@@ -53,6 +53,7 @@ Cada lote aparece como card: imagem, título completo, preço, horário, UF e li
 - **Seção especial "Novelas, coletâneas e não classificados"**: títulos com
   `novela`, `trilha sonora`, `coletânea`, `sucessos`, `vol.`, `internacional`,
   `lote com`, ou sem artista identificável.
+- Dentro de cada casa, artistas em ordem alfabética; a seção especial sempre por último.
 
 ## Vigiar lotes
 
