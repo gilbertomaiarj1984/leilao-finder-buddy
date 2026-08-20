@@ -55,36 +55,54 @@ Cada lote aparece como card: imagem, título completo, preço, horário, UF e li
   `lote com`, ou sem artista identificável.
 - Dentro de cada casa, artistas em ordem alfabética; a seção especial sempre por último.
 
-## Vigiar lotes
+## Vigiar sincronizado com o LeilõesBR
 
-- Cada card tem um botão de olho/"Vigiar" que marca o lote como vigiado (e desmarca ao
-  clicar de novo), com destaque visual no card.
-- Uma aba/seção "Vigiados" reúne todos os lotes marcados, independentemente do dia,
-  com contador no topo da página.
-- A lista de vigiados é salva no navegador (localStorage), guardando os dados do lote
-  (título, preço, data, casa, imagem, link) para continuar visível mesmo depois de o
-  lote sair da janela de 3 dias. Leitura só após a hidratação, para não quebrar o SSR.
-- Botão para limpar a lista e para remover item individualmente.
-- Observação: é uma lista de vigiados própria do app — não é o "vigiar" do LeilõesBR,
-  que exige login na conta deles. Se depois você quiser vigiados sincronizados entre
-  dispositivos com login, dá para migrar para o Lovable Cloud.
+- Cada card tem um botão "Vigiar" que grava o lote na SUA conta do LeilõesBR, usando
+  login feito no servidor com suas credenciais guardadas como segredos do projeto
+  (`LEILOESBR_EMAIL` e `LEILOESBR_SENHA`) — nunca expostas ao navegador.
+- Fluxo no servidor: POST em `portal/assets/modulos/login/asp/login.asp`, guarda o
+  cookie de sessão ASP em memória e o reutiliza; se a sessão expirar, refaz o login
+  automaticamente e repete a ação uma vez.
+- Botão alterna vigiar/desvigiar e mostra estado de carregando. Se a gravação no
+  LeilõesBR falhar, aparece um erro claro e o lote **não** é marcado no app — as duas
+  listas nunca ficam divergentes (conforme sua escolha).
+- Aba "Vigiados" lê a lista real da sua conta no LeilõesBR (página de vigiados do
+  portal, raspada com a mesma sessão), com contador no topo e opção de desvigiar dali.
+- Não guardo lista local nem duplicada: a fonte da verdade é a sua conta no site.
 
 ## Detalhes técnicos
 
-- `src/lib/leiloesbr.functions.ts` — `createServerFn` com o scraper, parser e cache.
+- `src/lib/leiloesbr.functions.ts` — `createServerFn` com o scraper de busca, parser e
+  cache de listagem.
+- `src/lib/leiloesbr-auth.server.ts` — login, cache do cookie de sessão, `fetch`
+  autenticado com re-login automático.
+- `src/lib/leiloesbr-watch.functions.ts` — server functions `toggleWatch` e
+  `listWatched`, que só rodam server-side e devolvem DTOs simples.
 - `src/lib/vinyl-parse.ts` — funções puras de classificação (vinil sim/não, extração de
-  artista, normalização de data) para manter o server fn enxuto.
-- `src/hooks/use-watchlist.ts` — hook de vigiados com persistência em localStorage.
+  artista, normalização de data) para manter os server fns enxutos.
 - `src/routes/index.tsx` — página com abas de dia + aba Vigiados, blocos por casa,
   grupos por artista, estados de carregando/vazio/erro, e `head()` próprio.
+- Vigiar usa `useMutation` + invalidação da query de vigiados; toasts via sonner.
 - Componentes shadcn (Tabs, Card, Badge, Button, Skeleton) e tokens do design system.
-- Sem banco de dados; scraping ao vivo com cache curto e vigiados no navegador.
+- Sem banco de dados: scraping ao vivo com cache curto e vigiar direto na sua conta.
 
+## Primeiro passo da implementação
+
+O botão de vigiar do site só aparece para usuário logado, então o endpoint exato de
+vigiar precisa ser descoberto com uma sessão real. Ao começar, vou pedir suas
+credenciais pelo formulário seguro de segredos, fazer o login pelo servidor,
+identificar a chamada de vigiar/desvigiar e a página de vigiados, e então implementar.
+Se o login exigir algo que não dá para automatizar (captcha, 2FA, bloqueio), eu paro e
+te aviso antes de seguir.
 
 ## Limitações
 
-- Depende do HTML atual do LeilõesBR; mudanças de layout exigem ajuste no parser.
+- Depende do HTML e do fluxo de login atuais do LeilõesBR; mudanças no site exigem
+  ajuste no scraper ou no login.
 - A identificação de artista é heurística — títulos mal escritos cairão na seção
   "não classificado".
 - A varredura faz várias requisições ao site por atualização; o cache existe para
   manter o uso leve e responsável.
+- Como as credenciais são do projeto, qualquer pessoa que acessar o app publicado
+  vigiaria na sua conta. Recomendo manter o app privado ou, depois, adicionar login
+  próprio com Lovable Cloud.
