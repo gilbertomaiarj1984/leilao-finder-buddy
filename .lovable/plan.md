@@ -55,15 +55,31 @@ Cada lote aparece como card: imagem, título completo, preço, horário, UF e li
   `lote com`, ou sem artista identificável.
 - Dentro de cada casa, artistas em ordem alfabética; a seção especial sempre por último.
 
+## Vigiar lotes
+
+- Cada card tem um botão de olho/"Vigiar" que marca o lote como vigiado (e desmarca ao
+  clicar de novo), com destaque visual no card.
+- Uma aba/seção "Vigiados" reúne todos os lotes marcados, independentemente do dia,
+  com contador no topo da página.
+- A lista de vigiados é salva no navegador (localStorage), guardando os dados do lote
+  (título, preço, data, casa, imagem, link) para continuar visível mesmo depois de o
+  lote sair da janela de 3 dias. Leitura só após a hidratação, para não quebrar o SSR.
+- Botão para limpar a lista e para remover item individualmente.
+- Observação: é uma lista de vigiados própria do app — não é o "vigiar" do LeilõesBR,
+  que exige login na conta deles. Se depois você quiser vigiados sincronizados entre
+  dispositivos com login, dá para migrar para o Lovable Cloud.
+
 ## Detalhes técnicos
 
 - `src/lib/leiloesbr.functions.ts` — `createServerFn` com o scraper, parser e cache.
 - `src/lib/vinyl-parse.ts` — funções puras de classificação (vinil sim/não, extração de
   artista, normalização de data) para manter o server fn enxuto.
-- `src/routes/index.tsx` — página com abas de dia, blocos por casa, grupos por artista,
-  estados de carregando/vazio/erro, e `head()` próprio com título e descrição.
-- Componentes shadcn (Tabs, Card, Badge, Skeleton) e tokens de cor do design system.
-- Sem banco de dados; tudo ao vivo com cache curto.
+- `src/hooks/use-watchlist.ts` — hook de vigiados com persistência em localStorage.
+- `src/routes/index.tsx` — página com abas de dia + aba Vigiados, blocos por casa,
+  grupos por artista, estados de carregando/vazio/erro, e `head()` próprio.
+- Componentes shadcn (Tabs, Card, Badge, Button, Skeleton) e tokens do design system.
+- Sem banco de dados; scraping ao vivo com cache curto e vigiados no navegador.
+
 
 ## Limitações
 
