@@ -117,7 +117,14 @@ export async function scrapeVinylLots(): Promise<{ days: string[]; lots: VinylLo
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
 
-  const firstHtml = await fetchPage(1);
+  let firstHtml: string;
+  try {
+    firstHtml = await fetchPage(1);
+  } catch (error) {
+    // Se o site está instável, mostramos a última varredura em vez de quebrar a tela.
+    if (cache) return { days: cache.days, lots: cache.lots };
+    throw error;
+  }
   const total = lastPage(firstHtml);
 
   const byId = new Map<string, VinylLot>();
@@ -145,6 +152,8 @@ export async function scrapeVinylLots(): Promise<{ days: string[]; lots: VinylLo
     if (minDay > windowEnd) break;
   }
 
+  if (!byId.size && cache) return { days: cache.days, lots: cache.lots };
+
   const lots = [...byId.values()].sort(
     (a, b) =>
       a.dayKey.localeCompare(b.dayKey) ||
@@ -155,3 +164,4 @@ export async function scrapeVinylLots(): Promise<{ days: string[]; lots: VinylLo
   cache = { at: Date.now(), days, lots };
   return { days, lots };
 }
+

@@ -12,9 +12,12 @@ export const getAccessStatus = createServerFn({ method: "GET" })
 
 export const getVinylLots = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((data: { force?: boolean } | undefined) => data ?? {})
+  .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
-    const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
+    const { scrapeVinylLots, invalidateLotsCache } = await import("./leiloesbr-scrape.server");
+    if (data.force) invalidateLotsCache();
     return await scrapeVinylLots();
   });
+

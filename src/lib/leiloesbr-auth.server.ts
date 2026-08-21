@@ -118,12 +118,27 @@ export async function authFetch(
     return await response.text();
   };
 
-  let html = await run(await getSessionCookie());
+  // O site devolve 500/502 de forma intermitente sob carga: tentamos algumas vezes.
+  const attempt = async (cookie: string) => {
+    let lastError: unknown;
+    for (let i = 0; i < 3; i++) {
+      try {
+        return await run(cookie);
+      } catch (error) {
+        lastError = error;
+        await new Promise((resolve) => setTimeout(resolve, 600 * (i + 1)));
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error("Falha ao acessar o LeilõesBR.");
+  };
+
+  let html = await attempt(await getSessionCookie());
   if (isLoggedOut?.(html)) {
-    html = await run(await getSessionCookie(true));
+    html = await attempt(await getSessionCookie(true));
   }
   return html;
 }
+
 
 export function loginEmail(): string {
   const email = process.env["LEILOESBR_EMAIL"];
