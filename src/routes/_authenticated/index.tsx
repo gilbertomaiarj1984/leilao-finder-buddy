@@ -21,7 +21,7 @@ import { getVinylLots } from "@/lib/leiloesbr.functions";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { UNCLASSIFIED_LABEL, type VinylLot } from "@/lib/vinyl-parse";
 
-export const Route = createFileRoute("/")({
+export const Route = createFileRoute("/_authenticated/")({
   head: () => ({
     meta: [
       { title: "Garimpo de Vinil — leilões dos próximos 3 dias" },
