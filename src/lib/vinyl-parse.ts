@@ -99,13 +99,16 @@ export function extractArtist(title: string): string {
     }
   }
 
-  // "ARTISTA - TITULO" / "ARTISTA – TITULO" / "ARTISTA: TITULO"
+  // "ARTISTA - TITULO" / "ARTISTA – TITULO" / "ARTISTA: TITULO" / "ARTISTA. resto"
   const parts = rest.split(/\s[-–—:]\s|[-–—:](?=\s)|\s[-–—](?=\S)/);
   let candidate = (parts[0] ?? "").trim();
 
-  // Quoted album name right after the artist: ARTISTA "ALBUM"
-  candidate = candidate.split(/["“”]/)[0]!.trim();
-  candidate = candidate.replace(/[(),.;]+$/g, "").replace(/^[(),.;]+/g, "").trim();
+  // Cut trailing sentences / album names / parentheses: "Artista. Produto original..."
+  candidate = candidate.split(/["“”(\[/]/)[0]!;
+  candidate = candidate.split(/\.\s+|,\s+|;\s+/)[0]!;
+  candidate = candidate.replace(/[(),.;:]+$/g, "").replace(/^[(),.;:]+/g, "").trim();
+  candidate = candidate.replace(/\s+(vol\.?|volume)\s*\d*$/i, "").trim();
+
 
   const normCandidate = normalize(candidate);
   if (!normCandidate) return "";
