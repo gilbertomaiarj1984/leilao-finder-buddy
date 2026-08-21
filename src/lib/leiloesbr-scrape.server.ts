@@ -1,5 +1,6 @@
 import { parse, type HTMLElement } from "node-html-parser";
 
+import { authFetch, BASE_URL } from "./leiloesbr-auth.server";
 import {
   extractArtist,
   isVinylTitle,
@@ -8,17 +9,17 @@ import {
   type VinylLot,
 } from "./vinyl-parse";
 
-export const BASE_URL = "https://leiloesbr.com.br";
 const VINYL_CATEGORY = "|446973636F2064652076696E696C|";
 const PER_PAGE = 126;
 const MAX_PAGES = 45;
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
-const UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36";
-
 type CacheEntry = { at: number; days: string[]; lots: VinylLot[] };
 let cache: CacheEntry | null = null;
+
+export function invalidateLotsCache(): void {
+  cache = null;
+}
 
 function listUrl(page: number): string {
   const params = new URLSearchParams({
@@ -31,13 +32,14 @@ function listUrl(page: number): string {
   return `${BASE_URL}/busca_andamento.asp?${params.toString()}&tp=${VINYL_CATEGORY}`;
 }
 
+// Logged-in listings render the watch button; its absence means the session died.
+const looksAnonymous = (html: string) =>
+  html.includes("mostbidded") && !html.includes("data-watch");
+
 async function fetchPage(page: number): Promise<string> {
-  const response = await fetch(listUrl(page), {
-    headers: { "User-Agent": UA, Accept: "text/html" },
-  });
-  if (!response.ok) throw new Error(`LeilõesBR respondeu ${response.status} na página ${page}`);
-  return await response.text();
+  return await authFetch(listUrl(page), {}, looksAnonymous);
 }
+
 
 function absolute(href: string | undefined): string {
   if (!href) return BASE_URL;
