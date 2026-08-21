@@ -1,7 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Check, ChevronsUpDown, Eye, EyeOff, ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import {
+  Check,
+  ChevronsUpDown,
+  Eye,
+  EyeOff,
+  ExternalLink,
+  Loader2,
+  LogOut,
+  RefreshCw,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -17,11 +26,12 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { getVinylLots } from "@/lib/leiloesbr.functions";
+import { supabase } from "@/integrations/supabase/client";
+import { getAccessStatus, getVinylLots } from "@/lib/leiloesbr.functions";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { UNCLASSIFIED_LABEL, type VinylLot } from "@/lib/vinyl-parse";
 
-export const Route = createFileRoute("/")({
+export const Route = createFileRoute("/_authenticated/")({
   head: () => ({
     meta: [
       { title: "Garimpo de Vinil — leilões dos próximos 3 dias" },
@@ -176,6 +186,54 @@ function ArtistFilter({
 }
 
 function HomePage() {
+  const navigate = useNavigate();
+  const queryClientForAuth = useQueryClient();
+  const fetchAccess = useServerFn(getAccessStatus);
+  const access = useQuery({
+    queryKey: ["access-status"] as const,
+    queryFn: () => fetchAccess(),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+  async function signOut() {
+    await queryClientForAuth.cancelQueries();
+    queryClientForAuth.clear();
+    await supabase.auth.signOut();
+    void navigate({ to: "/auth", replace: true });
+  }
+
+  if (access.isLoading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </main>
+    );
+  }
+
+  if (access.isError || !access.data?.allowed) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="w-full max-w-sm rounded-lg border border-border bg-card p-8 text-center">
+          <h1 className="text-xl font-semibold text-foreground">Acesso não autorizado</h1>
+          <p className="mt-3 text-sm text-muted-foreground">
+            {access.data?.email
+              ? `A conta ${access.data.email} não é o e-mail cadastrado nas casas de leilão.`
+              : "Não foi possível validar o seu acesso."}
+          </p>
+          <Button className="mt-6 w-full" variant="outline" onClick={() => void signOut()}>
+            <LogOut className="mr-2 h-4 w-4" />
+            Sair e trocar de conta
+          </Button>
+        </div>
+      </main>
+    );
+  }
+
+  return <VinylDashboard onSignOut={signOut} email={access.data.email} />;
+}
+
+function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
   const [tab, setTab] = useState<string>("day-0");
   const [artistFilter, setArtistFilter] = useState<string>("");
   const queryClient = useQueryClient();
@@ -249,6 +307,13 @@ function HomePage() {
             )}
             Atualizar varredura
           </Button>
+          <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+            <span className="text-xs text-muted-foreground">{email}</span>
+            <Button variant="ghost" size="sm" onClick={() => void onSignOut()}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Sair
+            </Button>
+          </div>
         </div>
       </header>
 
