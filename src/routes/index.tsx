@@ -173,7 +173,13 @@ function HomePage() {
             ))}
           </div>
         ) : (
-          <Tabs value={tab} onValueChange={setTab}>
+          <Tabs
+            value={tab}
+            onValueChange={(value) => {
+              setTab(value);
+              setArtistFilter("");
+            }}
+          >
             <TabsList className="mb-6 flex h-auto flex-wrap justify-start gap-1 bg-secondary">
               {days.map((day, index) => (
                 <TabsTrigger key={day} value={`day-${index}`}>
@@ -193,7 +199,12 @@ function HomePage() {
               const dayLots = (lots.data?.lots ?? []).map((lot) =>
                 watchedIds.size ? { ...lot, watched: watchedIds.has(lot.idPeca) } : lot,
               ).filter((lot) => lot.dayKey === day);
-              const groups = groupByHouse(dayLots);
+              const artists = artistOptions(dayLots);
+              const visibleLots = artistFilter
+                ? dayLots.filter((lot) => (lot.artist || UNCLASSIFIED_LABEL) === artistFilter)
+                : dayLots;
+              const groups = groupByHouse(visibleLots);
+
               return (
                 <TabsContent key={day} value={`day-${index}`} className="space-y-10">
                   {groups.length === 0 ? (
