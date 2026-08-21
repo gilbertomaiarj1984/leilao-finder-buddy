@@ -99,13 +99,16 @@ export function extractArtist(title: string): string {
     }
   }
 
-  // "ARTISTA - TITULO" / "ARTISTA – TITULO" / "ARTISTA: TITULO"
+  // "ARTISTA - TITULO" / "ARTISTA – TITULO" / "ARTISTA: TITULO" / "ARTISTA. resto"
   const parts = rest.split(/\s[-–—:]\s|[-–—:](?=\s)|\s[-–—](?=\S)/);
   let candidate = (parts[0] ?? "").trim();
 
-  // Quoted album name right after the artist: ARTISTA "ALBUM"
-  candidate = candidate.split(/["“”]/)[0]!.trim();
-  candidate = candidate.replace(/[(),.;]+$/g, "").replace(/^[(),.;]+/g, "").trim();
+  // Cut trailing sentences / album names / parentheses: "Artista. Produto original..."
+  candidate = candidate.split(/["“”(\[/]/)[0]!;
+  candidate = candidate.split(/\.\s+|,\s+|;\s+/)[0]!;
+  candidate = candidate.replace(/[(),.;:]+$/g, "").replace(/^[(),.;:]+/g, "").trim();
+  candidate = candidate.replace(/\s+(vol\.?|volume)\s*\d*$/i, "").trim();
+
 
   const normCandidate = normalize(candidate);
   if (!normCandidate) return "";
@@ -117,18 +120,25 @@ export function extractArtist(title: string): string {
   return titleCase(candidate);
 }
 
+const LOWER_WORDS = new Set([
+  "de", "da", "do", "das", "dos", "e", "em", "no", "na", "nos", "nas",
+  "of", "the", "and", "a", "o", "y", "los", "las", "le", "la", "des", "du", "van", "von",
+]);
+
 export function titleCase(value: string): string {
   return value
     .toLocaleLowerCase("pt-BR")
     .split(" ")
-    .map((word) =>
-      word.length <= 2 && !/^\d/.test(word)
-        ? word.toLocaleUpperCase("pt-BR")
+    .filter(Boolean)
+    .map((word, index) =>
+      index > 0 && LOWER_WORDS.has(word)
+        ? word
         : word.charAt(0).toLocaleUpperCase("pt-BR") + word.slice(1),
     )
     .join(" ")
     .trim();
 }
+
 
 export const UNCLASSIFIED_LABEL = "Novelas, coletâneas e não classificados";
 
