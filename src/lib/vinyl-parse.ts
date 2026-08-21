@@ -1,5 +1,9 @@
 export type VinylLot = {
   id: string;
+  idPeca: string;
+  idLeilao: string;
+  base: string;
+  watched: boolean;
   title: string;
   url: string;
   image: string | null;
@@ -11,6 +15,7 @@ export type VinylLot = {
   houseUrl: string;
   artist: string; // "" when unidentified
 };
+
 
 const VINYL_HINTS = [
   "lp",
