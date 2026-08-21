@@ -63,15 +63,19 @@ function parseCard(card: HTMLElement): VinylLot | null {
   const houseAnchor = infoNodes[infoNodes.length - 1]?.querySelector("a");
   const idMatch = href.match(/\|(\d+)\|(\d+)/);
 
-  const watchAnchor = card.querySelector("[data-watch]");
-  const watchData = (watchAnchor?.getAttribute("data-watch") ?? "").split(",");
+  // The site emits an unclosed <span> inside the favourite button, so the DOM
+  // subtree with the watch anchor is unreliable — read it from the raw markup.
+  const raw = card.outerHTML;
+  const watchData = (raw.match(/data-watch="([^"]+)"/)?.[1] ?? "").split(",");
+  const watched = /class="[^"]*\bwatch\b[^"]*\bativo\b[^"]*"/.test(raw);
 
   return {
     id: idMatch ? `${idMatch[1]}-${idMatch[2]}` : href,
-    idPeca: watchData[0]?.trim() ?? idMatch?.[2] ?? "",
-    idLeilao: watchData[2]?.trim() ?? idMatch?.[1] ?? "",
-    base: watchData[3]?.trim() ?? "0",
-    watched: (watchAnchor?.getAttribute("class") ?? "").split(/\s+/).includes("ativo"),
+    idPeca: watchData[0]?.trim() || (idMatch?.[2] ?? ""),
+    idLeilao: watchData[2]?.trim() || (idMatch?.[1] ?? ""),
+    base: watchData[3]?.trim() || "0",
+    watched,
+
     title,
     url: absolute(href),
     image: card.querySelector("img")?.getAttribute("src") ?? null,
