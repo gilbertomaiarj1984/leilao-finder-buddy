@@ -281,8 +281,6 @@ function HomePage() {
                         ...lot,
                         dayKey: lot.date,
                         watched: true,
-                        house: lot.house,
-                        houseUrl: lot.houseUrl,
                       }}
                       busy={pending === lot.idPeca}
                       onToggle={() =>
