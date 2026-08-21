@@ -1,7 +1,5 @@
-import { parse } from "node-html-parser";
-
 import { authFetch, BASE_URL, loginEmail } from "./leiloesbr-auth.server";
-import { extractArtist, type VinylLot } from "./vinyl-parse";
+import { extractArtist } from "./vinyl-parse";
 
 export type WatchTarget = { idPeca: string; idLeilao: string; base: string };
 
@@ -14,39 +12,90 @@ export async function toggleWatchOnSite(target: WatchTarget, desired: boolean): 
     base: target.base || "0",
   }).toString();
 
-  const run = async () =>
-    (
-      await authFetch(
-        `${BASE_URL}/portal/assets/modulos/vigia-favorita/vigiar_peca.asp`,
-        { method: "POST", body, referer: `${BASE_URL}/busca_andamento.asp` },
-      )
+  const run = async () => {
+    const text = (
+      await authFetch(`${BASE_URL}/portal/assets/modulos/vigia-favorita/vigiar_peca.asp`, {
+        method: "POST",
+        body,
+        referer: `${BASE_URL}/busca_andamento.asp`,
+      })
     ).trim();
-
-  let result = await run();
-  // The endpoint is a toggle: "+" means it is now watched, "-" means removed.
-  if (result !== "+" && result !== "-") {
-    throw new Error("O LeilõesBR não confirmou a vigia deste lote.");
-  }
-  let state = result === "+";
-  if (state !== desired) {
-    result = await run();
-    if (result !== "+" && result !== "-") {
+    // The endpoint is a toggle: "+" means now watched, "-" means removed.
+    if (text !== "+" && text !== "-") {
       throw new Error("O LeilõesBR não confirmou a vigia deste lote.");
     }
-    state = result === "+";
-  }
+    return text === "+";
+  };
+
+  let state = await run();
+  if (state !== desired) state = await run();
   if (state !== desired) {
     throw new Error("Não foi possível sincronizar a vigia com o LeilõesBR.");
   }
   return state;
 }
 
-export type WatchedLot = Pick<
-  VinylLot,
-  "id" | "idPeca" | "idLeilao" | "base" | "title" | "url" | "image" | "price" | "artist"
-> & { lote: string; watched: true };
+export type WatchedLot = {
+  id: string;
+  idPeca: string;
+  idLeilao: string;
+  base: string;
+  lote: string;
+  title: string;
+  url: string;
+  image: string | null;
+  price: string;
+  date: string; // dd/mm/yyyy
+  time: string;
+  house: string;
+  houseUrl: string;
+  uf: string;
+  artist: string;
+  watched: true;
+};
 
 const looksAnonymous = (html: string) => !html.includes("data-watch");
+const decode = (value: string) =>
+  value
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+
+function parseWatchedChunk(chunk: string): WatchedLot | null {
+  const data = (chunk.match(/data-watch="([^"]+)"/)?.[1] ?? "").split(",");
+  const idPeca = data[0]?.trim();
+  if (!idPeca) return null;
+  if (!/class="[^"]*\bwatch\b[^"]*\bativo\b[^"]*"/.test(chunk)) return null;
+
+  const flat = chunk.replace(/\s+/g, " ");
+  const grab = (re: RegExp) => decode(flat.match(re)?.[1] ?? "");
+  const title = grab(/<\/span><br>\s*([^<]+)/);
+  const dateTime = flat.match(/(\d{2}\/\d{2}\/\d{4})\s*-\s*([\dh:]+)/);
+
+  return {
+    id: `${data[2]?.trim() ?? ""}-${idPeca}`,
+    idPeca,
+    idLeilao: data[2]?.trim() ?? "",
+    base: data[3]?.trim() ?? "0",
+    lote: grab(/title="Lote-?([^"]*)"/),
+    title,
+    url: grab(/<a href="([^"]+)"[^>]*class="stretched-link"/) || BASE_URL,
+    image: grab(/<img[^>]*src="([^"]+)"/) || null,
+    price: grab(/<b class="pb-1">([^<]+)</),
+    date: dateTime?.[1] ?? "",
+    time: dateTime?.[2] ?? "",
+    house: grab(/ellipsis-overflow"><a href="[^"]*">([^<]+?)\s*-\s*</),
+    houseUrl: grab(/ellipsis-overflow"><a href="([^"]+)"/),
+    uf: grab(/class="pesq-uf">([^<]+)</),
+    artist: extractArtist(title),
+    watched: true,
+  };
+}
 
 /** Reads every watched lot straight from the account page (conta_site.asp?l=8). */
 export async function listWatchedFromSite(): Promise<WatchedLot[]> {
@@ -59,35 +108,14 @@ export async function listWatchedFromSite(): Promise<WatchedLot[]> {
       {},
       page === 1 ? looksAnonymous : undefined,
     );
-    const root = parse(html);
-    const cards = root.querySelectorAll(".product");
+
     let added = 0;
-
-    for (const card of cards) {
-      const watch = card.querySelector("[data-watch]");
-      const data = (watch?.getAttribute("data-watch") ?? "").split(",");
-      const idPeca = data[0]?.trim();
-      if (!idPeca || seen.has(idPeca)) continue;
-
-      const anchor = card.querySelector(".product-title a") ?? card.querySelector("a.stretched-link");
-      const rawTitle = (anchor?.text ?? "").replace(/\s+/g, " ").trim();
-      const title = rawTitle.replace(/^Lote:?\s*\d+\s*/i, "").trim();
-
-      seen.add(idPeca);
+    for (const chunk of html.split('<div class="oc-item').slice(1)) {
+      const lot = parseWatchedChunk(chunk);
+      if (!lot || seen.has(lot.idPeca)) continue;
+      seen.add(lot.idPeca);
+      out.push(lot);
       added++;
-      out.push({
-        id: `${data[2]?.trim() ?? ""}-${idPeca}`,
-        idPeca,
-        idLeilao: data[2]?.trim() ?? "",
-        base: data[3]?.trim() ?? "0",
-        lote: (card.querySelector("a.stretched-link")?.getAttribute("title") ?? "").replace(/^Lote-?/i, ""),
-        title: title || rawTitle,
-        url: (card.querySelector("a.stretched-link")?.getAttribute("href") ?? BASE_URL).trim(),
-        image: card.querySelector("img")?.getAttribute("src") ?? null,
-        price: (card.querySelector(".product-price b")?.text ?? "").trim(),
-        artist: extractArtist(title),
-        watched: true,
-      });
     }
 
     if (added === 0) break;
