@@ -63,7 +63,7 @@ function parseCard(card: HTMLElement): VinylLot | null {
   const houseAnchor = infoNodes[infoNodes.length - 1]?.querySelector("a");
   const idMatch = href.match(/\|(\d+)\|(\d+)/);
 
-  const watchAnchor = card.querySelector("a.watch");
+  const watchAnchor = card.querySelector("[data-watch]");
   const watchData = (watchAnchor?.getAttribute("data-watch") ?? "").split(",");
 
   return {
@@ -71,7 +71,7 @@ function parseCard(card: HTMLElement): VinylLot | null {
     idPeca: watchData[0]?.trim() ?? idMatch?.[2] ?? "",
     idLeilao: watchData[2]?.trim() ?? idMatch?.[1] ?? "",
     base: watchData[3]?.trim() ?? "0",
-    watched: watchAnchor?.classNames.includes("ativo") ?? false,
+    watched: (watchAnchor?.getAttribute("class") ?? "").split(/\s+/).includes("ativo"),
     title,
     url: absolute(href),
     image: card.querySelector("img")?.getAttribute("src") ?? null,

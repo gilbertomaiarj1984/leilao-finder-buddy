@@ -64,7 +64,7 @@ export async function listWatchedFromSite(): Promise<WatchedLot[]> {
     let added = 0;
 
     for (const card of cards) {
-      const watch = card.querySelector("a.watch");
+      const watch = card.querySelector("[data-watch]");
       const data = (watch?.getAttribute("data-watch") ?? "").split(",");
       const idPeca = data[0]?.trim();
       if (!idPeca || seen.has(idPeca)) continue;
