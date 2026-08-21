@@ -1,12 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Eye, EyeOff, ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { Check, ChevronsUpDown, Eye, EyeOff, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { getVinylLots } from "@/lib/leiloesbr.functions";
@@ -84,8 +92,92 @@ function groupByHouse(lots: VinylLot[]): HouseGroup[] {
     .sort((a, b) => b.count - a.count || a.house.localeCompare(b.house, "pt-BR"));
 }
 
+function houseAnchor(house: string, dayIndex: number): string {
+  return `casa-${dayIndex}-${house.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+}
+
+function artistOptions(lots: VinylLot[]): { artist: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const lot of lots) {
+    const key = lot.artist || UNCLASSIFIED_LABEL;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([artist, count]) => ({ artist, count }))
+    .sort((a, b) => {
+      if (a.artist === UNCLASSIFIED_LABEL) return 1;
+      if (b.artist === UNCLASSIFIED_LABEL) return -1;
+      return a.artist.localeCompare(b.artist, "pt-BR");
+    });
+}
+
+function ArtistFilter({
+  artists,
+  value,
+  onChange,
+}: {
+  artists: { artist: string; count: number }[];
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between sm:w-72"
+        >
+          <span className="truncate">{value || `Todos os artistas (${artists.length})`}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[min(22rem,90vw)] p-0">
+        <Command>
+          <CommandInput placeholder="Buscar artista..." />
+          <CommandList className="max-h-72">
+            <CommandEmpty>Nenhum artista encontrado.</CommandEmpty>
+            <CommandItem
+              value="__todos"
+              onSelect={() => {
+                onChange("");
+                setOpen(false);
+              }}
+            >
+              <Check className={value ? "mr-2 h-4 w-4 opacity-0" : "mr-2 h-4 w-4"} />
+              Todos os artistas
+            </CommandItem>
+            {artists.map((item) => (
+              <CommandItem
+                key={item.artist}
+                value={item.artist}
+                onSelect={() => {
+                  onChange(item.artist === value ? "" : item.artist);
+                  setOpen(false);
+                }}
+              >
+                <Check
+                  className={
+                    value === item.artist ? "mr-2 h-4 w-4" : "mr-2 h-4 w-4 opacity-0"
+                  }
+                />
+                <span className="truncate">{item.artist}</span>
+                <span className="ml-auto text-xs text-muted-foreground">{item.count}</span>
+              </CommandItem>
+            ))}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function HomePage() {
   const [tab, setTab] = useState<string>("day-0");
+  const [artistFilter, setArtistFilter] = useState<string>("");
   const queryClient = useQueryClient();
   const fetchLots = useServerFn(getVinylLots);
   const fetchWatched = useServerFn(listWatched);
@@ -173,7 +265,13 @@ function HomePage() {
             ))}
           </div>
         ) : (
-          <Tabs value={tab} onValueChange={setTab}>
+          <Tabs
+            value={tab}
+            onValueChange={(value) => {
+              setTab(value);
+              setArtistFilter("");
+            }}
+          >
             <TabsList className="mb-6 flex h-auto flex-wrap justify-start gap-1 bg-secondary">
               {days.map((day, index) => (
                 <TabsTrigger key={day} value={`day-${index}`}>
@@ -193,16 +291,58 @@ function HomePage() {
               const dayLots = (lots.data?.lots ?? []).map((lot) =>
                 watchedIds.size ? { ...lot, watched: watchedIds.has(lot.idPeca) } : lot,
               ).filter((lot) => lot.dayKey === day);
-              const groups = groupByHouse(dayLots);
+              const artists = artistOptions(dayLots);
+              const visibleLots = artistFilter
+                ? dayLots.filter((lot) => (lot.artist || UNCLASSIFIED_LABEL) === artistFilter)
+                : dayLots;
+              const groups = groupByHouse(visibleLots);
+
               return (
                 <TabsContent key={day} value={`day-${index}`} className="space-y-10">
+                  <div className="sticky top-0 z-20 -mx-4 mb-2 space-y-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <ArtistFilter
+                        artists={artists}
+                        value={artistFilter}
+                        onChange={setArtistFilter}
+                      />
+                      {artistFilter ? (
+                        <Button variant="ghost" size="sm" onClick={() => setArtistFilter("")}>
+                          Limpar filtro
+                        </Button>
+                      ) : null}
+                      <span className="text-xs text-muted-foreground">
+                        {visibleLots.length} lote(s) em {groups.length} casa(s)
+                      </span>
+                    </div>
+                    {groups.length > 0 ? (
+                      <nav className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
+                        {groups.map((group) => (
+                          <a
+                            key={group.house}
+                            href={`#${houseAnchor(group.house, index)}`}
+                            className="shrink-0 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
+                          >
+                            {group.house}
+                            <span className="ml-1.5 text-muted-foreground">{group.count}</span>
+                          </a>
+                        ))}
+                      </nav>
+                    ) : null}
+                  </div>
                   {groups.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                      Nenhum disco de vinil encontrado para este dia.
+                      {artistFilter
+                        ? "Nenhum lote deste artista neste dia."
+                        : "Nenhum disco de vinil encontrado para este dia."}
                     </p>
                   ) : (
                     groups.map((group) => (
-                      <section key={group.house} className="space-y-5">
+                      <section
+                        key={group.house}
+                        id={houseAnchor(group.house, index)}
+                        className="scroll-mt-32 space-y-5"
+                      >
                         <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
                           <h2 className="text-2xl font-semibold tracking-tight text-foreground">
                             {group.house}
