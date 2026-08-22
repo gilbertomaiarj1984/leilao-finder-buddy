@@ -1,6 +1,6 @@
 import { parse, type HTMLElement } from "node-html-parser";
 
-import { authFetch, BASE_URL } from "./leiloesbr-auth.server";
+import { publicFetch, BASE_URL } from "./leiloesbr-auth.server";
 import {
   extractArtist,
   isVinylTitle,
@@ -12,7 +12,7 @@ import {
 const VINYL_CATEGORY = "|446973636F2064652076696E696C|";
 const PER_PAGE = 126;
 const MAX_PAGES = 45;
-const CACHE_TTL_MS = 15 * 60 * 1000;
+const CACHE_TTL_MS = 30 * 60 * 1000;
 
 type CacheEntry = { at: number; days: string[]; lots: VinylLot[] };
 let cache: CacheEntry | null = null;
@@ -32,12 +32,10 @@ function listUrl(page: number): string {
   return `${BASE_URL}/busca_andamento.asp?${params.toString()}&tp=${VINYL_CATEGORY}`;
 }
 
-// Logged-in listings render the watch button; its absence means the session died.
-const looksAnonymous = (html: string) =>
-  html.includes("mostbidded") && !html.includes("data-watch");
-
+// A varredura geral é pública: buscamos deslogados para evitar o 500 intermitente
+// que o site devolve em sessões autenticadas sob carga. O login fica só para a vigia.
 async function fetchPage(page: number): Promise<string> {
-  return await authFetch(listUrl(page), {}, looksAnonymous);
+  return await publicFetch(listUrl(page), {});
 }
 
 

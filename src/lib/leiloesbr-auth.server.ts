@@ -88,6 +88,51 @@ export type AuthFetchInit = {
   referer?: string;
 };
 
+async function fetchOnce(url: string, init: AuthFetchInit, cookie?: string): Promise<string> {
+  const response = await fetch(url, {
+    method: init.method ?? "GET",
+    headers: {
+      "User-Agent": UA,
+      Accept: init.method === "POST" ? "*/*" : "text/html",
+      // Deslogado (varredura pública) não envia Cookie; logado (vigia) envia.
+      ...(cookie ? { Cookie: cookie } : {}),
+      Referer: init.referer ?? `${BASE_URL}/default.asp`,
+      ...(init.method === "POST"
+        ? {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Requested-With": "XMLHttpRequest",
+          }
+        : {}),
+    },
+    ...(init.body ? { body: init.body } : {}),
+  });
+  if (!response.ok) throw new Error(`LeilõesBR respondeu ${response.status}`);
+  return await response.text();
+}
+
+// O site devolve 500/502 de forma intermitente sob carga: tentamos algumas vezes.
+async function fetchWithRetry(url: string, init: AuthFetchInit, cookie?: string): Promise<string> {
+  let lastError: unknown;
+  for (let i = 0; i < 3; i++) {
+    try {
+      return await fetchOnce(url, init, cookie);
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 600 * (i + 1)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Falha ao acessar o LeilõesBR.");
+}
+
+/**
+ * Fetches a public LeilõesBR URL WITHOUT logging in. The general listing is public,
+ * and scraping it anonymously avoids the intermittent 500s the site throws for
+ * authenticated sessions under load. Login stays reserved for the watch (vigia) calls.
+ */
+export async function publicFetch(url: string, init: AuthFetchInit = {}): Promise<string> {
+  return await fetchWithRetry(url, init);
+}
+
 /**
  * Fetches a LeilõesBR URL with the shared logged-in session. When `isLoggedOut`
  * says the response came back anonymous, it logs in again and retries once.
@@ -97,44 +142,9 @@ export async function authFetch(
   init: AuthFetchInit = {},
   isLoggedOut?: (html: string) => boolean,
 ): Promise<string> {
-  const run = async (cookie: string) => {
-    const response = await fetch(url, {
-      method: init.method ?? "GET",
-      headers: {
-        "User-Agent": UA,
-        Accept: init.method === "POST" ? "*/*" : "text/html",
-        Cookie: cookie,
-        Referer: init.referer ?? `${BASE_URL}/default.asp`,
-        ...(init.method === "POST"
-          ? {
-              "Content-Type": "application/x-www-form-urlencoded",
-              "X-Requested-With": "XMLHttpRequest",
-            }
-          : {}),
-      },
-      ...(init.body ? { body: init.body } : {}),
-    });
-    if (!response.ok) throw new Error(`LeilõesBR respondeu ${response.status}`);
-    return await response.text();
-  };
-
-  // O site devolve 500/502 de forma intermitente sob carga: tentamos algumas vezes.
-  const attempt = async (cookie: string) => {
-    let lastError: unknown;
-    for (let i = 0; i < 3; i++) {
-      try {
-        return await run(cookie);
-      } catch (error) {
-        lastError = error;
-        await new Promise((resolve) => setTimeout(resolve, 600 * (i + 1)));
-      }
-    }
-    throw lastError instanceof Error ? lastError : new Error("Falha ao acessar o LeilõesBR.");
-  };
-
-  let html = await attempt(await getSessionCookie());
+  let html = await fetchWithRetry(url, init, await getSessionCookie());
   if (isLoggedOut?.(html)) {
-    html = await attempt(await getSessionCookie(true));
+    html = await fetchWithRetry(url, init, await getSessionCookie(true));
   }
   return html;
 }
