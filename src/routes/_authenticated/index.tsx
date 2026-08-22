@@ -39,7 +39,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { getAccessStatus, getLiveAuctions, getVinylLots } from "@/lib/leiloesbr.functions";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
-import { auctionStarted, UNCLASSIFIED_LABEL, type VinylLot } from "@/lib/vinyl-parse";
+import { auctionFinished, UNCLASSIFIED_LABEL, type VinylLot } from "@/lib/vinyl-parse";
 
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({
@@ -501,7 +501,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                   {dayLabel(day, index)}
                   <span className="ml-2 text-xs text-muted-foreground">
                     {lots.data?.lots.filter(
-                      (lot) => lot.dayKey === day && !auctionStarted(lot.dayKey, lot.time),
+                      (lot) => lot.dayKey === day && !auctionFinished(lot.dayKey, lot.time),
                     ).length ?? 0}
                   </span>
                 </TabsTrigger>
@@ -517,8 +517,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 .map((lot) =>
                   watchedIds.size ? { ...lot, watched: watchedIds.has(lot.idPeca) } : lot,
                 )
-                // Remove das listagens os leilões que já começaram (finalizados/ao vivo).
-                .filter((lot) => lot.dayKey === day && !auctionStarted(lot.dayKey, lot.time));
+                // Remove das listagens os leilões finalizados (3h após o início).
+                .filter((lot) => lot.dayKey === day && !auctionFinished(lot.dayKey, lot.time));
               const artists = artistOptions(dayLots);
               const globalActive = artistFilter !== "";
               const visibleLots = globalActive
@@ -529,6 +529,32 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               const watchedForDay = (watched.data ?? []).filter(
                 (lot) => watchedDateToKey(lot.date) === day,
               );
+              // Vigiados do dia agrupados por casa e ordenados por nº do lote.
+              const watchedByHouse = (() => {
+                const byHouse = new Map<
+                  string,
+                  { house: string; houseUrl: string; lots: typeof watchedForDay }
+                >();
+                for (const lot of watchedForDay) {
+                  const group =
+                    byHouse.get(lot.house) ??
+                    { house: lot.house, houseUrl: lot.houseUrl, lots: [] as typeof watchedForDay };
+                  group.lots.push(lot);
+                  byHouse.set(lot.house, group);
+                }
+                const num = (value: string) => {
+                  const n = Number(value);
+                  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+                };
+                for (const group of byHouse.values()) {
+                  group.lots.sort(
+                    (a, b) => num(a.lote) - num(b.lote) || a.lote.localeCompare(b.lote, "pt-BR"),
+                  );
+                }
+                return [...byHouse.values()].sort(
+                  (a, b) => b.lots.length - a.lots.length || a.house.localeCompare(b.house, "pt-BR"),
+                );
+              })();
 
               return (
                 <TabsContent key={day} value={`day-${index}`} className="space-y-6">
@@ -612,21 +638,41 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                     ) : watchedForDay.length === 0 ? (
                       <p className="text-sm text-muted-foreground">Nenhum lote vigiado neste dia.</p>
                     ) : (
-                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {watchedForDay.map((lot) => (
-                          <LotCard
-                            key={lot.id}
-                            lot={{ ...lot, dayKey: lot.date, watched: true }}
-                            busy={pending === lot.idPeca}
-                            onToggle={() =>
-                              toggle.mutate({
-                                idPeca: lot.idPeca,
-                                idLeilao: lot.idLeilao,
-                                base: lot.base,
-                                watch: false,
-                              })
-                            }
-                          />
+                      <div className="space-y-8">
+                        {watchedByHouse.map((houseGroup) => (
+                          <section key={houseGroup.house} className="space-y-3">
+                            <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
+                              <h2 className="text-xl font-semibold tracking-tight text-foreground">
+                                {houseGroup.house}
+                              </h2>
+                              <Badge variant="secondary">{houseGroup.lots.length} lote(s)</Badge>
+                              <a
+                                className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                href={houseGroup.houseUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                site da casa <ExternalLink className="h-3 w-3" />
+                              </a>
+                            </div>
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                              {houseGroup.lots.map((lot) => (
+                                <LotCard
+                                  key={lot.id}
+                                  lot={{ ...lot, dayKey: lot.date, watched: true }}
+                                  busy={pending === lot.idPeca}
+                                  onToggle={() =>
+                                    toggle.mutate({
+                                      idPeca: lot.idPeca,
+                                      idLeilao: lot.idLeilao,
+                                      base: lot.base,
+                                      watch: false,
+                                    })
+                                  }
+                                />
+                              ))}
+                            </div>
+                          </section>
                         ))}
                       </div>
                     )

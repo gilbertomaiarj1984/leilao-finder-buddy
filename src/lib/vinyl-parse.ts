@@ -185,14 +185,34 @@ export function formatDayLabel(dayKey: string, dayKeys: string[]): string {
   return `${weekday.replace(".", "")} · ${short}`;
 }
 
-/** true se o horário de início do leilão (dia + hora, fuso São Paulo) já passou. */
-export function auctionStarted(dayKey: string, time: string, now: number = Date.now()): boolean {
+/** Instante de início do leilão (dia + hora, fuso São Paulo) em ms, ou null. */
+function auctionStartMs(dayKey: string, time: string): number | null {
   const match = time.match(/(\d{1,2})[:h.]?(\d{2})?/);
-  if (!match) return false;
+  if (!match) return null;
   const hh = String(Number(match[1])).padStart(2, "0");
   const mm = (match[2] ?? "00").padStart(2, "0");
   const start = new Date(`${dayKey}T${hh}:${mm}:00-03:00`).getTime();
-  return Number.isFinite(start) && start <= now;
+  return Number.isFinite(start) ? start : null;
+}
+
+/** true se o horário de início do leilão já passou. */
+export function auctionStarted(dayKey: string, time: string, now: number = Date.now()): boolean {
+  const start = auctionStartMs(dayKey, time);
+  return start !== null && start <= now;
+}
+
+/**
+ * true quando o leilão é considerado finalizado: passou `graceHours` (padrão 3h)
+ * do horário de início. O site não informa o término, então usamos essa janela.
+ */
+export function auctionFinished(
+  dayKey: string,
+  time: string,
+  now: number = Date.now(),
+  graceHours = 3,
+): boolean {
+  const start = auctionStartMs(dayKey, time);
+  return start !== null && now - start >= graceHours * 60 * 60 * 1000;
 }
 
 // --- Base de nomes conhecidos (reforço da classificação de artista) ---
