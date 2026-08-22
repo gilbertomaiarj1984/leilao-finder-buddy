@@ -3,6 +3,7 @@ export type VinylLot = {
   idPeca: string;
   idLeilao: string;
   base: string;
+  lote: string; // número do lote exibido (ex.: "123"); "" quando não identificado
   watched: boolean;
   title: string;
   url: string;

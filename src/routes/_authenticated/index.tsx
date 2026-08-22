@@ -364,10 +364,16 @@ function HomePage() {
   return <VinylDashboard onSignOut={signOut} email={access.data.email} />;
 }
 
+/** "dd/mm/yyyy" (vigiados) -> "yyyy-mm-dd" (dayKey). */
+function watchedDateToKey(value: string): string {
+  const [dd, mm, yy] = value.split("/");
+  return yy && mm && dd ? `${yy}-${mm}-${dd}` : "";
+}
+
 function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
   const [tab, setTab] = useState<string>("day-0");
   const [artistFilter, setArtistFilter] = useState<string>("");
-  const [watchedDay, setWatchedDay] = useState<string | null>(null);
+  const [watchedViewDay, setWatchedViewDay] = useState<string | null>(null);
   // Estado por casa (chave `${dia}|${casa}`): casas iniciam fechadas.
   const [openHouses, setOpenHouses] = useState<Set<string>>(new Set());
   const [houseArtist, setHouseArtist] = useState<Record<string, string>>({});
@@ -487,7 +493,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             onValueChange={(value) => {
               setTab(value);
               setArtistFilter("");
-              setWatchedDay(null);
             }}
           >
             <TabsList className="mb-6 flex h-auto flex-wrap justify-start gap-1 bg-secondary">
@@ -520,6 +525,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 ? dayLots.filter((lot) => (lot.artist || UNCLASSIFIED_LABEL) === artistFilter)
                 : dayLots;
               const groups = groupByHouse(visibleLots);
+              const isWatchedView = watchedViewDay === day;
+              const watchedForDay = (watched.data ?? []).filter(
+                (lot) => watchedDateToKey(lot.date) === day,
+              );
 
               return (
                 <TabsContent key={day} value={`day-${index}`} className="space-y-6">
@@ -542,32 +551,47 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setWatchedDay(day);
-                          setTab("watched");
-                        }}
+                        onClick={() => setWatchedViewDay((cur) => (cur === day ? null : day))}
                         title="Ver vigiados deste dia"
                         aria-label={`Ver vigiados de ${dayLabel(day, index)}`}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
+                        aria-pressed={isWatchedView}
+                        className={
+                          isWatchedView
+                            ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
+                            : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
+                        }
                       >
                         <Eye className="h-3.5 w-3.5" />
-                        Vigiados
+                        Vigiados do dia
+                        {watchedForDay.length ? (
+                          <span className="ml-0.5 text-muted-foreground">
+                            {watchedForDay.length}
+                          </span>
+                        ) : null}
                       </button>
-                      <ArtistFilter
-                        artists={artists}
-                        value={artistFilter}
-                        onChange={setArtistFilter}
-                      />
-                      {artistFilter ? (
-                        <Button variant="ghost" size="sm" onClick={() => setArtistFilter("")}>
-                          Limpar filtro
-                        </Button>
-                      ) : null}
-                      <span className="text-xs text-muted-foreground">
-                        {visibleLots.length} lote(s) em {groups.length} casa(s)
-                      </span>
+                      {!isWatchedView ? (
+                        <>
+                          <ArtistFilter
+                            artists={artists}
+                            value={artistFilter}
+                            onChange={setArtistFilter}
+                          />
+                          {artistFilter ? (
+                            <Button variant="ghost" size="sm" onClick={() => setArtistFilter("")}>
+                              Limpar filtro
+                            </Button>
+                          ) : null}
+                          <span className="text-xs text-muted-foreground">
+                            {visibleLots.length} lote(s) em {groups.length} casa(s)
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          {watchedForDay.length} lote(s) vigiado(s) neste dia
+                        </span>
+                      )}
                     </div>
-                    {groups.length > 0 ? (
+                    {!isWatchedView && groups.length > 0 ? (
                       <nav className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
                         {groups.map((group) => (
                           <a
@@ -582,7 +606,31 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                       </nav>
                     ) : null}
                   </div>
-                  {groups.length === 0 ? (
+                  {isWatchedView ? (
+                    watched.isLoading ? (
+                      <Skeleton className="h-40 w-full" />
+                    ) : watchedForDay.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Nenhum lote vigiado neste dia.</p>
+                    ) : (
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {watchedForDay.map((lot) => (
+                          <LotCard
+                            key={lot.id}
+                            lot={{ ...lot, dayKey: lot.date, watched: true }}
+                            busy={pending === lot.idPeca}
+                            onToggle={() =>
+                              toggle.mutate({
+                                idPeca: lot.idPeca,
+                                idLeilao: lot.idLeilao,
+                                base: lot.base,
+                                watch: false,
+                              })
+                            }
+                          />
+                        ))}
+                      </div>
+                    )
+                  ) : groups.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
                       {artistFilter
                         ? "Nenhum lote deste artista neste dia."
@@ -716,62 +764,33 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 <p className="text-sm text-destructive">
                   Não foi possível ler os vigiados: {(watched.error as Error).message}
                 </p>
+              ) : (watched.data ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Você ainda não está vigiando nenhum lote.
+                </p>
               ) : (
-                (() => {
-                  const all = watched.data ?? [];
-                  const toKey = (value: string) => {
-                    const [dd, mm, yy] = value.split("/");
-                    return yy && mm && dd ? `${yy}-${mm}-${dd}` : "";
-                  };
-                  const shown = watchedDay ? all.filter((lot) => toKey(lot.date) === watchedDay) : all;
-                  return (
-                    <>
-                      {watchedDay ? (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm text-muted-foreground">
-                            Vigiados de {dayLabel(watchedDay, days.indexOf(watchedDay))} —{" "}
-                            {shown.length} lote(s)
-                          </span>
-                          <Button variant="ghost" size="sm" onClick={() => setWatchedDay(null)}>
-                            Ver todos
-                          </Button>
-                        </div>
-                      ) : null}
-                      {all.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
-                          Você ainda não está vigiando nenhum lote.
-                        </p>
-                      ) : shown.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
-                          Nenhum lote vigiado neste dia.
-                        </p>
-                      ) : (
-                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                          {shown.map((lot) => (
-                            <LotCard
-                              key={lot.id}
-                              lot={{
-                                ...lot,
-                                dayKey: lot.date,
-                                watched: true,
-                              }}
-                              busy={pending === lot.idPeca}
-                              onToggle={() =>
-                                toggle.mutate({
-                                  idPeca: lot.idPeca,
-                                  idLeilao: lot.idLeilao,
-                                  base: lot.base,
-                                  watch: false,
-                                })
-                              }
-                              showDate
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  );
-                })()
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {(watched.data ?? []).map((lot) => (
+                    <LotCard
+                      key={lot.id}
+                      lot={{
+                        ...lot,
+                        dayKey: lot.date,
+                        watched: true,
+                      }}
+                      busy={pending === lot.idPeca}
+                      onToggle={() =>
+                        toggle.mutate({
+                          idPeca: lot.idPeca,
+                          idLeilao: lot.idLeilao,
+                          base: lot.base,
+                          watch: false,
+                        })
+                      }
+                      showDate
+                    />
+                  ))}
+                </div>
               )}
             </TabsContent>
           </Tabs>
@@ -791,6 +810,7 @@ type CardLot = {
   uf: string;
   dayKey: string;
   watched: boolean;
+  lote?: string;
 };
 
 function LotCard({
@@ -823,6 +843,11 @@ function LotCard({
       <div className="flex flex-1 flex-col gap-3 p-4">
         <p className="line-clamp-3 text-sm leading-snug text-foreground">{lot.title}</p>
         <div className="mt-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          {lot.lote ? (
+            <span className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground">
+              Lote {lot.lote}
+            </span>
+          ) : null}
           <span className="font-semibold text-primary">{lot.price || "sem valor"}</span>
           {showDate && lot.dayKey ? <span>{lot.dayKey}</span> : null}
           {lot.time ? <span>{lot.time}</span> : null}

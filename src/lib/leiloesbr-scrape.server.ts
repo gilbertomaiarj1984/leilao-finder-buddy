@@ -67,11 +67,21 @@ function parseCard(card: HTMLElement): VinylLot | null {
   const watchData = (raw.match(/data-watch="([^"]+)"/)?.[1] ?? "").split(",");
   const watched = /class="[^"]*\bwatch\b[^"]*\bativo\b[^"]*"/.test(raw);
 
+  // Número do lote exibido: tenta o atributo title="Lote-XXX" e, senão, o texto do título.
+  const lote = (
+    raw.match(/title="Lote-?\s*([^"]+)"/i)?.[1] ??
+    title.match(/\blote\s*n?[ºo°]?\s*[:.\-]?\s*([0-9]+[a-zA-Z]?)/i)?.[1] ??
+    ""
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+
   return {
     id: idMatch ? `${idMatch[1]}-${idMatch[2]}` : href,
     idPeca: watchData[0]?.trim() || (idMatch?.[2] ?? ""),
     idLeilao: watchData[2]?.trim() || (idMatch?.[1] ?? ""),
     base: watchData[3]?.trim() || "0",
+    lote,
     watched,
 
     title,
