@@ -21,3 +21,13 @@ export const getVinylLots = createServerFn({ method: "GET" })
     return await scrapeVinylLots();
   });
 
+export const getLiveAuctions = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { listLiveAuctions } = await import("./leiloesbr-auctions.server");
+    return await listLiveAuctions();
+  });
+
+

@@ -14,7 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      seen_auctions: {
+        Row: {
+          created_at: string
+          day_key: string
+          entry_url: string | null
+          house: string
+          house_url: string | null
+          id_leilao: string
+          last_seen_at: string
+          lot_count: number
+          sample_titles: string[]
+          start_time: string
+          starts_at: string | null
+          uf: string | null
+        }
+        Insert: {
+          created_at?: string
+          day_key: string
+          entry_url?: string | null
+          house: string
+          house_url?: string | null
+          id_leilao: string
+          last_seen_at?: string
+          lot_count?: number
+          sample_titles?: string[]
+          start_time: string
+          starts_at?: string | null
+          uf?: string | null
+        }
+        Update: {
+          created_at?: string
+          day_key?: string
+          entry_url?: string | null
+          house?: string
+          house_url?: string | null
+          id_leilao?: string
+          last_seen_at?: string
+          lot_count?: number
+          sample_titles?: string[]
+          start_time?: string
+          starts_at?: string | null
+          uf?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
