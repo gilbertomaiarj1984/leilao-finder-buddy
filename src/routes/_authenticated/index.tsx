@@ -249,6 +249,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   });
 
   const [pending, setPending] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
 
   const toggle = useMutation({
     mutationFn: async (lot: { idPeca: string; idLeilao: string; base: string; watch: boolean }) =>
@@ -295,12 +297,27 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           <Button
             variant="outline"
             onClick={() => {
-              void queryClient.invalidateQueries({ queryKey: lotsQuery.queryKey });
-              void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
+              void (async () => {
+                setRefreshing(true);
+                try {
+                  const fresh = await fetchLots({ data: { force: true } });
+                  queryClient.setQueryData(lotsQuery.queryKey, fresh);
+                  toast.success("Varredura atualizada");
+                } catch (error) {
+                  toast.error(
+                    (error as Error)?.message || "Não foi possível atualizar a varredura agora",
+                  );
+                } finally {
+                  setRefreshing(false);
+                  void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
+                }
+
+              })();
             }}
-            disabled={lots.isFetching}
+            disabled={lots.isFetching || refreshing}
           >
-            {lots.isFetching ? (
+            {lots.isFetching || refreshing ? (
+
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <RefreshCw className="mr-2 h-4 w-4" />
