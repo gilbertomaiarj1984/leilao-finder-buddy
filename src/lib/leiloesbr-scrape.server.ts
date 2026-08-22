@@ -177,4 +177,75 @@ export async function scrapeVinylLots(): Promise<{ days: string[]; lots: VinylLo
   return { days, lots };
 }
 
+function sortLots(lots: VinylLot[]): VinylLot[] {
+  return lots.sort(
+    (a, b) =>
+      a.dayKey.localeCompare(b.dayKey) ||
+      a.house.localeCompare(b.house, "pt-BR") ||
+      a.title.localeCompare(b.title, "pt-BR"),
+  );
+}
+
+/**
+ * Re-varre apenas UM dia e mescla no cache, preservando os demais dias.
+ * As páginas são decrescentes por data: paramos assim que passamos do dia alvo.
+ * Sem cache válido (ou janela de dias trocada), cai para a varredura completa.
+ */
+export async function refreshVinylDay(day: string): Promise<{ days: string[]; lots: VinylLot[] }> {
+  const days = upcomingDayKeys(3);
+  if (!cache || cache.days[0] !== days[0] || !days.includes(day)) {
+    invalidateLotsCache();
+    return await scrapeVinylLots();
+  }
+
+  let firstHtml: string;
+  try {
+    firstHtml = await fetchPage(1);
+  } catch {
+    return { days: cache.days, lots: cache.lots };
+  }
+  const total = lastPage(firstHtml);
+
+  const dayLots = new Map<string, VinylLot>();
+  let scanned = 0;
+  for (let page = total; page >= 1 && scanned < MAX_PAGES; page -= 1) {
+    scanned += 1;
+    let html: string;
+    try {
+      html = await fetchPage(page);
+    } catch {
+      continue;
+    }
+    const lots = parseCards(html);
+    if (!lots.length) continue;
+    for (const lot of lots) {
+      if (lot.dayKey !== day) continue;
+      if (!isVinylTitle(lot.title)) continue;
+      dayLots.set(lot.id, lot);
+    }
+    const minDay = lots.reduce((min, lot) => (lot.dayKey < min ? lot.dayKey : min), "9999-99-99");
+    if (minDay > day) break;
+  }
+
+  const fresh = [...dayLots.values()];
+  try {
+    const { fillMissingArtists } = await import("./known-artists.server");
+    await fillMissingArtists(fresh);
+  } catch (error) {
+    console.error("[leiloesbr] não foi possível aplicar a base de artistas", error);
+  }
+
+  const merged = sortLots([...cache.lots.filter((lot) => lot.dayKey !== day), ...fresh]);
+  // Mantém cache.at (o TTL global não é reiniciado por um refresh de um dia só).
+  cache = { at: cache.at, days: cache.days, lots: merged };
+
+  try {
+    const { recordAuctions } = await import("./leiloesbr-auctions.server");
+    await recordAuctions(fresh);
+  } catch (error) {
+    console.error("[leiloesbr] não foi possível salvar o histórico de leilões", error);
+  }
+  return { days: cache.days, lots: merged };
+}
+
 

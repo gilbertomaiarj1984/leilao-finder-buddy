@@ -395,7 +395,23 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   });
 
   const [pending, setPending] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshingDay, setRefreshingDay] = useState<string | null>(null);
+
+  const refreshDay = (day: string) => {
+    void (async () => {
+      setRefreshingDay(day);
+      try {
+        const fresh = await fetchLots({ data: { force: true, day } });
+        queryClient.setQueryData(lotsQuery.queryKey, fresh);
+        toast.success("Dia atualizado");
+      } catch (error) {
+        toast.error((error as Error)?.message || "Não foi possível atualizar este dia agora");
+      } finally {
+        setRefreshingDay(null);
+        void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
+      }
+    })();
+  };
 
 
   const toggle = useMutation({
@@ -440,36 +456,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               casa de leilão e artista. A vigia é sincronizada com a sua conta do LeilõesBR.
             </p>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => {
-              void (async () => {
-                setRefreshing(true);
-                try {
-                  const fresh = await fetchLots({ data: { force: true } });
-                  queryClient.setQueryData(lotsQuery.queryKey, fresh);
-                  toast.success("Varredura atualizada");
-                } catch (error) {
-                  toast.error(
-                    (error as Error)?.message || "Não foi possível atualizar a varredura agora",
-                  );
-                } finally {
-                  setRefreshing(false);
-                  void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
-                }
-
-              })();
-            }}
-            disabled={lots.isFetching || refreshing}
-          >
-            {lots.isFetching || refreshing ? (
-
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
-            )}
-            Atualizar varredura
-          </Button>
           <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
             <span className="text-xs text-muted-foreground">{email}</span>
             <Button variant="ghost" size="sm" onClick={() => void onSignOut()}>
@@ -532,6 +518,21 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 <TabsContent key={day} value={`day-${index}`} className="space-y-6">
                   <div className="sticky top-0 z-20 -mx-4 mb-2 space-y-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
                     <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => refreshDay(day)}
+                        disabled={refreshingDay === day}
+                        title="Atualizar este dia"
+                        aria-label={`Atualizar ${dayLabel(day, index)}`}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                      >
+                        {refreshingDay === day ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        )}
+                        {dayLabel(day, index)}
+                      </button>
                       <ArtistFilter
                         artists={artists}
                         value={artistFilter}
