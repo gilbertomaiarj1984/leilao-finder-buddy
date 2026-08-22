@@ -162,6 +162,13 @@ export async function scrapeVinylLots(): Promise<{ days: string[]; lots: VinylLo
   );
 
   cache = { at: Date.now(), days, lots };
+  try {
+    const { recordAuctions } = await import("./leiloesbr-auctions.server");
+    await recordAuctions(lots);
+  } catch (error) {
+    console.error("[leiloesbr] não foi possível salvar o histórico de leilões", error);
+  }
   return { days, lots };
 }
+
 
