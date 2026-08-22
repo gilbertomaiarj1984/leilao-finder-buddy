@@ -298,6 +298,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             variant="outline"
             onClick={() => {
               void (async () => {
+                setRefreshing(true);
                 try {
                   const fresh = await fetchLots({ data: { force: true } });
                   queryClient.setQueryData(lotsQuery.queryKey, fresh);
@@ -307,8 +308,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                     (error as Error)?.message || "Não foi possível atualizar a varredura agora",
                   );
                 } finally {
+                  setRefreshing(false);
                   void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
                 }
+
               })();
             }}
             disabled={lots.isFetching || refreshing}
