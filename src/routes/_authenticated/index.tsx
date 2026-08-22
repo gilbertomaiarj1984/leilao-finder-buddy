@@ -295,12 +295,24 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           <Button
             variant="outline"
             onClick={() => {
-              void queryClient.invalidateQueries({ queryKey: lotsQuery.queryKey });
-              void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
+              void (async () => {
+                try {
+                  const fresh = await fetchLots({ data: { force: true } });
+                  queryClient.setQueryData(lotsQuery.queryKey, fresh);
+                  toast.success("Varredura atualizada");
+                } catch (error) {
+                  toast.error(
+                    (error as Error)?.message || "Não foi possível atualizar a varredura agora",
+                  );
+                } finally {
+                  void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
+                }
+              })();
             }}
-            disabled={lots.isFetching}
+            disabled={lots.isFetching || refreshing}
           >
-            {lots.isFetching ? (
+            {lots.isFetching || refreshing ? (
+
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <RefreshCw className="mr-2 h-4 w-4" />
