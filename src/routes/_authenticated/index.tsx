@@ -14,7 +14,7 @@ import {
   Radio,
   RefreshCw,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Component, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -361,7 +361,42 @@ function HomePage() {
     );
   }
 
-  return <VinylDashboard onSignOut={signOut} email={access.data.email} />;
+  return (
+    <ErrorBoundary>
+      <VinylDashboard onSignOut={signOut} email={access.data.email} />
+    </ErrorBoundary>
+  );
+}
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error("[ui] erro de renderização", error);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <main className="flex min-h-screen items-center justify-center bg-background px-4">
+          <div className="w-full max-w-md rounded-lg border border-destructive/40 bg-destructive/10 p-6 text-center">
+            <h1 className="text-lg font-semibold text-foreground">Algo quebrou ao renderizar</h1>
+            <p className="mt-2 break-words text-sm text-muted-foreground">
+              {this.state.error.message}
+            </p>
+            <Button className="mt-4" variant="outline" onClick={() => window.location.reload()}>
+              Recarregar
+            </Button>
+          </div>
+        </main>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 /** "dd/mm/yyyy" (vigiados) -> "yyyy-mm-dd" (dayKey). */
