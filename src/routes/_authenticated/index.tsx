@@ -249,6 +249,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   });
 
   const [pending, setPending] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
 
   const toggle = useMutation({
     mutationFn: async (lot: { idPeca: string; idLeilao: string; base: string; watch: boolean }) =>
