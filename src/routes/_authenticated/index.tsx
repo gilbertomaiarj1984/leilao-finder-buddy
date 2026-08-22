@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Loader2,
   LogOut,
+  Radio,
   RefreshCw,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -27,7 +28,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
-import { getAccessStatus, getVinylLots } from "@/lib/leiloesbr.functions";
+import { getAccessStatus, getLiveAuctions, getVinylLots } from "@/lib/leiloesbr.functions";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { UNCLASSIFIED_LABEL, type VinylLot } from "@/lib/vinyl-parse";
 
