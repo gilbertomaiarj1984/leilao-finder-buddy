@@ -3,6 +3,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
   Check,
+  ChevronDown,
+  ChevronRight,
   ChevronsUpDown,
   Eye,
   EyeOff,
@@ -25,6 +27,13 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
@@ -128,7 +137,31 @@ function dayLabel(dayKey: string, index: number): string {
 }
 
 type ArtistGroup = { artist: string; lots: VinylLot[] };
-type HouseGroup = { house: string; houseUrl: string; time: string; artists: ArtistGroup[]; count: number };
+type HouseGroup = {
+  house: string;
+  houseUrl: string;
+  time: string;
+  lots: VinylLot[];
+  artists: ArtistGroup[];
+  count: number;
+};
+
+function groupByArtist(lots: VinylLot[]): ArtistGroup[] {
+  const byArtist = new Map<string, VinylLot[]>();
+  for (const lot of lots) {
+    const key = lot.artist || UNCLASSIFIED_LABEL;
+    const list = byArtist.get(key) ?? [];
+    list.push(lot);
+    byArtist.set(key, list);
+  }
+  return [...byArtist.entries()]
+    .map(([artist, list]) => ({ artist, lots: list }))
+    .sort((a, b) => {
+      if (a.artist === UNCLASSIFIED_LABEL) return 1;
+      if (b.artist === UNCLASSIFIED_LABEL) return -1;
+      return a.artist.localeCompare(b.artist, "pt-BR");
+    });
+}
 
 function groupByHouse(lots: VinylLot[]): HouseGroup[] {
   const houses = new Map<string, VinylLot[]>();
@@ -139,30 +172,41 @@ function groupByHouse(lots: VinylLot[]): HouseGroup[] {
   }
 
   return [...houses.entries()]
-    .map(([house, houseLots]) => {
-      const byArtist = new Map<string, VinylLot[]>();
-      for (const lot of houseLots) {
-        const key = lot.artist || UNCLASSIFIED_LABEL;
-        const list = byArtist.get(key) ?? [];
-        list.push(lot);
-        byArtist.set(key, list);
-      }
-      const artists = [...byArtist.entries()]
-        .map(([artist, list]) => ({ artist, lots: list }))
-        .sort((a, b) => {
-          if (a.artist === UNCLASSIFIED_LABEL) return 1;
-          if (b.artist === UNCLASSIFIED_LABEL) return -1;
-          return a.artist.localeCompare(b.artist, "pt-BR");
-        });
-      return {
-        house,
-        houseUrl: houseLots[0]?.houseUrl ?? "#",
-        time: houseLots[0]?.time ?? "",
-        artists,
-        count: houseLots.length,
-      };
-    })
+    .map(([house, houseLots]) => ({
+      house,
+      houseUrl: houseLots[0]?.houseUrl ?? "#",
+      time: houseLots[0]?.time ?? "",
+      lots: houseLots,
+      artists: groupByArtist(houseLots),
+      count: houseLots.length,
+    }))
     .sort((a, b) => b.count - a.count || a.house.localeCompare(b.house, "pt-BR"));
+}
+
+// Faixas de valor por casa. Preço vem como "R$ 1.234,56" (BR): ponto de milhar,
+// vírgula decimal. Lotes sem valor numérico entram na faixa "Menor de 50".
+const PRICE_OPTIONS = [
+  { value: "lt50", label: "Menor de 50" },
+  { value: "r51_100", label: "De 51 a 100" },
+  { value: "r101_150", label: "De 101 a 150" },
+  { value: "gt150", label: "Acima de 150" },
+] as const;
+
+function parsePrice(raw: string): number | null {
+  const cleaned = raw.replace(/[^\d,]/g, "").replace(",", ".");
+  if (!cleaned) return null;
+  const value = Number(cleaned);
+  return Number.isFinite(value) ? value : null;
+}
+
+function matchesPriceRange(raw: string, range: string): boolean {
+  if (!range) return true;
+  const value = parsePrice(raw);
+  if (value === null) return range === "lt50"; // sem valor: sempre visível, na faixa "Menor de 50"
+  if (range === "lt50") return value <= 50;
+  if (range === "r51_100") return value > 50 && value <= 100;
+  if (range === "r101_150") return value > 100 && value <= 150;
+  return value > 150; // gt150
 }
 
 function houseAnchor(house: string, dayIndex: number): string {
@@ -188,20 +232,23 @@ function ArtistFilter({
   artists,
   value,
   onChange,
+  disabled = false,
 }: {
   artists: { artist: string; count: number }[];
   value: string;
   onChange: (next: string) => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open && !disabled} onOpenChange={(next) => !disabled && setOpen(next)}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
           size="sm"
           role="combobox"
           aria-expanded={open}
+          disabled={disabled}
           className="w-full justify-between sm:w-72"
         >
           <span className="truncate">{value || `Todos os artistas (${artists.length})`}</span>
@@ -245,6 +292,27 @@ function ArtistFilter({
         </Command>
       </PopoverContent>
     </Popover>
+  );
+}
+
+function PriceFilter({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  return (
+    <Select
+      value={value || "__all"}
+      onValueChange={(next) => onChange(next === "__all" ? "" : next)}
+    >
+      <SelectTrigger className="w-full sm:w-44">
+        <SelectValue placeholder="Todos os valores" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="__all">Todos os valores</SelectItem>
+        {PRICE_OPTIONS.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -299,6 +367,21 @@ function HomePage() {
 function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
   const [tab, setTab] = useState<string>("day-0");
   const [artistFilter, setArtistFilter] = useState<string>("");
+  // Estado por casa (chave `${dia}|${casa}`): casas iniciam fechadas.
+  const [openHouses, setOpenHouses] = useState<Set<string>>(new Set());
+  const [houseArtist, setHouseArtist] = useState<Record<string, string>>({});
+  const [housePrice, setHousePrice] = useState<Record<string, string>>({});
+  const toggleHouse = (key: string) =>
+    setOpenHouses((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const setHouseArtistFor = (key: string, value: string) =>
+    setHouseArtist((prev) => ({ ...prev, [key]: value }));
+  const setHousePriceFor = (key: string, value: string) =>
+    setHousePrice((prev) => ({ ...prev, [key]: value }));
   const queryClient = useQueryClient();
   const fetchLots = useServerFn(getVinylLots);
   const fetchWatched = useServerFn(listWatched);
@@ -439,13 +522,14 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 watchedIds.size ? { ...lot, watched: watchedIds.has(lot.idPeca) } : lot,
               ).filter((lot) => lot.dayKey === day);
               const artists = artistOptions(dayLots);
-              const visibleLots = artistFilter
+              const globalActive = artistFilter !== "";
+              const visibleLots = globalActive
                 ? dayLots.filter((lot) => (lot.artist || UNCLASSIFIED_LABEL) === artistFilter)
                 : dayLots;
               const groups = groupByHouse(visibleLots);
 
               return (
-                <TabsContent key={day} value={`day-${index}`} className="space-y-10">
+                <TabsContent key={day} value={`day-${index}`} className="space-y-6">
                   <div className="sticky top-0 z-20 -mx-4 mb-2 space-y-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
                     <div className="flex flex-wrap items-center gap-3">
                       <ArtistFilter
@@ -484,65 +568,121 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                         : "Nenhum disco de vinil encontrado para este dia."}
                     </p>
                   ) : (
-                    groups.map((group) => (
-                      <section
-                        key={group.house}
-                        id={houseAnchor(group.house, index)}
-                        className="scroll-mt-32 space-y-5"
-                      >
-                        <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
-                          <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-                            {group.house}
-                          </h2>
-                          <Badge variant="secondary">{group.count} lotes</Badge>
-                          {group.time ? (
-                            <span className="text-sm text-muted-foreground">às {group.time}</span>
-                          ) : null}
-                          <a
-                            className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                            href={group.houseUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            site da casa <ExternalLink className="h-3 w-3" />
-                          </a>
-                        </div>
+                    groups.map((group) => {
+                      const houseKey = `${day}|${group.house}`;
+                      const isOpen = openHouses.has(houseKey);
+                      const perArtist = globalActive ? "" : houseArtist[houseKey] ?? "";
+                      const perPrice = housePrice[houseKey] ?? "";
+                      let houseLots = group.lots;
+                      if (perArtist)
+                        houseLots = houseLots.filter(
+                          (lot) => (lot.artist || UNCLASSIFIED_LABEL) === perArtist,
+                        );
+                      if (perPrice)
+                        houseLots = houseLots.filter((lot) => matchesPriceRange(lot.price, perPrice));
+                      const artistGroups = groupByArtist(houseLots);
 
-                        {group.artists.map((artistGroup) => (
-                          <div key={artistGroup.artist} className="space-y-3">
-                            <h3
-                              className={
-                                artistGroup.artist === UNCLASSIFIED_LABEL
-                                  ? "text-sm font-medium uppercase tracking-wider text-muted-foreground"
-                                  : "text-sm font-semibold uppercase tracking-wider text-primary"
-                              }
-                            >
-                              {artistGroup.artist}
-                              <span className="ml-2 font-normal normal-case tracking-normal text-muted-foreground">
-                                {artistGroup.lots.length}
-                              </span>
-                            </h3>
-                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                              {artistGroup.lots.map((lot) => (
-                                <LotCard
-                                  key={lot.id}
-                                  lot={lot}
-                                  busy={pending === lot.idPeca}
-                                  onToggle={() =>
-                                    toggle.mutate({
-                                      idPeca: lot.idPeca,
-                                      idLeilao: lot.idLeilao,
-                                      base: lot.base,
-                                      watch: !lot.watched,
-                                    })
-                                  }
-                                />
-                              ))}
+                      return (
+                        <section
+                          key={group.house}
+                          id={houseAnchor(group.house, index)}
+                          className="scroll-mt-32 space-y-4"
+                        >
+                          <div className="space-y-3 border-b border-border pb-2">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() => toggleHouse(houseKey)}
+                                aria-expanded={isOpen}
+                                className="flex items-center gap-2 text-left"
+                              >
+                                {isOpen ? (
+                                  <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
+                                ) : (
+                                  <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+                                )}
+                                <span className="text-2xl font-semibold tracking-tight text-foreground">
+                                  {group.house}
+                                </span>
+                              </button>
+                              <Badge variant="secondary">{houseLots.length} lotes</Badge>
+                              {group.time ? (
+                                <span className="text-sm text-muted-foreground">às {group.time}</span>
+                              ) : null}
+                              <a
+                                className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                href={group.houseUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                site da casa <ExternalLink className="h-3 w-3" />
+                              </a>
                             </div>
+                            {isOpen ? (
+                              <div className="flex flex-wrap items-center gap-2">
+                                <ArtistFilter
+                                  artists={artistOptions(group.lots)}
+                                  value={perArtist}
+                                  onChange={(next) => setHouseArtistFor(houseKey, next)}
+                                  disabled={globalActive}
+                                />
+                                <PriceFilter
+                                  value={perPrice}
+                                  onChange={(next) => setHousePriceFor(houseKey, next)}
+                                />
+                                {globalActive ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    filtro de artista global ativo
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : null}
                           </div>
-                        ))}
-                      </section>
-                    ))
+
+                          {isOpen ? (
+                            artistGroups.length === 0 ? (
+                              <p className="text-sm text-muted-foreground">
+                                Nenhum lote com esses filtros nesta casa.
+                              </p>
+                            ) : (
+                              artistGroups.map((artistGroup) => (
+                                <div key={artistGroup.artist} className="space-y-3">
+                                  <h3
+                                    className={
+                                      artistGroup.artist === UNCLASSIFIED_LABEL
+                                        ? "text-sm font-medium uppercase tracking-wider text-muted-foreground"
+                                        : "text-sm font-semibold uppercase tracking-wider text-primary"
+                                    }
+                                  >
+                                    {artistGroup.artist}
+                                    <span className="ml-2 font-normal normal-case tracking-normal text-muted-foreground">
+                                      {artistGroup.lots.length}
+                                    </span>
+                                  </h3>
+                                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                    {artistGroup.lots.map((lot) => (
+                                      <LotCard
+                                        key={lot.id}
+                                        lot={lot}
+                                        busy={pending === lot.idPeca}
+                                        onToggle={() =>
+                                          toggle.mutate({
+                                            idPeca: lot.idPeca,
+                                            idLeilao: lot.idLeilao,
+                                            base: lot.base,
+                                            watch: !lot.watched,
+                                          })
+                                        }
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              ))
+                            )
+                          ) : null}
+                        </section>
+                      );
+                    })
                   )}
                 </TabsContent>
               );
