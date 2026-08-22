@@ -39,7 +39,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { getAccessStatus, getLiveAuctions, getVinylLots } from "@/lib/leiloesbr.functions";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
-import { UNCLASSIFIED_LABEL, type VinylLot } from "@/lib/vinyl-parse";
+import { auctionStarted, UNCLASSIFIED_LABEL, type VinylLot } from "@/lib/vinyl-parse";
 
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({
@@ -367,6 +367,7 @@ function HomePage() {
 function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
   const [tab, setTab] = useState<string>("day-0");
   const [artistFilter, setArtistFilter] = useState<string>("");
+  const [watchedDay, setWatchedDay] = useState<string | null>(null);
   // Estado por casa (chave `${dia}|${casa}`): casas iniciam fechadas.
   const [openHouses, setOpenHouses] = useState<Set<string>>(new Set());
   const [houseArtist, setHouseArtist] = useState<Record<string, string>>({});
@@ -395,7 +396,23 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   });
 
   const [pending, setPending] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshingDay, setRefreshingDay] = useState<string | null>(null);
+
+  const refreshDay = (day: string) => {
+    void (async () => {
+      setRefreshingDay(day);
+      try {
+        const fresh = await fetchLots({ data: { force: true, day } });
+        queryClient.setQueryData(lotsQuery.queryKey, fresh);
+        toast.success("Dia atualizado");
+      } catch (error) {
+        toast.error((error as Error)?.message || "Não foi possível atualizar este dia agora");
+      } finally {
+        setRefreshingDay(null);
+        void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
+      }
+    })();
+  };
 
 
   const toggle = useMutation({
@@ -440,36 +457,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               casa de leilão e artista. A vigia é sincronizada com a sua conta do LeilõesBR.
             </p>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => {
-              void (async () => {
-                setRefreshing(true);
-                try {
-                  const fresh = await fetchLots({ data: { force: true } });
-                  queryClient.setQueryData(lotsQuery.queryKey, fresh);
-                  toast.success("Varredura atualizada");
-                } catch (error) {
-                  toast.error(
-                    (error as Error)?.message || "Não foi possível atualizar a varredura agora",
-                  );
-                } finally {
-                  setRefreshing(false);
-                  void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
-                }
-
-              })();
-            }}
-            disabled={lots.isFetching || refreshing}
-          >
-            {lots.isFetching || refreshing ? (
-
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
-            )}
-            Atualizar varredura
-          </Button>
           <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
             <span className="text-xs text-muted-foreground">{email}</span>
             <Button variant="ghost" size="sm" onClick={() => void onSignOut()}>
@@ -500,6 +487,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             onValueChange={(value) => {
               setTab(value);
               setArtistFilter("");
+              setWatchedDay(null);
             }}
           >
             <TabsList className="mb-6 flex h-auto flex-wrap justify-start gap-1 bg-secondary">
@@ -507,7 +495,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 <TabsTrigger key={day} value={`day-${index}`}>
                   {dayLabel(day, index)}
                   <span className="ml-2 text-xs text-muted-foreground">
-                    {lots.data?.lots.filter((lot) => lot.dayKey === day).length ?? 0}
+                    {lots.data?.lots.filter(
+                      (lot) => lot.dayKey === day && !auctionStarted(lot.dayKey, lot.time),
+                    ).length ?? 0}
                   </span>
                 </TabsTrigger>
               ))}
@@ -518,9 +508,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             </TabsList>
 
             {days.map((day, index) => {
-              const dayLots = (lots.data?.lots ?? []).map((lot) =>
-                watchedIds.size ? { ...lot, watched: watchedIds.has(lot.idPeca) } : lot,
-              ).filter((lot) => lot.dayKey === day);
+              const dayLots = (lots.data?.lots ?? [])
+                .map((lot) =>
+                  watchedIds.size ? { ...lot, watched: watchedIds.has(lot.idPeca) } : lot,
+                )
+                // Remove das listagens os leilões que já começaram (finalizados/ao vivo).
+                .filter((lot) => lot.dayKey === day && !auctionStarted(lot.dayKey, lot.time));
               const artists = artistOptions(dayLots);
               const globalActive = artistFilter !== "";
               const visibleLots = globalActive
@@ -532,6 +525,34 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 <TabsContent key={day} value={`day-${index}`} className="space-y-6">
                   <div className="sticky top-0 z-20 -mx-4 mb-2 space-y-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
                     <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => refreshDay(day)}
+                        disabled={refreshingDay === day}
+                        title="Atualizar este dia"
+                        aria-label={`Atualizar ${dayLabel(day, index)}`}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                      >
+                        {refreshingDay === day ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        )}
+                        {dayLabel(day, index)}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWatchedDay(day);
+                          setTab("watched");
+                        }}
+                        title="Ver vigiados deste dia"
+                        aria-label={`Ver vigiados de ${dayLabel(day, index)}`}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Vigiados
+                      </button>
                       <ArtistFilter
                         artists={artists}
                         value={artistFilter}
@@ -695,33 +716,62 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 <p className="text-sm text-destructive">
                   Não foi possível ler os vigiados: {(watched.error as Error).message}
                 </p>
-              ) : (watched.data ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Você ainda não está vigiando nenhum lote.
-                </p>
               ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {(watched.data ?? []).map((lot) => (
-                    <LotCard
-                      key={lot.id}
-                      lot={{
-                        ...lot,
-                        dayKey: lot.date,
-                        watched: true,
-                      }}
-                      busy={pending === lot.idPeca}
-                      onToggle={() =>
-                        toggle.mutate({
-                          idPeca: lot.idPeca,
-                          idLeilao: lot.idLeilao,
-                          base: lot.base,
-                          watch: false,
-                        })
-                      }
-                      showDate
-                    />
-                  ))}
-                </div>
+                (() => {
+                  const all = watched.data ?? [];
+                  const toKey = (value: string) => {
+                    const [dd, mm, yy] = value.split("/");
+                    return yy && mm && dd ? `${yy}-${mm}-${dd}` : "";
+                  };
+                  const shown = watchedDay ? all.filter((lot) => toKey(lot.date) === watchedDay) : all;
+                  return (
+                    <>
+                      {watchedDay ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm text-muted-foreground">
+                            Vigiados de {dayLabel(watchedDay, days.indexOf(watchedDay))} —{" "}
+                            {shown.length} lote(s)
+                          </span>
+                          <Button variant="ghost" size="sm" onClick={() => setWatchedDay(null)}>
+                            Ver todos
+                          </Button>
+                        </div>
+                      ) : null}
+                      {all.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          Você ainda não está vigiando nenhum lote.
+                        </p>
+                      ) : shown.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          Nenhum lote vigiado neste dia.
+                        </p>
+                      ) : (
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                          {shown.map((lot) => (
+                            <LotCard
+                              key={lot.id}
+                              lot={{
+                                ...lot,
+                                dayKey: lot.date,
+                                watched: true,
+                              }}
+                              busy={pending === lot.idPeca}
+                              onToggle={() =>
+                                toggle.mutate({
+                                  idPeca: lot.idPeca,
+                                  idLeilao: lot.idLeilao,
+                                  base: lot.base,
+                                  watch: false,
+                                })
+                              }
+                              showDate
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()
               )}
             </TabsContent>
           </Tabs>
