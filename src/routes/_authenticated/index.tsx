@@ -335,6 +335,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       </header>
 
       <div className="mx-auto max-w-6xl px-4 py-8">
+        <LiveAuctions />
+
         {lots.isError ? (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-foreground">
             Não foi possível ler o LeilõesBR agora: {(lots.error as Error).message}
