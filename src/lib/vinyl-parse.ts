@@ -184,6 +184,16 @@ export function formatDayLabel(dayKey: string, dayKeys: string[]): string {
   return `${weekday.replace(".", "")} · ${short}`;
 }
 
+/** true se o horário de início do leilão (dia + hora, fuso São Paulo) já passou. */
+export function auctionStarted(dayKey: string, time: string, now: number = Date.now()): boolean {
+  const match = time.match(/(\d{1,2})[:h.]?(\d{2})?/);
+  if (!match) return false;
+  const hh = String(Number(match[1])).padStart(2, "0");
+  const mm = (match[2] ?? "00").padStart(2, "0");
+  const start = new Date(`${dayKey}T${hh}:${mm}:00-03:00`).getTime();
+  return Number.isFinite(start) && start <= now;
+}
+
 // --- Base de nomes conhecidos (reforço da classificação de artista) ---
 
 /** Normalização para casar nomes: remove acentos e pontuação, baixa a caixa. */

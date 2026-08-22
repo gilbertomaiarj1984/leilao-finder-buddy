@@ -22,6 +22,7 @@ export type Database = {
           house: string
           house_url: string | null
           id_leilao: string
+          last_lot_url: string | null
           last_seen_at: string
           lot_count: number
           sample_titles: string[]
@@ -36,6 +37,7 @@ export type Database = {
           house: string
           house_url?: string | null
           id_leilao: string
+          last_lot_url?: string | null
           last_seen_at?: string
           lot_count?: number
           sample_titles?: string[]
@@ -50,6 +52,7 @@ export type Database = {
           house?: string
           house_url?: string | null
           id_leilao?: string
+          last_lot_url?: string | null
           last_seen_at?: string
           lot_count?: number
           sample_titles?: string[]
