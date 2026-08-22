@@ -183,3 +183,72 @@ export function formatDayLabel(dayKey: string, dayKeys: string[]): string {
   const weekday = date.toLocaleDateString("pt-BR", { weekday: "short" });
   return `${weekday.replace(".", "")} · ${short}`;
 }
+
+// --- Base de nomes conhecidos (reforço da classificação de artista) ---
+
+/** Normalização para casar nomes: remove acentos e pontuação, baixa a caixa. */
+export function normalizeForMatch(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+// Nomes de UMA palavra que também são palavras comuns (PT/EN) e gerariam falsos
+// positivos; só entram na base como parte de nomes com 2+ palavras.
+const AMBIGUOUS_SINGLE_WORDS = new Set([
+  "free", "love", "zero", "cream", "sweet", "angel", "death", "family", "spirit",
+  "war", "air", "can", "yes", "mud", "egg", "dust", "fist", "toad", "bang", "art",
+  "peso", "stress", "strike", "oriente", "sensacao", "evolucao", "abolicao",
+  "overdose", "devotos", "inocentes", "replicantes", "chic", "mina", "jane",
+  "nico", "sade", "dio", "jesus", "zero",
+]);
+
+const LEADING_ARTICLES = ["the ", "os ", "as ", "o ", "a "];
+
+export type KnownArtistIndex = { byNorm: Map<string, string>; maxWords: number };
+
+/** Constrói o índice de busca a partir da lista de nomes canônicos. */
+export function buildKnownArtistIndex(names: string[]): KnownArtistIndex {
+  const byNorm = new Map<string, string>();
+  let maxWords = 1;
+  const add = (key: string, canonical: string) => {
+    const words = key.split(" ").filter(Boolean);
+    if (!words.length) return;
+    if (words.length === 1 && (key.length < 4 || AMBIGUOUS_SINGLE_WORDS.has(key))) return;
+    if (!byNorm.has(key)) byNorm.set(key, canonical);
+    if (words.length > maxWords) maxWords = words.length;
+  };
+  for (const raw of names) {
+    const norm = normalizeForMatch(raw);
+    if (norm.length < 2) continue;
+    add(norm, raw);
+    // Indexa também sem o artigo inicial: "The Beatles" também casa "beatles".
+    for (const article of LEADING_ARTICLES) {
+      if (norm.startsWith(article)) {
+        add(norm.slice(article.length), raw);
+        break;
+      }
+    }
+  }
+  return { byNorm, maxWords };
+}
+
+/**
+ * Procura um nome conhecido dentro do título como sequência de palavras inteiras;
+ * o maior nome encontrado vence. Retorna "" quando nada casa.
+ */
+export function matchKnownArtist(title: string, index: KnownArtistIndex): string {
+  const words = normalizeForMatch(title).split(" ").filter(Boolean);
+  const max = Math.min(index.maxWords, words.length);
+  for (let size = max; size >= 1; size -= 1) {
+    for (let i = 0; i + size <= words.length; i += 1) {
+      const hit = index.byNorm.get(words.slice(i, i + size).join(" "));
+      if (hit) return hit;
+    }
+  }
+  return "";
+}

@@ -159,6 +159,14 @@ export async function scrapeVinylLots(): Promise<{ days: string[]; lots: VinylLo
       a.title.localeCompare(b.title, "pt-BR"),
   );
 
+  // Reforço: preenche artistas não classificados com a base de nomes conhecidos.
+  try {
+    const { fillMissingArtists } = await import("./known-artists.server");
+    await fillMissingArtists(lots);
+  } catch (error) {
+    console.error("[leiloesbr] não foi possível aplicar a base de artistas", error);
+  }
+
   cache = { at: Date.now(), days, lots };
   try {
     const { recordAuctions } = await import("./leiloesbr-auctions.server");
