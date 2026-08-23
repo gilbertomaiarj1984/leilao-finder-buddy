@@ -83,6 +83,69 @@ export type Database = {
         }
         Relationships: []
       }
+      lots: {
+        Row: {
+          artist: string
+          base: string
+          day_key: string
+          first_seen_at: string
+          house: string
+          house_url: string
+          id: string
+          id_leilao: string
+          id_peca: string
+          image: string | null
+          last_seen_at: string
+          lote: string
+          price: string
+          start_time: string
+          title: string
+          uf: string
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          artist?: string
+          base?: string
+          day_key: string
+          first_seen_at?: string
+          house?: string
+          house_url?: string
+          id: string
+          id_leilao: string
+          id_peca: string
+          image?: string | null
+          last_seen_at?: string
+          lote?: string
+          price?: string
+          start_time?: string
+          title: string
+          uf?: string
+          updated_at?: string
+          url: string
+        }
+        Update: {
+          artist?: string
+          base?: string
+          day_key?: string
+          first_seen_at?: string
+          house?: string
+          house_url?: string
+          id?: string
+          id_leilao?: string
+          id_peca?: string
+          image?: string | null
+          last_seen_at?: string
+          lote?: string
+          price?: string
+          start_time?: string
+          title?: string
+          uf?: string
+          updated_at?: string
+          url?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
