@@ -14,7 +14,7 @@ import {
   Radio,
   RefreshCw,
 } from "lucide-react";
-import { Component, useMemo, useState, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -441,6 +441,29 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       else next.add(key);
       return next;
     });
+  // Casas já verificadas (chave `${dia}|${casa}`): marcador verde que persiste no
+  // navegador e move a casa para a seção "Já verificadas" no fim da lista.
+  const [verifiedHouses, setVerifiedHouses] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("garimpo:verifiedHouses");
+      if (raw) setVerifiedHouses(new Set<string>(JSON.parse(raw)));
+    } catch {
+      /* localStorage indisponível: segue sem persistência */
+    }
+  }, []);
+  const toggleVerified = (key: string) =>
+    setVerifiedHouses((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      try {
+        localStorage.setItem("garimpo:verifiedHouses", JSON.stringify([...next]));
+      } catch {
+        /* localStorage indisponível: segue sem persistência */
+      }
+      return next;
+    });
   const setHouseArtistFor = (key: string, value: string) =>
     setHouseArtist((prev) => ({ ...prev, [key]: value }));
   const setHousePriceFor = (key: string, value: string) =>
@@ -852,9 +875,11 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                       ) : null}
                     </div>
                   ) : (
-                    groups.map((group) => {
+                    (() => {
+                    const renderHouse = (group: HouseGroup) => {
                       const houseKey = `${day}|${group.house}`;
                       const isOpen = openHouses.has(houseKey);
+                      const isVerified = verifiedHouses.has(houseKey);
                       const perArtist = globalActive ? "" : houseArtist[houseKey] ?? "";
                       const perPrice = housePrice[houseKey] ?? "";
                       let houseLots = group.lots;
@@ -874,6 +899,28 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                         >
                           <div className="space-y-3 border-b border-border pb-2">
                             <div className="flex flex-wrap items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() => toggleVerified(houseKey)}
+                                aria-pressed={isVerified}
+                                title={
+                                  isVerified
+                                    ? "Casa verificada — clique para desmarcar"
+                                    : "Marcar casa como verificada"
+                                }
+                                aria-label={
+                                  isVerified
+                                    ? `Desmarcar ${group.house} como verificada`
+                                    : `Marcar ${group.house} como verificada`
+                                }
+                                className={
+                                  isVerified
+                                    ? "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-green-600 bg-green-600 text-white"
+                                    : "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:border-green-600 hover:text-green-600"
+                                }
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => toggleHouse(houseKey)}
@@ -966,7 +1013,31 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                           ) : null}
                         </section>
                       );
-                    })
+                    };
+                    const verifiedGroups = groups.filter((group) =>
+                      verifiedHouses.has(`${day}|${group.house}`),
+                    );
+                    const unverifiedGroups = groups.filter(
+                      (group) => !verifiedHouses.has(`${day}|${group.house}`),
+                    );
+                    return (
+                      <>
+                        {unverifiedGroups.map(renderHouse)}
+                        {verifiedGroups.length ? (
+                          <div className="space-y-6 pt-4">
+                            <h2 className="flex items-center gap-2 border-b border-border pb-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                              <Check className="h-4 w-4 text-green-600" />
+                              Já verificadas
+                              <span className="font-normal normal-case tracking-normal">
+                                {verifiedGroups.length} casa(s)
+                              </span>
+                            </h2>
+                            {verifiedGroups.map(renderHouse)}
+                          </div>
+                        ) : null}
+                      </>
+                    );
+                    })()
                   )}
                 </TabsContent>
               );
