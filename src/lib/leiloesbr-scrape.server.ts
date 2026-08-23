@@ -3,7 +3,7 @@ import { parse, type HTMLElement } from "node-html-parser";
 import { publicFetch, BASE_URL } from "./leiloesbr-auth.server";
 import {
   extractArtist,
-  isVinylTitle,
+  looksNonVinyl,
   parseInfoLine,
   upcomingDayKeys,
   type VinylLot,
@@ -143,7 +143,7 @@ async function scrapePages(
     const lots = parseCards(html);
     if (!lots.length) continue;
     for (const lot of lots) {
-      if (!isVinylTitle(lot.title)) continue;
+      if (looksNonVinyl(lot.title)) continue;
       if (keep(lot)) byId.set(lot.id, lot);
     }
     const minDay = lots.reduce((min, lot) => (lot.dayKey < min ? lot.dayKey : min), "9999-99-99");
@@ -408,7 +408,7 @@ export async function scrapeVinylChunk(
     if (!lots.length) continue;
     for (const lot of lots) {
       if (lot.dayKey < windowStart || lot.dayKey > windowEnd) continue;
-      if (!isVinylTitle(lot.title)) continue;
+      if (looksNonVinyl(lot.title)) continue;
       byId.set(lot.id, lot);
     }
     // Páginas decrescentes por data: ao passar do fim da janela, terminamos.
