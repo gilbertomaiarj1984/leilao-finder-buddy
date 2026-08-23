@@ -21,10 +21,13 @@ export type VinylLot = {
 const VINYL_HINTS = [
   "lp",
   "lps",
+  "disco",
+  "discos",
   "disco de vinil",
   "discos de vinil",
   "vinil",
   "vinis",
+  "vinyl",
   "compacto",
   "compactos",
   "bolachao",
@@ -68,6 +71,8 @@ export function looksNonVinyl(title: string): boolean {
   const t = ` ${normalize(title)} `;
   const mentionsVinyl =
     t.includes("vinil") ||
+    t.includes("vinyl") ||
+    t.includes("disco") ||
     /\blps?\b/.test(t) ||
     t.includes("compacto") ||
     t.includes("bolachao") ||
