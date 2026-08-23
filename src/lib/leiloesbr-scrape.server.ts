@@ -15,13 +15,6 @@ const WINDOW_DAYS = 10; // quantos dias de leilões trazer (hoje + próximos)
 const MAX_PAGES = 150; // teto de páginas por varredura (janela maior = mais páginas)
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2h: a lista muda pouco; atualização manual quando preciso
 
-type CacheEntry = { at: number; days: string[]; lots: VinylLot[] };
-let cache: CacheEntry | null = null;
-
-export function invalidateLotsCache(): void {
-  cache = null;
-}
-
 function listUrl(page: number): string {
   const params = new URLSearchParams({
     pesquisa: "",
@@ -112,88 +105,6 @@ function lastPage(html: string): number {
   return pages.length ? Math.max(...pages) : 1;
 }
 
-/**
- * The category listing sorted by "próximos leilões" (op=3) is ordered by date
- * descending, so the closest auction days live on the LAST pages. We walk
- * backwards from the last page until every lot on a page is beyond the window.
- */
-export async function scrapeVinylLots(force = false): Promise<{ days: string[]; lots: VinylLot[] }> {
-  if (!force && cache && Date.now() - cache.at < CACHE_TTL_MS) {
-    return { days: cache.days, lots: cache.lots };
-  }
-
-  const days = upcomingDayKeys(WINDOW_DAYS);
-  const windowStart = days[0]!;
-  const windowEnd = days[days.length - 1]!;
-
-  let firstHtml: string;
-  try {
-    firstHtml = await fetchPage(1);
-  } catch (error) {
-    // Se o site está instável, mostramos a última varredura em vez de quebrar a tela.
-    if (cache) return { days: cache.days, lots: cache.lots };
-    throw error;
-  }
-  const total = lastPage(firstHtml);
-
-  const byId = new Map<string, VinylLot>();
-  let scanned = 0;
-
-  for (let page = total; page >= 1 && scanned < MAX_PAGES; page -= 1) {
-    scanned += 1;
-    let html: string;
-    try {
-      html = await fetchPage(page);
-    } catch {
-      continue;
-    }
-    const lots = parseCards(html);
-    if (!lots.length) continue;
-
-    for (const lot of lots) {
-      if (lot.dayKey < windowStart || lot.dayKey > windowEnd) continue;
-      if (!isVinylTitle(lot.title)) continue;
-      byId.set(lot.id, lot);
-    }
-
-    // Pages are date-descending: once the whole page sits after the window we stop.
-    const minDay = lots.reduce((min, lot) => (lot.dayKey < min ? lot.dayKey : min), "9999-99-99");
-    if (minDay > windowEnd) break;
-  }
-
-  if (!byId.size && cache) return { days: cache.days, lots: cache.lots };
-
-  // Merge (só diferenças): mantém os lotes já vistos que ainda estão na janela e
-  // sobrepõe os recém-varridos. Assim não perdemos itens quando um leilão entra
-  // ao vivo e some da listagem pública — o "atualizar" acrescenta, não apaga.
-  const merged = new Map<string, VinylLot>();
-  if (cache) {
-    for (const lot of cache.lots) {
-      if (lot.dayKey >= windowStart && lot.dayKey <= windowEnd) merged.set(lot.id, lot);
-    }
-  }
-  for (const lot of byId.values()) merged.set(lot.id, lot);
-
-  const lots = sortLots([...merged.values()]);
-
-  // Reforço: preenche artistas não classificados com a base de nomes conhecidos.
-  try {
-    const { fillMissingArtists } = await import("./known-artists.server");
-    await fillMissingArtists(lots);
-  } catch (error) {
-    console.error("[leiloesbr] não foi possível aplicar a base de artistas", error);
-  }
-
-  cache = { at: Date.now(), days, lots };
-  try {
-    const { recordAuctions } = await import("./leiloesbr-auctions.server");
-    await recordAuctions([...byId.values()]);
-  } catch (error) {
-    console.error("[leiloesbr] não foi possível salvar o histórico de leilões", error);
-  }
-  return { days, lots };
-}
-
 function sortLots(lots: VinylLot[]): VinylLot[] {
   return lots.sort(
     (a, b) =>
@@ -204,26 +115,17 @@ function sortLots(lots: VinylLot[]): VinylLot[] {
 }
 
 /**
- * Re-varre apenas UM dia e mescla no cache, preservando os demais dias.
- * As páginas são decrescentes por data: paramos assim que passamos do dia alvo.
- * Sem cache válido (ou janela de dias trocada), cai para a varredura completa.
+ * Percorre as páginas (op=3, decrescentes por data — os dias mais próximos ficam
+ * nas ÚLTIMAS páginas) coletando lotes de vinil que passem em `keep`, parando
+ * assim que uma página inteira já está além de `stopDay`.
  */
-export async function refreshVinylDay(day: string): Promise<{ days: string[]; lots: VinylLot[] }> {
-  const days = upcomingDayKeys(WINDOW_DAYS);
-  if (!cache || cache.days[0] !== days[0] || !days.includes(day)) {
-    invalidateLotsCache();
-    return await scrapeVinylLots();
-  }
-
-  let firstHtml: string;
-  try {
-    firstHtml = await fetchPage(1);
-  } catch {
-    return { days: cache.days, lots: cache.lots };
-  }
+async function scrapePages(
+  keep: (lot: VinylLot) => boolean,
+  stopDay: string,
+): Promise<VinylLot[]> {
+  const firstHtml = await fetchPage(1);
   const total = lastPage(firstHtml);
-
-  const dayLots = new Map<string, VinylLot>();
+  const byId = new Map<string, VinylLot>();
   let scanned = 0;
   for (let page = total; page >= 1 && scanned < MAX_PAGES; page -= 1) {
     scanned += 1;
@@ -236,38 +138,204 @@ export async function refreshVinylDay(day: string): Promise<{ days: string[]; lo
     const lots = parseCards(html);
     if (!lots.length) continue;
     for (const lot of lots) {
-      if (lot.dayKey !== day) continue;
       if (!isVinylTitle(lot.title)) continue;
-      dayLots.set(lot.id, lot);
+      if (keep(lot)) byId.set(lot.id, lot);
     }
     const minDay = lots.reduce((min, lot) => (lot.dayKey < min ? lot.dayKey : min), "9999-99-99");
-    if (minDay > day) break;
+    if (minDay > stopDay) break;
   }
+  return [...byId.values()];
+}
 
-  const fresh = [...dayLots.values()];
+/** Preenche artistas, faz upsert dos lotes no banco e registra os leilões vistos. */
+async function persistLots(fresh: VinylLot[]): Promise<void> {
+  if (!fresh.length) return;
   try {
     const { fillMissingArtists } = await import("./known-artists.server");
     await fillMissingArtists(fresh);
   } catch (error) {
     console.error("[leiloesbr] não foi possível aplicar a base de artistas", error);
   }
-
-  // Merge por id: mantém os lotes já vistos (inclusive os que saíram da listagem
-  // por entrarem ao vivo) e sobrepõe os recém-varridos do dia — não apaga.
-  const mergedById = new Map<string, VinylLot>();
-  for (const lot of cache.lots) mergedById.set(lot.id, lot);
-  for (const lot of fresh) mergedById.set(lot.id, lot);
-  const merged = sortLots([...mergedById.values()]);
-  // Mantém cache.at (o TTL global não é reiniciado por um refresh de um dia só).
-  cache = { at: cache.at, days: cache.days, lots: merged };
-
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const nowIso = new Date().toISOString();
+    const rows = fresh.map((lot) => ({
+      id: lot.id,
+      id_leilao: lot.idLeilao,
+      id_peca: lot.idPeca,
+      base: lot.base,
+      lote: lot.lote,
+      title: lot.title,
+      url: lot.url,
+      image: lot.image,
+      price: lot.price,
+      day_key: lot.dayKey,
+      start_time: lot.time,
+      uf: lot.uf,
+      house: lot.house,
+      house_url: lot.houseUrl,
+      artist: lot.artist,
+      last_seen_at: nowIso,
+      updated_at: nowIso,
+    }));
+    // Upsert por id: atualiza preço/campos dos lotes que ainda estão no site e
+    // ACRESCENTA os novos, sem apagar os que já não aparecem (merge durável).
+    await supabaseAdmin.from("lots").upsert(rows, { onConflict: "id" });
+  } catch (error) {
+    console.error("[leiloesbr] não foi possível salvar os lotes", error);
+  }
   try {
     const { recordAuctions } = await import("./leiloesbr-auctions.server");
     await recordAuctions(fresh);
   } catch (error) {
     console.error("[leiloesbr] não foi possível salvar o histórico de leilões", error);
   }
-  return { days: cache.days, lots: merged };
+}
+
+/** Remove do banco os lotes fora da janela atual de dias. */
+async function pruneOutOfWindow(windowStart: string, windowEnd: string): Promise<void> {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await supabaseAdmin
+      .from("lots")
+      .delete()
+      .or(`day_key.lt.${windowStart},day_key.gt.${windowEnd}`);
+  } catch (error) {
+    console.error("[leiloesbr] não foi possível limpar lotes fora da janela", error);
+  }
+}
+
+type LotRow = {
+  id: string;
+  id_leilao: string;
+  id_peca: string;
+  base: string;
+  lote: string;
+  title: string;
+  url: string;
+  image: string | null;
+  price: string;
+  day_key: string;
+  start_time: string;
+  uf: string;
+  house: string;
+  house_url: string;
+  artist: string;
+};
+
+function rowToLot(row: LotRow): VinylLot {
+  return {
+    id: row.id,
+    idPeca: row.id_peca,
+    idLeilao: row.id_leilao,
+    base: row.base,
+    lote: row.lote,
+    watched: false, // a vigia é sobreposta na UI a partir de listWatched
+    title: row.title,
+    url: row.url,
+    image: row.image,
+    price: row.price,
+    dayKey: row.day_key,
+    time: row.start_time,
+    uf: row.uf,
+    house: row.house,
+    houseUrl: row.house_url,
+    artist: row.artist,
+  };
+}
+
+const LOT_COLUMNS =
+  "id, id_leilao, id_peca, base, lote, title, url, image, price, day_key, start_time, uf, house, house_url, artist";
+
+async function readLots(windowStart: string, windowEnd: string): Promise<VinylLot[]> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const out: VinylLot[] = [];
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabaseAdmin
+      .from("lots")
+      .select(LOT_COLUMNS)
+      .gte("day_key", windowStart)
+      .lte("day_key", windowEnd)
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const batch = (data as LotRow[] | null) ?? [];
+    for (const row of batch) out.push(rowToLot(row));
+    if (batch.length < PAGE) break;
+  }
+  return sortLots(out);
+}
+
+/** Instante (ms) da varredura mais recente registrada no banco (0 se vazio). */
+async function lastScrapeAt(): Promise<number> {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data } = await supabaseAdmin
+      .from("lots")
+      .select("last_seen_at")
+      .order("last_seen_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data?.last_seen_at ? new Date(data.last_seen_at as string).getTime() : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Fonte da verdade dos lotes é o banco. Se não houver varredura recente (ou em
+ * `force`), varre o site e faz upsert; depois SEMPRE lê do banco. Assim o
+ * "atualizar" acrescenta diferenças sem apagar, e navegar não re-varre.
+ */
+export async function scrapeVinylLots(force = false): Promise<{ days: string[]; lots: VinylLot[] }> {
+  const days = upcomingDayKeys(WINDOW_DAYS);
+  const windowStart = days[0]!;
+  const windowEnd = days[days.length - 1]!;
+
+  const stale = force || Date.now() - (await lastScrapeAt()) >= CACHE_TTL_MS;
+  if (stale) {
+    try {
+      const fresh = await scrapePages(
+        (lot) => lot.dayKey >= windowStart && lot.dayKey <= windowEnd,
+        windowEnd,
+      );
+      if (fresh.length) {
+        await persistLots(fresh);
+        await pruneOutOfWindow(windowStart, windowEnd);
+      }
+    } catch (error) {
+      console.error("[leiloesbr] varredura falhou; servindo o que há no banco", error);
+    }
+  }
+
+  try {
+    return { days, lots: await readLots(windowStart, windowEnd) };
+  } catch (error) {
+    console.error("[leiloesbr] não foi possível ler os lotes do banco", error);
+    return { days, lots: [] };
+  }
+}
+
+/** Re-varre apenas UM dia, faz upsert (não apaga os demais) e lê tudo do banco. */
+export async function refreshVinylDay(day: string): Promise<{ days: string[]; lots: VinylLot[] }> {
+  const days = upcomingDayKeys(WINDOW_DAYS);
+  const windowStart = days[0]!;
+  const windowEnd = days[days.length - 1]!;
+  if (!days.includes(day)) return await scrapeVinylLots(true);
+
+  try {
+    const fresh = await scrapePages((lot) => lot.dayKey === day, day);
+    if (fresh.length) await persistLots(fresh);
+  } catch (error) {
+    console.error("[leiloesbr] varredura do dia falhou", error);
+  }
+
+  try {
+    return { days, lots: await readLots(windowStart, windowEnd) };
+  } catch (error) {
+    console.error("[leiloesbr] não foi possível ler os lotes do banco", error);
+    return { days, lots: [] };
+  }
 }
 
 
