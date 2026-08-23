@@ -11,7 +11,8 @@ import {
 
 const VINYL_CATEGORY = "|446973636F2064652076696E696C|";
 const PER_PAGE = 126;
-const MAX_PAGES = 45;
+const WINDOW_DAYS = 10; // quantos dias de leilões trazer (hoje + próximos)
+const MAX_PAGES = 150; // teto de páginas por varredura (janela maior = mais páginas)
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2h: a lista muda pouco; atualização manual quando preciso
 
 type CacheEntry = { at: number; days: string[]; lots: VinylLot[] };
@@ -121,7 +122,7 @@ export async function scrapeVinylLots(force = false): Promise<{ days: string[]; 
     return { days: cache.days, lots: cache.lots };
   }
 
-  const days = upcomingDayKeys(3);
+  const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
 
@@ -208,7 +209,7 @@ function sortLots(lots: VinylLot[]): VinylLot[] {
  * Sem cache válido (ou janela de dias trocada), cai para a varredura completa.
  */
 export async function refreshVinylDay(day: string): Promise<{ days: string[]; lots: VinylLot[] }> {
-  const days = upcomingDayKeys(3);
+  const days = upcomingDayKeys(WINDOW_DAYS);
   if (!cache || cache.days[0] !== days[0] || !days.includes(day)) {
     invalidateLotsCache();
     return await scrapeVinylLots();
