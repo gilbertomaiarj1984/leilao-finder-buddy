@@ -13,7 +13,7 @@ const VINYL_CATEGORY = "|446973636F2064652076696E696C|";
 const PER_PAGE = 126;
 const WINDOW_DAYS = 10; // quantos dias de leilões trazer (hoje + próximos)
 const MAX_PAGES = 150; // teto de páginas por varredura (janela maior = mais páginas)
-const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2h: a lista muda pouco; atualização manual quando preciso
+
 
 // Cache/merge em memória: GARANTE a lista mesmo que o banco esteja indisponível
 // (ex.: migração ainda não aplicada). O banco é usado como camada durável quando
