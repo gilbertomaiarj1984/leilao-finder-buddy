@@ -307,27 +307,31 @@ export async function scrapeVinylLots(force = false): Promise<{ days: string[]; 
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
 
-  const stale =
-    force ||
-    !memCache ||
-    memCache.days[0] !== windowStart ||
-    Date.now() - memCache.at >= CACHE_TTL_MS;
-
-  let fresh: VinylLot[] = [];
-  if (stale) {
-    try {
-      fresh = await scrapePages(
-        (lot) => lot.dayKey >= windowStart && lot.dayKey <= windowEnd,
-        windowEnd,
-      );
-    } catch (error) {
-      console.error("[leiloesbr] varredura falhou; usando o que já temos", error);
+  // Leitura normal: NUNCA varre o site. O banco é a fonte da listagem, o que faz o
+  // app funcionar igual em produção (onde a varredura de ~150 páginas excede o
+  // tempo de execução do servidor e a requisição era abortada, deixando a tela vazia).
+  if (!force) {
+    const lots = await mergeSources(windowStart, windowEnd, []);
+    if (lots.length) {
+      memCache = { at: memCache?.at ?? Date.now(), days, lots };
+      return { days, lots };
     }
-    await fillArtists(fresh);
   }
 
+  let fresh: VinylLot[] = [];
+  try {
+    fresh = await scrapePages(
+      (lot) => lot.dayKey >= windowStart && lot.dayKey <= windowEnd,
+      windowEnd,
+    );
+  } catch (error) {
+    console.error("[leiloesbr] varredura falhou; usando o que já temos", error);
+  }
+  await fillArtists(fresh);
+
   const lots = await mergeSources(windowStart, windowEnd, fresh);
-  memCache = { at: stale ? Date.now() : memCache?.at ?? Date.now(), days, lots };
+  memCache = { at: Date.now(), days, lots };
+
 
   if (fresh.length) {
     try {
