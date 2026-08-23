@@ -88,26 +88,36 @@ export type AuthFetchInit = {
   referer?: string;
 };
 
+const REQUEST_TIMEOUT_MS = 20000;
+
 async function fetchOnce(url: string, init: AuthFetchInit, cookie?: string): Promise<string> {
-  const response = await fetch(url, {
-    method: init.method ?? "GET",
-    headers: {
-      "User-Agent": UA,
-      Accept: init.method === "POST" ? "*/*" : "text/html",
-      // Deslogado (varredura pública) não envia Cookie; logado (vigia) envia.
-      ...(cookie ? { Cookie: cookie } : {}),
-      Referer: init.referer ?? `${BASE_URL}/default.asp`,
-      ...(init.method === "POST"
-        ? {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "X-Requested-With": "XMLHttpRequest",
-          }
-        : {}),
-    },
-    ...(init.body ? { body: init.body } : {}),
-  });
-  if (!response.ok) throw new Error(`LeilõesBR respondeu ${response.status}`);
-  return await response.text();
+  // Timeout para a requisição não travar indefinidamente (evita "fica carregando").
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      method: init.method ?? "GET",
+      headers: {
+        "User-Agent": UA,
+        Accept: init.method === "POST" ? "*/*" : "text/html",
+        // Deslogado (varredura pública) não envia Cookie; logado (vigia) envia.
+        ...(cookie ? { Cookie: cookie } : {}),
+        Referer: init.referer ?? `${BASE_URL}/default.asp`,
+        ...(init.method === "POST"
+          ? {
+              "Content-Type": "application/x-www-form-urlencoded",
+              "X-Requested-With": "XMLHttpRequest",
+            }
+          : {}),
+      },
+      signal: controller.signal,
+      ...(init.body ? { body: init.body } : {}),
+    });
+    if (!response.ok) throw new Error(`LeilõesBR respondeu ${response.status}`);
+    return await response.text();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // O site devolve 500/502 de forma intermitente sob carga: tentamos algumas vezes.

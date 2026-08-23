@@ -12,7 +12,7 @@ import {
 const VINYL_CATEGORY = "|446973636F2064652076696E696C|";
 const PER_PAGE = 126;
 const MAX_PAGES = 45;
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2h: a lista muda pouco; atualização manual quando preciso
 
 type CacheEntry = { at: number; days: string[]; lots: VinylLot[] };
 let cache: CacheEntry | null = null;
