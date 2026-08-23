@@ -15,6 +15,11 @@ const WINDOW_DAYS = 10; // quantos dias de leilões trazer (hoje + próximos)
 const MAX_PAGES = 150; // teto de páginas por varredura (janela maior = mais páginas)
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2h: a lista muda pouco; atualização manual quando preciso
 
+// Cache/merge em memória: GARANTE a lista mesmo que o banco esteja indisponível
+// (ex.: migração ainda não aplicada). O banco é usado como camada durável quando
+// disponível — a UI nunca fica vazia por causa do banco.
+let memCache: { at: number; days: string[]; lots: VinylLot[] } | null = null;
+
 function listUrl(page: number): string {
   const params = new URLSearchParams({
     pesquisa: "",
@@ -147,15 +152,9 @@ async function scrapePages(
   return [...byId.values()];
 }
 
-/** Preenche artistas, faz upsert dos lotes no banco e registra os leilões vistos. */
+/** Faz upsert dos lotes no banco e registra os leilões vistos (best-effort). */
 async function persistLots(fresh: VinylLot[]): Promise<void> {
   if (!fresh.length) return;
-  try {
-    const { fillMissingArtists } = await import("./known-artists.server");
-    await fillMissingArtists(fresh);
-  } catch (error) {
-    console.error("[leiloesbr] não foi possível aplicar a base de artistas", error);
-  }
   try {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const nowIso = new Date().toISOString();
@@ -266,76 +265,107 @@ async function readLots(windowStart: string, windowEnd: string): Promise<VinylLo
   return sortLots(out);
 }
 
-/** Instante (ms) da varredura mais recente registrada no banco (0 se vazio). */
-async function lastScrapeAt(): Promise<number> {
+/** Une (por id) o cache em memória + o banco (best-effort) + os recém-varridos. */
+async function mergeSources(
+  windowStart: string,
+  windowEnd: string,
+  fresh: VinylLot[],
+): Promise<VinylLot[]> {
+  const merged = new Map<string, VinylLot>();
+  if (memCache) {
+    for (const lot of memCache.lots) {
+      if (lot.dayKey >= windowStart && lot.dayKey <= windowEnd) merged.set(lot.id, lot);
+    }
+  }
   try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data } = await supabaseAdmin
-      .from("lots")
-      .select("last_seen_at")
-      .order("last_seen_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    return data?.last_seen_at ? new Date(data.last_seen_at as string).getTime() : 0;
-  } catch {
-    return 0;
+    for (const lot of await readLots(windowStart, windowEnd)) merged.set(lot.id, lot);
+  } catch (error) {
+    console.error("[leiloesbr] não foi possível ler os lotes do banco", error);
+  }
+  for (const lot of fresh) merged.set(lot.id, lot); // recém-varridos vencem (preço novo)
+  return sortLots([...merged.values()]);
+}
+
+async function fillArtists(fresh: VinylLot[]): Promise<void> {
+  if (!fresh.length) return;
+  try {
+    const { fillMissingArtists } = await import("./known-artists.server");
+    await fillMissingArtists(fresh);
+  } catch (error) {
+    console.error("[leiloesbr] não foi possível aplicar a base de artistas", error);
   }
 }
 
 /**
- * Fonte da verdade dos lotes é o banco. Se não houver varredura recente (ou em
- * `force`), varre o site e faz upsert; depois SEMPRE lê do banco. Assim o
- * "atualizar" acrescenta diferenças sem apagar, e navegar não re-varre.
+ * Retorna os lotes da janela. A fonte GARANTIDA é o cache/merge em memória; o
+ * banco é camada durável quando disponível (não quebra se a tabela não existir).
+ * Varre o site quando está "stale" ou em `force`, mescla tudo por id (sem apagar)
+ * e faz upsert best-effort — o "atualizar" acrescenta diferenças.
  */
 export async function scrapeVinylLots(force = false): Promise<{ days: string[]; lots: VinylLot[] }> {
   const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
 
-  const stale = force || Date.now() - (await lastScrapeAt()) >= CACHE_TTL_MS;
+  const stale =
+    force ||
+    !memCache ||
+    memCache.days[0] !== windowStart ||
+    Date.now() - memCache.at >= CACHE_TTL_MS;
+
+  let fresh: VinylLot[] = [];
   if (stale) {
     try {
-      const fresh = await scrapePages(
+      fresh = await scrapePages(
         (lot) => lot.dayKey >= windowStart && lot.dayKey <= windowEnd,
         windowEnd,
       );
-      if (fresh.length) {
-        await persistLots(fresh);
-        await pruneOutOfWindow(windowStart, windowEnd);
-      }
     } catch (error) {
-      console.error("[leiloesbr] varredura falhou; servindo o que há no banco", error);
+      console.error("[leiloesbr] varredura falhou; usando o que já temos", error);
+    }
+    await fillArtists(fresh);
+  }
+
+  const lots = await mergeSources(windowStart, windowEnd, fresh);
+  memCache = { at: stale ? Date.now() : memCache?.at ?? Date.now(), days, lots };
+
+  if (fresh.length) {
+    try {
+      await persistLots(fresh);
+      await pruneOutOfWindow(windowStart, windowEnd);
+    } catch (error) {
+      console.error("[leiloesbr] não foi possível persistir os lotes", error);
     }
   }
-
-  try {
-    return { days, lots: await readLots(windowStart, windowEnd) };
-  } catch (error) {
-    console.error("[leiloesbr] não foi possível ler os lotes do banco", error);
-    return { days, lots: [] };
-  }
+  return { days, lots };
 }
 
-/** Re-varre apenas UM dia, faz upsert (não apaga os demais) e lê tudo do banco. */
+/** Re-varre apenas UM dia, mescla (não apaga os demais) e faz upsert best-effort. */
 export async function refreshVinylDay(day: string): Promise<{ days: string[]; lots: VinylLot[] }> {
   const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
   if (!days.includes(day)) return await scrapeVinylLots(true);
 
+  let fresh: VinylLot[] = [];
   try {
-    const fresh = await scrapePages((lot) => lot.dayKey === day, day);
-    if (fresh.length) await persistLots(fresh);
+    fresh = await scrapePages((lot) => lot.dayKey === day, day);
   } catch (error) {
     console.error("[leiloesbr] varredura do dia falhou", error);
   }
+  await fillArtists(fresh);
 
-  try {
-    return { days, lots: await readLots(windowStart, windowEnd) };
-  } catch (error) {
-    console.error("[leiloesbr] não foi possível ler os lotes do banco", error);
-    return { days, lots: [] };
+  const lots = await mergeSources(windowStart, windowEnd, fresh);
+  memCache = { at: memCache?.at ?? Date.now(), days, lots };
+
+  if (fresh.length) {
+    try {
+      await persistLots(fresh);
+    } catch (error) {
+      console.error("[leiloesbr] não foi possível persistir os lotes do dia", error);
+    }
   }
+  return { days, lots };
 }
 
 
