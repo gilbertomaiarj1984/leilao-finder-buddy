@@ -56,6 +56,26 @@ export function isVinylTitle(title: string): boolean {
   return true;
 }
 
+/**
+ * A varredura já é feita na CATEGORIA "Disco de vinil" (parâmetro `tp`), então
+ * TODO lote retornado já é vinil. Portanto NÃO exigimos uma palavra-chave de vinil
+ * no título — casas dedicadas a vinil listam por artista/álbum ("Beatles - Abbey
+ * Road") sem repetir "vinil/LP", e exigir a palavra descartava esses lotes (bug:
+ * casa com 200+ lotes aparecia com 2). Aqui só descartamos o que é claramente de
+ * OUTRO formato (CD/DVD/K7) e não menciona vinil.
+ */
+export function looksNonVinyl(title: string): boolean {
+  const t = ` ${normalize(title)} `;
+  const mentionsVinyl =
+    t.includes("vinil") ||
+    /\blps?\b/.test(t) ||
+    t.includes("compacto") ||
+    t.includes("bolachao") ||
+    t.includes("long play");
+  if (mentionsVinyl) return false;
+  return NON_VINYL_HINTS.some((hint) => t.includes(hint));
+}
+
 const UNCLASSIFIED_HINTS = [
   "novela",
   "trilha sonora",

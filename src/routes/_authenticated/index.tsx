@@ -800,16 +800,41 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                     </div>
                     {!isWatchedView && groups.length > 0 ? (
                       <nav className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
-                        {groups.map((group) => (
-                          <a
-                            key={group.house}
-                            href={`#${houseAnchor(group.house, index)}`}
-                            className="shrink-0 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
-                          >
-                            {group.house}
-                            <span className="ml-1.5 text-muted-foreground">{group.count}</span>
-                          </a>
-                        ))}
+                        {groups.map((group) => {
+                          const houseKey = `${day}|${group.house}`;
+                          const isOpen = openHouses.has(houseKey);
+                          return (
+                            <button
+                              key={group.house}
+                              type="button"
+                              aria-expanded={isOpen}
+                              onClick={() => {
+                                const willOpen = !openHouses.has(houseKey);
+                                toggleHouse(houseKey);
+                                if (willOpen) {
+                                  requestAnimationFrame(() =>
+                                    document
+                                      .getElementById(houseAnchor(group.house, index))
+                                      ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                                  );
+                                }
+                              }}
+                              className={
+                                isOpen
+                                  ? "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
+                                  : "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
+                              }
+                            >
+                              {isOpen ? (
+                                <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                              ) : (
+                                <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                              )}
+                              {group.house}
+                              <span className="text-muted-foreground">{group.count}</span>
+                            </button>
+                          );
+                        })}
                       </nav>
                     ) : null}
                   </div>
