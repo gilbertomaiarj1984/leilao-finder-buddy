@@ -44,17 +44,17 @@ import { auctionFinished, UNCLASSIFIED_LABEL, type VinylLot } from "@/lib/vinyl-
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({
     meta: [
-      { title: "Garimpo de Vinil — leilões dos próximos 3 dias" },
+      { title: "Garimpo de Vinil — leilões dos próximos 10 dias" },
       {
         name: "description",
         content:
-          "Varredura dos lotes de disco de vinil em leilão no LeilõesBR nos próximos 3 dias, agrupados por dia, casa de leilão e artista, com vigia sincronizada.",
+          "Varredura dos lotes de disco de vinil em leilão no LeilõesBR nos próximos 10 dias, agrupados por dia, casa de leilão e artista, com vigia sincronizada.",
       },
-      { property: "og:title", content: "Garimpo de Vinil — leilões dos próximos 3 dias" },
+      { property: "og:title", content: "Garimpo de Vinil — leilões dos próximos 10 dias" },
       {
         property: "og:description",
         content:
-          "LPs, compactos e bolachões em leilão nos próximos 3 dias, organizados por dia, casa e artista.",
+          "LPs, compactos e bolachões em leilão nos próximos 10 dias, organizados por dia, casa e artista.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -529,7 +529,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               Garimpo de Vinil
             </h1>
             <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-              LPs, compactos e bolachões que vão a leilão nos próximos 3 dias, agrupados por dia,
+              LPs, compactos e bolachões que vão a leilão nos próximos 10 dias, agrupados por dia,
               casa de leilão e artista. A vigia é sincronizada com a sua conta do LeilõesBR.
             </p>
           </div>
