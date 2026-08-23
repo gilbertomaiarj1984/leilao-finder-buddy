@@ -23,6 +23,19 @@ export const getVinylLots = createServerFn({ method: "GET" })
     return await scrapeVinylLots(data.force ?? false);
   });
 
+export const scrapeVinylChunk = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { fromPage?: number | null; size?: number } | undefined) => ({
+    fromPage: input?.fromPage ?? null,
+    size: Math.min(Math.max(Number(input?.size) || 15, 1), 40),
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { scrapeVinylChunk: run } = await import("./leiloesbr-scrape.server");
+    return await run(data.fromPage, data.size);
+  });
+
 export const getLiveAuctions = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {

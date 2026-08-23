@@ -11,7 +11,7 @@ import {
 
 const VINYL_CATEGORY = "|446973636F2064652076696E696C|";
 const PER_PAGE = 126;
-const WINDOW_DAYS = 10; // quantos dias de leilões trazer (hoje + próximos)
+const WINDOW_DAYS = 5; // quantos dias de leilões trazer (hoje + próximos)
 const MAX_PAGES = 150; // teto de páginas por varredura (janela maior = mais páginas)
 
 
@@ -370,6 +370,74 @@ export async function refreshVinylDay(day: string): Promise<{ days: string[]; lo
     }
   }
   return { days, lots };
+}
+
+/**
+ * Varredura em BLOCOS sequenciais: cada chamada varre `size` páginas a partir de
+ * `fromPage` (ou da última página quando null) e faz upsert. Evita a varredura
+ * completa numa única requisição (que estoura o tempo em produção). Retorna a
+ * próxima página a varrer (null quando terminou a janela) e o total de páginas.
+ */
+export async function scrapeVinylChunk(
+  fromPage: number | null,
+  size: number,
+): Promise<{ total: number; nextPage: number | null; scraped: number }> {
+  const days = upcomingDayKeys(WINDOW_DAYS);
+  const windowStart = days[0]!;
+  const windowEnd = days[days.length - 1]!;
+
+  let start = fromPage ?? 0;
+  let total = fromPage ?? 0;
+  if (fromPage == null) {
+    const firstHtml = await fetchPage(1);
+    total = lastPage(firstHtml);
+    start = total;
+  }
+
+  const end = Math.max(start - size + 1, 1);
+  const byId = new Map<string, VinylLot>();
+  let passedWindow = false;
+  for (let page = start; page >= end; page -= 1) {
+    let html: string;
+    try {
+      html = await fetchPage(page);
+    } catch {
+      continue;
+    }
+    const lots = parseCards(html);
+    if (!lots.length) continue;
+    for (const lot of lots) {
+      if (lot.dayKey < windowStart || lot.dayKey > windowEnd) continue;
+      if (!isVinylTitle(lot.title)) continue;
+      byId.set(lot.id, lot);
+    }
+    // Páginas decrescentes por data: ao passar do fim da janela, terminamos.
+    const minDay = lots.reduce((min, lot) => (lot.dayKey < min ? lot.dayKey : min), "9999-99-99");
+    if (minDay > windowEnd) {
+      passedWindow = true;
+      break;
+    }
+  }
+
+  const fresh = [...byId.values()];
+  await fillArtists(fresh);
+  if (fresh.length) {
+    try {
+      await persistLots(fresh);
+    } catch (error) {
+      console.error("[leiloesbr] não foi possível persistir o bloco", error);
+    }
+  }
+
+  const nextPage = passedWindow || end <= 1 ? null : end - 1;
+  if (nextPage == null) {
+    try {
+      await pruneOutOfWindow(windowStart, windowEnd);
+    } catch (error) {
+      console.error("[leiloesbr] não foi possível limpar lotes fora da janela", error);
+    }
+  }
+  return { total: fromPage == null ? total : start, nextPage, scraped: fresh.length };
 }
 
 
