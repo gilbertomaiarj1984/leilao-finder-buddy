@@ -16,13 +16,11 @@ export const getVinylLots = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
-    const { scrapeVinylLots, invalidateLotsCache, refreshVinylDay } = await import(
-      "./leiloesbr-scrape.server"
-    );
+    const { scrapeVinylLots, refreshVinylDay } = await import("./leiloesbr-scrape.server");
     // Atualização por data: re-varre somente o dia informado e mescla no cache.
     if (data.force && data.day) return await refreshVinylDay(data.day);
-    if (data.force) invalidateLotsCache();
-    return await scrapeVinylLots();
+    // "force" ignora o TTL, mas a varredura MESCLA (não apaga o que já existe).
+    return await scrapeVinylLots(data.force ?? false);
   });
 
 export const getLiveAuctions = createServerFn({ method: "GET" })

@@ -116,8 +116,8 @@ function lastPage(html: string): number {
  * descending, so the closest auction days live on the LAST pages. We walk
  * backwards from the last page until every lot on a page is beyond the window.
  */
-export async function scrapeVinylLots(): Promise<{ days: string[]; lots: VinylLot[] }> {
-  if (cache && Date.now() - cache.at < CACHE_TTL_MS) {
+export async function scrapeVinylLots(force = false): Promise<{ days: string[]; lots: VinylLot[] }> {
+  if (!force && cache && Date.now() - cache.at < CACHE_TTL_MS) {
     return { days: cache.days, lots: cache.lots };
   }
 
@@ -162,12 +162,18 @@ export async function scrapeVinylLots(): Promise<{ days: string[]; lots: VinylLo
 
   if (!byId.size && cache) return { days: cache.days, lots: cache.lots };
 
-  const lots = [...byId.values()].sort(
-    (a, b) =>
-      a.dayKey.localeCompare(b.dayKey) ||
-      a.house.localeCompare(b.house, "pt-BR") ||
-      a.title.localeCompare(b.title, "pt-BR"),
-  );
+  // Merge (só diferenças): mantém os lotes já vistos que ainda estão na janela e
+  // sobrepõe os recém-varridos. Assim não perdemos itens quando um leilão entra
+  // ao vivo e some da listagem pública — o "atualizar" acrescenta, não apaga.
+  const merged = new Map<string, VinylLot>();
+  if (cache) {
+    for (const lot of cache.lots) {
+      if (lot.dayKey >= windowStart && lot.dayKey <= windowEnd) merged.set(lot.id, lot);
+    }
+  }
+  for (const lot of byId.values()) merged.set(lot.id, lot);
+
+  const lots = sortLots([...merged.values()]);
 
   // Reforço: preenche artistas não classificados com a base de nomes conhecidos.
   try {
@@ -180,7 +186,7 @@ export async function scrapeVinylLots(): Promise<{ days: string[]; lots: VinylLo
   cache = { at: Date.now(), days, lots };
   try {
     const { recordAuctions } = await import("./leiloesbr-auctions.server");
-    await recordAuctions(lots);
+    await recordAuctions([...byId.values()]);
   } catch (error) {
     console.error("[leiloesbr] não foi possível salvar o histórico de leilões", error);
   }
@@ -245,7 +251,12 @@ export async function refreshVinylDay(day: string): Promise<{ days: string[]; lo
     console.error("[leiloesbr] não foi possível aplicar a base de artistas", error);
   }
 
-  const merged = sortLots([...cache.lots.filter((lot) => lot.dayKey !== day), ...fresh]);
+  // Merge por id: mantém os lotes já vistos (inclusive os que saíram da listagem
+  // por entrarem ao vivo) e sobrepõe os recém-varridos do dia — não apaga.
+  const mergedById = new Map<string, VinylLot>();
+  for (const lot of cache.lots) mergedById.set(lot.id, lot);
+  for (const lot of fresh) mergedById.set(lot.id, lot);
+  const merged = sortLots([...mergedById.values()]);
   // Mantém cache.at (o TTL global não é reiniciado por um refresh de um dia só).
   cache = { at: cache.at, days: cache.days, lots: merged };
 
