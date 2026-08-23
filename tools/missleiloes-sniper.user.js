@@ -1,37 +1,37 @@
 // ==UserScript==
-// @name         Leilão presencial — Assistente de lance no fechamento
+// @name         Leilão presencial — Lance único no FECHANDO (status 4)
 // @namespace    garimpo-de-vinil
-// @version      2.0.0
-// @description  Dá o lance automaticamente no último instante ("VOU BATER"/"FECHANDO"), ou cobre sempre até um teto, usando a SUA conta já logada. Reusa a função de lance do próprio site. Funciona em qualquer casa que use a plataforma "presencial". Use por sua conta e risco (ver termos/edital do leilão).
+// @version      3.0.0
+// @description  Dispara UM lance no momento exato do FECHANDO (status 4), usando a SUA conta já logada, para tentar arrematar no menor valor possível no último instante. Faz um único lance e desarma. Reusa a função de lance do próprio site. Use por sua conta e risco (ver termos/edital do leilão).
 // @match        *://*/presencial/presencial.asp*
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
 //
+// PROPÓSITO
+// ---------
+// UM lance certeiro no último instante. A escalada até um teto você já faz pelo
+// LANCE AUTOMÁTICO do próprio site — este script NÃO cobre repetidamente. Ele só
+// espera o lote entrar em FECHANDO (status "4") e, se você não estiver vencendo,
+// dispara UM lance (o incremento mínimo do momento) e desarma.
+//
 // COMO FUNCIONA
 // ------------
-// A página do pregão mantém um objeto global `novoPresencial` que:
-//   - faz polling (~1s) do estado e guarda `statusatual`, `valorpecaatual`
-//     (o PRÓXIMO lance já calculado) e `lancevencedor` (quem está ganhando);
-//   - envia o lance com `Fazerlance()` (POST lote_fazerlance.asp), usando o
-//     cookie da sua sessão. Ele só bloqueia se statusatual == 'F' ou se você
-//     já é o vencedor.
+// A página mantém o objeto global `novoPresencial`:
+//   - status do lote em `statusatual` (P -> X -> 1/2/3 -> 4 FECHANDO -> F fechado);
+//   - o próximo lance já calculado em `valorpecaatual`;
+//   - quem está ganhando em `lancevencedor`;
+//   - envia o lance com `Fazerlance()` (POST lote_fazerlance.asp) com o seu cookie.
+// O site DESABILITA o botão no status 4, mas `Fazerlance()` em si só recusa 'F' —
+// por isso conseguimos TESTAR o lance no 4 chamando a função diretamente. Se o
+// servidor aceitar, a confirmação no log mostra "✓ você está vencendo".
 //
-// STATUS do fechamento: P (pregão) -> X (prestes a fechar) -> 1/2/3 (dou-lhe
-// uma/duas / "VOU BATER") -> 4 (FECHANDO) -> F (fechado). O site desabilita o
-// BOTÃO em 4/S/F, mas Fazerlance() em si só recusa 'F' — por isso dá para
-// TESTAR o lance no 4 chamando a função direto.
+// TURBO (recomendado, ligado por padrão): faz um polling próprio (~250ms) no mesmo
+// endpoint do site para detectar a virada para o status 4 antes do loop de ~1s da
+// página — essencial para pegar o 4 a tempo.
 //
-// TURBO: opcionalmente o script faz o SEU próprio polling rápido (~250ms) no
-// mesmo endpoint do site (defineLeRegistro) para detectar a virada de status
-// antes do loop de 1s da página — reduz a latência de reação, que é o fator #1.
-//
-// ESTRATÉGIA: no soft-close, quem ganha é quem tem o maior teto. Lance no último
-// instante serve para PAGAR MENOS, não para ganhar mais. Para MÁXIMA chance de
-// ganhar, use o modo "Garantir" (cobre sempre até o teto).
-//
-// IMPORTANTE: automatizar lance pode violar os termos/edital da plataforma. É a
-// sua conta e o seu dinheiro; a decisão e o risco são seus. Teste num lote barato.
+// IMPORTANTE: automatizar lance pode violar os termos/edital do leilão. É a sua
+// conta e o seu dinheiro; a decisão e o risco são seus. Teste num lote barato.
 
 (function () {
   "use strict";
@@ -42,22 +42,14 @@
     E: "Em exame", T: "Chamada telefônica", R: "Recarregar", "": "—",
   };
 
-  var MODES = {
-    conservador: { label: "Conservador — só \"VOU BATER\" (3)", set: ["3"] },
-    agressivo: { label: "Agressivo — \"DOU-LHE\" (1, 2 e 3)", set: ["1", "2", "3"] },
-    fechando: { label: "Testar FECHANDO — só o (4)", set: ["4"] },
-    maximo: { label: "Máximo — X, 1, 2, 3 e 4", set: ["X", "1", "2", "3", "4"] },
-    garantir: { label: "Garantir — cobrir sempre até o teto", set: ["P", "X", "1", "2", "3", "4"] },
-  };
+  var TRIGGER = "4"; // único gatilho: FECHANDO
 
   var armed = false;
-  var maxBid = 0;
-  var mode = "conservador";
-  var turbo = false;
+  var tetoOpcional = 0; // 0 = sem teto (dispara qualquer que seja o valor)
+  var turbo = true;
   var armedPeca = null;
-  var cooldownUntil = 0;
-  var lastBid = null; // { val, at, confirmed } — para confirmar se o lance foi aceito
-  var fast = { status: null, winnerId: null, peca: null, at: 0 };
+  var lastBid = null; // { val, at, confirmed }
+  var fast = { status: null, winnerId: null, at: 0 };
   var fastTimer = null;
 
   function np() { return window.novoPresencial; }
@@ -108,12 +100,11 @@
       crossDomain: true, dataType: "html",
     }).done(function (msg) {
       try {
-        if (msg === "np" || msg === "invalido" || typeof msg !== "string") return;
+        if (typeof msg !== "string" || msg === "np" || msg === "invalido") return;
         var arr = msg.split("*|*");
         var info = JSON.parse(arr[1]).INFOLEILAO;
         var lances = JSON.parse(arr[0]).LANCES;
         fast.status = info.STATUS;
-        fast.peca = info.ID_PECA;
         fast.winnerId = (lances && lances.length) ? parseInt(lances[0].IDCLIENTE, 10) : null;
         fast.at = Date.now();
       } catch (e) { /* resposta inesperada: ignora este ciclo */ }
@@ -124,12 +115,12 @@
     turbo = on;
     if (on && !fastTimer) {
       fastTimer = setInterval(fastPollOnce, 250);
-      log("Turbo ligado: detecção rápida (~250ms) via polling próprio.");
+      log("Turbo ligado: detecção rápida (~250ms).");
     } else if (!on && fastTimer) {
       clearInterval(fastTimer);
       fastTimer = null;
       fast.at = 0;
-      log("Turbo desligado: usando o estado da própria página (~1s).");
+      log("Turbo desligado: usando o estado da página (~1s).");
     }
   }
 
@@ -147,11 +138,11 @@
       "#mlsniper .row{display:flex;justify-content:space-between;gap:8px;margin:3px 0}",
       "#mlsniper .k{color:#666}",
       "#mlsniper .v{font-weight:600;text-align:right}",
-      "#mlsniper input[type=number],#mlsniper select{width:100%;padding:6px;border:1px solid #cfcfcf;border-radius:6px;font:inherit;margin-top:2px}",
+      "#mlsniper input[type=number]{width:100%;padding:6px;border:1px solid #cfcfcf;border-radius:6px;font:inherit;margin-top:2px}",
       "#mlsniper label{display:block;margin-top:8px;color:#444;font-weight:600}",
       "#mlsniper .chk{display:flex;align-items:center;gap:6px;margin-top:8px;font-weight:600;color:#444}",
       "#mlsniper .chk input{width:auto;margin:0}",
-      "#mlsniper .btn{margin-top:10px;width:100%;padding:9px;border:0;border-radius:8px;font-weight:700;cursor:pointer}",
+      "#mlsniper .btn{margin-top:10px;width:100%;padding:10px;border:0;border-radius:8px;font-weight:700;cursor:pointer}",
       "#mlsniper .btn.off{background:#127a2e;color:#fff}",
       "#mlsniper .btn.on{background:#b3261e;color:#fff}",
       "#mlsniper .btn:disabled{background:#bbb;cursor:not-allowed}",
@@ -167,7 +158,7 @@
     var el = document.createElement("div");
     el.id = "mlsniper";
     el.innerHTML =
-      '<div class="hd"><span><span class="dot" id="mlsniper-dot"></span>Lance no fechamento</span>' +
+      '<div class="hd"><span><span class="dot" id="mlsniper-dot"></span>Lance no FECHANDO (4)</span>' +
       '<span class="min" id="mlsniper-min" title="Recolher/expandir">—</span></div>' +
       '<div class="bd">' +
       '<div class="row"><span class="k">Login</span><span class="v" id="mlsniper-login">verificando…</span></div>' +
@@ -176,33 +167,17 @@
       '<div class="row"><span class="k">Valor atual</span><span class="v" id="mlsniper-atual">--</span></div>' +
       '<div class="row"><span class="k">Próximo lance</span><span class="v" id="mlsniper-prox">--</span></div>' +
       '<div class="row"><span class="k">Situação</span><span class="v" id="mlsniper-sit">--</span></div>' +
-      '<label>Teto do meu lance (R$)</label>' +
-      '<input id="mlsniper-max" type="number" min="0" step="1" placeholder="ex.: 150" inputmode="numeric">' +
-      '<label>Quando disparar</label>' +
-      '<select id="mlsniper-mode"></select>' +
-      '<div class="chk"><input type="checkbox" id="mlsniper-turbo"><label for="mlsniper-turbo" style="margin:0">Turbo — detecção rápida (~250ms)</label></div>' +
-      '<button class="btn off" id="mlsniper-arm">ARMAR</button>' +
-      '<div class="warn">Usa a sua conta logada e a função de lance do próprio site. Pode violar os termos do leilão — use por sua conta e risco e teste num lote barato.</div>' +
+      '<label>Teto de segurança (R$ — opcional)</label>' +
+      '<input id="mlsniper-max" type="number" min="0" step="1" placeholder="deixe vazio p/ sem teto" inputmode="numeric">' +
+      '<div class="chk"><input type="checkbox" id="mlsniper-turbo" checked><label for="mlsniper-turbo" style="margin:0">Turbo — detecção rápida (~250ms)</label></div>' +
+      '<button class="btn off" id="mlsniper-arm">ARMAR (lance único no 4)</button>' +
+      '<div class="warn">Dispara UM lance no FECHANDO e desarma. Usa a sua conta logada e a função de lance do próprio site. Pode violar os termos do leilão — use por sua conta e risco e teste num lote barato.</div>' +
       '<div id="mlsniper-log"></div>' +
       '</div>';
     document.body.appendChild(el);
 
-    var sel = el.querySelector("#mlsniper-mode");
-    Object.keys(MODES).forEach(function (key) {
-      var opt = document.createElement("option");
-      opt.value = key;
-      opt.textContent = MODES[key].label;
-      sel.appendChild(opt);
-    });
-    sel.value = mode;
-    sel.addEventListener("change", function () {
-      mode = sel.value;
-      log("Modo: " + MODES[mode].label);
-    });
-
     el.querySelector("#mlsniper-max").addEventListener("input", function (e) {
-      maxBid = Number(e.target.value) || 0;
-      renderArm();
+      tetoOpcional = Number(e.target.value) || 0;
     });
     el.querySelector("#mlsniper-turbo").addEventListener("change", function (e) {
       setTurbo(!!e.target.checked);
@@ -212,8 +187,9 @@
       el.classList.toggle("mini");
     });
 
+    setTurbo(true); // Turbo ligado por padrão (checkbox já vem marcado)
     renderArm();
-    log("Pronto. Defina o teto, escolha o modo e clique ARMAR para disputar o lote atual.");
+    log("Pronto. (Opcional: teto de segurança.) Clique ARMAR no lote que você quer; ele dispara UM lance quando entrar em FECHANDO.");
   }
 
   function toggleArm() {
@@ -229,20 +205,12 @@
       log("Você precisa estar LOGADO no site para armar.");
       return;
     }
-    if (!(maxBid > 0)) {
-      log("Defina um teto de lance maior que zero antes de armar.");
-      return;
-    }
-    var prox = Number(o.valorpecaatual);
-    if (Number.isFinite(prox) && prox > maxBid) {
-      log("O próximo lance (R$ " + fmt(prox) + ") já passa do teto (R$ " + fmt(maxBid) + ").");
-      return;
-    }
     armed = true;
     armedPeca = String(o.pecaatual);
     lastBid = null;
-    log("ARMADO no lote " + (o.loteatual || "?") + " (peça " + armedPeca + "), teto R$ " + fmt(maxBid) +
-      ", modo \"" + MODES[mode].label + "\"" + (turbo ? " + Turbo" : "") + ".");
+    log("ARMADO no lote " + (o.loteatual || "?") + " (peça " + armedPeca + ")" +
+      (tetoOpcional > 0 ? ", teto R$ " + fmt(tetoOpcional) : ", sem teto") +
+      (turbo ? " + Turbo" : "") + ". Aguardando o FECHANDO (4)…");
     renderArm();
   }
 
@@ -250,9 +218,8 @@
     var btn = document.getElementById("mlsniper-arm");
     var dot = document.getElementById("mlsniper-dot");
     if (!btn) return;
-    btn.textContent = armed ? "DESARMAR" : "ARMAR";
+    btn.textContent = armed ? "DESARMAR" : "ARMAR (lance único no 4)";
     btn.className = "btn " + (armed ? "on" : "off");
-    btn.disabled = !armed && !(maxBid > 0);
     if (dot) dot.className = "dot" + (armed ? " g" : "");
   }
 
@@ -265,7 +232,7 @@
     set("mlsniper-status", (STATUS_LABEL[st] || st || "--") + (fastFresh() ? " ⚡" : ""));
     set("mlsniper-atual", "R$ " + fmt(o.lancevencedor && o.lancevencedor.VALOR));
     set("mlsniper-prox", "R$ " + fmt(o.valorpecaatual));
-    set("mlsniper-sit", isWinning(o) ? "você está vencendo" : (armed ? "armado, aguardando" : "parado"));
+    set("mlsniper-sit", isWinning(o) ? "você está vencendo" : (armed ? "armado, aguardando o 4" : "parado"));
   }
 
   // ---- Loop principal ----------------------------------------------------
@@ -274,13 +241,13 @@
     if (!o) return;
     updatePanel(o);
 
-    // Confirmação pós-lance: descobre se o lance (inclusive no "4") foi aceito.
+    // Confirmação pós-lance: descobre se o lance no 4 foi aceito.
     if (lastBid && !lastBid.confirmed) {
       if (isWinning(o)) {
         lastBid.confirmed = true;
-        log("✓ Lance confirmado: você está vencendo (R$ " + fmt(lastBid.val) + ").");
+        log("✓ Lance CONFIRMADO: você está vencendo (R$ " + fmt(lastBid.val) + "). O lance no 4 funcionou.");
       } else if (Date.now() - lastBid.at > 2500) {
-        log("✗ Lance ainda não confirmado (pode ter sido coberto, ou o status não aceitou).");
+        log("✗ Lance NÃO confirmado (o servidor pode recusar no status 4, ou você foi coberto).");
         lastBid = null;
       }
     }
@@ -295,30 +262,36 @@
       return;
     }
     if (o.sessaocli === "" || o.sessaocli == null) return;
-    if (isWinning(o)) return;
 
-    var val = Number(o.valorpecaatual);
-    if (!Number.isFinite(val) || val <= 0) return;
-    if (val > maxBid) {
+    if (isWinning(o)) {
       armed = false;
-      log("Próximo lance R$ " + fmt(val) + " passaria do teto R$ " + fmt(maxBid) + ". Desarmado.");
+      log("Você já está vencendo este lote — nada a fazer. Desarmado.");
       renderArm();
       return;
     }
 
-    if (MODES[mode].set.indexOf(currentStatus(o)) === -1) return;
+    // Só dispara no FECHANDO (4).
+    if (currentStatus(o) !== TRIGGER) return;
 
-    var now = Date.now();
-    if (now < cooldownUntil) return;
+    var val = Number(o.valorpecaatual);
+    if (!Number.isFinite(val) || val <= 0) return;
+    if (tetoOpcional > 0 && val > tetoOpcional) {
+      armed = false;
+      log("Lance no 4 seria R$ " + fmt(val) + ", acima do teto R$ " + fmt(tetoOpcional) + ". Não disparei. Desarmado.");
+      renderArm();
+      return;
+    }
 
+    // Dispara UM lance e desarma (lance único certeiro).
     try {
       o.Fazerlance();
-      cooldownUntil = now + (turbo ? 600 : 1500);
-      lastBid = { val: val, at: now, confirmed: false };
-      log("LANCE enviado: R$ " + fmt(val) + " (status " + (STATUS_LABEL[currentStatus(o)] || currentStatus(o)) + ").");
+      lastBid = { val: val, at: Date.now(), confirmed: false };
+      log("LANCE ÚNICO enviado no FECHANDO: R$ " + fmt(val) + ". Verificando confirmação…");
     } catch (e) {
       log("Falha ao enviar lance: " + (e && e.message ? e.message : e));
     }
+    armed = false;
+    renderArm();
   }
 
   // ---- Boot --------------------------------------------------------------
