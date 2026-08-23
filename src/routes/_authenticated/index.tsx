@@ -34,27 +34,38 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
-import { getAccessStatus, getLiveAuctions, getVinylLots } from "@/lib/leiloesbr.functions";
+import {
+  getAccessStatus,
+  getLiveAuctions,
+  getVinylLots,
+  scrapeVinylChunk,
+} from "@/lib/leiloesbr.functions";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
-import { auctionFinished, UNCLASSIFIED_LABEL, type VinylLot } from "@/lib/vinyl-parse";
+import {
+  auctionFinished,
+  normalizeForMatch,
+  UNCLASSIFIED_LABEL,
+  type VinylLot,
+} from "@/lib/vinyl-parse";
 
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({
     meta: [
-      { title: "Garimpo de Vinil — leilões dos próximos 10 dias" },
+      { title: "Garimpo de Vinil — leilões dos próximos 5 dias" },
       {
         name: "description",
         content:
-          "Varredura dos lotes de disco de vinil em leilão no LeilõesBR nos próximos 10 dias, agrupados por dia, casa de leilão e artista, com vigia sincronizada.",
+          "Varredura dos lotes de disco de vinil em leilão no LeilõesBR nos próximos 5 dias, agrupados por dia, casa de leilão e artista, com vigia sincronizada.",
       },
-      { property: "og:title", content: "Garimpo de Vinil — leilões dos próximos 10 dias" },
+      { property: "og:title", content: "Garimpo de Vinil — leilões dos próximos 5 dias" },
       {
         property: "og:description",
         content:
-          "LPs, compactos e bolachões em leilão nos próximos 10 dias, organizados por dia, casa e artista.",
+          "LPs, compactos e bolachões em leilão nos próximos 5 dias, organizados por dia, casa e artista.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -409,6 +420,7 @@ function watchedDateToKey(value: string): string {
 function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
   const [tab, setTab] = useState<string>("day-0");
   const [artistFilter, setArtistFilter] = useState<string>("");
+  const [search, setSearch] = useState<string>("");
   const [watchedViewDay, setWatchedViewDay] = useState<string | null>(null);
   const [showFinishedDays, setShowFinishedDays] = useState<Set<string>>(new Set());
   const toggleShowFinished = (day: string) =>
@@ -437,6 +449,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const fetchLots = useServerFn(getVinylLots);
   const fetchWatched = useServerFn(listWatched);
   const runToggle = useServerFn(toggleWatch);
+  const runChunk = useServerFn(scrapeVinylChunk);
 
   const lots = useQuery({
     ...lotsQuery,
@@ -474,17 +487,35 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   };
 
   const [refreshingAll, setRefreshingAll] = useState(false);
+  const [refreshPct, setRefreshPct] = useState<number | null>(null);
+  // Atualiza tudo em BLOCOS sequenciais de páginas (uma requisição por vez),
+  // evitando uma varredura completa que estoura o tempo do servidor em produção.
   const refreshAll = () => {
     void (async () => {
       setRefreshingAll(true);
+      setRefreshPct(0);
       try {
-        const fresh = await fetchLots({ data: { force: true } });
+        const SIZE = 15;
+        let fromPage: number | null = null;
+        let total = 0;
+        for (let guard = 0; guard < 80; guard += 1) {
+          const res = await runChunk({ data: { fromPage, size: SIZE } });
+          if (fromPage === null) total = res.total || 0;
+          fromPage = res.nextPage;
+          // páginas vão da última (total) em direção ao começo da janela
+          const scannedTop = total ? total - (fromPage ?? 0) : 0;
+          setRefreshPct(total ? Math.min(99, Math.round((scannedTop / total) * 100)) : null);
+          if (fromPage === null) break;
+        }
+        const fresh = await fetchLots({ data: {} });
         queryClient.setQueryData(lotsQuery.queryKey, fresh);
+        setRefreshPct(100);
         toast.success("Lista atualizada");
       } catch (error) {
         toast.error((error as Error)?.message || "Não foi possível atualizar a lista agora");
       } finally {
         setRefreshingAll(false);
+        setRefreshPct(null);
         void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
       }
     })();
@@ -514,6 +545,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   });
 
   const days = lots.data?.days ?? [];
+  const searchNorm = normalizeForMatch(search);
+  const matchesSearch = (lot: VinylLot) =>
+    !searchNorm ||
+    normalizeForMatch(`${lot.title} ${lot.artist} ${lot.house} ${lot.lote}`).includes(searchNorm);
   const watchedIds = useMemo(
     () => new Set((watched.data ?? []).map((item) => item.idPeca)),
     [watched.data],
@@ -529,7 +564,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               Garimpo de Vinil
             </h1>
             <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-              LPs, compactos e bolachões que vão a leilão nos próximos 10 dias, agrupados por dia,
+              LPs, compactos e bolachões que vão a leilão nos próximos 5 dias, agrupados por dia,
               casa de leilão e artista. A vigia é sincronizada com a sua conta do LeilõesBR.
             </p>
           </div>
@@ -546,7 +581,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               ) : (
                 <RefreshCw className="mr-2 h-4 w-4" />
               )}
-              Atualizar tudo
+              {refreshingAll && refreshPct !== null ? `Atualizando… ${refreshPct}%` : "Atualizar tudo"}
             </Button>
             <span className="text-xs text-muted-foreground">{email}</span>
             <Button variant="ghost" size="sm" onClick={() => void onSignOut()}>
@@ -579,13 +614,29 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               setArtistFilter("");
             }}
           >
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar por título, artista, casa ou nº do lote…"
+                className="w-full sm:max-w-md"
+              />
+              {search ? (
+                <Button variant="ghost" size="sm" onClick={() => setSearch("")}>
+                  Limpar busca
+                </Button>
+              ) : null}
+            </div>
             <TabsList className="mb-6 flex h-auto flex-wrap justify-start gap-1 bg-secondary">
               {days.map((day, index) => (
                 <TabsTrigger key={day} value={`day-${index}`}>
                   {dayLabel(day, index)}
                   <span className="ml-2 text-xs text-muted-foreground">
                     {lots.data?.lots.filter(
-                      (lot) => lot.dayKey === day && !auctionFinished(lot.dayKey, lot.time),
+                      (lot) =>
+                        lot.dayKey === day &&
+                        !auctionFinished(lot.dayKey, lot.time) &&
+                        matchesSearch(lot),
                     ).length ?? 0}
                   </span>
                 </TabsTrigger>
@@ -607,9 +658,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               ).length;
               const showFinished = showFinishedDays.has(day);
               // Por padrão esconde os finalizados (3h após o início); o usuário pode incluí-los.
-              const dayLots = showFinished
-                ? rawDay
-                : rawDay.filter((lot) => !auctionFinished(lot.dayKey, lot.time));
+              // A busca geral (searchNorm) filtra por título/artista/casa/nº do lote.
+              const dayLots = (
+                showFinished
+                  ? rawDay
+                  : rawDay.filter((lot) => !auctionFinished(lot.dayKey, lot.time))
+              ).filter(matchesSearch);
               const artists = artistOptions(dayLots);
               const globalActive = artistFilter !== "";
               const visibleLots = globalActive
@@ -783,11 +837,13 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                   ) : groups.length === 0 ? (
                     <div className="space-y-3">
                       <p className="text-sm text-muted-foreground">
-                        {artistFilter
-                          ? "Nenhum lote deste artista neste dia."
-                          : rawDay.length === 0
-                            ? "Nenhum disco de vinil na varredura para este dia. Leilões que já estão ao vivo somem da listagem pública — tente “Atualizar tudo”."
-                            : `Todos os ${finishedCount} leilão(ões) deste dia já começaram há mais de 3h.`}
+                        {searchNorm
+                          ? "Nenhum lote corresponde à busca neste dia."
+                          : artistFilter
+                            ? "Nenhum lote deste artista neste dia."
+                            : rawDay.length === 0
+                              ? "Nenhum disco de vinil na varredura para este dia. Leilões que já estão ao vivo somem da listagem pública — tente “Atualizar tudo”."
+                              : `Todos os ${finishedCount} leilão(ões) deste dia já começaram há mais de 3h.`}
                       </p>
                       {!artistFilter && rawDay.length > 0 && !showFinished ? (
                         <Button variant="outline" size="sm" onClick={() => toggleShowFinished(day)}>
