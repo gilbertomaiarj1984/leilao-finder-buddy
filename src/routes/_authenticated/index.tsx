@@ -75,6 +75,7 @@ function LiveAuctions() {
     queryFn: () => fetchLive(),
     staleTime: 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const auctions = live.data ?? [];
@@ -429,11 +430,20 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const fetchWatched = useServerFn(listWatched);
   const runToggle = useServerFn(toggleWatch);
 
-  const lots = useQuery({ ...lotsQuery, queryFn: () => fetchLots(), staleTime: 10 * 60 * 1000 });
+  const lots = useQuery({
+    ...lotsQuery,
+    queryFn: () => fetchLots(),
+    // Carrega uma vez ao abrir; não recarrega ao navegar/trocar de aba/focar a janela.
+    staleTime: 2 * 60 * 60 * 1000,
+    gcTime: 4 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
   const watched = useQuery({
     ...watchedQuery,
     queryFn: () => fetchWatched(),
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const [pending, setPending] = useState<string | null>(null);
@@ -450,6 +460,23 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         toast.error((error as Error)?.message || "Não foi possível atualizar este dia agora");
       } finally {
         setRefreshingDay(null);
+        void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
+      }
+    })();
+  };
+
+  const [refreshingAll, setRefreshingAll] = useState(false);
+  const refreshAll = () => {
+    void (async () => {
+      setRefreshingAll(true);
+      try {
+        const fresh = await fetchLots({ data: { force: true } });
+        queryClient.setQueryData(lotsQuery.queryKey, fresh);
+        toast.success("Lista atualizada");
+      } catch (error) {
+        toast.error((error as Error)?.message || "Não foi possível atualizar a lista agora");
+      } finally {
+        setRefreshingAll(false);
         void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
       }
     })();
@@ -499,6 +526,20 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             </p>
           </div>
           <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshAll}
+              disabled={refreshingAll || lots.isFetching}
+              title="Forçar atualização geral da lista"
+            >
+              {refreshingAll ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Atualizar tudo
+            </Button>
             <span className="text-xs text-muted-foreground">{email}</span>
             <Button variant="ghost" size="sm" onClick={() => void onSignOut()}>
               <LogOut className="mr-2 h-4 w-4" />
@@ -595,20 +636,22 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 <TabsContent key={day} value={`day-${index}`} className="space-y-6">
                   <div className="sticky top-0 z-20 -mx-4 mb-2 space-y-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
                     <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-sm font-semibold text-foreground">
+                        {dayLabel(day, index)}
+                      </span>
                       <button
                         type="button"
                         onClick={() => refreshDay(day)}
                         disabled={refreshingDay === day}
-                        title="Atualizar este dia"
-                        aria-label={`Atualizar ${dayLabel(day, index)}`}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                        title="Forçar atualização deste dia"
+                        aria-label={`Forçar atualização de ${dayLabel(day, index)}`}
+                        className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
                       >
                         {refreshingDay === day ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
                           <RefreshCw className="h-3.5 w-3.5" />
                         )}
-                        {dayLabel(day, index)}
                       </button>
                       <button
                         type="button"
