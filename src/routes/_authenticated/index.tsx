@@ -410,6 +410,14 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const [tab, setTab] = useState<string>("day-0");
   const [artistFilter, setArtistFilter] = useState<string>("");
   const [watchedViewDay, setWatchedViewDay] = useState<string | null>(null);
+  const [showFinishedDays, setShowFinishedDays] = useState<Set<string>>(new Set());
+  const toggleShowFinished = (day: string) =>
+    setShowFinishedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(day)) next.delete(day);
+      else next.add(day);
+      return next;
+    });
   // Estado por casa (chave `${dia}|${casa}`): casas iniciam fechadas.
   const [openHouses, setOpenHouses] = useState<Set<string>>(new Set());
   const [houseArtist, setHouseArtist] = useState<Record<string, string>>({});
@@ -589,12 +597,19 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             </TabsList>
 
             {days.map((day, index) => {
-              const dayLots = (lots.data?.lots ?? [])
+              const rawDay = (lots.data?.lots ?? [])
                 .map((lot) =>
                   watchedIds.size ? { ...lot, watched: watchedIds.has(lot.idPeca) } : lot,
                 )
-                // Remove das listagens os leilões finalizados (3h após o início).
-                .filter((lot) => lot.dayKey === day && !auctionFinished(lot.dayKey, lot.time));
+                .filter((lot) => lot.dayKey === day);
+              const finishedCount = rawDay.filter((lot) =>
+                auctionFinished(lot.dayKey, lot.time),
+              ).length;
+              const showFinished = showFinishedDays.has(day);
+              // Por padrão esconde os finalizados (3h após o início); o usuário pode incluí-los.
+              const dayLots = showFinished
+                ? rawDay
+                : rawDay.filter((lot) => !auctionFinished(lot.dayKey, lot.time));
               const artists = artistOptions(dayLots);
               const globalActive = artistFilter !== "";
               const visibleLots = globalActive
@@ -688,6 +703,17 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                           <span className="text-xs text-muted-foreground">
                             {visibleLots.length} lote(s) em {groups.length} casa(s)
                           </span>
+                          {finishedCount > 0 ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleShowFinished(day)}
+                            >
+                              {showFinished
+                                ? `Ocultar finalizados (${finishedCount})`
+                                : `Incluir finalizados (${finishedCount})`}
+                            </Button>
+                          ) : null}
                         </>
                       ) : (
                         <span className="text-xs text-muted-foreground">
@@ -755,11 +781,20 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                       </div>
                     )
                   ) : groups.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      {artistFilter
-                        ? "Nenhum lote deste artista neste dia."
-                        : "Nenhum disco de vinil encontrado para este dia."}
-                    </p>
+                    <div className="space-y-3">
+                      <p className="text-sm text-muted-foreground">
+                        {artistFilter
+                          ? "Nenhum lote deste artista neste dia."
+                          : rawDay.length === 0
+                            ? "Nenhum disco de vinil na varredura para este dia. Leilões que já estão ao vivo somem da listagem pública — tente “Atualizar tudo”."
+                            : `Todos os ${finishedCount} leilão(ões) deste dia já começaram há mais de 3h.`}
+                      </p>
+                      {!artistFilter && rawDay.length > 0 && !showFinished ? (
+                        <Button variant="outline" size="sm" onClick={() => toggleShowFinished(day)}>
+                          Mostrar finalizados ({finishedCount})
+                        </Button>
+                      ) : null}
+                    </div>
                   ) : (
                     groups.map((group) => {
                       const houseKey = `${day}|${group.house}`;
