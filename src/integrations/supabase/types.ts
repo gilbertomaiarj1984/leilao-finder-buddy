@@ -22,7 +22,6 @@ export type Database = {
           house: string
           house_url: string | null
           id_leilao: string
-          last_lot_url: string | null
           last_seen_at: string
           lot_count: number
           sample_titles: string[]
@@ -37,7 +36,6 @@ export type Database = {
           house: string
           house_url?: string | null
           id_leilao: string
-          last_lot_url?: string | null
           last_seen_at?: string
           lot_count?: number
           sample_titles?: string[]
@@ -52,97 +50,12 @@ export type Database = {
           house?: string
           house_url?: string | null
           id_leilao?: string
-          last_lot_url?: string | null
           last_seen_at?: string
           lot_count?: number
           sample_titles?: string[]
           start_time?: string
           starts_at?: string | null
           uf?: string | null
-        }
-        Relationships: []
-      }
-      known_artists: {
-        Row: {
-          created_at: string
-          id: string
-          name: string
-          name_norm: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          name: string
-          name_norm: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          name?: string
-          name_norm?: string
-        }
-        Relationships: []
-      }
-      lots: {
-        Row: {
-          artist: string
-          base: string
-          day_key: string
-          first_seen_at: string
-          house: string
-          house_url: string
-          id: string
-          id_leilao: string
-          id_peca: string
-          image: string | null
-          last_seen_at: string
-          lote: string
-          price: string
-          start_time: string
-          title: string
-          uf: string
-          updated_at: string
-          url: string
-        }
-        Insert: {
-          artist?: string
-          base?: string
-          day_key: string
-          first_seen_at?: string
-          house?: string
-          house_url?: string
-          id: string
-          id_leilao: string
-          id_peca: string
-          image?: string | null
-          last_seen_at?: string
-          lote?: string
-          price?: string
-          start_time?: string
-          title: string
-          uf?: string
-          updated_at?: string
-          url: string
-        }
-        Update: {
-          artist?: string
-          base?: string
-          day_key?: string
-          first_seen_at?: string
-          house?: string
-          house_url?: string
-          id?: string
-          id_leilao?: string
-          id_peca?: string
-          image?: string | null
-          last_seen_at?: string
-          lote?: string
-          price?: string
-          start_time?: string
-          title?: string
-          uf?: string
-          updated_at?: string
-          url?: string
         }
         Relationships: []
       }
