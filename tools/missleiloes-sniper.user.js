@@ -1,13 +1,18 @@
 // ==UserScript==
-// @name         Miss Leilões — Assistente de lance no fechamento
+// @name         Leilão presencial — Assistente de lance no fechamento
 // @namespace    garimpo-de-vinil
-// @version      1.0.0
-// @description  Dá o lance automaticamente no último instante ("VOU BATER"/"DOU-LHE"), até um teto que você define, usando a SUA própria conta já logada no site. Reusa a função de lance do próprio site. Use por sua conta e risco (ver termos/edital do leilão).
-// @match        https://www.missleiloes.com.br/presencial/presencial.asp*
-// @match        https://missleiloes.com.br/presencial/presencial.asp*
+// @version      1.1.0
+// @description  Dá o lance automaticamente no último instante ("VOU BATER"/"DOU-LHE"), até um teto que você define, usando a SUA própria conta já logada. Reusa a função de lance do próprio site. Funciona em qualquer casa de leilão que use a mesma plataforma "presencial" (missleiloes e afins). Use por sua conta e risco (ver termos/edital do leilão).
+// @match        *://*/presencial/presencial.asp*
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
+//
+// Observação sobre o @match: a página do pregão (/presencial/presencial.asp) é a
+// mesma plataforma usada por várias casas de leilão em domínios diferentes. Por isso
+// o match cobre qualquer domínio com esse caminho. A trava de segurança em
+// waitForSite() garante que o painel só aparece onde o motor `novoPresencial` (com a
+// função Fazerlance) realmente existe — em qualquer outra página, o script não faz nada.
 
 /*
  * COMO FUNCIONA
