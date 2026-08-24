@@ -586,6 +586,14 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     for (const b of bids.data ?? []) map.set(b.idPeca, b.status);
     return map;
   }, [bids.data]);
+  // Nº do lote não vem na listagem geral; preenchemos com o que já lemos das
+  // páginas de vigias (l=8) e meus lances (l=4), casando por idPeca.
+  const loteById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const w of watched.data ?? []) if (w.lote) map.set(w.idPeca, w.lote);
+    for (const b of bids.data ?? []) if (b.lote) map.set(b.idPeca, b.lote);
+    return map;
+  }, [watched.data, bids.data]);
 
   return (
     <main className="min-h-screen bg-background">
@@ -1036,7 +1044,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                     {artistGroup.lots.map((lot) => (
                                       <LotCard
                                         key={lot.id}
-                                        lot={lot}
+                                        lot={{ ...lot, lote: lot.lote || loteById.get(lot.idPeca) || "" }}
                                         busy={pending === lot.idPeca}
                                         bidStatus={bidStatusById.get(lot.idPeca)}
                                         onToggle={() =>
