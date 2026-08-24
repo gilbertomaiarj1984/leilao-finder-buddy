@@ -26,13 +26,15 @@ export async function getBaseline(): Promise<Baseline> {
 
 export async function markSeen(prices: Record<string, string>): Promise<{ seenAt: string }> {
   const seenAt = new Date().toISOString();
-  try {
-    const { error } = await supabaseAdmin
-      .from("app_state")
-      .upsert({ key: BASELINE_KEY, value: prices, updated_at: seenAt }, { onConflict: "key" });
-    if (error) throw error;
-  } catch (error) {
+  const { error } = await supabaseAdmin
+    .from("app_state")
+    .upsert({ key: BASELINE_KEY, value: prices, updated_at: seenAt }, { onConflict: "key" });
+  // Antes engolíamos o erro e retornávamos "sucesso": o baseline nunca era
+  // gravado e o painel ficava eternamente com tudo "novo" e sem último acesso.
+  // Agora propagamos a falha para o cliente exibir e não mascarar o problema.
+  if (error) {
     console.error("[app-state] não foi possível gravar o baseline", error);
+    throw new Error(`Não foi possível gravar o baseline: ${error.message}`);
   }
   return { seenAt };
 }
