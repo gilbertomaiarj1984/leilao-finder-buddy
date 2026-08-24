@@ -201,6 +201,69 @@ function groupByHouse(lots: VinylLot[]): HouseGroup[] {
     .sort((a, b) => b.count - a.count || a.house.localeCompare(b.house, "pt-BR"));
 }
 
+type HouseStats = { vigia: number; green: number; red: number };
+
+/**
+ * Conta, para um conjunto de lotes, quantos estão vigiados e quantos têm lance
+ * ganhando (verde) ou coberto (vermelho) — mesma regra de cor do LotCard.
+ */
+function computeHouseStats(
+  lots: { idPeca: string }[],
+  watchedIds: Set<string>,
+  bidStatusById: Map<string, string>,
+): HouseStats {
+  let vigia = 0;
+  let green = 0;
+  let red = 0;
+  for (const lot of lots) {
+    const status = bidStatusById.get(lot.idPeca);
+    if (status) {
+      // Mesma prioridade das cores do card: lance ganhando = verde, coberto = vermelho.
+      if (bidIsWinning(status)) green += 1;
+      else red += 1;
+    } else if (watchedIds.has(lot.idPeca)) {
+      // Vigiado sem lance = amarelo (nº de vigia).
+      vigia += 1;
+    }
+  }
+  return { vigia, green, red };
+}
+
+/** Contadores ao lado do nome da casa: vigia, lance verde e lance vermelho. */
+function HouseStatBadges({ stats }: { stats: HouseStats }) {
+  return (
+    <>
+      {stats.vigia > 0 ? (
+        <span
+          title="Lotes vigiados"
+          className="inline-flex items-center gap-1 rounded bg-yellow-500/15 px-1.5 py-0.5 text-xs font-medium text-yellow-700 dark:text-yellow-400"
+        >
+          <Eye className="h-3 w-3" />
+          {stats.vigia}
+        </span>
+      ) : null}
+      {stats.green > 0 ? (
+        <span
+          title="Lotes com lance ganhando (verde)"
+          className="inline-flex items-center gap-1 rounded bg-green-500/15 px-1.5 py-0.5 text-xs font-medium text-green-700 dark:text-green-400"
+        >
+          <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden />
+          {stats.green}
+        </span>
+      ) : null}
+      {stats.red > 0 ? (
+        <span
+          title="Lotes com lance coberto (vermelho)"
+          className="inline-flex items-center gap-1 rounded bg-red-500/15 px-1.5 py-0.5 text-xs font-medium text-red-700 dark:text-red-400"
+        >
+          <span className="h-2 w-2 rounded-full bg-red-500" aria-hidden />
+          {stats.red}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 // Faixas de valor por casa. Preço vem como "R$ 1.234,56" (BR): ponto de milhar,
 // vírgula decimal. Lotes sem valor numérico entram na faixa "Menor de 50".
 const PRICE_OPTIONS = [
@@ -866,6 +929,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                               )}
                               {group.house}
                               <span className="text-muted-foreground">{group.count}</span>
+                              <HouseStatBadges
+                                stats={computeHouseStats(group.lots, watchedIds, bidStatusById)}
+                              />
                             </button>
                           );
                         })}
@@ -886,6 +952,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                 {houseGroup.house}
                               </h2>
                               <Badge variant="secondary">{houseGroup.lots.length} lote(s)</Badge>
+                              <HouseStatBadges
+                                stats={computeHouseStats(houseGroup.lots, watchedIds, bidStatusById)}
+                              />
                               <a
                                 className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
                                 href={houseGroup.houseUrl}
@@ -997,6 +1066,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                 </span>
                               </button>
                               <Badge variant="secondary">{houseLots.length} lotes</Badge>
+                              <HouseStatBadges
+                                stats={computeHouseStats(houseLots, watchedIds, bidStatusById)}
+                              />
                               {group.time ? (
                                 <span className="text-sm text-muted-foreground">às {group.time}</span>
                               ) : null}
