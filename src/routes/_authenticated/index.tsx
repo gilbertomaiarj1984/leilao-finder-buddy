@@ -40,6 +40,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import {
+  enrichLotes,
   getAccessStatus,
   getLiveAuctions,
   getVinylLots,
@@ -471,6 +472,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const fetchBids = useServerFn(listMyBids);
   const runToggle = useServerFn(toggleWatch);
   const runChunk = useServerFn(scrapeVinylChunk);
+  const runEnrich = useServerFn(enrichLotes);
 
   const lots = useQuery({
     ...lotsQuery,
@@ -533,6 +535,11 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           const scannedTop = total ? total - (fromPage ?? 0) : 0;
           setRefreshPct(total ? Math.min(99, Math.round((scannedTop / total) * 100)) : null);
           if (fromPage === null) break;
+        }
+        // Preenche o nº do lote (via catálogo das casas) em blocos de leilões.
+        for (let guard = 0; guard < 40; guard += 1) {
+          const res = await runEnrich({ data: { max: 6 } });
+          if (!res.remaining) break;
         }
         const fresh = await fetchLots({ data: {} });
         queryClient.setQueryData(lotsQuery.queryKey, fresh);
