@@ -45,7 +45,42 @@ export async function handleCron(request: Request, env?: unknown): Promise<Respo
       return json(await enrichMissingLotes(max));
     }
 
-    return json({ error: "step inválido (use chunk|enrich)" }, 400);
+    // Diagnóstico: sonda os catálogos das casas dos primeiros leilões sem nº de lote.
+    if (step === "catdebug") {
+      const { listMissingAuctions } = await import("./leiloesbr-scrape.server");
+      const UA =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36";
+      const probe = async (target: string) => {
+        try {
+          const resp = await fetch(target, {
+            headers: { "User-Agent": UA, Accept: "text/html" },
+            redirect: "follow",
+          });
+          const text = await resp.text();
+          return {
+            status: resp.status,
+            len: text.length,
+            prodBox: (text.match(/class="prod-box/g) ?? []).length,
+            ocItem: (text.match(/class="oc-item/g) ?? []).length,
+            pecaHit: text.match(/peca\.asp\?ID=(\d+)/i)?.[1] ?? null,
+            loteHit: text.match(/LoteProd[\s\S]{0,120}?lote:?\s*([0-9]+)/i)?.[1] ?? null,
+          };
+        } catch (error) {
+          return { status: "ERR", error: (error as Error)?.message ?? "fetch failed" };
+        }
+      };
+      const auctions = await listMissingAuctions(3);
+      const probes = [];
+      for (const a of auctions) {
+        for (const path of [`/catalogo.asp?Num=${a.idLeilao}`, `/leilao.asp?Num=${a.idLeilao}`]) {
+          const target = `${a.domain}${path}`;
+          probes.push({ idLeilao: a.idLeilao, sampleIds: a.ids, url: target, ...(await probe(target)) });
+        }
+      }
+      return json({ missingAuctions: auctions.length, probes });
+    }
+
+    return json({ error: "step inválido (use chunk|enrich|catdebug)" }, 400);
   } catch (error) {
     console.error("[cron] falha", error);
     return json({ error: (error as Error)?.message ?? "cron failed" }, 500);

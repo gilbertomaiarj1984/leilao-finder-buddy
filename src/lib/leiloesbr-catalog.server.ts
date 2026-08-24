@@ -49,9 +49,13 @@ function parseCatalogLotes(html: string): Map<string, string> {
 export async function fetchLoteMap(domain: string, idLeilao: string): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   for (let page = 1; page <= 20; page++) {
+    const pageUrl =
+      page === 1
+        ? `${domain}/catalogo.asp?Num=${idLeilao}`
+        : `${domain}/catalogo.asp?Num=${idLeilao}&pag=${page}`;
     let html: string;
     try {
-      html = await publicFetch(`${domain}/catalogo.asp?Num=${idLeilao}&pag=${page}`, {});
+      html = await publicFetch(pageUrl, {});
     } catch {
       break;
     }
