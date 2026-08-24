@@ -14,6 +14,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_state: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value?: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
       known_artists: {
         Row: {
           created_at: string
