@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronsUpDown,
+  ChevronUp,
   Eye,
   EyeOff,
   ExternalLink,
@@ -1028,7 +1029,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                           </div>
 
                           {isOpen ? (
-                            artistGroups.length === 0 ? (
+                            <>
+                            {artistGroups.length === 0 ? (
                               <p className="text-sm text-muted-foreground">
                                 Nenhum lote com esses filtros nesta casa.
                               </p>
@@ -1067,7 +1069,25 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   </div>
                                 </div>
                               ))
-                            )
+                            )}
+                            <div className="pt-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  toggleHouse(houseKey);
+                                  requestAnimationFrame(() =>
+                                    document
+                                      .getElementById(houseAnchor(group.house, index))
+                                      ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                                  );
+                                }}
+                                className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                              >
+                                <ChevronUp className="h-4 w-4" />
+                                Fechar {group.house}
+                              </button>
+                            </div>
+                            </>
                           ) : null}
                         </section>
                       );
