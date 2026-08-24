@@ -479,6 +479,42 @@ function watchedDateToKey(value: string): string {
   return yy && mm && dd ? `${yy}-${mm}-${dd}` : "";
 }
 
+/** A busca principal casa por título, artista, casa e nº do lote — igual à das abas de dia. */
+function watchedMatchesSearch(
+  lot: { title: string; artist: string; house: string; lote: string },
+  searchNorm: string,
+): boolean {
+  return (
+    !searchNorm ||
+    normalizeForMatch(`${lot.title} ${lot.artist} ${lot.house} ${lot.lote}`).includes(searchNorm)
+  );
+}
+
+/** Agrupa vigiados por casa de leilão e ordena os lotes pelo nº do lote. */
+function groupWatchedByHouse<T extends { house: string; houseUrl: string; lote: string }>(
+  lots: T[],
+): { house: string; houseUrl: string; lots: T[] }[] {
+  const byHouse = new Map<string, { house: string; houseUrl: string; lots: T[] }>();
+  for (const lot of lots) {
+    const group =
+      byHouse.get(lot.house) ?? { house: lot.house, houseUrl: lot.houseUrl, lots: [] as T[] };
+    group.lots.push(lot);
+    byHouse.set(lot.house, group);
+  }
+  const num = (value: string) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+  };
+  for (const group of byHouse.values()) {
+    group.lots.sort(
+      (a, b) => num(a.lote) - num(b.lote) || a.lote.localeCompare(b.lote, "pt-BR"),
+    );
+  }
+  return [...byHouse.values()].sort(
+    (a, b) => b.lots.length - a.lots.length || a.house.localeCompare(b.house, "pt-BR"),
+  );
+}
+
 function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
   const [tab, setTab] = useState<string>("day-0");
   const [artistFilter, setArtistFilter] = useState<string>("");
@@ -763,7 +799,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               ))}
               <TabsTrigger value="watched">
                 Vigiados
-                <span className="ml-2 text-xs text-muted-foreground">{watchedIds.size}</span>
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {
+                    (watched.data ?? []).filter((lot) => watchedMatchesSearch(lot, searchNorm))
+                      .length
+                  }
+                </span>
               </TabsTrigger>
             </TabsList>
 
@@ -791,35 +832,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 : dayLots;
               const groups = groupByHouse(visibleLots);
               const isWatchedView = watchedViewDay === day;
+              // Vigiados do dia: a busca principal também filtra aqui.
               const watchedForDay = (watched.data ?? []).filter(
-                (lot) => watchedDateToKey(lot.date) === day,
+                (lot) => watchedDateToKey(lot.date) === day && watchedMatchesSearch(lot, searchNorm),
               );
               // Vigiados do dia agrupados por casa e ordenados por nº do lote.
-              const watchedByHouse = (() => {
-                const byHouse = new Map<
-                  string,
-                  { house: string; houseUrl: string; lots: typeof watchedForDay }
-                >();
-                for (const lot of watchedForDay) {
-                  const group =
-                    byHouse.get(lot.house) ??
-                    { house: lot.house, houseUrl: lot.houseUrl, lots: [] as typeof watchedForDay };
-                  group.lots.push(lot);
-                  byHouse.set(lot.house, group);
-                }
-                const num = (value: string) => {
-                  const n = Number(value);
-                  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
-                };
-                for (const group of byHouse.values()) {
-                  group.lots.sort(
-                    (a, b) => num(a.lote) - num(b.lote) || a.lote.localeCompare(b.lote, "pt-BR"),
-                  );
-                }
-                return [...byHouse.values()].sort(
-                  (a, b) => b.lots.length - a.lots.length || a.house.localeCompare(b.house, "pt-BR"),
-                );
-              })();
+              const watchedByHouse = groupWatchedByHouse(watchedForDay);
 
               return (
                 <TabsContent key={day} value={`day-${index}`} className="space-y-6">
@@ -1207,29 +1225,101 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                   Você ainda não está vigiando nenhum lote.
                 </p>
               ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {(watched.data ?? []).map((lot) => (
-                    <LotCard
-                      key={lot.id}
-                      lot={{
-                        ...lot,
-                        dayKey: lot.date,
-                        watched: true,
-                      }}
-                      busy={pending === lot.idPeca}
-                      bidStatus={bidStatusById.get(lot.idPeca)}
-                      onToggle={() =>
-                        toggle.mutate({
-                          idPeca: lot.idPeca,
-                          idLeilao: lot.idLeilao,
-                          base: lot.base,
-                          watch: false,
-                        })
-                      }
-                      showDate
-                    />
-                  ))}
-                </div>
+                (() => {
+                  // A busca principal filtra os vigiados; o resultado é apresentado
+                  // separado por dia e casa de leilão, igual às abas de dia.
+                  const filtered = (watched.data ?? []).filter((lot) =>
+                    watchedMatchesSearch(lot, searchNorm),
+                  );
+                  if (filtered.length === 0) {
+                    return (
+                      <p className="text-sm text-muted-foreground">
+                        Nenhum lote vigiado corresponde à busca.
+                      </p>
+                    );
+                  }
+                  const byDay = new Map<string, typeof filtered>();
+                  for (const lot of filtered) {
+                    const key = watchedDateToKey(lot.date) || lot.date || "";
+                    const list = byDay.get(key) ?? [];
+                    list.push(lot);
+                    byDay.set(key, list);
+                  }
+                  // Dias sem data ("") vão para o fim; os demais em ordem crescente.
+                  const dayKeys = [...byDay.keys()].sort((a, b) => {
+                    if (!a) return 1;
+                    if (!b) return -1;
+                    return a.localeCompare(b);
+                  });
+
+                  return (
+                    <div className="space-y-10">
+                      {dayKeys.map((dayKey) => {
+                        const dayLots = byDay.get(dayKey) ?? [];
+                        const idx = days.indexOf(dayKey);
+                        const label = dayKey
+                          ? dayLabel(dayKey, idx >= 0 ? idx : 99)
+                          : "Sem data";
+                        const houses = groupWatchedByHouse(dayLots);
+                        return (
+                          <section key={dayKey || "sem-data"} className="space-y-6">
+                            <div className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
+                              <span className="text-sm font-semibold text-foreground">{label}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {dayLots.length} lote(s) vigiado(s) em {houses.length} casa(s)
+                              </span>
+                            </div>
+                            {houses.map((houseGroup) => (
+                              <section key={houseGroup.house} className="space-y-3">
+                                <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
+                                  <h2 className="text-xl font-semibold tracking-tight text-foreground">
+                                    {houseGroup.house}
+                                  </h2>
+                                  <Badge variant="secondary">
+                                    {houseGroup.lots.length} lote(s)
+                                  </Badge>
+                                  <HouseStatBadges
+                                    stats={computeHouseStats(
+                                      houseGroup.lots,
+                                      watchedIds,
+                                      bidStatusById,
+                                    )}
+                                  />
+                                  <a
+                                    className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                    href={houseGroup.houseUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    site da casa <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                </div>
+                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                  {houseGroup.lots.map((lot) => (
+                                    <LotCard
+                                      key={lot.id}
+                                      lot={{ ...lot, dayKey: lot.date, watched: true }}
+                                      busy={pending === lot.idPeca}
+                                      bidStatus={bidStatusById.get(lot.idPeca)}
+                                      onToggle={() =>
+                                        toggle.mutate({
+                                          idPeca: lot.idPeca,
+                                          idLeilao: lot.idLeilao,
+                                          base: lot.base,
+                                          watch: false,
+                                        })
+                                      }
+                                    />
+                                  ))}
+                                </div>
+                              </section>
+                            ))}
+                          </section>
+                        );
+                      })}
+                    </div>
+                  );
+                })()
               )}
             </TabsContent>
           </Tabs>
