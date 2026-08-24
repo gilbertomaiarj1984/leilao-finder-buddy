@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
   Check,
@@ -9,6 +9,7 @@ import {
   Eye,
   EyeOff,
   ExternalLink,
+  LayoutDashboard,
   Loader2,
   LogOut,
   Radio,
@@ -48,6 +49,7 @@ import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import {
   auctionFinished,
   normalizeForMatch,
+  parsePrice,
   UNCLASSIFIED_LABEL,
   type VinylLot,
 } from "@/lib/vinyl-parse";
@@ -203,13 +205,6 @@ const PRICE_OPTIONS = [
   { value: "r101_150", label: "De 101 a 150" },
   { value: "gt150", label: "Acima de 150" },
 ] as const;
-
-function parsePrice(raw: string): number | null {
-  const cleaned = raw.replace(/[^\d,]/g, "").replace(",", ".");
-  if (!cleaned) return null;
-  const value = Number(cleaned);
-  return Number.isFinite(value) ? value : null;
-}
 
 function matchesPriceRange(raw: string, range: string): boolean {
   if (!range) return true;
@@ -592,6 +587,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             </p>
           </div>
           <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+            <Button variant="outline" size="sm" asChild title="Painel de mudanças">
+              <Link to="/dashboard">
+                <LayoutDashboard className="mr-2 h-4 w-4" />
+                Painel
+              </Link>
+            </Button>
             <Button
               variant="outline"
               size="sm"
