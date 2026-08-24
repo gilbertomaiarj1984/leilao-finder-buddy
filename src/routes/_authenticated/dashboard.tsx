@@ -24,7 +24,13 @@ import {
   markDashboardSeen,
 } from "@/lib/leiloesbr.functions";
 import { listWatched } from "@/lib/leiloesbr-watch.functions";
-import { auctionFinished, formatDayLabel, parsePrice, type VinylLot } from "@/lib/vinyl-parse";
+import {
+  auctionFinished,
+  bidIsWinning,
+  formatDayLabel,
+  parsePrice,
+  type VinylLot,
+} from "@/lib/vinyl-parse";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Painel de mudanças — Garimpo de Vinil" }] }),
@@ -242,20 +248,24 @@ function DashboardPage() {
               }
               // Ordena as casas: as que têm lance/vigia primeiro, depois por quantidade.
               const counts = (g: HouseGroup) => {
+                let green = 0;
                 let red = 0;
                 let yellow = 0;
                 for (const l of g.lots) {
-                  if (bidsById.has(l.idPeca)) red++;
-                  else if (watchedIds.has(l.idPeca)) yellow++;
+                  const b = bidsById.get(l.idPeca);
+                  if (b) {
+                    if (bidIsWinning(b.status)) green++;
+                    else red++;
+                  } else if (watchedIds.has(l.idPeca)) yellow++;
                 }
-                return { red, yellow };
+                return { green, red, yellow, bids: green + red };
               };
               const ordered = [...groups].sort((a, b) => {
                 const ca = counts(a);
                 const cb = counts(b);
                 return (
-                  (cb.red > 0 ? 1 : 0) - (ca.red > 0 ? 1 : 0) ||
-                  cb.red - ca.red ||
+                  (cb.bids > 0 ? 1 : 0) - (ca.bids > 0 ? 1 : 0) ||
+                  cb.bids - ca.bids ||
                   (cb.yellow > 0 ? 1 : 0) - (ca.yellow > 0 ? 1 : 0) ||
                   cb.yellow - ca.yellow ||
                   b.lots.length - a.lots.length ||
@@ -302,7 +312,9 @@ function DashboardPage() {
                               ) : (
                                 <ChevronRight className="h-3.5 w-3.5 shrink-0" />
                               )}
-                              {c.red > 0 ? (
+                              {c.green > 0 ? (
+                                <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
+                              ) : c.red > 0 ? (
                                 <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
                               ) : c.yellow > 0 ? (
                                 <span className="h-2 w-2 shrink-0 rounded-full bg-yellow-500" />
@@ -341,9 +353,14 @@ function DashboardPage() {
                                 </span>
                               </button>
                               <Badge variant="secondary">{group.lots.length} lote(s)</Badge>
+                              {c.green > 0 ? (
+                                <Badge className="bg-green-500/15 text-green-700 dark:text-green-400" variant="secondary">
+                                  {c.green} ganhando
+                                </Badge>
+                              ) : null}
                               {c.red > 0 ? (
                                 <Badge className="bg-red-500/15 text-red-600 dark:text-red-400" variant="secondary">
-                                  {c.red} com lance
+                                  {c.red} coberto(s)
                                 </Badge>
                               ) : null}
                               {c.yellow > 0 ? (
@@ -379,11 +396,14 @@ function DashboardPage() {
                                   <tbody>
                                     {group.lots.map((lot) => {
                                       const bid = bidsById.get(lot.idPeca);
+                                      const winning = bid ? bidIsWinning(bid.status) : false;
                                       const isWatched = watchedIds.has(lot.idPeca);
                                       const delta = computeDelta(lot.price, prices[lot.id]);
                                       const finished = auctionFinished(lot.dayKey, lot.time);
                                       const rowClass = bid
-                                        ? "border-l-4 border-red-500 bg-red-500/10"
+                                        ? winning
+                                          ? "border-l-4 border-green-500 bg-green-500/10"
+                                          : "border-l-4 border-red-500 bg-red-500/10"
                                         : isWatched
                                           ? "border-l-4 border-yellow-500 bg-yellow-400/10"
                                           : "border-l-4 border-transparent";
@@ -406,7 +426,13 @@ function DashboardPage() {
                                               {lot.title}
                                             </a>
                                             {bid?.status ? (
-                                              <span className="mt-0.5 block text-xs text-red-600 dark:text-red-400">
+                                              <span
+                                                className={
+                                                  winning
+                                                    ? "mt-0.5 block text-xs text-green-600 dark:text-green-400"
+                                                    : "mt-0.5 block text-xs text-red-600 dark:text-red-400"
+                                                }
+                                              >
                                                 {bid.status}
                                               </span>
                                             ) : null}
@@ -420,7 +446,15 @@ function DashboardPage() {
                                           <td className="whitespace-nowrap px-2 py-2 text-right">
                                             <DeltaCell delta={delta} />
                                           </td>
-                                          <td className="whitespace-nowrap px-2 py-2 text-right font-medium text-red-600 dark:text-red-400">
+                                          <td
+                                            className={
+                                              bid
+                                                ? winning
+                                                  ? "whitespace-nowrap px-2 py-2 text-right font-medium text-green-600 dark:text-green-400"
+                                                  : "whitespace-nowrap px-2 py-2 text-right font-medium text-red-600 dark:text-red-400"
+                                                : "whitespace-nowrap px-2 py-2 text-right text-muted-foreground"
+                                            }
+                                          >
                                             {bid?.myBid ?? "—"}
                                           </td>
                                         </tr>
