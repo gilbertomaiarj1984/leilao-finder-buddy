@@ -300,6 +300,83 @@ async function fillArtists(fresh: VinylLot[]): Promise<void> {
 }
 
 /**
+ * Preenche o nº do lote (que NÃO vem na listagem geral) buscando o catálogo de
+ * cada leilão no site da casa (`catalogo.asp?Num=`). Processa até `maxAuctions`
+ * leilões por chamada (para caber no tempo do servidor) e devolve quantos lotes
+ * atualizou e quantos leilões ainda faltam. Persiste no banco e atualiza o cache.
+ */
+export async function enrichMissingLotes(
+  maxAuctions = 6,
+): Promise<{ updated: number; remaining: number }> {
+  const days = upcomingDayKeys(WINDOW_DAYS);
+  const windowStart = days[0]!;
+  const windowEnd = days[days.length - 1]!;
+
+  let lots: VinylLot[];
+  try {
+    lots = await mergeSources(windowStart, windowEnd, []);
+  } catch {
+    return { updated: 0, remaining: 0 };
+  }
+
+  const { parseAuctionRef, fetchLoteMap } = await import("./leiloesbr-catalog.server");
+
+  // Agrupa os lotes SEM número por leilão (domínio da casa + idLeilao).
+  const auctions = new Map<string, { domain: string; idLeilao: string; ids: Set<string> }>();
+  for (const lot of lots) {
+    if (lot.lote) continue;
+    const ref = parseAuctionRef(lot.url);
+    if (!ref) continue;
+    const key = `${ref.domain}|${ref.idLeilao}`;
+    const entry =
+      auctions.get(key) ?? { domain: ref.domain, idLeilao: ref.idLeilao, ids: new Set<string>() };
+    entry.ids.add(lot.idPeca);
+    auctions.set(key, entry);
+  }
+
+  const pending = [...auctions.values()];
+  const batch = pending.slice(0, maxAuctions);
+  const remaining = Math.max(pending.length - batch.length, 0);
+
+  const loteByPeca = new Map<string, string>();
+  for (const auction of batch) {
+    try {
+      const map = await fetchLoteMap(auction.domain, auction.idLeilao);
+      for (const id of auction.ids) {
+        const lote = map.get(id);
+        if (lote) loteByPeca.set(id, lote);
+      }
+    } catch (error) {
+      console.error("[leiloesbr] falha ao ler catálogo da casa", error);
+    }
+  }
+  if (!loteByPeca.size) return { updated: 0, remaining };
+
+  // Aplica no cache em memória e coleta os lotes alterados para persistir.
+  if (memCache) {
+    for (const lot of memCache.lots) {
+      const lote = loteByPeca.get(lot.idPeca);
+      if (lote && !lot.lote) lot.lote = lote;
+    }
+  }
+  const changed: VinylLot[] = [];
+  for (const lot of lots) {
+    const lote = loteByPeca.get(lot.idPeca);
+    if (lote && !lot.lote) {
+      lot.lote = lote;
+      changed.push(lot);
+    }
+  }
+  try {
+    await persistLots(changed);
+  } catch (error) {
+    console.error("[leiloesbr] não foi possível persistir os nº de lote", error);
+  }
+
+  return { updated: changed.length, remaining };
+}
+
+/**
  * Retorna os lotes da janela. A fonte GARANTIDA é o cache/merge em memória; o
  * banco é camada durável quando disponível (não quebra se a tabela não existir).
  * Varre o site quando está "stale" ou em `force`, mescla tudo por id (sem apagar)

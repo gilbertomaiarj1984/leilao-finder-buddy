@@ -147,6 +147,15 @@ function DashboardPage() {
     for (const b of bids.data ?? []) map.set(b.idPeca, { myBid: b.myBid, status: b.status });
     return map;
   }, [bids.data]);
+  // Nº do lote não vem na listagem geral; preenchemos com o que já lemos das
+  // páginas de vigias (l=8) e meus lances (l=4), casando por idPeca.
+  const loteById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const w of watched.data ?? []) if (w.lote) map.set(w.idPeca, w.lote);
+    for (const b of bids.data ?? []) if (b.lote) map.set(b.idPeca, b.lote);
+    return map;
+  }, [watched.data, bids.data]);
+  const loteOf = (lot: VinylLot) => lot.lote || loteById.get(lot.idPeca) || "";
 
   const prices = baseline.data?.prices ?? {};
   const days = lots.data?.days ?? [];
@@ -242,8 +251,8 @@ function DashboardPage() {
                 g.lots.sort(
                   (a, b) =>
                     rank(a) - rank(b) ||
-                    loteNum(a.lote) - loteNum(b.lote) ||
-                    a.lote.localeCompare(b.lote, "pt-BR"),
+                    loteNum(loteOf(a)) - loteNum(loteOf(b)) ||
+                    loteOf(a).localeCompare(loteOf(b), "pt-BR"),
                 );
               }
               // Ordena as casas: as que têm lance/vigia primeiro, depois por quantidade.
@@ -413,7 +422,7 @@ function DashboardPage() {
                                           className={`border-b border-border/60 align-top ${rowClass} ${finished ? "opacity-60" : ""}`}
                                         >
                                           <td className="px-2 py-2 font-medium text-foreground">
-                                            {lot.lote || "—"}
+                                            {loteOf(lot) || "—"}
                                           </td>
                                           <td className="px-2 py-2">
                                             <a

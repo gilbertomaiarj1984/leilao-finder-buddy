@@ -40,6 +40,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import {
+  enrichLotes,
   getAccessStatus,
   getLiveAuctions,
   getVinylLots,
@@ -471,6 +472,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const fetchBids = useServerFn(listMyBids);
   const runToggle = useServerFn(toggleWatch);
   const runChunk = useServerFn(scrapeVinylChunk);
+  const runEnrich = useServerFn(enrichLotes);
 
   const lots = useQuery({
     ...lotsQuery,
@@ -534,6 +536,11 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           setRefreshPct(total ? Math.min(99, Math.round((scannedTop / total) * 100)) : null);
           if (fromPage === null) break;
         }
+        // Preenche o nº do lote (via catálogo das casas) em blocos de leilões.
+        for (let guard = 0; guard < 40; guard += 1) {
+          const res = await runEnrich({ data: { max: 6 } });
+          if (!res.remaining) break;
+        }
         const fresh = await fetchLots({ data: {} });
         queryClient.setQueryData(lotsQuery.queryKey, fresh);
         setRefreshPct(100);
@@ -586,6 +593,14 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     for (const b of bids.data ?? []) map.set(b.idPeca, b.status);
     return map;
   }, [bids.data]);
+  // Nº do lote não vem na listagem geral; preenchemos com o que já lemos das
+  // páginas de vigias (l=8) e meus lances (l=4), casando por idPeca.
+  const loteById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const w of watched.data ?? []) if (w.lote) map.set(w.idPeca, w.lote);
+    for (const b of bids.data ?? []) if (b.lote) map.set(b.idPeca, b.lote);
+    return map;
+  }, [watched.data, bids.data]);
 
   return (
     <main className="min-h-screen bg-background">
@@ -1036,7 +1051,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                     {artistGroup.lots.map((lot) => (
                                       <LotCard
                                         key={lot.id}
-                                        lot={lot}
+                                        lot={{ ...lot, lote: lot.lote || loteById.get(lot.idPeca) || "" }}
                                         busy={pending === lot.idPeca}
                                         bidStatus={bidStatusById.get(lot.idPeca)}
                                         onToggle={() =>

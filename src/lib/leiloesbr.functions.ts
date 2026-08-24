@@ -45,6 +45,20 @@ export const getLiveAuctions = createServerFn({ method: "GET" })
     return await listLiveAuctions();
   });
 
+// Preenche o nº do lote (via catálogo da casa) em blocos de leilões, para caber no
+// tempo do servidor. O cliente chama em laço até `remaining` chegar a 0.
+export const enrichLotes = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { max?: number } | undefined) => ({
+    max: Math.min(Math.max(Number(input?.max) || 6, 1), 20),
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { enrichMissingLotes } = await import("./leiloesbr-scrape.server");
+    return await enrichMissingLotes(data.max);
+  });
+
 /** Lances dados pelo usuário (conta_site.asp?l=4). Best-effort: [] em erro. */
 export const listMyBids = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
