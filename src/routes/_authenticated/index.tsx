@@ -537,10 +537,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           setRefreshPct(total ? Math.min(99, Math.round((scannedTop / total) * 100)) : null);
           if (fromPage === null) break;
         }
-        // Preenche o nº do lote (via catálogo das casas) em blocos de leilões.
-        for (let guard = 0; guard < 40; guard += 1) {
-          const res = await runEnrich({ data: { max: 6 } });
-          if (!res.remaining) break;
+        // Preenche o nº do lote (via catálogo das casas) percorrendo os leilões por cursor.
+        let enrichOffset = 0;
+        for (let guard = 0; guard < 60; guard += 1) {
+          const res = await runEnrich({ data: { max: 6, offset: enrichOffset } });
+          if (res.done || res.nextOffset == null) break;
+          enrichOffset = res.nextOffset;
         }
         const fresh = await fetchLots({ data: {} });
         queryClient.setQueryData(lotsQuery.queryKey, fresh);

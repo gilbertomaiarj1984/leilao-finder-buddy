@@ -39,16 +39,14 @@ jobs:
           done
 
           echo "== Preenchimento de nº de lote (catálogos) =="
-          nozero=0
-          for i in $(seq 1 40); do
-            res="$(call "/api/cron?step=enrich&max=6")"
-            echo "enrich $i: $res"
-            rem="$(echo "$res" | jq -r '.remaining')"
-            upd="$(echo "$res" | jq -r '.updated')"
-            [ "$rem" = "0" ] && break
-            # Se não houve progresso em 3 chamadas seguidas, encerra (evita laço à toa).
-            if [ "$upd" = "0" ]; then nozero=$((nozero+1)); else nozero=0; fi
-            [ "$nozero" -ge 3 ] && { echo "sem progresso no enrich; encerrando"; break; }
+          off=0
+          for i in $(seq 1 60); do
+            res="$(call "/api/cron?step=enrich&max=6&offset=$off")"
+            echo "enrich $i (offset $off): $res"
+            done="$(echo "$res" | jq -r '.done')"
+            [ "$done" = "true" ] && break
+            off="$(echo "$res" | jq -r '.nextOffset')"
+            [ "$off" = "null" ] && break
           done
 
           echo "Concluído."
