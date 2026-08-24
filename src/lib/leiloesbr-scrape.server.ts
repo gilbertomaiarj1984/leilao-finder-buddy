@@ -305,6 +305,33 @@ async function fillArtists(fresh: VinylLot[]): Promise<void> {
  * leilões por chamada (para caber no tempo do servidor) e devolve quantos lotes
  * atualizou e quantos leilões ainda faltam. Persiste no banco e atualiza o cache.
  */
+/** Lista os leilões (domínio + idLeilao) que ainda têm lotes SEM número — p/ diagnóstico. */
+export async function listMissingAuctions(
+  limit = 5,
+): Promise<{ domain: string; idLeilao: string; ids: string[] }[]> {
+  const days = upcomingDayKeys(WINDOW_DAYS);
+  const windowStart = days[0]!;
+  const windowEnd = days[days.length - 1]!;
+  let lots: VinylLot[] = [];
+  try {
+    lots = await mergeSources(windowStart, windowEnd, []);
+  } catch {
+    return [];
+  }
+  const { parseAuctionRef } = await import("./leiloesbr-catalog.server");
+  const auctions = new Map<string, { domain: string; idLeilao: string; ids: string[] }>();
+  for (const lot of lots) {
+    if (lot.lote) continue;
+    const ref = parseAuctionRef(lot.url);
+    if (!ref) continue;
+    const key = `${ref.domain}|${ref.idLeilao}`;
+    const entry = auctions.get(key) ?? { domain: ref.domain, idLeilao: ref.idLeilao, ids: [] };
+    if (entry.ids.length < 5) entry.ids.push(lot.idPeca);
+    auctions.set(key, entry);
+  }
+  return [...auctions.values()].slice(0, limit);
+}
+
 export async function enrichMissingLotes(
   maxAuctions = 6,
 ): Promise<{ updated: number; remaining: number }> {
