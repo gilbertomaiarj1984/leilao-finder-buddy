@@ -1,5 +1,3 @@
-import { parse, type HTMLElement } from "node-html-parser";
-
 import { publicFetch } from "./leiloesbr-auth.server";
 
 /**
@@ -18,29 +16,26 @@ export function parseAuctionRef(url: string): { domain: string; idLeilao: string
   return { domain: domain.replace(/\/+$/, ""), idLeilao: m[2]! };
 }
 
-function loteFromBox(box: HTMLElement): string {
-  // 1) `<div class="LoteProd">...Lote: 145</div>` (catálogo da casa)
-  const loteProd = box.querySelector(".LoteProd")?.text ?? "";
-  const fromLoteProd = loteProd.match(/lote:?\s*([0-9]+[a-zA-Z]?)/i)?.[1];
-  if (fromLoteProd) return fromLoteProd;
-  // 2) atributo `title="Lote-60"` (páginas de conta / outros temas)
-  const titled = box.querySelector('[title^="Lote-"], [title^="Lote "]');
-  const fromTitle = titled?.getAttribute("title")?.match(/lote-?\s*([0-9]+[a-zA-Z]?)/i)?.[1];
-  if (fromTitle) return fromTitle;
-  return "";
-}
-
-/** Extrai idPeca -> nº do lote de uma página de catálogo/listagem da casa. */
+/**
+ * Extrai idPeca -> nº do lote do HTML do catálogo da casa SEM depender da classe
+ * do container (que varia: destaques usam `.prod-box`, o catálogo completo usa
+ * outra estrutura). Casa por POSIÇÃO: cada card tem `peca.asp?ID=<idPeca>` seguido
+ * de um bloco `LoteProd ... Lote: <n>`. Para cada ocorrência de peca.asp, procuramos
+ * o "Lote:" no trecho até a PRÓXIMA peca.asp — que é o card daquele idPeca.
+ */
 function parseCatalogLotes(html: string): Map<string, string> {
-  const root = parse(html);
   const map = new Map<string, string>();
-  for (const box of root.querySelectorAll(".prod-box, .oc-item, .product")) {
-    const href =
-      box.querySelector('a[href*="peca.asp"]')?.getAttribute("href") ?? "";
-    const idPeca = href.match(/peca\.asp\?ID=\s*(\d+)/i)?.[1];
-    if (!idPeca || map.has(idPeca)) continue;
-    const lote = loteFromBox(box);
-    if (lote) map.set(idPeca, lote);
+  const matches = [...html.matchAll(/peca\.asp\?ID=\s*(\d+)/gi)];
+  for (let i = 0; i < matches.length; i++) {
+    const id = matches[i]![1]!;
+    if (map.has(id)) continue;
+    const start = (matches[i]!.index ?? 0) + matches[i]![0].length;
+    const end = i + 1 < matches.length ? (matches[i + 1]!.index ?? html.length) : html.length;
+    const seg = html.slice(start, end);
+    const lote =
+      seg.match(/LoteProd[\s\S]{0,250}?lote\s*:?\s*([0-9]+[a-zA-Z]?)/i)?.[1] ??
+      seg.match(/title="Lote-?\s*([0-9]+[a-zA-Z]?)"/i)?.[1];
+    if (lote) map.set(id, lote);
   }
   return map;
 }
