@@ -81,6 +81,17 @@ export function looksNonVinyl(title: string): boolean {
   return NON_VINYL_HINTS.some((hint) => t.includes(hint));
 }
 
+/**
+ * Converte um preço em texto BR ("R$ 1.234,56": ponto de milhar, vírgula decimal)
+ * para número. Retorna null quando não há valor numérico (ex.: "sem valor", "--").
+ */
+export function parsePrice(raw: string): number | null {
+  const cleaned = (raw ?? "").replace(/[^\d,]/g, "").replace(",", ".");
+  if (!cleaned) return null;
+  const value = Number(cleaned);
+  return Number.isFinite(value) ? value : null;
+}
+
 const UNCLASSIFIED_HINTS = [
   "novela",
   "trilha sonora",
