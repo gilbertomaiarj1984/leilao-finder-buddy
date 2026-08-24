@@ -42,7 +42,8 @@ export async function handleCron(request: Request, env?: unknown): Promise<Respo
 
     if (step === "enrich") {
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 6, 1), 20);
-      return json(await enrichMissingLotes(max));
+      const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
+      return json(await enrichMissingLotes(max, offset));
     }
 
     // Diagnóstico: sonda os catálogos das casas dos primeiros leilões sem nº de lote.

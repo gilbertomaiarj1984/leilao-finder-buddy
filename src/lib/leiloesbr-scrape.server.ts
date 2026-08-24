@@ -334,7 +334,8 @@ export async function listMissingAuctions(
 
 export async function enrichMissingLotes(
   maxAuctions = 6,
-): Promise<{ updated: number; remaining: number }> {
+  offset = 0,
+): Promise<{ updated: number; total: number; nextOffset: number | null; done: boolean }> {
   const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
@@ -343,33 +344,41 @@ export async function enrichMissingLotes(
   try {
     lots = await mergeSources(windowStart, windowEnd, []);
   } catch {
-    return { updated: 0, remaining: 0 };
+    return { updated: 0, total: 0, nextOffset: null, done: true };
   }
 
   const { parseAuctionRef, fetchLoteMap } = await import("./leiloesbr-catalog.server");
 
-  // Agrupa os lotes SEM número por leilão (domínio da casa + idLeilao).
-  const auctions = new Map<string, { domain: string; idLeilao: string; ids: Set<string> }>();
+  // Lista ESTÁVEL de TODOS os leilões da janela (ordenada), guardando quais idPecas
+  // ainda estão SEM número. A lista não encolhe entre chamadas, então o cursor
+  // `offset` avança de forma determinística por todos os leilões (não repete os 6
+  // primeiros). Leilões de casas fora da plataforma simplesmente não rendem número.
+  const auctions = new Map<string, { domain: string; idLeilao: string; missing: Set<string> }>();
   for (const lot of lots) {
-    if (lot.lote) continue;
     const ref = parseAuctionRef(lot.url);
     if (!ref) continue;
     const key = `${ref.domain}|${ref.idLeilao}`;
     const entry =
-      auctions.get(key) ?? { domain: ref.domain, idLeilao: ref.idLeilao, ids: new Set<string>() };
-    entry.ids.add(lot.idPeca);
+      auctions.get(key) ?? { domain: ref.domain, idLeilao: ref.idLeilao, missing: new Set<string>() };
+    if (!lot.lote) entry.missing.add(lot.idPeca);
     auctions.set(key, entry);
   }
-
-  const pending = [...auctions.values()];
-  const batch = pending.slice(0, maxAuctions);
-  const remaining = Math.max(pending.length - batch.length, 0);
+  const all = [...auctions.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([, v]) => v);
+  const total = all.length;
+  const start = Math.max(0, offset);
+  const batch = all.slice(start, start + maxAuctions);
+  const nextStart = start + maxAuctions;
+  const done = nextStart >= total;
+  const nextOffset = done ? null : nextStart;
 
   const loteByPeca = new Map<string, string>();
   for (const auction of batch) {
+    if (auction.missing.size === 0) continue; // leilão já completo — pula
     try {
       const map = await fetchLoteMap(auction.domain, auction.idLeilao);
-      for (const id of auction.ids) {
+      for (const id of auction.missing) {
         const lote = map.get(id);
         if (lote) loteByPeca.set(id, lote);
       }
@@ -377,7 +386,7 @@ export async function enrichMissingLotes(
       console.error("[leiloesbr] falha ao ler catálogo da casa", error);
     }
   }
-  if (!loteByPeca.size) return { updated: 0, remaining };
+  if (!loteByPeca.size) return { updated: 0, total, nextOffset, done };
 
   // Aplica no cache em memória e coleta os lotes alterados para persistir.
   if (memCache) {
@@ -400,7 +409,7 @@ export async function enrichMissingLotes(
     console.error("[leiloesbr] não foi possível persistir os nº de lote", error);
   }
 
-  return { updated: changed.length, remaining };
+  return { updated: changed.length, total, nextOffset, done };
 }
 
 /**
