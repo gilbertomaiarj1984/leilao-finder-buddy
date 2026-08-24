@@ -1,0 +1,49 @@
+name: Atualização periódica dos lotes
+
+# Roda 4x por dia (UTC 03/09/15/21 = BRT 00/06/12/18). Também pode ser disparado
+# manualmente na aba Actions ("Run workflow"). O "Atualizar tudo" no app continua
+# existindo para forçar na hora.
+on:
+  schedule:
+    - cron: "0 3,9,15,21 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: refresh-lotes
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Varrer em blocos + preencher nº de lote
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL:-}" ] || [ -z "${CRON_TOKEN:-}" ]; then
+            echo "Configure os secrets APP_URL e CRON_TOKEN no repositório."; exit 1
+          fi
+          base="${APP_URL%/}"
+          call() { curl -fsS --max-time 120 --retry 3 --retry-delay 5 -H "x-cron-token: $CRON_TOKEN" "$base$1"; }
+
+          echo "== Varredura em blocos =="
+          from="null"
+          for i in $(seq 1 80); do
+            res="$(call "/api/cron?step=chunk&fromPage=$from&size=15")"
+            echo "chunk $i: $res"
+            next="$(echo "$res" | jq -r '.nextPage')"
+            [ "$next" = "null" ] && break
+            from="$next"
+          done
+
+          echo "== Preenchimento de nº de lote (catálogos) =="
+          for i in $(seq 1 40); do
+            res="$(call "/api/cron?step=enrich&max=6")"
+            echo "enrich $i: $res"
+            rem="$(echo "$res" | jq -r '.remaining')"
+            [ "$rem" = "0" ] && break
+          done
+
+          echo "Concluído."
