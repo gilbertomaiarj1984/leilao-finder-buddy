@@ -10,7 +10,7 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  enrichLotes,
   getDashboardBaseline,
   getVinylLots,
   listMyBids,
@@ -102,6 +103,7 @@ function DashboardPage() {
   const fetchBids = useServerFn(listMyBids);
   const fetchBaseline = useServerFn(getDashboardBaseline);
   const runMarkSeen = useServerFn(markDashboardSeen);
+  const runEnrich = useServerFn(enrichLotes);
 
   // Casas expandem/retraem (chave `${dia}|${casa}`), iniciam fechadas — igual à listagem.
   const [openHouses, setOpenHouses] = useState<Set<string>>(new Set());
@@ -166,17 +168,62 @@ function DashboardPage() {
     bidsById.has(lot.idPeca) ? 0 : watchedIds.has(lot.idPeca) ? 1 : 2;
 
   const markSeen = useMutation({
-    mutationFn: async () => {
+    // `silent` semeia a base automática na 1ª visita sem toast; o botão usa false.
+    mutationFn: async ({ silent: _silent = false }: { silent?: boolean } = {}) => {
       const map: Record<string, string> = {};
       for (const lot of allLots) map[lot.id] = lot.price;
       return await runMarkSeen({ data: { prices: map } });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["dashboard-baseline"] });
-      toast.success("Marcado como visto — os valores atuais viram a nova base");
+      if (!variables?.silent)
+        toast.success("Marcado como visto — os valores atuais viram a nova base");
     },
-    onError: (e: Error) => toast.error(e.message || "Não foi possível marcar como visto"),
+    onError: (e: Error, variables) => {
+      if (!variables?.silent) toast.error(e.message || "Não foi possível marcar como visto");
+    },
   });
+
+  // Nº do lote NÃO vem na listagem geral. Assim como na tela de listagem, buscamos
+  // o número no catálogo das casas (enrich) e persistimos — aqui roda uma vez ao
+  // abrir o painel quando há lotes sem número, para os itens sem vigia/lance também
+  // exibirem o lote. Roda em segundo plano; ao terminar, recarrega os lotes.
+  const enrichRan = useRef(false);
+  const rawLots = lots.data?.lots;
+  useEffect(() => {
+    if (enrichRan.current) return;
+    if (!rawLots || rawLots.length === 0) return;
+    if (!rawLots.some((l) => !l.lote)) return; // todos já têm número
+    enrichRan.current = true;
+    void (async () => {
+      try {
+        let offset = 0;
+        for (let guard = 0; guard < 60; guard += 1) {
+          const res = await runEnrich({ data: { max: 6, offset } });
+          if (res.done || res.nextOffset == null) break;
+          offset = res.nextOffset;
+        }
+        const fresh = await fetchLots({ data: {} });
+        queryClient.setQueryData(["vinyl-lots"], fresh);
+      } catch (error) {
+        console.error("[dashboard] não foi possível preencher os nº de lote", error);
+      }
+    })();
+  }, [rawLots, runEnrich, fetchLots, queryClient]);
+
+  // Base de comparação automática na 1ª visita: sem baseline, tudo apareceria como
+  // "novo" e sem "último acesso". Ao carregar sem base, gravamos os valores atuais
+  // como referência (silencioso). Nas próximas visitas o painel mostra a variação.
+  const baselineSeeded = useRef(false);
+  useEffect(() => {
+    if (baselineSeeded.current) return;
+    if (!baseline.isSuccess) return;
+    if (baseline.data?.seenAt) return; // já existe base
+    if (allLots.length === 0) return;
+    if (markSeen.isPending) return;
+    baselineSeeded.current = true;
+    markSeen.mutate({ silent: true });
+  }, [baseline.isSuccess, baseline.data?.seenAt, allLots.length, markSeen]);
 
   const seenAt = baseline.data?.seenAt
     ? new Date(baseline.data.seenAt).toLocaleString("pt-BR")
@@ -206,7 +253,7 @@ function DashboardPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => markSeen.mutate()}
+            onClick={() => markSeen.mutate({ silent: false })}
             disabled={markSeen.isPending || !allLots.length}
             title="Marca os valores atuais como a nova base de comparação"
           >
