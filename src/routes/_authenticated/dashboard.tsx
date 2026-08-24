@@ -1,8 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Check, ExternalLink, Loader2, RefreshCw } from "lucide-react";
-import { useMemo } from "react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -36,19 +44,17 @@ function groupByHouse(lots: VinylLot[]): HouseGroup[] {
     group.lots.push(lot);
     byHouse.set(lot.house, group);
   }
-  const num = (v: string) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
-  };
-  for (const group of byHouse.values()) {
-    group.lots.sort(
-      (a, b) => num(a.lote) - num(b.lote) || a.lote.localeCompare(b.lote, "pt-BR"),
-    );
-  }
-  return [...byHouse.values()].sort(
-    (a, b) => b.lots.length - a.lots.length || a.house.localeCompare(b.house, "pt-BR"),
-  );
+  return [...byHouse.values()];
 }
+
+function houseAnchor(house: string, dayIndex: number): string {
+  return `casa-${dayIndex}-${house.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+}
+
+const loteNum = (v: string) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+};
 
 type Delta =
   | { kind: "novo" }
@@ -73,8 +79,8 @@ function brl(n: number): string {
 function DeltaCell({ delta }: { delta: Delta }) {
   if (delta.kind === "novo")
     return <Badge variant="secondary" className="font-normal">novo</Badge>;
-  if (delta.kind === "igual") return <span className="text-muted-foreground">—</span>;
-  if (delta.kind === "sem") return <span className="text-muted-foreground">—</span>;
+  if (delta.kind === "igual" || delta.kind === "sem")
+    return <span className="text-muted-foreground">—</span>;
   const up = delta.kind === "subiu";
   return (
     <span className={up ? "font-medium text-amber-600 dark:text-amber-400" : "font-medium text-emerald-600 dark:text-emerald-400"}>
@@ -90,6 +96,16 @@ function DashboardPage() {
   const fetchBids = useServerFn(listMyBids);
   const fetchBaseline = useServerFn(getDashboardBaseline);
   const runMarkSeen = useServerFn(markDashboardSeen);
+
+  // Casas expandem/retraem (chave `${dia}|${casa}`), iniciam fechadas — igual à listagem.
+  const [openHouses, setOpenHouses] = useState<Set<string>>(new Set());
+  const toggleHouse = (key: string) =>
+    setOpenHouses((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   const lots = useQuery({
     queryKey: ["vinyl-lots"] as const,
@@ -129,6 +145,10 @@ function DashboardPage() {
   const prices = baseline.data?.prices ?? {};
   const days = lots.data?.days ?? [];
   const allLots = lots.data?.lots ?? [];
+
+  // Prioridade: lote com lance (vermelho) primeiro, depois vigiado (amarelo), depois o resto.
+  const rank = (lot: VinylLot) =>
+    bidsById.has(lot.idPeca) ? 0 : watchedIds.has(lot.idPeca) ? 1 : 2;
 
   const markSeen = useMutation({
     mutationFn: async () => {
@@ -211,97 +231,209 @@ function DashboardPage() {
             {days.map((day, index) => {
               const dayLots = allLots.filter((l) => l.dayKey === day);
               const groups = groupByHouse(dayLots);
+              // Ordena os lotes de cada casa por prioridade (vermelho, amarelo, resto) e nº do lote.
+              for (const g of groups) {
+                g.lots.sort(
+                  (a, b) =>
+                    rank(a) - rank(b) ||
+                    loteNum(a.lote) - loteNum(b.lote) ||
+                    a.lote.localeCompare(b.lote, "pt-BR"),
+                );
+              }
+              // Ordena as casas: as que têm lance/vigia primeiro, depois por quantidade.
+              const counts = (g: HouseGroup) => {
+                let red = 0;
+                let yellow = 0;
+                for (const l of g.lots) {
+                  if (bidsById.has(l.idPeca)) red++;
+                  else if (watchedIds.has(l.idPeca)) yellow++;
+                }
+                return { red, yellow };
+              };
+              const ordered = [...groups].sort((a, b) => {
+                const ca = counts(a);
+                const cb = counts(b);
+                return (
+                  (cb.red > 0 ? 1 : 0) - (ca.red > 0 ? 1 : 0) ||
+                  cb.red - ca.red ||
+                  (cb.yellow > 0 ? 1 : 0) - (ca.yellow > 0 ? 1 : 0) ||
+                  cb.yellow - ca.yellow ||
+                  b.lots.length - a.lots.length ||
+                  a.house.localeCompare(b.house, "pt-BR")
+                );
+              });
+
               return (
-                <TabsContent key={day} value={`day-${index}`} className="space-y-8">
-                  {groups.length === 0 ? (
+                <TabsContent key={day} value={`day-${index}`} className="space-y-6">
+                  {ordered.length === 0 ? (
                     <p className="text-sm text-muted-foreground">Nenhum lote neste dia.</p>
                   ) : (
-                    groups.map((group) => (
-                      <section key={group.house} className="space-y-3">
-                        <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
-                          <h2 className="text-lg font-semibold tracking-tight text-foreground">
-                            {group.house}
-                          </h2>
-                          <Badge variant="secondary">{group.lots.length} lote(s)</Badge>
-                          {group.houseUrl && group.houseUrl !== "#" ? (
-                            <a
-                              className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                              href={group.houseUrl}
-                              target="_blank"
-                              rel="noreferrer"
+                    <>
+                      {/* Botões das casas no topo — clicar expande/retrai (e rola até a casa). */}
+                      <nav className="sticky top-0 z-10 -mx-4 flex flex-nowrap gap-2 overflow-x-auto border-b border-border bg-background/95 px-4 py-2 backdrop-blur">
+                        {ordered.map((group) => {
+                          const key = `${day}|${group.house}`;
+                          const isOpen = openHouses.has(key);
+                          const c = counts(group);
+                          return (
+                            <button
+                              key={group.house}
+                              type="button"
+                              aria-expanded={isOpen}
+                              onClick={() => {
+                                const willOpen = !openHouses.has(key);
+                                toggleHouse(key);
+                                if (willOpen) {
+                                  requestAnimationFrame(() =>
+                                    document
+                                      .getElementById(houseAnchor(group.house, index))
+                                      ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                                  );
+                                }
+                              }}
+                              className={
+                                isOpen
+                                  ? "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
+                                  : "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
+                              }
                             >
-                              site da casa <ExternalLink className="h-3 w-3" />
-                            </a>
-                          ) : null}
-                        </div>
+                              {isOpen ? (
+                                <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                              ) : (
+                                <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                              )}
+                              {c.red > 0 ? (
+                                <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
+                              ) : c.yellow > 0 ? (
+                                <span className="h-2 w-2 shrink-0 rounded-full bg-yellow-500" />
+                              ) : null}
+                              {group.house}
+                              <span className="text-muted-foreground">{group.lots.length}</span>
+                            </button>
+                          );
+                        })}
+                      </nav>
 
-                        <div className="overflow-x-auto">
-                          <table className="w-full min-w-[640px] border-collapse text-sm">
-                            <thead>
-                              <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-                                <th className="px-2 py-2 font-medium">Lote</th>
-                                <th className="px-2 py-2 font-medium">Título</th>
-                                <th className="px-2 py-2 text-right font-medium">Últ. acesso</th>
-                                <th className="px-2 py-2 text-right font-medium">Atual</th>
-                                <th className="px-2 py-2 text-right font-medium">Variação</th>
-                                <th className="px-2 py-2 text-right font-medium">Meu lance</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {group.lots.map((lot) => {
-                                const bid = bidsById.get(lot.idPeca);
-                                const isWatched = watchedIds.has(lot.idPeca);
-                                const delta = computeDelta(lot.price, prices[lot.id]);
-                                const finished = auctionFinished(lot.dayKey, lot.time);
-                                const rowClass = bid
-                                  ? "border-l-4 border-red-500 bg-red-500/10"
-                                  : isWatched
-                                    ? "border-l-4 border-yellow-500 bg-yellow-400/10"
-                                    : "border-l-4 border-transparent";
-                                return (
-                                  <tr
-                                    key={lot.id}
-                                    className={`border-b border-border/60 align-top ${rowClass} ${finished ? "opacity-60" : ""}`}
-                                  >
-                                    <td className="px-2 py-2 font-medium text-foreground">
-                                      {lot.lote || "—"}
-                                    </td>
-                                    <td className="px-2 py-2">
-                                      <a
-                                        href={lot.url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="line-clamp-2 text-foreground hover:text-primary hover:underline"
-                                        title={lot.title}
-                                      >
-                                        {lot.title}
-                                      </a>
-                                      {bid?.status ? (
-                                        <span className="mt-0.5 block text-xs text-red-600 dark:text-red-400">
-                                          {bid.status}
-                                        </span>
-                                      ) : null}
-                                    </td>
-                                    <td className="whitespace-nowrap px-2 py-2 text-right text-muted-foreground">
-                                      {prices[lot.id] ?? "—"}
-                                    </td>
-                                    <td className="whitespace-nowrap px-2 py-2 text-right font-semibold text-primary">
-                                      {lot.price || "sem valor"}
-                                    </td>
-                                    <td className="whitespace-nowrap px-2 py-2 text-right">
-                                      <DeltaCell delta={delta} />
-                                    </td>
-                                    <td className="whitespace-nowrap px-2 py-2 text-right font-medium text-red-600 dark:text-red-400">
-                                      {bid?.myBid ?? "—"}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </section>
-                    ))
+                      {ordered.map((group) => {
+                        const key = `${day}|${group.house}`;
+                        const isOpen = openHouses.has(key);
+                        const c = counts(group);
+                        return (
+                          <section
+                            key={group.house}
+                            id={houseAnchor(group.house, index)}
+                            className="scroll-mt-24 space-y-3"
+                          >
+                            <div className="flex flex-wrap items-center gap-3 border-b border-border pb-2">
+                              <button
+                                type="button"
+                                onClick={() => toggleHouse(key)}
+                                aria-expanded={isOpen}
+                                className="flex items-center gap-2 text-left"
+                              >
+                                {isOpen ? (
+                                  <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
+                                ) : (
+                                  <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+                                )}
+                                <span className="text-lg font-semibold tracking-tight text-foreground">
+                                  {group.house}
+                                </span>
+                              </button>
+                              <Badge variant="secondary">{group.lots.length} lote(s)</Badge>
+                              {c.red > 0 ? (
+                                <Badge className="bg-red-500/15 text-red-600 dark:text-red-400" variant="secondary">
+                                  {c.red} com lance
+                                </Badge>
+                              ) : null}
+                              {c.yellow > 0 ? (
+                                <Badge className="bg-yellow-400/20 text-yellow-700 dark:text-yellow-300" variant="secondary">
+                                  {c.yellow} vigiado(s)
+                                </Badge>
+                              ) : null}
+                              {group.houseUrl && group.houseUrl !== "#" ? (
+                                <a
+                                  className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                  href={group.houseUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  site da casa <ExternalLink className="h-3 w-3" />
+                                </a>
+                              ) : null}
+                            </div>
+
+                            {isOpen ? (
+                              <div className="overflow-x-auto">
+                                <table className="w-full min-w-[640px] border-collapse text-sm">
+                                  <thead>
+                                    <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+                                      <th className="px-2 py-2 font-medium">Lote</th>
+                                      <th className="px-2 py-2 font-medium">Título</th>
+                                      <th className="px-2 py-2 text-right font-medium">Últ. acesso</th>
+                                      <th className="px-2 py-2 text-right font-medium">Atual</th>
+                                      <th className="px-2 py-2 text-right font-medium">Variação</th>
+                                      <th className="px-2 py-2 text-right font-medium">Meu lance</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {group.lots.map((lot) => {
+                                      const bid = bidsById.get(lot.idPeca);
+                                      const isWatched = watchedIds.has(lot.idPeca);
+                                      const delta = computeDelta(lot.price, prices[lot.id]);
+                                      const finished = auctionFinished(lot.dayKey, lot.time);
+                                      const rowClass = bid
+                                        ? "border-l-4 border-red-500 bg-red-500/10"
+                                        : isWatched
+                                          ? "border-l-4 border-yellow-500 bg-yellow-400/10"
+                                          : "border-l-4 border-transparent";
+                                      return (
+                                        <tr
+                                          key={lot.id}
+                                          className={`border-b border-border/60 align-top ${rowClass} ${finished ? "opacity-60" : ""}`}
+                                        >
+                                          <td className="px-2 py-2 font-medium text-foreground">
+                                            {lot.lote || "—"}
+                                          </td>
+                                          <td className="px-2 py-2">
+                                            <a
+                                              href={lot.url}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="line-clamp-2 text-foreground hover:text-primary hover:underline"
+                                              title={lot.title}
+                                            >
+                                              {lot.title}
+                                            </a>
+                                            {bid?.status ? (
+                                              <span className="mt-0.5 block text-xs text-red-600 dark:text-red-400">
+                                                {bid.status}
+                                              </span>
+                                            ) : null}
+                                          </td>
+                                          <td className="whitespace-nowrap px-2 py-2 text-right text-muted-foreground">
+                                            {prices[lot.id] ?? "—"}
+                                          </td>
+                                          <td className="whitespace-nowrap px-2 py-2 text-right font-semibold text-primary">
+                                            {lot.price || "sem valor"}
+                                          </td>
+                                          <td className="whitespace-nowrap px-2 py-2 text-right">
+                                            <DeltaCell delta={delta} />
+                                          </td>
+                                          <td className="whitespace-nowrap px-2 py-2 text-right font-medium text-red-600 dark:text-red-400">
+                                            {bid?.myBid ?? "—"}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ) : null}
+                          </section>
+                        );
+                      })}
+                    </>
                   )}
                 </TabsContent>
               );
