@@ -82,6 +82,14 @@ export function looksNonVinyl(title: string): boolean {
 }
 
 /**
+ * true quando o status do meu lance indica que estou ganhando ("Vencendo"/"Vencedor").
+ * "Coberto"/"Coberto e Vendido"/"Não vendido" retornam false.
+ */
+export function bidIsWinning(status: string): boolean {
+  return /venc/i.test(status ?? "");
+}
+
+/**
  * Converte um preço em texto BR ("R$ 1.234,56": ponto de milhar, vírgula decimal)
  * para número. Retorna null quando não há valor numérico (ex.: "sem valor", "--").
  */

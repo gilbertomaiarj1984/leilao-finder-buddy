@@ -43,11 +43,13 @@ import {
   getAccessStatus,
   getLiveAuctions,
   getVinylLots,
+  listMyBids,
   scrapeVinylChunk,
 } from "@/lib/leiloesbr.functions";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import {
   auctionFinished,
+  bidIsWinning,
   normalizeForMatch,
   parsePrice,
   UNCLASSIFIED_LABEL,
@@ -466,6 +468,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const queryClient = useQueryClient();
   const fetchLots = useServerFn(getVinylLots);
   const fetchWatched = useServerFn(listWatched);
+  const fetchBids = useServerFn(listMyBids);
   const runToggle = useServerFn(toggleWatch);
   const runChunk = useServerFn(scrapeVinylChunk);
 
@@ -481,6 +484,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const watched = useQuery({
     ...watchedQuery,
     queryFn: () => fetchWatched(),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const bids = useQuery({
+    queryKey: ["vinyl-my-bids"] as const,
+    queryFn: () => fetchBids(),
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -571,6 +580,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     () => new Set((watched.data ?? []).map((item) => item.idPeca)),
     [watched.data],
   );
+  // Status do meu lance por peça (para colorir: verde = ganhando, vermelho = coberto).
+  const bidStatusById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const b of bids.data ?? []) map.set(b.idPeca, b.status);
+    return map;
+  }, [bids.data]);
 
   return (
     <main className="min-h-screen bg-background">
@@ -868,6 +883,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   key={lot.id}
                                   lot={{ ...lot, dayKey: lot.date, watched: true }}
                                   busy={pending === lot.idPeca}
+                                  bidStatus={bidStatusById.get(lot.idPeca)}
                                   onToggle={() =>
                                     toggle.mutate({
                                       idPeca: lot.idPeca,
@@ -1022,6 +1038,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                         key={lot.id}
                                         lot={lot}
                                         busy={pending === lot.idPeca}
+                                        bidStatus={bidStatusById.get(lot.idPeca)}
                                         onToggle={() =>
                                           toggle.mutate({
                                             idPeca: lot.idPeca,
@@ -1091,6 +1108,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                         watched: true,
                       }}
                       busy={pending === lot.idPeca}
+                      bidStatus={bidStatusById.get(lot.idPeca)}
                       onToggle={() =>
                         toggle.mutate({
                           idPeca: lot.idPeca,
@@ -1130,14 +1148,27 @@ function LotCard({
   busy,
   onToggle,
   showDate = false,
+  bidStatus,
 }: {
   lot: CardLot;
   busy: boolean;
   onToggle: () => void;
   showDate?: boolean;
+  bidStatus?: string | null;
 }) {
+  // Cores (mesma regra do painel): meu lance ganhando = verde; meu lance coberto = vermelho;
+  // apenas vigiado = amarelo; caso contrário, borda neutra.
+  const hasBid = bidStatus !== undefined && bidStatus !== null && bidStatus !== "";
+  const winning = hasBid && bidIsWinning(bidStatus as string);
+  const cardClass = hasBid
+    ? winning
+      ? "border-green-500 ring-1 ring-green-500/40"
+      : "border-red-500 ring-1 ring-red-500/40"
+    : lot.watched
+      ? "border-yellow-500 ring-1 ring-yellow-500/40"
+      : "border-border";
   return (
-    <article className="flex flex-col overflow-hidden rounded-md border border-border bg-card">
+    <article className={`flex flex-col overflow-hidden rounded-md border bg-card ${cardClass}`}>
       <a href={lot.url} target="_blank" rel="noreferrer" className="block bg-secondary">
         {lot.image ? (
           <img
@@ -1161,6 +1192,17 @@ function LotCard({
             </span>
           ) : null}
           <span className="font-semibold text-primary">{lot.price || "sem valor"}</span>
+          {hasBid ? (
+            <span
+              className={
+                winning
+                  ? "rounded bg-green-500/15 px-1.5 py-0.5 font-medium text-green-600 dark:text-green-400"
+                  : "rounded bg-red-500/15 px-1.5 py-0.5 font-medium text-red-600 dark:text-red-400"
+              }
+            >
+              {bidStatus}
+            </span>
+          ) : null}
           {showDate && lot.dayKey ? <span>{lot.dayKey}</span> : null}
           {lot.time ? <span>{lot.time}</span> : null}
           {lot.uf ? <span>{lot.uf}</span> : null}
