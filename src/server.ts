@@ -47,6 +47,12 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      // Endpoint de atualização periódica (agendador externo, token-gated), fora
+      // do fluxo de server functions. Retorna cedo quando o caminho for /api/cron.
+      const { handleCron } = await import("./lib/cron.server");
+      const cronResponse = await handleCron(request);
+      if (cronResponse) return cronResponse;
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);
