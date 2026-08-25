@@ -42,6 +42,24 @@ construído no **Lovable**, deploy alvo **Cloudflare** (via nitro).
   (baseline do painel “desde o último acesso”, chave `dashboard_baseline`).
 - `id` do lote = `"${idLeilao}-${idPeca}"`. Janela = **5 dias** (`WINDOW_DAYS`).
 
+## Painel de mudanças (`dashboard.tsx`) — mecânica do baseline
+- **Baseline = snapshot global** de `{lotId: price}` em `app_state` (chave única
+  `dashboard_baseline`, um registro para o app todo). `getBaseline`/`markSeen` usam o
+  **service role** (`supabaseAdmin`, ignora RLS). A coluna “Últ. acesso” mostra o preço
+  do snapshot; “Variação” = `computeDelta(atual, baseline[lot.id])` → `novo` quando a
+  chave **não existe** no baseline.
+- **Semente automática na 1ª visita** (`baselineSeeded` ref + `markSeen({silent:true})`):
+  sem isso o baseline nasce vazio e **tudo aparece como “novo” e sem “último acesso”**.
+  Na visita em que semeia, os itens ainda saem como “novo” e só depois viram “—”; a
+  variação real aparece **a partir da visita seguinte**. O botão “Marcar como visto”
+  (`silent:false`) reancora o baseline quando o usuário quiser.
+- **Enrich no painel** (`enrichRan` ref): igual à listagem, ao abrir roda o laço
+  `enrichLotes({max,offset})` **uma vez** quando há lote sem `lote`, em segundo plano,
+  e ao terminar faz `setQueryData(["vinyl-lots"], fresh)`. Sem isso, só lotes com
+  vigia/lance (overlay `loteById`) mostravam número — os demais ficavam “—”.
+- `markSeen` (server, `app-state.server.ts`) **propaga** erro de gravação (antes engolia
+  e retornava “sucesso”, mascarando baseline que nunca persistia).
+
 ## Como o LeilõesBR funciona (scraping)
 - **Varredura geral é PÚBLICA** (sem login) via `publicFetch` — evita o 500 que o site
   dá em sessão logada sob carga. Categoria fixada por `tp=|446973636F2064652076696E696C|`
@@ -119,6 +137,12 @@ construído no **Lovable**, deploy alvo **Cloudflare** (via nitro).
   é reagir mais rápido que humanos no último instante.
 
 ## Feito recentemente
+- **Painel: baseline + nº de lote na 1ª visita** — ✅ concluído (PR #30). Corrigiu os
+  três sintomas relatados: (a) nº do lote sumido para lotes **sem vigia/lance** →
+  enrich passa a rodar também no painel; (b) “último acesso” vazio e (c) variação
+  sempre “novo” → **semente automática** do baseline quando ainda não existe; e o
+  `markSeen` deixou de mascarar erro de gravação. Detalhe na seção **Painel de
+  mudanças**. (Merge trouxe também refino de `loteNum`/ordenação de lote vazio ao fim.)
 - **Badges por casa (UI)** — ✅ concluído (PR #29). Ao lado do nome da casa, além do
   nº de lotes, mostra **nº de vigia (amarelo)**, **nº com lance coberto (vermelho)** e
   **nº ganhando (verde)**, padronizado em todos os pontos onde o nome da casa aparece.
@@ -136,6 +160,12 @@ construído no **Lovable**, deploy alvo **Cloudflare** (via nitro).
    do usuário.
 2. **Confirmar em produção** que o `enrich` por cursor passou a preencher os números
    (casas da plataforma, ex.: bruce) após o deploy — rodar o workflow e ver `updated>0`.
+   Confirmar também no **painel** (que agora dispara enrich ao abrir) que os lotes sem
+   vigia/lance passam a mostrar número.
+3. **Validar o baseline do painel em produção** (PR #30): 1ª visita deve semear (todos
+   “novo” só nessa visita) e a **2ª visita** já mostrar variação/“último acesso”. Se
+   persistir tudo “novo”, o `markSeen` agora **lança** o erro real (toast) — investigar a
+   gravação em `app_state` (era mascarada antes).
 
 ## Convenções de trabalho
 - Branch de trabalho recriada de `origin/main` a cada tarefa (a `main` avança sozinha).
