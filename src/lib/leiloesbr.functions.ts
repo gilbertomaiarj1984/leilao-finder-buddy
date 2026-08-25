@@ -6,7 +6,9 @@ export const getAccessStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { configuredEmail } = await import("./access.server");
-    const email = String(context.claims?.["email"] ?? "").trim().toLowerCase();
+    const email = String(context.claims?.["email"] ?? "")
+      .trim()
+      .toLowerCase();
     const allowed = configuredEmail();
     return {
       email,
@@ -102,5 +104,3 @@ export const markDashboardSeen = createServerFn({ method: "POST" })
     const { markSeen } = await import("./app-state.server");
     return await markSeen(data.prices);
   });
-
-

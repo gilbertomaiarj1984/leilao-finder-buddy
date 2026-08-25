@@ -7,7 +7,8 @@ let cookieHeader: string | null = null;
 let loginPromise: Promise<string> | null = null;
 
 function collectCookies(response: Response): string {
-  const raw = (response.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.() ?? [];
+  const raw =
+    (response.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.() ?? [];
   const single = response.headers.get("set-cookie");
   const all = raw.length ? raw : single ? [single] : [];
   const jar = new Map<string, string>();
@@ -29,7 +30,9 @@ async function performLogin(): Promise<string> {
   const email = process.env["LEILOESBR_EMAIL"];
   const password = process.env["LEILOESBR_SENHA"];
   if (!email || !password) {
-    throw new Error("Credenciais do LeilõesBR não configuradas (LEILOESBR_EMAIL / LEILOESBR_SENHA).");
+    throw new Error(
+      "Credenciais do LeilõesBR não configuradas (LEILOESBR_EMAIL / LEILOESBR_SENHA).",
+    );
   }
 
   const body = new URLSearchParams({
@@ -158,7 +161,6 @@ export async function authFetch(
   }
   return html;
 }
-
 
 export function loginEmail(): string {
   const email = process.env["LEILOESBR_EMAIL"];

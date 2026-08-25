@@ -44,12 +44,10 @@ function parseBidChunk(chunk: string): MyBid | null {
     flat.match(/data-fav="([^"]+)"/)?.[1] ??
     ""
   ).split(",");
-  const idPeca =
-    data[0]?.trim() || flat.match(/peca\.asp\?ID=(\d+)/)?.[1] || "";
+  const idPeca = data[0]?.trim() || flat.match(/peca\.asp\?ID=(\d+)/)?.[1] || "";
   if (!idPeca) return null;
 
-  const idLeilao =
-    data[2]?.trim() || flat.match(/leilao\.asp\?Num=(\d+)/)?.[1] || "";
+  const idLeilao = data[2]?.trim() || flat.match(/leilao\.asp\?Num=(\d+)/)?.[1] || "";
   const dateMatch = flat.match(/(\d{2}\/\d{2}\/\d{4})/);
 
   return {
