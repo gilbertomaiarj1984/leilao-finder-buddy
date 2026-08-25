@@ -10,11 +10,13 @@ import {
   Eye,
   EyeOff,
   ExternalLink,
+  Gavel,
   LayoutDashboard,
   Loader2,
   LogOut,
   Radio,
   RefreshCw,
+  Trophy,
 } from "lucide-react";
 import { Component, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -264,6 +266,75 @@ function HouseStatBadges({ stats }: { stats: HouseStats }) {
   );
 }
 
+/**
+ * Classifica o status de um lance dado na conta (conta_site.asp?l=4):
+ * - "winning": vencendo agora (ganhando)
+ * - "won": vencedor / arrematado — o leilão já passou e você levou
+ * - "covered": coberto — alguém cobriu o seu lance
+ * - "lost": não vendido / demais casos
+ */
+type BidState = "winning" | "won" | "covered" | "lost";
+
+function classifyBid(status: string): BidState {
+  const s = (status ?? "").toLowerCase();
+  if (/arremat|vencedor|arrebat/.test(s)) return "won";
+  if (/venc/.test(s)) return "winning";
+  if (/cobert/.test(s)) return "covered";
+  return "lost";
+}
+
+type BidStats = { winning: number; won: number; covered: number; lost: number };
+
+function computeBidStats(bids: { status: string }[]): BidStats {
+  const stats: BidStats = { winning: 0, won: 0, covered: 0, lost: 0 };
+  for (const bid of bids) stats[classifyBid(bid.status)] += 1;
+  return stats;
+}
+
+/** Contadores de lances ao lado do nome da casa: vencendo, vencedor, coberto e perdido. */
+function BidStatBadges({ stats }: { stats: BidStats }) {
+  return (
+    <>
+      {stats.winning > 0 ? (
+        <span
+          title="Lances vencendo (ganhando agora)"
+          className="inline-flex items-center gap-1 rounded bg-green-500/15 px-1.5 py-0.5 text-xs font-medium text-green-700 dark:text-green-400"
+        >
+          <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden />
+          {stats.winning}
+        </span>
+      ) : null}
+      {stats.won > 0 ? (
+        <span
+          title="Lances vencedores (leilão já encerrado)"
+          className="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400"
+        >
+          <Trophy className="h-3 w-3" />
+          {stats.won}
+        </span>
+      ) : null}
+      {stats.covered > 0 ? (
+        <span
+          title="Lances cobertos (alguém cobriu o seu lance)"
+          className="inline-flex items-center gap-1 rounded bg-red-500/15 px-1.5 py-0.5 text-xs font-medium text-red-700 dark:text-red-400"
+        >
+          <span className="h-2 w-2 rounded-full bg-red-500" aria-hidden />
+          {stats.covered}
+        </span>
+      ) : null}
+      {stats.lost > 0 ? (
+        <span
+          title="Lances não vendidos / encerrados sem arremate"
+          className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground"
+        >
+          <span className="h-2 w-2 rounded-full bg-muted-foreground/60" aria-hidden />
+          {stats.lost}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 // Faixas de valor por casa. Preço vem como "R$ 1.234,56" (BR): ponto de milhar,
 // vírgula decimal. Lotes sem valor numérico entram na faixa "Menor de 50".
 const PRICE_OPTIONS = [
@@ -490,6 +561,17 @@ function watchedMatchesSearch(
   );
 }
 
+/** A busca dos lances casa por título, casa, nº do lote e status do lance. */
+function bidMatchesSearch(
+  bid: { title: string; house: string; lote: string; status: string },
+  searchNorm: string,
+): boolean {
+  return (
+    !searchNorm ||
+    normalizeForMatch(`${bid.title} ${bid.house} ${bid.lote} ${bid.status}`).includes(searchNorm)
+  );
+}
+
 /** Agrupa vigiados por casa de leilão e ordena os lotes pelo nº do lote. */
 function groupWatchedByHouse<T extends { house: string; houseUrl: string; lote: string }>(
   lots: T[],
@@ -520,6 +602,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const [artistFilter, setArtistFilter] = useState<string>("");
   const [search, setSearch] = useState<string>("");
   const [watchedViewDay, setWatchedViewDay] = useState<string | null>(null);
+  const [bidsViewDay, setBidsViewDay] = useState<string | null>(null);
   const [showFinishedDays, setShowFinishedDays] = useState<Set<string>>(new Set());
   const toggleShowFinished = (day: string) =>
     setShowFinishedDays((prev) => {
@@ -703,6 +786,21 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     for (const b of bids.data ?? []) if (b.lote) map.set(b.idPeca, b.lote);
     return map;
   }, [watched.data, bids.data]);
+  // A URL do site da casa não vem na página de lances — casamos pelo nome da casa
+  // com o que já lemos da varredura geral e dos vigiados.
+  const houseUrlByName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const lot of lots.data?.lots ?? [])
+      if (lot.house && lot.houseUrl) map.set(lot.house, lot.houseUrl);
+    for (const w of watched.data ?? [])
+      if (w.house && w.houseUrl && !map.has(w.house)) map.set(w.house, w.houseUrl);
+    return map;
+  }, [lots.data, watched.data]);
+  // Lances com a URL da casa preenchida, prontos para o agrupamento por casa.
+  const bidsWithHouseUrl = useMemo(
+    () => (bids.data ?? []).map((b) => ({ ...b, houseUrl: houseUrlByName.get(b.house) ?? "#" })),
+    [bids.data, houseUrlByName],
+  );
 
   return (
     <main className="min-h-screen bg-background">
@@ -806,6 +904,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                   }
                 </span>
               </TabsTrigger>
+              <TabsTrigger value="bids">
+                Lances
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {(bids.data ?? []).filter((bid) => bidMatchesSearch(bid, searchNorm)).length}
+                </span>
+              </TabsTrigger>
             </TabsList>
 
             {days.map((day, index) => {
@@ -838,6 +942,13 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               );
               // Vigiados do dia agrupados por casa e ordenados por nº do lote.
               const watchedByHouse = groupWatchedByHouse(watchedForDay);
+              const isBidsView = bidsViewDay === day;
+              // Lances do dia: a busca principal também filtra aqui.
+              const bidsForDay = bidsWithHouseUrl.filter(
+                (bid) => watchedDateToKey(bid.date) === day && bidMatchesSearch(bid, searchNorm),
+              );
+              // Lances do dia agrupados por casa e ordenados por nº do lote.
+              const bidsByHouse = groupWatchedByHouse(bidsForDay);
 
               return (
                 <TabsContent key={day} value={`day-${index}`} className="space-y-6">
@@ -862,7 +973,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                       </button>
                       <button
                         type="button"
-                        onClick={() => setWatchedViewDay((cur) => (cur === day ? null : day))}
+                        onClick={() => {
+                          setBidsViewDay(null);
+                          setWatchedViewDay((cur) => (cur === day ? null : day));
+                        }}
                         title="Ver vigiados deste dia"
                         aria-label={`Ver vigiados de ${dayLabel(day, index)}`}
                         aria-pressed={isWatchedView}
@@ -880,7 +994,28 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                           </span>
                         ) : null}
                       </button>
-                      {!isWatchedView ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWatchedViewDay(null);
+                          setBidsViewDay((cur) => (cur === day ? null : day));
+                        }}
+                        title="Ver lances deste dia"
+                        aria-label={`Ver lances de ${dayLabel(day, index)}`}
+                        aria-pressed={isBidsView}
+                        className={
+                          isBidsView
+                            ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
+                            : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
+                        }
+                      >
+                        <Gavel className="h-3.5 w-3.5" />
+                        Lances do dia
+                        {bidsForDay.length ? (
+                          <span className="ml-0.5 text-muted-foreground">{bidsForDay.length}</span>
+                        ) : null}
+                      </button>
+                      {!isWatchedView && !isBidsView ? (
                         <>
                           <ArtistFilter
                             artists={artists}
@@ -907,13 +1042,18 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                             </Button>
                           ) : null}
                         </>
-                      ) : (
+                      ) : isWatchedView ? (
                         <span className="text-xs text-muted-foreground">
                           {watchedForDay.length} lote(s) vigiado(s) neste dia
                         </span>
+                      ) : (
+                        <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          {bidsForDay.length} lance(s) neste dia
+                          <BidStatBadges stats={computeBidStats(bidsForDay)} />
+                        </span>
                       )}
                     </div>
-                    {!isWatchedView && groups.length > 0 ? (
+                    {!isWatchedView && !isBidsView && groups.length > 0 ? (
                       <nav className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
                         {groups.map((group) => {
                           const houseKey = `${day}|${group.house}`;
@@ -1003,6 +1143,19 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                           </section>
                         ))}
                       </div>
+                    )
+                  ) : isBidsView ? (
+                    bids.isLoading ? (
+                      <Skeleton className="h-40 w-full" />
+                    ) : bidsForDay.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Nenhum lance neste dia.</p>
+                    ) : (
+                      <BidHouseSections
+                        houses={bidsByHouse}
+                        pending={pending}
+                        loteById={loteById}
+                        onToggle={(bid) => toggle.mutate(bid)}
+                      />
                     )
                   ) : groups.length === 0 ? (
                     <div className="space-y-3">
@@ -1322,6 +1475,76 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 })()
               )}
             </TabsContent>
+
+            <TabsContent value="bids" className="space-y-4">
+              {bids.isLoading ? (
+                <Skeleton className="h-40 w-full" />
+              ) : bids.isError ? (
+                <p className="text-sm text-destructive">
+                  Não foi possível ler os lances: {(bids.error as Error).message}
+                </p>
+              ) : (bids.data ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Você ainda não deu lance em nenhum lote.
+                </p>
+              ) : (
+                (() => {
+                  // A busca principal filtra os lances; o resultado é apresentado
+                  // separado por dia e casa de leilão, igual às abas de dia e vigiados.
+                  const filtered = bidsWithHouseUrl.filter((bid) =>
+                    bidMatchesSearch(bid, searchNorm),
+                  );
+                  if (filtered.length === 0) {
+                    return (
+                      <p className="text-sm text-muted-foreground">
+                        Nenhum lance corresponde à busca.
+                      </p>
+                    );
+                  }
+                  const byDay = new Map<string, BidCard[]>();
+                  for (const bid of filtered) {
+                    const key = watchedDateToKey(bid.date) || bid.date || "";
+                    const list = byDay.get(key) ?? [];
+                    list.push(bid);
+                    byDay.set(key, list);
+                  }
+                  // Dias sem data ("") vão para o fim; os demais em ordem crescente.
+                  const dayKeys = [...byDay.keys()].sort((a, b) => {
+                    if (!a) return 1;
+                    if (!b) return -1;
+                    return a.localeCompare(b);
+                  });
+
+                  return (
+                    <div className="space-y-10">
+                      {dayKeys.map((dayKey) => {
+                        const dayBids = byDay.get(dayKey) ?? [];
+                        const idx = days.indexOf(dayKey);
+                        const label = dayKey ? dayLabel(dayKey, idx >= 0 ? idx : 99) : "Sem data";
+                        const houses = groupWatchedByHouse(dayBids);
+                        return (
+                          <section key={dayKey || "sem-data"} className="space-y-6">
+                            <div className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
+                              <span className="text-sm font-semibold text-foreground">{label}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {dayBids.length} lance(s) em {houses.length} casa(s)
+                              </span>
+                              <BidStatBadges stats={computeBidStats(dayBids)} />
+                            </div>
+                            <BidHouseSections
+                              houses={houses}
+                              pending={pending}
+                              loteById={loteById}
+                              onToggle={(bid) => toggle.mutate(bid)}
+                            />
+                          </section>
+                        );
+                      })}
+                    </div>
+                  );
+                })()
+              )}
+            </TabsContent>
           </Tabs>
         )}
       </div>
@@ -1340,6 +1563,7 @@ type CardLot = {
   dayKey: string;
   watched: boolean;
   lote?: string;
+  myBid?: string;
 };
 
 function LotCard({
@@ -1390,7 +1614,14 @@ function LotCard({
               Lote {lot.lote}
             </span>
           ) : null}
-          <span className="font-semibold text-primary">{lot.price || "sem valor"}</span>
+          {lot.myBid ? (
+            <span className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground">
+              Meu lance {lot.myBid}
+            </span>
+          ) : null}
+          {lot.price || !lot.myBid ? (
+            <span className="font-semibold text-primary">{lot.price || "sem valor"}</span>
+          ) : null}
           {hasBid ? (
             <span
               className={
@@ -1431,5 +1662,96 @@ function LotCard({
         </div>
       </div>
     </article>
+  );
+}
+
+/** Um lance com a URL da casa preenchida (casada pelo nome) para agrupar por casa. */
+type BidCard = {
+  id: string;
+  idPeca: string;
+  idLeilao: string;
+  base: string;
+  lote: string;
+  title: string;
+  myBid: string;
+  status: string;
+  url: string;
+  image: string | null;
+  date: string;
+  house: string;
+  houseUrl: string;
+  uf: string;
+  watched: boolean;
+};
+
+/**
+ * Renderiza os lances agrupados por casa de leilão, com o mesmo layout dos vigiados:
+ * cada casa vira uma seção com os cartões dos lotes onde você deu lance.
+ */
+function BidHouseSections({
+  houses,
+  pending,
+  loteById,
+  onToggle,
+}: {
+  houses: { house: string; houseUrl: string; lots: BidCard[] }[];
+  pending: string | null;
+  loteById: Map<string, string>;
+  onToggle: (bid: { idPeca: string; idLeilao: string; base: string; watch: boolean }) => void;
+}) {
+  return (
+    <div className="space-y-8">
+      {houses.map((houseGroup) => (
+        <section key={houseGroup.house} className="space-y-3">
+          <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
+            <h2 className="text-xl font-semibold tracking-tight text-foreground">
+              {houseGroup.house}
+            </h2>
+            <Badge variant="secondary">{houseGroup.lots.length} lance(s)</Badge>
+            <BidStatBadges stats={computeBidStats(houseGroup.lots)} />
+            {houseGroup.houseUrl && houseGroup.houseUrl !== "#" ? (
+              <a
+                className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                href={houseGroup.houseUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                site da casa <ExternalLink className="h-3 w-3" />
+              </a>
+            ) : null}
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {houseGroup.lots.map((bid) => (
+              <LotCard
+                key={bid.id}
+                lot={{
+                  title: bid.title,
+                  url: bid.url,
+                  image: bid.image,
+                  price: "",
+                  time: "",
+                  house: bid.house,
+                  uf: bid.uf,
+                  dayKey: bid.date,
+                  watched: bid.watched,
+                  lote: bid.lote || loteById.get(bid.idPeca) || "",
+                  myBid: bid.myBid,
+                }}
+                busy={pending === bid.idPeca}
+                bidStatus={bid.status}
+                onToggle={() =>
+                  onToggle({
+                    idPeca: bid.idPeca,
+                    idLeilao: bid.idLeilao,
+                    base: bid.base,
+                    watch: !bid.watched,
+                  })
+                }
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
   );
 }
