@@ -17,14 +17,11 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-export async function handleCron(request: Request, env?: unknown): Promise<Response | null> {
+export async function handleCron(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname !== "/api/cron") return null;
 
-  // No alvo Cloudflare as variáveis podem chegar pelo binding `env` (não em process.env).
-  const fromEnv =
-    env && typeof env === "object" ? (env as Record<string, unknown>)["CRON_TOKEN"] : undefined;
-  const token = process.env["CRON_TOKEN"] ?? (typeof fromEnv === "string" ? fromEnv : undefined);
+  const token = process.env["CRON_TOKEN"];
   const provided = request.headers.get("x-cron-token") ?? url.searchParams.get("token") ?? "";
   if (!token) return json({ error: "CRON_TOKEN não configurado no servidor" }, 503);
   if (provided !== token) return json({ error: "unauthorized" }, 401);
