@@ -97,6 +97,10 @@ export function computeHouseStats(
  * - "won": vencedor / arrematado — o leilão já passou e você levou
  * - "covered": coberto — alguém cobriu o seu lance
  * - "lost": não vendido / demais casos
+ *
+ * "winning" + "won" são os resultados POSITIVOS (verde) e devem casar com
+ * `bidIsWinning` (vinyl-parse.ts), que colore o card/linha; se mudar os tokens
+ * aqui, ajuste lá também.
  */
 export type BidState = "winning" | "won" | "covered" | "lost";
 

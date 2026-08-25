@@ -81,11 +81,15 @@ export function looksNonVinyl(title: string): boolean {
 }
 
 /**
- * true quando o status do meu lance indica que estou ganhando ("Vencendo"/"Vencedor").
- * "Coberto"/"Coberto e Vendido"/"Não vendido" retornam false.
+ * true quando o status do meu lance é um resultado POSITIVO (cor verde na UI):
+ * ganhando agora ("Vencendo") OU já arrematado/vencedor com o leilão encerrado
+ * ("Arrematado"/"Vencedor"/"Arrebatado"). Casa os mesmos tokens de "winning" + "won"
+ * de `classifyBid` (grouping.ts) para as duas rotas de cor não divergirem — antes só
+ * `/venc/` marcava verde, então "Arrematado" (sem "venc") caía como vermelho.
+ * "Coberto"/"Coberto e Vendido"/"Não vendido" continuam retornando false.
  */
 export function bidIsWinning(status: string): boolean {
-  return /venc/i.test(status ?? "");
+  return /venc|arremat|arrebat/i.test(status ?? "");
 }
 
 /**
