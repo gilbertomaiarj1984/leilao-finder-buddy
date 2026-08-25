@@ -81,6 +81,13 @@ construído no **Lovable**, deploy alvo **Cloudflare** (via nitro).
   vigiado (sem lance). Precedência: lance vence vigia.
 - Helpers de classificação/agrupamento ficam em `src/components/vinyl/grouping.ts`
   (`classifyBid`, `houseAnchor`, etc.) após refatoração.
+- **Badges por casa (ao lado do nome):** `HouseStatBadges` em
+  `src/components/vinyl/badges.tsx`, alimentado por `computeHouseStats` (em
+  `grouping.ts`, tipo `HouseStats = {vigia, green, red}`). As três contagens são
+  **mutuamente exclusivas** e seguem a precedência de cor (lance verde/vermelho vence
+  vigia). Usado em `index.tsx` nos três pontos onde o nome da casa aparece: chips de
+  navegação, seções por casa e “Vigiados do dia”. Há também `BidStatBadges` +
+  `computeBidStats` para a visão “Meus lances”.
 
 ## Atualização em background (4x/dia)
 - **Endpoint** `/api/cron` (tratado direto em `src/server.ts`, FORA das server functions
@@ -111,13 +118,14 @@ construído no **Lovable**, deploy alvo **Cloudflare** (via nitro).
   ~250ms) e confirmação pós-lance. Sniping clássico não existe no soft-close; a vantagem
   é reagir mais rápido que humanos no último instante.
 
+## Feito recentemente
+- **Badges por casa (UI)** — ✅ concluído (PR #29). Ao lado do nome da casa, além do
+  nº de lotes, mostra **nº de vigia (amarelo)**, **nº com lance coberto (vermelho)** e
+  **nº ganhando (verde)**, padronizado em todos os pontos onde o nome da casa aparece.
+  Ver detalhe na seção **Cores** (`HouseStatBadges`/`computeHouseStats`).
+
 ## Pendências (próximas sessões)
-1. **Badges por casa (UI):** ao lado do nome da casa, além do nº de lotes, mostrar
-   **nº de vigia (amarelo)**, **nº com lance coberto (vermelho)** e **nº ganhando
-   (verde)** — padronizado em **todos** os lugares onde aparece o nome da casa
-   (listagem por dia, “Vigiados do dia”, chips, painel). O painel já tem badges
-   verde/vermelho/amarelo — usar como referência de estilo/labels.
-2. **Lance pelo sistema (leiloesbr):** avaliar/implementar dar lance pelo app. Regras do
+1. **Lance pelo sistema (leiloesbr):** avaliar/implementar dar lance pelo app. Regras do
    usuário: sempre o **próximo menor valor permitido**; após lançar, **verificar nos
    segundos seguintes se foi coberto** (o lance automático de outro pode cobrir) e,
    se for o caso, relançar. **Bloqueio atual:** não temos o **endpoint de lance do
@@ -126,7 +134,7 @@ construído no **Lovable**, deploy alvo **Cloudflare** (via nitro).
    que a dispara. Considerar que o leiloesbr provavelmente já tem “lance automático”
    nativo (pode ser mais seguro). ToS/edital costumam proibir automação — decisão/risco
    do usuário.
-3. **Confirmar em produção** que o `enrich` por cursor passou a preencher os números
+2. **Confirmar em produção** que o `enrich` por cursor passou a preencher os números
    (casas da plataforma, ex.: bruce) após o deploy — rodar o workflow e ver `updated>0`.
 
 ## Convenções de trabalho
