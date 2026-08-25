@@ -80,7 +80,15 @@ construído no **Lovable**, deploy alvo **Cloudflare** (via nitro).
   `venc|arremat|arrebat`). **Vermelho** = tenho lance mas coberto. **Amarelo** = só
   vigiado (sem lance). Precedência: lance vence vigia.
 - Helpers de classificação/agrupamento ficam em `src/components/vinyl/grouping.ts`
-  (`classifyBid`, `houseAnchor`, etc.) após refatoração.
+  (`classifyBid`, `houseAnchor`, `computeHouseStats`, `watchedMatchesSearch`,
+  `groupWatchedByHouse`, etc.) após refatoração.
+- **Busca principal + agrupamento dos vigiados/lances:** `watchedMatchesSearch(lot,
+  searchNorm)` casa por **título/artista/casa/nº do lote** (mesma regra das abas de dia).
+  `groupWatchedByHouse<T>(lots)` agrupa por casa e ordena por **nº do lote** (numérico
+  primeiro, depois lexicográfico); é genérico e reutilizado para **vigiados** e **meus
+  lances** (`bidsByHouse`). A aba **“Vigiados”** (ver todos) e a **“Vigiados do dia”**
+  respeitam a busca e são apresentadas **por dia → casa** (mesmo layout das abas de dia,
+  usando `dayLabel`); o contador da aba reflete o resultado da busca.
 - **Badges por casa (ao lado do nome):** `HouseStatBadges` em
   `src/components/vinyl/badges.tsx`, alimentado por `computeHouseStats` (em
   `grouping.ts`, tipo `HouseStats = {vigia, green, red}`). As três contagens são
@@ -119,6 +127,14 @@ construído no **Lovable**, deploy alvo **Cloudflare** (via nitro).
   é reagir mais rápido que humanos no último instante.
 
 ## Feito recentemente
+- **Busca + vigiados por dia/casa** — ✅ concluído (PR #31, mesclado). A aba
+  **“Vigiados”** (ver todos) passou a **respeitar a busca principal** e a ser
+  apresentada **separada por dia e casa de leilão** (antes era uma grade plana), no mesmo
+  layout das abas de dia. Extraídos `watchedMatchesSearch` e `groupWatchedByHouse`
+  (ver seção **Cores**), depois movidos para `grouping.ts` e reutilizados também em
+  “Meus lances”. Nota de ambiente: nesta sessão o `bun install` falhou (registry privado
+  Lovable, 403) e o `node_modules` **não existia**, então o typecheck local não rodou —
+  validação por revisão estática; o merge foi feito via `mcp__github__merge_pull_request`.
 - **Badges por casa (UI)** — ✅ concluído (PR #29). Ao lado do nome da casa, além do
   nº de lotes, mostra **nº de vigia (amarelo)**, **nº com lance coberto (vermelho)** e
   **nº ganhando (verde)**, padronizado em todos os pontos onde o nome da casa aparece.
