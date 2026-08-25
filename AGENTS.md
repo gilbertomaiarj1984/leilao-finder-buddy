@@ -1,10 +1,12 @@
-<!-- LOVABLE:BEGIN -->
-> [!IMPORTANT]
-> This project is connected to [Lovable](https://lovable.dev). Avoid rewriting
-> published git history — force pushing, or rebasing/amending/squashing commits
-> that are already pushed — as it rewrites history on Lovable's side and the
-> user will likely lose their project history.
->
-> Commits you push to the connected branch sync back to Lovable and show up in
-> the editor, so keep the branch in a working state.
-<!-- LOVABLE:END -->
+# Notas para agentes
+
+Este projeto é um app **TanStack Start** (React 19 + SSR, build com Vite + Nitro),
+com **Supabase** como backend e deploy na **Vercel**.
+
+- Auth: Supabase Auth nativo (OAuth Google, fluxo PKCE) — ver `src/routes/auth.tsx`
+  e `src/integrations/supabase/`.
+- Acesso restrito ao e-mail em `LEILOESBR_EMAIL` (ver `src/lib/access.server.ts`).
+- Dados servidos via `service_role` no servidor (RLS bloqueia acesso direto).
+- Atualização periódica via GitHub Actions chamando `/api/cron` (ver
+  `.github/workflows/refresh.yml`), protegida por `CRON_TOKEN`.
+- Variáveis de ambiente: ver `.env.example`.

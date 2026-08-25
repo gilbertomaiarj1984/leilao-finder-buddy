@@ -30,3 +30,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Variáveis de ambiente locais (contêm segredos — não versionar)
+.env
+.env.local
+.env.*.local
+
+# Vercel
+.vercel
