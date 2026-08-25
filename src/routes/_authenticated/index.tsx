@@ -488,15 +488,18 @@ function HomePage() {
   }
 
   if (access.isError || !access.data?.allowed) {
+    const accessMessage = access.isError
+      ? "Não foi possível validar o seu acesso."
+      : access.data?.configured === false
+        ? "O e-mail autorizado não está carregado no servidor. Reinicie a prévia ou reconfigure o secret LEILOESBR_EMAIL."
+        : access.data?.email
+          ? `A conta ${access.data.email} não é o e-mail cadastrado nas casas de leilão.`
+          : "Não foi possível validar o seu acesso.";
     return (
       <main className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="w-full max-w-sm rounded-lg border border-border bg-card p-8 text-center">
           <h1 className="text-xl font-semibold text-foreground">Acesso não autorizado</h1>
-          <p className="mt-3 text-sm text-muted-foreground">
-            {access.data?.email
-              ? `A conta ${access.data.email} não é o e-mail cadastrado nas casas de leilão.`
-              : "Não foi possível validar o seu acesso."}
-          </p>
+          <p className="mt-3 text-sm text-muted-foreground">{accessMessage}</p>
           <Button className="mt-6 w-full" variant="outline" onClick={() => void signOut()}>
             <LogOut className="mr-2 h-4 w-4" />
             Sair e trocar de conta
