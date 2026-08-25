@@ -24,6 +24,7 @@ import {
   listMyBids,
   markDashboardSeen,
 } from "@/lib/leiloesbr.functions";
+import { houseAnchor } from "@/components/vinyl/grouping";
 import { listWatched } from "@/lib/leiloesbr-watch.functions";
 import {
   auctionFinished,
@@ -54,15 +55,10 @@ function groupByHouse(lots: VinylLot[]): HouseGroup[] {
   return [...byHouse.values()];
 }
 
-function houseAnchor(house: string, dayIndex: number): string {
-  return `casa-${dayIndex}-${house
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")}`;
-}
-
 const loteNum = (v: string) => {
-  const n = Number(v);
+  // Lote vazio ("", comum na listagem geral) deve ir para o FIM: Number("") é 0,
+  // por isso o guard explícito antes de cair no fallback POSITIVE_INFINITY.
+  const n = v.trim() === "" ? NaN : Number(v);
   return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
 };
 
