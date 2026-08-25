@@ -14,7 +14,6 @@ const PER_PAGE = 126;
 const WINDOW_DAYS = 5; // quantos dias de leilões trazer (hoje + próximos)
 const MAX_PAGES = 150; // teto de páginas por varredura (janela maior = mais páginas)
 
-
 // Cache/merge em memória: GARANTE a lista mesmo que o banco esteja indisponível
 // (ex.: migração ainda não aplicada). O banco é usado como camada durável quando
 // disponível — a UI nunca fica vazia por causa do banco.
@@ -36,7 +35,6 @@ function listUrl(page: number): string {
 async function fetchPage(page: number): Promise<string> {
   return await publicFetch(listUrl(page), {});
 }
-
 
 function absolute(href: string | undefined): string {
   if (!href) return BASE_URL;
@@ -72,7 +70,7 @@ function parseCard(card: HTMLElement): VinylLot | null {
   const lote = (
     raw.match(/title="Lote-?\s*([^"]+)"/i)?.[1] ??
     rawFlat.match(/lote\s*:?\s*<b[^>]*>\s*([0-9]+[a-zA-Z]?)/i)?.[1] ??
-    title.match(/\blote\s*n?[ºo°]?\s*[:.\-]?\s*([0-9]+[a-zA-Z]?)/i)?.[1] ??
+    title.match(/\blote\s*n?[ºo°]?\s*[:.-]?\s*([0-9]+[a-zA-Z]?)/i)?.[1] ??
     ""
   )
     .replace(/\s+/g, " ")
@@ -97,7 +95,6 @@ function parseCard(card: HTMLElement): VinylLot | null {
     houseUrl: absolute(houseAnchor?.getAttribute("href") ?? undefined),
     artist: extractArtist(title),
   };
-
 }
 
 function parseCards(html: string): VinylLot[] {
@@ -127,10 +124,7 @@ function sortLots(lots: VinylLot[]): VinylLot[] {
  * nas ÚLTIMAS páginas) coletando lotes de vinil que passem em `keep`, parando
  * assim que uma página inteira já está além de `stopDay`.
  */
-async function scrapePages(
-  keep: (lot: VinylLot) => boolean,
-  stopDay: string,
-): Promise<VinylLot[]> {
+async function scrapePages(keep: (lot: VinylLot) => boolean, stopDay: string): Promise<VinylLot[]> {
   const firstHtml = await fetchPage(1);
   const total = lastPage(firstHtml);
   const byId = new Map<string, VinylLot>();
@@ -358,14 +352,15 @@ export async function enrichMissingLotes(
     const ref = parseAuctionRef(lot.url);
     if (!ref) continue;
     const key = `${ref.domain}|${ref.idLeilao}`;
-    const entry =
-      auctions.get(key) ?? { domain: ref.domain, idLeilao: ref.idLeilao, missing: new Set<string>() };
+    const entry = auctions.get(key) ?? {
+      domain: ref.domain,
+      idLeilao: ref.idLeilao,
+      missing: new Set<string>(),
+    };
     if (!lot.lote) entry.missing.add(lot.idPeca);
     auctions.set(key, entry);
   }
-  const all = [...auctions.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([, v]) => v);
+  const all = [...auctions.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([, v]) => v);
   const total = all.length;
   const start = Math.max(0, offset);
   const batch = all.slice(start, start + maxAuctions);
@@ -418,7 +413,9 @@ export async function enrichMissingLotes(
  * Varre o site quando está "stale" ou em `force`, mescla tudo por id (sem apagar)
  * e faz upsert best-effort — o "atualizar" acrescenta diferenças.
  */
-export async function scrapeVinylLots(force = false): Promise<{ days: string[]; lots: VinylLot[] }> {
+export async function scrapeVinylLots(
+  force = false,
+): Promise<{ days: string[]; lots: VinylLot[] }> {
   const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
@@ -447,7 +444,6 @@ export async function scrapeVinylLots(force = false): Promise<{ days: string[]; 
 
   const lots = await mergeSources(windowStart, windowEnd, fresh);
   memCache = { at: Date.now(), days, lots };
-
 
   if (fresh.length) {
     try {
@@ -555,5 +551,3 @@ export async function scrapeVinylChunk(
   }
   return { total: fromPage == null ? total : start, nextPage, scraped: fresh.length };
 }
-
-

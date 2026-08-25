@@ -17,7 +17,6 @@ export type VinylLot = {
   artist: string; // "" when unidentified
 };
 
-
 const VINYL_HINTS = [
   "lp",
   "lps",
@@ -154,11 +153,13 @@ export function extractArtist(title: string): string {
   let candidate = (parts[0] ?? "").trim();
 
   // Cut trailing sentences / album names / parentheses: "Artista. Produto original..."
-  candidate = candidate.split(/["“”(\[/]/)[0]!;
+  candidate = candidate.split(/["“”([/]/)[0]!;
   candidate = candidate.split(/\.\s+|,\s+|;\s+/)[0]!;
-  candidate = candidate.replace(/[(),.;:]+$/g, "").replace(/^[(),.;:]+/g, "").trim();
+  candidate = candidate
+    .replace(/[(),.;:]+$/g, "")
+    .replace(/^[(),.;:]+/g, "")
+    .trim();
   candidate = candidate.replace(/\s+(vol\.?|volume)\s*\d*$/i, "").trim();
-
 
   const normCandidate = normalize(candidate);
   if (!normCandidate) return "";
@@ -171,8 +172,31 @@ export function extractArtist(title: string): string {
 }
 
 const LOWER_WORDS = new Set([
-  "de", "da", "do", "das", "dos", "e", "em", "no", "na", "nos", "nas",
-  "of", "the", "and", "a", "o", "y", "los", "las", "le", "la", "des", "du", "van", "von",
+  "de",
+  "da",
+  "do",
+  "das",
+  "dos",
+  "e",
+  "em",
+  "no",
+  "na",
+  "nos",
+  "nas",
+  "of",
+  "the",
+  "and",
+  "a",
+  "o",
+  "y",
+  "los",
+  "las",
+  "le",
+  "la",
+  "des",
+  "du",
+  "van",
+  "von",
 ]);
 
 export function titleCase(value: string): string {
@@ -188,7 +212,6 @@ export function titleCase(value: string): string {
     .join(" ")
     .trim();
 }
-
 
 export const UNCLASSIFIED_LABEL = "Novelas, coletâneas e não classificados";
 
@@ -275,11 +298,45 @@ export function normalizeForMatch(value: string): string {
 // Nomes de UMA palavra que também são palavras comuns (PT/EN) e gerariam falsos
 // positivos; só entram na base como parte de nomes com 2+ palavras.
 const AMBIGUOUS_SINGLE_WORDS = new Set([
-  "free", "love", "zero", "cream", "sweet", "angel", "death", "family", "spirit",
-  "war", "air", "can", "yes", "mud", "egg", "dust", "fist", "toad", "bang", "art",
-  "peso", "stress", "strike", "oriente", "sensacao", "evolucao", "abolicao",
-  "overdose", "devotos", "inocentes", "replicantes", "chic", "mina", "jane",
-  "nico", "sade", "dio", "jesus", "zero",
+  "free",
+  "love",
+  "zero",
+  "cream",
+  "sweet",
+  "angel",
+  "death",
+  "family",
+  "spirit",
+  "war",
+  "air",
+  "can",
+  "yes",
+  "mud",
+  "egg",
+  "dust",
+  "fist",
+  "toad",
+  "bang",
+  "art",
+  "peso",
+  "stress",
+  "strike",
+  "oriente",
+  "sensacao",
+  "evolucao",
+  "abolicao",
+  "overdose",
+  "devotos",
+  "inocentes",
+  "replicantes",
+  "chic",
+  "mina",
+  "jane",
+  "nico",
+  "sade",
+  "dio",
+  "jesus",
+  "zero",
 ]);
 
 const LEADING_ARTICLES = ["the ", "os ", "as ", "o ", "a "];

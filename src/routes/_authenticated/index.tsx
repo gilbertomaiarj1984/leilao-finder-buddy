@@ -147,7 +147,6 @@ function LiveAuctions() {
   );
 }
 
-
 function dayLabel(dayKey: string, index: number): string {
   const [y, m, d] = dayKey.split("-").map(Number);
   const date = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1));
@@ -355,7 +354,10 @@ function matchesPriceRange(raw: string, range: string): boolean {
 }
 
 function houseAnchor(house: string, dayIndex: number): string {
-  return `casa-${dayIndex}-${house.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+  return `casa-${dayIndex}-${house
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")}`;
 }
 
 function artistOptions(lots: VinylLot[]): { artist: string; count: number }[] {
@@ -425,9 +427,7 @@ function ArtistFilter({
                 }}
               >
                 <Check
-                  className={
-                    value === item.artist ? "mr-2 h-4 w-4" : "mr-2 h-4 w-4 opacity-0"
-                  }
+                  className={value === item.artist ? "mr-2 h-4 w-4" : "mr-2 h-4 w-4 opacity-0"}
                 />
                 <span className="truncate">{item.artist}</span>
                 <span className="ml-auto text-xs text-muted-foreground">{item.count}</span>
@@ -581,8 +581,11 @@ function groupWatchedByHouse<T extends { house: string; houseUrl: string; lote: 
 ): { house: string; houseUrl: string; lots: T[] }[] {
   const byHouse = new Map<string, { house: string; houseUrl: string; lots: T[] }>();
   for (const lot of lots) {
-    const group =
-      byHouse.get(lot.house) ?? { house: lot.house, houseUrl: lot.houseUrl, lots: [] as T[] };
+    const group = byHouse.get(lot.house) ?? {
+      house: lot.house,
+      houseUrl: lot.houseUrl,
+      lots: [] as T[],
+    };
     group.lots.push(lot);
     byHouse.set(lot.house, group);
   }
@@ -591,9 +594,7 @@ function groupWatchedByHouse<T extends { house: string; houseUrl: string; lote: 
     return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
   };
   for (const group of byHouse.values()) {
-    group.lots.sort(
-      (a, b) => num(a.lote) - num(b.lote) || a.lote.localeCompare(b.lote, "pt-BR"),
-    );
+    group.lots.sort((a, b) => num(a.lote) - num(b.lote) || a.lote.localeCompare(b.lote, "pt-BR"));
   }
   return [...byHouse.values()].sort(
     (a, b) => b.lots.length - a.lots.length || a.house.localeCompare(b.house, "pt-BR"),
@@ -743,7 +744,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     })();
   };
 
-
   const toggle = useMutation({
     mutationFn: async (lot: { idPeca: string; idLeilao: string; base: string; watch: boolean }) =>
       await runToggle({ data: lot }),
@@ -838,7 +838,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               ) : (
                 <RefreshCw className="mr-2 h-4 w-4" />
               )}
-              {refreshingAll && refreshPct !== null ? `Atualizando… ${refreshPct}%` : "Atualizar tudo"}
+              {refreshingAll && refreshPct !== null
+                ? `Atualizando… ${refreshPct}%`
+                : "Atualizar tudo"}
             </Button>
             <span className="text-xs text-muted-foreground">{email}</span>
             <Button variant="ghost" size="sm" onClick={() => void onSignOut()}>
@@ -941,7 +943,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               const isWatchedView = watchedViewDay === day;
               // Vigiados do dia: a busca principal também filtra aqui.
               const watchedForDay = (watched.data ?? []).filter(
-                (lot) => watchedDateToKey(lot.date) === day && watchedMatchesSearch(lot, searchNorm),
+                (lot) =>
+                  watchedDateToKey(lot.date) === day && watchedMatchesSearch(lot, searchNorm),
               );
               // Vigiados do dia agrupados por casa e ordenados por nº do lote.
               const watchedByHouse = groupWatchedByHouse(watchedForDay);
@@ -1103,7 +1106,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                     watched.isLoading ? (
                       <Skeleton className="h-40 w-full" />
                     ) : watchedForDay.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">Nenhum lote vigiado neste dia.</p>
+                      <p className="text-sm text-muted-foreground">
+                        Nenhum lote vigiado neste dia.
+                      </p>
                     ) : (
                       <div className="space-y-8">
                         {watchedByHouse.map((houseGroup) => (
@@ -1114,7 +1119,11 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                               </h2>
                               <Badge variant="secondary">{houseGroup.lots.length} lote(s)</Badge>
                               <HouseStatBadges
-                                stats={computeHouseStats(houseGroup.lots, watchedIds, bidStatusById)}
+                                stats={computeHouseStats(
+                                  houseGroup.lots,
+                                  watchedIds,
+                                  bidStatusById,
+                                )}
                               />
                               <a
                                 className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
@@ -1179,190 +1188,197 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                     </div>
                   ) : (
                     (() => {
-                    const renderHouse = (group: HouseGroup) => {
-                      const houseKey = `${day}|${group.house}`;
-                      const isOpen = openHouses.has(houseKey);
-                      const isVerified = verifiedHouses.has(houseKey);
-                      const perArtist = globalActive ? "" : houseArtist[houseKey] ?? "";
-                      const perPrice = housePrice[houseKey] ?? "";
-                      let houseLots = group.lots;
-                      if (perArtist)
-                        houseLots = houseLots.filter(
-                          (lot) => (lot.artist || UNCLASSIFIED_LABEL) === perArtist,
-                        );
-                      if (perPrice)
-                        houseLots = houseLots.filter((lot) => matchesPriceRange(lot.price, perPrice));
-                      const artistGroups = groupByArtist(houseLots);
+                      const renderHouse = (group: HouseGroup) => {
+                        const houseKey = `${day}|${group.house}`;
+                        const isOpen = openHouses.has(houseKey);
+                        const isVerified = verifiedHouses.has(houseKey);
+                        const perArtist = globalActive ? "" : (houseArtist[houseKey] ?? "");
+                        const perPrice = housePrice[houseKey] ?? "";
+                        let houseLots = group.lots;
+                        if (perArtist)
+                          houseLots = houseLots.filter(
+                            (lot) => (lot.artist || UNCLASSIFIED_LABEL) === perArtist,
+                          );
+                        if (perPrice)
+                          houseLots = houseLots.filter((lot) =>
+                            matchesPriceRange(lot.price, perPrice),
+                          );
+                        const artistGroups = groupByArtist(houseLots);
 
-                      return (
-                        <section
-                          key={group.house}
-                          id={houseAnchor(group.house, index)}
-                          className="scroll-mt-32 space-y-4"
-                        >
-                          <div className="space-y-3 border-b border-border pb-2">
-                            <div className="flex flex-wrap items-center gap-3">
-                              <button
-                                type="button"
-                                onClick={() => toggleVerified(houseKey)}
-                                aria-pressed={isVerified}
-                                title={
-                                  isVerified
-                                    ? "Casa verificada — clique para desmarcar"
-                                    : "Marcar casa como verificada"
-                                }
-                                aria-label={
-                                  isVerified
-                                    ? `Desmarcar ${group.house} como verificada`
-                                    : `Marcar ${group.house} como verificada`
-                                }
-                                className={
-                                  isVerified
-                                    ? "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-green-600 bg-green-600 text-white"
-                                    : "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:border-green-600 hover:text-green-600"
-                                }
-                              >
-                                <Check className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => toggleHouse(houseKey)}
-                                aria-expanded={isOpen}
-                                className="flex items-center gap-2 text-left"
-                              >
-                                {isOpen ? (
-                                  <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
-                                ) : (
-                                  <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-                                )}
-                                <span className="text-2xl font-semibold tracking-tight text-foreground">
-                                  {group.house}
-                                </span>
-                              </button>
-                              <Badge variant="secondary">{houseLots.length} lotes</Badge>
-                              <HouseStatBadges
-                                stats={computeHouseStats(houseLots, watchedIds, bidStatusById)}
-                              />
-                              {group.time ? (
-                                <span className="text-sm text-muted-foreground">às {group.time}</span>
-                              ) : null}
-                              <a
-                                className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                href={group.houseUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                site da casa <ExternalLink className="h-3 w-3" />
-                              </a>
-                            </div>
-                            {isOpen ? (
-                              <div className="flex flex-wrap items-center gap-2">
-                                <ArtistFilter
-                                  artists={artistOptions(group.lots)}
-                                  value={perArtist}
-                                  onChange={(next) => setHouseArtistFor(houseKey, next)}
-                                  disabled={globalActive}
+                        return (
+                          <section
+                            key={group.house}
+                            id={houseAnchor(group.house, index)}
+                            className="scroll-mt-32 space-y-4"
+                          >
+                            <div className="space-y-3 border-b border-border pb-2">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleVerified(houseKey)}
+                                  aria-pressed={isVerified}
+                                  title={
+                                    isVerified
+                                      ? "Casa verificada — clique para desmarcar"
+                                      : "Marcar casa como verificada"
+                                  }
+                                  aria-label={
+                                    isVerified
+                                      ? `Desmarcar ${group.house} como verificada`
+                                      : `Marcar ${group.house} como verificada`
+                                  }
+                                  className={
+                                    isVerified
+                                      ? "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-green-600 bg-green-600 text-white"
+                                      : "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:border-green-600 hover:text-green-600"
+                                  }
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleHouse(houseKey)}
+                                  aria-expanded={isOpen}
+                                  className="flex items-center gap-2 text-left"
+                                >
+                                  {isOpen ? (
+                                    <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
+                                  ) : (
+                                    <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+                                  )}
+                                  <span className="text-2xl font-semibold tracking-tight text-foreground">
+                                    {group.house}
+                                  </span>
+                                </button>
+                                <Badge variant="secondary">{houseLots.length} lotes</Badge>
+                                <HouseStatBadges
+                                  stats={computeHouseStats(houseLots, watchedIds, bidStatusById)}
                                 />
-                                <PriceFilter
-                                  value={perPrice}
-                                  onChange={(next) => setHousePriceFor(houseKey, next)}
-                                />
-                                {globalActive ? (
-                                  <span className="text-xs text-muted-foreground">
-                                    filtro de artista global ativo
+                                {group.time ? (
+                                  <span className="text-sm text-muted-foreground">
+                                    às {group.time}
                                   </span>
                                 ) : null}
+                                <a
+                                  className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                  href={group.houseUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  site da casa <ExternalLink className="h-3 w-3" />
+                                </a>
                               </div>
-                            ) : null}
-                          </div>
-
-                          {isOpen ? (
-                            <>
-                            {artistGroups.length === 0 ? (
-                              <p className="text-sm text-muted-foreground">
-                                Nenhum lote com esses filtros nesta casa.
-                              </p>
-                            ) : (
-                              artistGroups.map((artistGroup) => (
-                                <div key={artistGroup.artist} className="space-y-3">
-                                  <h3
-                                    className={
-                                      artistGroup.artist === UNCLASSIFIED_LABEL
-                                        ? "text-sm font-medium uppercase tracking-wider text-muted-foreground"
-                                        : "text-sm font-semibold uppercase tracking-wider text-primary"
-                                    }
-                                  >
-                                    {artistGroup.artist}
-                                    <span className="ml-2 font-normal normal-case tracking-normal text-muted-foreground">
-                                      {artistGroup.lots.length}
+                              {isOpen ? (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <ArtistFilter
+                                    artists={artistOptions(group.lots)}
+                                    value={perArtist}
+                                    onChange={(next) => setHouseArtistFor(houseKey, next)}
+                                    disabled={globalActive}
+                                  />
+                                  <PriceFilter
+                                    value={perPrice}
+                                    onChange={(next) => setHousePriceFor(houseKey, next)}
+                                  />
+                                  {globalActive ? (
+                                    <span className="text-xs text-muted-foreground">
+                                      filtro de artista global ativo
                                     </span>
-                                  </h3>
-                                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                    {artistGroup.lots.map((lot) => (
-                                      <LotCard
-                                        key={lot.id}
-                                        lot={{ ...lot, lote: lot.lote || loteById.get(lot.idPeca) || "" }}
-                                        busy={pending === lot.idPeca}
-                                        bidStatus={bidStatusById.get(lot.idPeca)}
-                                        onToggle={() =>
-                                          toggle.mutate({
-                                            idPeca: lot.idPeca,
-                                            idLeilao: lot.idLeilao,
-                                            base: lot.base,
-                                            watch: !lot.watched,
-                                          })
-                                        }
-                                      />
-                                    ))}
-                                  </div>
+                                  ) : null}
                                 </div>
-                              ))
-                            )}
-                            <div className="pt-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  toggleHouse(houseKey);
-                                  requestAnimationFrame(() =>
-                                    document
-                                      .getElementById(houseAnchor(group.house, index))
-                                      ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-                                  );
-                                }}
-                                className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-                              >
-                                <ChevronUp className="h-4 w-4" />
-                                Fechar {group.house}
-                              </button>
+                              ) : null}
                             </div>
-                            </>
-                          ) : null}
-                        </section>
+
+                            {isOpen ? (
+                              <>
+                                {artistGroups.length === 0 ? (
+                                  <p className="text-sm text-muted-foreground">
+                                    Nenhum lote com esses filtros nesta casa.
+                                  </p>
+                                ) : (
+                                  artistGroups.map((artistGroup) => (
+                                    <div key={artistGroup.artist} className="space-y-3">
+                                      <h3
+                                        className={
+                                          artistGroup.artist === UNCLASSIFIED_LABEL
+                                            ? "text-sm font-medium uppercase tracking-wider text-muted-foreground"
+                                            : "text-sm font-semibold uppercase tracking-wider text-primary"
+                                        }
+                                      >
+                                        {artistGroup.artist}
+                                        <span className="ml-2 font-normal normal-case tracking-normal text-muted-foreground">
+                                          {artistGroup.lots.length}
+                                        </span>
+                                      </h3>
+                                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                        {artistGroup.lots.map((lot) => (
+                                          <LotCard
+                                            key={lot.id}
+                                            lot={{
+                                              ...lot,
+                                              lote: lot.lote || loteById.get(lot.idPeca) || "",
+                                            }}
+                                            busy={pending === lot.idPeca}
+                                            bidStatus={bidStatusById.get(lot.idPeca)}
+                                            onToggle={() =>
+                                              toggle.mutate({
+                                                idPeca: lot.idPeca,
+                                                idLeilao: lot.idLeilao,
+                                                base: lot.base,
+                                                watch: !lot.watched,
+                                              })
+                                            }
+                                          />
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
+                                <div className="pt-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      toggleHouse(houseKey);
+                                      requestAnimationFrame(() =>
+                                        document
+                                          .getElementById(houseAnchor(group.house, index))
+                                          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                                      );
+                                    }}
+                                    className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                                  >
+                                    <ChevronUp className="h-4 w-4" />
+                                    Fechar {group.house}
+                                  </button>
+                                </div>
+                              </>
+                            ) : null}
+                          </section>
+                        );
+                      };
+                      const verifiedGroups = groups.filter((group) =>
+                        verifiedHouses.has(`${day}|${group.house}`),
                       );
-                    };
-                    const verifiedGroups = groups.filter((group) =>
-                      verifiedHouses.has(`${day}|${group.house}`),
-                    );
-                    const unverifiedGroups = groups.filter(
-                      (group) => !verifiedHouses.has(`${day}|${group.house}`),
-                    );
-                    return (
-                      <>
-                        {unverifiedGroups.map(renderHouse)}
-                        {verifiedGroups.length ? (
-                          <div className="space-y-6 pt-4">
-                            <h2 className="flex items-center gap-2 border-b border-border pb-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                              <Check className="h-4 w-4 text-green-600" />
-                              Já verificadas
-                              <span className="font-normal normal-case tracking-normal">
-                                {verifiedGroups.length} casa(s)
-                              </span>
-                            </h2>
-                            {verifiedGroups.map(renderHouse)}
-                          </div>
-                        ) : null}
-                      </>
-                    );
+                      const unverifiedGroups = groups.filter(
+                        (group) => !verifiedHouses.has(`${day}|${group.house}`),
+                      );
+                      return (
+                        <>
+                          {unverifiedGroups.map(renderHouse)}
+                          {verifiedGroups.length ? (
+                            <div className="space-y-6 pt-4">
+                              <h2 className="flex items-center gap-2 border-b border-border pb-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                                <Check className="h-4 w-4 text-green-600" />
+                                Já verificadas
+                                <span className="font-normal normal-case tracking-normal">
+                                  {verifiedGroups.length} casa(s)
+                                </span>
+                              </h2>
+                              {verifiedGroups.map(renderHouse)}
+                            </div>
+                          ) : null}
+                        </>
+                      );
                     })()
                   )}
                 </TabsContent>
@@ -1413,9 +1429,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                       {dayKeys.map((dayKey) => {
                         const dayLots = byDay.get(dayKey) ?? [];
                         const idx = days.indexOf(dayKey);
-                        const label = dayKey
-                          ? dayLabel(dayKey, idx >= 0 ? idx : 99)
-                          : "Sem data";
+                        const label = dayKey ? dayLabel(dayKey, idx >= 0 ? idx : 99) : "Sem data";
                         const houses = groupWatchedByHouse(dayLots);
                         return (
                           <section key={dayKey || "sem-data"} className="space-y-6">

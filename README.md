@@ -22,14 +22,14 @@ App em http://localhost:3000
 
 Veja `.env.example`. Resumo:
 
-| Variável | Onde | Para quê |
-|---|---|---|
-| `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` | cliente | conexão Supabase no front |
-| `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` | servidor | validação de sessão |
-| `SUPABASE_SERVICE_ROLE_KEY` | servidor | acesso aos dados (bypassa RLS) — **segredo** |
-| `LEILOESBR_EMAIL` | servidor | único e-mail Google autorizado |
-| `LEILOESBR_SENHA` | servidor | login no site de leilões (scraper) |
-| `CRON_TOKEN` | servidor + GitHub Actions | protege o endpoint `/api/cron` |
+| Variável                                              | Onde                      | Para quê                                     |
+| ----------------------------------------------------- | ------------------------- | -------------------------------------------- |
+| `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` | cliente                   | conexão Supabase no front                    |
+| `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY`           | servidor                  | validação de sessão                          |
+| `SUPABASE_SERVICE_ROLE_KEY`                           | servidor                  | acesso aos dados (bypassa RLS) — **segredo** |
+| `LEILOESBR_EMAIL`                                     | servidor                  | único e-mail Google autorizado               |
+| `LEILOESBR_SENHA`                                     | servidor                  | login no site de leilões (scraper)           |
+| `CRON_TOKEN`                                          | servidor + GitHub Actions | protege o endpoint `/api/cron`               |
 
 ## Deploy (Vercel)
 

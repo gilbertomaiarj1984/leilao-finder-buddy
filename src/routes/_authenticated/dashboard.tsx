@@ -55,7 +55,10 @@ function groupByHouse(lots: VinylLot[]): HouseGroup[] {
 }
 
 function houseAnchor(house: string, dayIndex: number): string {
-  return `casa-${dayIndex}-${house.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+  return `casa-${dayIndex}-${house
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")}`;
 }
 
 const loteNum = (v: string) => {
@@ -85,12 +88,22 @@ function brl(n: number): string {
 
 function DeltaCell({ delta }: { delta: Delta }) {
   if (delta.kind === "novo")
-    return <Badge variant="secondary" className="font-normal">novo</Badge>;
+    return (
+      <Badge variant="secondary" className="font-normal">
+        novo
+      </Badge>
+    );
   if (delta.kind === "igual" || delta.kind === "sem")
     return <span className="text-muted-foreground">—</span>;
   const up = delta.kind === "subiu";
   return (
-    <span className={up ? "font-medium text-amber-600 dark:text-amber-400" : "font-medium text-emerald-600 dark:text-emerald-400"}>
+    <span
+      className={
+        up
+          ? "font-medium text-amber-600 dark:text-amber-400"
+          : "font-medium text-emerald-600 dark:text-emerald-400"
+      }
+    >
       {up ? "▲" : "▼"} R$ {brl(delta.diff)}
     </span>
   );
@@ -410,17 +423,26 @@ function DashboardPage() {
                               </button>
                               <Badge variant="secondary">{group.lots.length} lote(s)</Badge>
                               {c.green > 0 ? (
-                                <Badge className="bg-green-500/15 text-green-700 dark:text-green-400" variant="secondary">
+                                <Badge
+                                  className="bg-green-500/15 text-green-700 dark:text-green-400"
+                                  variant="secondary"
+                                >
                                   {c.green} ganhando
                                 </Badge>
                               ) : null}
                               {c.red > 0 ? (
-                                <Badge className="bg-red-500/15 text-red-600 dark:text-red-400" variant="secondary">
+                                <Badge
+                                  className="bg-red-500/15 text-red-600 dark:text-red-400"
+                                  variant="secondary"
+                                >
                                   {c.red} coberto(s)
                                 </Badge>
                               ) : null}
                               {c.yellow > 0 ? (
-                                <Badge className="bg-yellow-400/20 text-yellow-700 dark:text-yellow-300" variant="secondary">
+                                <Badge
+                                  className="bg-yellow-400/20 text-yellow-700 dark:text-yellow-300"
+                                  variant="secondary"
+                                >
                                   {c.yellow} vigiado(s)
                                 </Badge>
                               ) : null}
@@ -443,10 +465,14 @@ function DashboardPage() {
                                     <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
                                       <th className="px-2 py-2 font-medium">Lote</th>
                                       <th className="px-2 py-2 font-medium">Título</th>
-                                      <th className="px-2 py-2 text-right font-medium">Últ. acesso</th>
+                                      <th className="px-2 py-2 text-right font-medium">
+                                        Últ. acesso
+                                      </th>
                                       <th className="px-2 py-2 text-right font-medium">Atual</th>
                                       <th className="px-2 py-2 text-right font-medium">Variação</th>
-                                      <th className="px-2 py-2 text-right font-medium">Meu lance</th>
+                                      <th className="px-2 py-2 text-right font-medium">
+                                        Meu lance
+                                      </th>
                                     </tr>
                                   </thead>
                                   <tbody>

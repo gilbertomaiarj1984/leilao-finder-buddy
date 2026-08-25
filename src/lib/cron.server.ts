@@ -75,7 +75,12 @@ export async function handleCron(request: Request, env?: unknown): Promise<Respo
       for (const a of auctions) {
         for (const path of [`/catalogo.asp?Num=${a.idLeilao}`, `/leilao.asp?Num=${a.idLeilao}`]) {
           const target = `${a.domain}${path}`;
-          probes.push({ idLeilao: a.idLeilao, sampleIds: a.ids, url: target, ...(await probe(target)) });
+          probes.push({
+            idLeilao: a.idLeilao,
+            sampleIds: a.ids,
+            url: target,
+            ...(await probe(target)),
+          });
         }
       }
       return json({ missingAuctions: auctions.length, probes });
