@@ -3,7 +3,6 @@ import { Disc3, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { lovable } from "@/integrations/lovable/index";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/auth")({
@@ -33,27 +32,61 @@ function AuthPage() {
 
   useEffect(() => {
     let active = true;
+    const cleanup = () => {
+      active = false;
+    };
+
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get("code");
+    const oauthError = url.searchParams.get("error_description") ?? url.searchParams.get("error");
+
+    if (oauthError) {
+      setError("Não foi possível entrar com o Google. Tente novamente.");
+      // Limpa os parâmetros de erro da URL.
+      window.history.replaceState({}, "", url.pathname);
+      return cleanup;
+    }
+
+    // Retorno do OAuth: troca o code do PKCE por uma sessão e segue para o app.
+    if (code) {
+      setBusy(true);
+      void supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (!active) return;
+        if (error) {
+          setError("Não foi possível concluir o login. Tente novamente.");
+          setBusy(false);
+          window.history.replaceState({}, "", url.pathname);
+          return;
+        }
+        void router.navigate({ to: "/", replace: true });
+      });
+      return cleanup;
+    }
+
+    // Sem code: se já houver sessão ativa, entra direto.
     void supabase.auth.getUser().then(({ data }) => {
       if (active && data.user) void router.navigate({ to: "/", replace: true });
     });
-    return () => {
-      active = false;
-    };
+
+    return cleanup;
   }, [router]);
 
   async function signIn() {
     setBusy(true);
     setError(null);
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth`,
+        queryParams: { prompt: "select_account" },
+      },
     });
-    if (result.error) {
+    if (error) {
       setError("Não foi possível entrar com o Google. Tente novamente.");
       setBusy(false);
-      return;
     }
-    if (result.redirected) return;
-    await router.navigate({ to: "/", replace: true });
+    // Em caso de sucesso o navegador é redirecionado para o Google; o retorno
+    // cai de volta em /auth?code=... e é tratado no efeito acima.
   }
 
   return (

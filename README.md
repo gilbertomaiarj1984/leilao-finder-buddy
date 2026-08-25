@@ -1,26 +1,48 @@
-# Leilão Finder
+# Garimpo de Vinil (Leilão Finder)
 
-é possivel criar um scrapper que acessa o site https://leiloesbr.com.br/busca_andamento.asp?pesquisa=&gbl=0&tp=|446973636F2064652076696E696C| e realize buscas ?
+App que garimpa discos de vinil em leilões (leiloesbr.com.br), com busca,
+acompanhamento de lotes e lances.
 
-This project was built with [Lovable](https://lovable.dev).
+Stack: **TanStack Start** (React 19 + SSR) · **Supabase** (Postgres + Auth) ·
+deploy na **Vercel** · atualização periódica via **GitHub Actions**.
 
-**Live app**: https://leilao-finder-buddy.lovable.app
+## Desenvolvimento local
 
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/bf97ea36-8e49-4d12-8b5b-7f30af2cf14e).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Requer [Bun](https://bun.sh) (ou Node 18+).
 
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+bun install
+cp .env.example .env   # preencha os valores
+bun run dev
 ```
+
+App em http://localhost:3000
+
+## Variáveis de ambiente
+
+Veja `.env.example`. Resumo:
+
+| Variável | Onde | Para quê |
+|---|---|---|
+| `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` | cliente | conexão Supabase no front |
+| `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` | servidor | validação de sessão |
+| `SUPABASE_SERVICE_ROLE_KEY` | servidor | acesso aos dados (bypassa RLS) — **segredo** |
+| `LEILOESBR_EMAIL` | servidor | único e-mail Google autorizado |
+| `LEILOESBR_SENHA` | servidor | login no site de leilões (scraper) |
+| `CRON_TOKEN` | servidor + GitHub Actions | protege o endpoint `/api/cron` |
+
+## Deploy (Vercel)
+
+1. Importe o repositório na Vercel (framework detectado automaticamente via Nitro).
+2. Cadastre todas as variáveis acima em **Settings → Environment Variables**.
+3. Build command: `bun run build` · Output: gerado pelo preset `vercel` do Nitro.
+
+## Banco de dados (Supabase)
+
+O schema está consolidado em `supabase/setup.sql`; o histórico em
+`supabase/migrations/`.
+
+## Atualização periódica
+
+`.github/workflows/refresh.yml` chama `/api/cron` 4×/dia. Configure os secrets
+`APP_URL` (domínio do app na Vercel) e `CRON_TOKEN` no repositório.
