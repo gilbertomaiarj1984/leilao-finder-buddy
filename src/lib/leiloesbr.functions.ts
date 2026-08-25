@@ -5,9 +5,14 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 export const getAccessStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { allowedEmail } = await import("./access.server");
+    const { configuredEmail } = await import("./access.server");
     const email = String(context.claims?.["email"] ?? "").trim().toLowerCase();
-    return { email, allowed: email === allowedEmail() };
+    const allowed = configuredEmail();
+    return {
+      email,
+      allowed: Boolean(allowed && email === allowed),
+      configured: Boolean(allowed),
+    };
   });
 
 export const getVinylLots = createServerFn({ method: "GET" })

@@ -1,8 +1,14 @@
 /** Só o e-mail cadastrado para as casas de leilão pode usar o app. */
-export function allowedEmail(): string {
+export function configuredEmail(): string | null {
   const email = process.env["LEILOESBR_EMAIL"];
+  const normalized = email?.trim().toLowerCase();
+  return normalized || null;
+}
+
+export function allowedEmail(): string {
+  const email = configuredEmail();
   if (!email) throw new Error("LEILOESBR_EMAIL não está configurado.");
-  return email.trim().toLowerCase();
+  return email;
 }
 
 export function assertAllowed(email: string | undefined): void {
