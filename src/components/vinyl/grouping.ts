@@ -200,7 +200,9 @@ export function groupWatchedByHouse<T extends { house: string; houseUrl: string;
     byHouse.set(lot.house, group);
   }
   const num = (value: string) => {
-    const n = Number(value);
+    // Lote vazio ("") deve ir para o FIM: Number("") é 0, então guardamos o caso
+    // vazio explicitamente antes de cair no fallback POSITIVE_INFINITY.
+    const n = value.trim() === "" ? NaN : Number(value);
     return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
   };
   for (const group of byHouse.values()) {
