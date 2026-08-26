@@ -53,6 +53,42 @@ export type Database = {
         }
         Relationships: []
       }
+      lot_ai: {
+        Row: {
+          deal: string | null
+          evaluated_at: string
+          id: string
+          model: string | null
+          rarity: string | null
+          reason: string | null
+          score: number | null
+          tags: Json
+          title_hash: string
+        }
+        Insert: {
+          deal?: string | null
+          evaluated_at?: string
+          id: string
+          model?: string | null
+          rarity?: string | null
+          reason?: string | null
+          score?: number | null
+          tags?: Json
+          title_hash: string
+        }
+        Update: {
+          deal?: string | null
+          evaluated_at?: string
+          id?: string
+          model?: string | null
+          rarity?: string | null
+          reason?: string | null
+          score?: number | null
+          tags?: Json
+          title_hash?: string
+        }
+        Relationships: []
+      }
       lots: {
         Row: {
           artist: string

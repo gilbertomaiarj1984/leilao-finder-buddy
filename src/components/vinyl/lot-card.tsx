@@ -1,6 +1,8 @@
 import { ExternalLink, Eye, EyeOff, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ScoreCorner } from "@/components/vinyl/ai-score";
+import type { LotAi } from "@/components/vinyl/ai-score-utils";
 import { bidIsWinning } from "@/lib/vinyl-parse";
 
 export type CardLot = {
@@ -24,12 +26,14 @@ export function LotCard({
   onToggle,
   showDate = false,
   bidStatus,
+  ai,
 }: {
   lot: CardLot;
   busy: boolean;
   onToggle: () => void;
   showDate?: boolean;
   bidStatus?: string | null;
+  ai?: LotAi;
 }) {
   // Cores (mesma regra do painel): meu lance ganhando = verde; meu lance coberto = vermelho;
   // apenas vigiado = amarelo; caso contrário, borda neutra.
@@ -47,7 +51,10 @@ export function LotCard({
       ? "border-yellow-500 ring-1 ring-yellow-500/40"
       : "border-border";
   return (
-    <article className={`flex flex-col overflow-hidden rounded-md border bg-card ${cardClass}`}>
+    <article
+      className={`relative flex flex-col overflow-hidden rounded-md border bg-card ${cardClass}`}
+    >
+      {ai ? <ScoreCorner ai={ai} /> : null}
       <a href={lot.url} target="_blank" rel="noreferrer" className="block bg-secondary">
         {lot.image ? (
           <img

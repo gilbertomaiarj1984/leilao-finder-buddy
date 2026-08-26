@@ -83,19 +83,39 @@ CREATE TABLE IF NOT EXISTS public.app_state (
 );
 
 -- ---------------------------------------------------------------------
+-- lot_ai — avaliação da IA por lote (cache durável; 1 avaliação por disco).
+-- `id` casa com lots.id ("${idLeilao}-${idPeca}"); `title_hash` guarda o hash
+-- do título avaliado, então só re-avaliamos quando o título muda.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.lot_ai (
+  id           text PRIMARY KEY,
+  title_hash   text NOT NULL,
+  score        integer,
+  rarity       text,
+  deal         text,
+  reason       text,
+  tags         jsonb NOT NULL DEFAULT '[]',
+  model        text,
+  evaluated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------
 -- Segurança: RLS on + acesso somente para service_role (estado final)
 -- ---------------------------------------------------------------------
 ALTER TABLE public.seen_auctions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lots          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.known_artists ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_state     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lot_ai        ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.seen_auctions FROM anon, authenticated;
 REVOKE ALL ON public.lots          FROM anon, authenticated;
 REVOKE ALL ON public.known_artists FROM anon, authenticated;
 REVOKE ALL ON public.app_state     FROM anon, authenticated;
+REVOKE ALL ON public.lot_ai        FROM anon, authenticated;
 
 GRANT ALL ON public.seen_auctions TO service_role;
 GRANT ALL ON public.lots          TO service_role;
 GRANT ALL ON public.known_artists TO service_role;
 GRANT ALL ON public.app_state     TO service_role;
+GRANT ALL ON public.lot_ai        TO service_role;

@@ -13,6 +13,7 @@ import {
   Loader2,
   LogOut,
   RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -42,11 +43,14 @@ import {
 } from "@/components/vinyl/grouping";
 import { LiveAuctions } from "@/components/vinyl/live-auctions";
 import { LotCard } from "@/components/vinyl/lot-card";
+import { buildInterestMatcher, type LotAi } from "@/components/vinyl/ai-score-utils";
 import { supabase } from "@/integrations/supabase/client";
 import {
   enrichLotes,
   getAccessStatus,
+  getLotAi,
   getNextBids,
+  getUserInterests,
   getVerifiedHouses,
   getVinylLots,
   listMyBids,
@@ -232,6 +236,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const fetchVerified = useServerFn(getVerifiedHouses);
   const saveVerified = useServerFn(setVerifiedHouses);
   const fetchNextBids = useServerFn(getNextBids);
+  const fetchLotAi = useServerFn(getLotAi);
+  const fetchInterests = useServerFn(getUserInterests);
 
   const lots = useQuery({
     ...lotsQuery,
@@ -254,6 +260,42 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
+  // Avaliações da IA (score/raridade/oportunidade) e interesses do usuário: alimentam o
+  // badge de nota no canto do card. Best-effort — sem avaliação, o card fica como hoje.
+  const lotAiQuery = useQuery({
+    queryKey: ["lot-ai"] as const,
+    queryFn: () => fetchLotAi(),
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const interestsQuery = useQuery({
+    queryKey: ["user-interests"] as const,
+    queryFn: () => fetchInterests(),
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const aiById = useMemo(() => {
+    const map = new Map<string, LotAi>();
+    for (const r of lotAiQuery.data ?? [])
+      map.set(r.id, {
+        score: r.score,
+        rarity: r.rarity,
+        deal: r.deal,
+        reason: r.reason,
+        tags: r.tags,
+      });
+    return map;
+  }, [lotAiQuery.data]);
+  const matchesInterest = useMemo(
+    () => buildInterestMatcher(interestsQuery.data ?? []),
+    [interestsQuery.data],
+  );
+  // Junta a avaliação (por id) com o "casa com meus interesses" (calculado do título).
+  const aiFor = (lot: { id: string; title?: string }): LotAi | undefined => {
+    const base = aiById.get(lot.id);
+    if (!base) return undefined;
+    return { ...base, matchesInterests: matchesInterest(lot.title ?? "") };
+  };
 
   // Casas verificadas: fonte da verdade é o servidor (app_state). O localStorage é só
   // um cache para pintar a tela na hora, sem esperar a rede.
@@ -507,6 +549,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             </p>
           </div>
           <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+            <Button variant="outline" size="sm" asChild title="Análise de lotes com IA">
+              <Link to="/analise">
+                <Sparkles className="mr-2 h-4 w-4" />
+                Análise
+              </Link>
+            </Button>
             <Button variant="outline" size="sm" asChild title="Painel de mudanças">
               <Link to="/dashboard">
                 <LayoutDashboard className="mr-2 h-4 w-4" />
@@ -843,6 +891,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                     nextBid: nextBidById.get(lot.idPeca),
                                   }}
                                   busy={pending === lot.idPeca}
+                                  ai={aiFor(lot)}
                                   bidStatus={bidStatusById.get(lot.idPeca)}
                                   onToggle={() =>
                                     toggle.mutate({
@@ -1026,6 +1075,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                               nextBid: nextBidById.get(lot.idPeca),
                                             }}
                                             busy={pending === lot.idPeca}
+                                            ai={aiFor(lot)}
                                             bidStatus={bidStatusById.get(lot.idPeca)}
                                             onToggle={() =>
                                               toggle.mutate({
@@ -1182,6 +1232,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                         myBid: myBidById.get(lot.idPeca),
                                       }}
                                       busy={pending === lot.idPeca}
+                                      ai={aiFor(lot)}
                                       bidStatus={bidStatusById.get(lot.idPeca)}
                                       onToggle={() =>
                                         toggle.mutate({
