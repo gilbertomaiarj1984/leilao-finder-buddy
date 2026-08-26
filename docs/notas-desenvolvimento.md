@@ -6,12 +6,14 @@
 > caminhos/linhas exatos.
 
 ## O que é o app
+
 App que garimpa **discos de vinil** em leilão no **LeilõesBR** e casas parceiras,
 agrupando por **dia → casa de leilão → artista**, com **vigia** e **lances**
 sincronizados com a conta do usuário. Stack: **TanStack Start + React 19 + Supabase**,
 deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última seção.)_
 
 ## Restrições do ambiente (importantes)
+
 - **Não dá para testar scraping/lance daqui** (sem rede para os sites de leilão) —
   validar por análise estática + `bun -e` de funções puras; o **usuário** testa na
   prévia/produção.
@@ -27,6 +29,7 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
 - Ao interagir com o usuário: **responder em português**.
 
 ## Arquitetura de dados
+
 - Leitura normal (abrir o app) **lê só do banco/cache** — NÃO varre o site (uma
   varredura completa estoura o tempo do servidor e deixava a tela vazia).
 - **Popular** os dados é sob demanda / agendado, em **blocos** (chunks) para caber no
@@ -41,6 +44,7 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
 - `id` do lote = `"${idLeilao}-${idPeca}"`. Janela = **5 dias** (`WINDOW_DAYS`).
 
 ## Painel de mudanças (`dashboard.tsx`) — mecânica do baseline
+
 - **Baseline = snapshot global** de `{lotId: price}` em `app_state` (chave única
   `dashboard_baseline`, um registro para o app todo). `getBaseline`/`markSeen` usam o
   **service role** (`supabaseAdmin`, ignora RLS). A coluna “Últ. acesso” mostra o preço
@@ -59,6 +63,7 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
   e retornava “sucesso”, mascarando baseline que nunca persistia).
 
 ## Como o LeilõesBR funciona (scraping)
+
 - **Varredura geral é PÚBLICA** (sem login) via `publicFetch` — evita o 500 que o site
   dá em sessão logada sob carga. Categoria fixada por `tp=|446973636F2064652076696E696C|`
   (hex de “Disco de vinil”), então **todo lote já é vinil** → não exigir palavra-chave no
@@ -72,6 +77,7 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
   - Toggle vigia: `POST vigiar_peca.asp` (`idpeca/idcliente/idleilao/base`, resposta `+`/`-`).
 
 ## Nº do lote (detalhe crítico)
+
 - **A listagem geral NÃO traz o nº do lote** (confirmado). Ele só existe no **catálogo
   da casa**. O link de cada lote embute tudo:
   `abre_catalogo.asp?t=1|<domínio-da-casa>|<idLeilao>|<idPeca>` → `parseAuctionRef`
@@ -92,6 +98,7 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
   casas dos primeiros leilões sem número (status/tamanho/contagem de cards/amostra).
 
 ## Cores (padrão do sistema)
+
 - **Verde** = tenho lance e estou ganhando/arrematei (`bidIsWinning(status)` casa
   `venc|arremat|arrebat`). **Vermelho** = tenho lance mas coberto. **Amarelo** = só
   vigiado (sem lance). Precedência: lance vence vigia.
@@ -99,7 +106,7 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
   (`classifyBid`, `houseAnchor`, `computeHouseStats`, `watchedMatchesSearch`,
   `groupWatchedByHouse`, etc.) após refatoração.
 - **Busca principal + agrupamento dos vigiados/lances:** `watchedMatchesSearch(lot,
-  searchNorm)` casa por **título/artista/casa/nº do lote** (mesma regra das abas de dia).
+searchNorm)` casa por **título/artista/casa/nº do lote** (mesma regra das abas de dia).
   `groupWatchedByHouse<T>(lots)` agrupa por casa e ordena por **nº do lote** (numérico
   primeiro, depois lexicográfico); é genérico e reutilizado para **vigiados** e **meus
   lances** (`bidsByHouse`). A aba **“Vigiados”** (ver todos) e a **“Vigiados do dia”**
@@ -114,6 +121,7 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
   `computeBidStats` para a visão “Meus lances”.
 
 ## Atualização em background (4x/dia)
+
 - **Endpoint** `/api/cron` (tratado direto em `src/server.ts`, FORA das server functions
   → sem Supabase/CSRF), protegido pelo segredo **`CRON_TOKEN`** (lido de `process.env`;
   token pode vir no header `x-cron-token` ou na query `?token=`). Steps: `chunk` (varre
@@ -127,9 +135,10 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
 - O **“Atualizar tudo”** manual na UI continua existindo (faz chunk + enrich por cursor).
 
 ## Ferramenta separada: lance no fechamento (missleiloes)
+
 - `tools/missleiloes-sniper.user.js` — userscript (Tampermonkey/bookmarklet) que roda **na
   página do pregão ao vivo** do missleiloes (plataforma white-label; `@match
-  */presencial/presencial.asp*`). NÃO faz parte do app.
+*/presencial/presencial.asp*`). NÃO faz parte do app.
 - Mecânica descoberta: pregão **ao vivo com soft-close** (cada lance **reinicia** o
   cronômetro). Objeto global **`novoPresencial`**: polling (~1s) via `LePregao`
   (`defineLeRegistro` → `le_registro_pregao_cfbr_v1.asp`), estado em `statusatual`
@@ -142,6 +151,37 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
   é reagir mais rápido que humanos no último instante.
 
 ## Feito recentemente
+
+- **Revisão geral + refatoração pós-Lovable** — ✅ concluído (PRs #34, #36, #37;
+  footer em #35). Passada de limpeza sobre o código herdado, em fases:
+  - **Lint/format**: `prettier --write` em todo o repo (nunca havia passado pelo
+    formatador → `bun run lint` tinha ~515 erros). `src/integrations/supabase/types.ts`
+    (gerado) e `tools/` (userscript) passaram a ser **ignorados** no ESLint/Prettier
+    (ver `eslint.config.js`/`.prettierignore`); 2 regex com escape inútil corrigidas.
+    `bun run lint` fica verde (só 2 warnings de shadcn em `badge`/`button`).
+  - **Remoção de morto**: −36 componentes shadcn não usados (sobraram os 10 em uso —
+    badge, button, command, dialog, input, popover, select, skeleton, sonner, tabs) e o
+    hook `use-mobile`; **−31 dependências** (`recharts`, `react-hook-form`, `zod`,
+    `date-fns`, `@hookform/resolvers`, ~21 `@radix-ui/*`, etc.); removido o `.lovable/`.
+  - **Dedup**: helper de fetch do Supabase (chave nova `sb_*`, remove o `Authorization`
+    bearer e usa só `apikey`) extraído para `src/integrations/supabase/api-fetch.ts`
+    (antes copiado em `client.ts`, `client.server.ts`, `auth-middleware.ts`).
+  - **Cloudflare/Wrangler**: removidos resíduos do `.gitignore` e o fallback de
+    `CRON_TOKEN` via binding `env` no `cron.server.ts` (alvo é só Vercel; token vem de
+    `process.env`).
+  - **Split do `index.tsx`** (1774 → ~1070 linhas): lógica movida para
+    `src/components/vinyl/` — `grouping.ts` (helpers puros + tipos), `badges.tsx`,
+    `filters.tsx`, `lot-card.tsx`, `bid-house-sections.tsx`, `live-auctions.tsx`. Sem
+    mudança de comportamento. (É por isso que as seções de mecânica acima citam esses
+    módulos.)
+  - **Correções do code-review + security review** (limpo): ordenação de lote **vazio ao
+    fim** (`Number("")` é 0, não NaN) em `groupWatchedByHouse`/`loteNum`; `houseAnchor`
+    deduplicado (agora só em `grouping.ts`); e a cor de lotes **"Arrematados"** unificada
+    em verde — `bidIsWinning` passou a casar `venc|arremat|arrebat` (igual ao
+    `classifyBid`), com referência cruzada entre as duas funções (ver seção **Cores**).
+- **Rodapé global + versão** — ✅ concluído (PR #35). `src/components/Footer.tsx` +
+  `src/lib/version.ts` (`APP_VERSION`, fonte única; bump a cada release) no layout raiz
+  (`__root.tsx`, `flex min-h-screen flex-col`). `package.json` ganhou o campo `version`.
 - **Painel: baseline + nº de lote na 1ª visita** — ✅ concluído (PR #30). Corrigiu os
   três sintomas relatados: (a) nº do lote sumido para lotes **sem vigia/lance** →
   enrich passa a rodar também no painel; (b) “último acesso” vazio e (c) variação
@@ -160,6 +200,7 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
   Ver detalhe na seção **Cores** (`HouseStatBadges`/`computeHouseStats`).
 
 ## Pendências (próximas sessões)
+
 1. **Lance pelo sistema (leiloesbr):** avaliar/implementar dar lance pelo app. Regras do
    usuário: sempre o **próximo menor valor permitido**; após lançar, **verificar nos
    segundos seguintes se foi coberto** (o lance automático de outro pode cobrir) e,
@@ -179,6 +220,7 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
    gravação em `app_state` (era mascarada antes).
 
 ## Convenções de trabalho
+
 - Branch de trabalho recriada de `origin/main` a cada tarefa (a `main` avança sozinha).
 - Rodapé de atribuição em qualquer post no GitHub. Commits terminam com
   `Co-Authored-By: Claude ...`.
@@ -193,6 +235,7 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
 > acima (scraping, baseline, nº de lote, cores) continua válida.
 
 ### Build / Auth (detalhes de implementação)
+
 - **Deploy agora é a Vercel**, não Cloudflare. O Nitro é um **plugin Vite separado**
   (`import { nitro } from 'nitro/vite'` no `vite.config.ts`) e **auto-detecta a Vercel**
   via `process.env.VERCEL` (preset forçável por `SERVER_PRESET`/`NITRO_PRESET`). O build
@@ -213,6 +256,7 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
   pelo Lovable (aspas simples); pré-existentes, não faziam parte da migração.
 
 ### Infra atual
+
 - **Supabase**: projeto `rjqzzxhgcelixlgnfcic` (`https://rjqzzxhgcelixlgnfcic.supabase.co`).
   `supabase/config.toml` atualizado. RLS mantém tudo só para `service_role` (o front não
   lê o banco direto; server functions usam `supabaseAdmin`).
@@ -233,6 +277,7 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
   (`sb_secret_`). A `publishable` (`sb_publishable_`) é **pública** por design.
 
 ### Como os dados foram migrados
+
 - Export do Lovable = `.backup` (`pg_dump -Fc`, dump do banco inteiro).
 - Recriamos só `public` com `setup.sql` e restauramos **só os dados**:
   `pg_restore --data-only --no-owner --no-privileges --schema=public -d <conn> arquivo.backup`.
@@ -240,6 +285,7 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
   `LEILOESBR_EMAIL`).
 
 ### Pendências desta migração
+
 - [ ] Secrets do cron no GitHub (`APP_URL`, `CRON_TOKEN`) e validar 1ª execução do
       workflow `refresh.yml`.
 - [ ] (Opcional) Rotacionar o `CRON_TOKEN` (gerado em chat na migração).
@@ -284,3 +330,5 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
 - (Opcional) Automatizar/validar o bump da versão em CI (garantir que `APP_VERSION` foi
   incrementado quando o PR muda código do app).
 - (Opcional) Exibir também commit/data do build no rodapé, se ajudar a rastrear deploys.
+- [x] Commit dedicado de formatação (prettier) nos arquivos herdados do Lovable — feito
+      na revisão geral (PR #34, fase de lint/format).
