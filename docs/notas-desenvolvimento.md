@@ -1,69 +1,286 @@
-# Notas de desenvolvimento
+# Notas de desenvolvimento — Garimpo de Vinil
 
-Registro de conhecimento acumulado entre sessões de trabalho no **Garimpo de Vinil**.
-Cada sessão acrescenta uma seção nova **ao final**, sem reescrever o histórico anterior.
+> Documento de continuidade entre sessões. Descreve **arquitetura, mecânica dos sites
+> de leilão, decisões e pendências**. O código é refatorado com frequência (helpers
+> mudam de arquivo); prefira **procurar por nome de função** (`grep`) a confiar em
+> caminhos/linhas exatos.
 
-## Visão geral do projeto
+## O que é o app
+App que garimpa **discos de vinil** em leilão no **LeilõesBR** e casas parceiras,
+agrupando por **dia → casa de leilão → artista**, com **vigia** e **lances**
+sincronizados com a conta do usuário. Stack: **TanStack Start + React 19 + Supabase**,
+deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última seção.)_
 
-- **Stack:** TanStack Start (React 19 + SSR), build com Vite + Nitro, deploy na Vercel.
-- **Backend:** Supabase (Auth nativo OAuth Google/PKCE + dados via `service_role` no servidor; RLS bloqueia acesso direto).
-- **Domínio:** garimpa lotes de disco de vinil em leilões do LeilõesBR nos próximos 5 dias, agrupados por dia, casa de leilão e artista, com vigia sincronizada à conta do usuário.
-- **Acesso restrito** ao e-mail em `LEILOESBR_EMAIL` (ver `src/lib/access.server.ts`).
-- **Atualização periódica** via GitHub Actions chamando `/api/cron` (`.github/workflows/refresh.yml`), protegida por `CRON_TOKEN`.
-- **Gerenciador de pacotes:** `bun` (há `bun.lock` e `bunfig.toml`).
+## Restrições do ambiente (importantes)
+- **Não dá para testar scraping/lance daqui** (sem rede para os sites de leilão) —
+  validar por análise estática + `bun -e` de funções puras; o **usuário** testa na
+  prévia/produção.
+- **`bun install` funciona** (npm público no `bunfig.toml`), então `bun run build`,
+  `bunx tsc --noEmit` e `bun run lint` rodam localmente.
+- **Migrações `.sql` do repo NÃO são auto-aplicadas** — o schema é recriado via
+  `supabase/setup.sql` (SQL Editor ou `psql -f`). As tabelas (`lots`, `known_artists`,
+  `app_state`, `seen_auctions`) já existem no projeto Supabase.
+- **Git push HTTPS costuma funcionar**; quando não, usar os tools `mcp__github__*`.
+  Fluxo: branch de trabalho → PR → merge.
+- **Recriar a branch a partir de `origin/main`** antes de cada tarefa (a `main` pode
+  receber commits de outras sessões/PRs).
+- Ao interagir com o usuário: **responder em português**.
 
-### Mapa rápido de arquivos
+## Arquitetura de dados
+- Leitura normal (abrir o app) **lê só do banco/cache** — NÃO varre o site (uma
+  varredura completa estoura o tempo do servidor e deixava a tela vazia).
+- **Popular** os dados é sob demanda / agendado, em **blocos** (chunks) para caber no
+  tempo do servidor:
+  - `scrapeVinylChunk(fromPage, size)` — varre um bloco de páginas da listagem geral.
+  - `enrichMissingLotes(maxAuctions, offset)` — preenche nº de lote via catálogo (ver
+    abaixo). Usa **cursor `offset`** sobre a lista **estável e ordenada** de todos os
+    leilões da janela (não repete os primeiros); retorna `{updated, total, nextOffset, done}`.
+- Camadas: `memCache` (módulo, garante a lista mesmo sem banco) + tabela **`lots`**
+  (durável, upsert por `id`, merge — nunca apaga o que não veio) + `app_state`
+  (baseline do painel “desde o último acesso”, chave `dashboard_baseline`).
+- `id` do lote = `"${idLeilao}-${idPeca}"`. Janela = **5 dias** (`WINDOW_DAYS`).
 
-| Área | Caminho |
-| --- | --- |
-| Root layout / shell / error+404 | `src/routes/__root.tsx` |
-| Rota autenticada (guard) | `src/routes/_authenticated/route.tsx` |
-| Listagem principal (home) | `src/routes/_authenticated/index.tsx` (arquivo grande, ~1775 linhas) |
-| Painel de mudanças | `src/routes/_authenticated/dashboard.tsx` |
-| Login | `src/routes/auth.tsx` |
-| Integração Supabase | `src/integrations/supabase/` |
-| Lógica de scraping/negócio | `src/lib/leiloesbr-*.server.ts`, `src/lib/vinyl-parse.ts` |
-| Componentes UI (shadcn) | `src/components/ui/` |
+## Painel de mudanças (`dashboard.tsx`) — mecânica do baseline
+- **Baseline = snapshot global** de `{lotId: price}` em `app_state` (chave única
+  `dashboard_baseline`, um registro para o app todo). `getBaseline`/`markSeen` usam o
+  **service role** (`supabaseAdmin`, ignora RLS). A coluna “Últ. acesso” mostra o preço
+  do snapshot; “Variação” = `computeDelta(atual, baseline[lot.id])` → `novo` quando a
+  chave **não existe** no baseline.
+- **Semente automática na 1ª visita** (`baselineSeeded` ref + `markSeen({silent:true})`):
+  sem isso o baseline nasce vazio e **tudo aparece como “novo” e sem “último acesso”**.
+  Na visita em que semeia, os itens ainda saem como “novo” e só depois viram “—”; a
+  variação real aparece **a partir da visita seguinte**. O botão “Marcar como visto”
+  (`silent:false`) reancora o baseline quando o usuário quiser.
+- **Enrich no painel** (`enrichRan` ref): igual à listagem, ao abrir roda o laço
+  `enrichLotes({max,offset})` **uma vez** quando há lote sem `lote`, em segundo plano,
+  e ao terminar faz `setQueryData(["vinyl-lots"], fresh)`. Sem isso, só lotes com
+  vigia/lance (overlay `loteById`) mostravam número — os demais ficavam “—”.
+- `markSeen` (server, `app-state.server.ts`) **propaga** erro de gravação (antes engolia
+  e retornava “sucesso”, mascarando baseline que nunca persistia).
 
-### Comandos de validação (rodar antes de commit)
+## Como o LeilõesBR funciona (scraping)
+- **Varredura geral é PÚBLICA** (sem login) via `publicFetch` — evita o 500 que o site
+  dá em sessão logada sob carga. Categoria fixada por `tp=|446973636F2064652076696E696C|`
+  (hex de “Disco de vinil”), então **todo lote já é vinil** → não exigir palavra-chave no
+  título; só descartar CD/DVD/K7 (`looksNonVinyl`, em `vinyl-parse.ts`).
+- **Login (`authFetch`)** só para a **conta**: credenciais em env `LEILOESBR_EMAIL` /
+  `LEILOESBR_SENHA`. Endpoints da conta:
+  - **Vigias**: `conta_site.asp?l=8` → `listWatchedFromSite` (cards `.oc-item`, `data-watch="idPeca,email,idLeilao,base"`, preço em `<b class="pb-1">`).
+  - **Meus lances**: `conta_site.asp?l=4` → `listMyBidsFromSite` (mesmos `.oc-item`;
+    **meu lance** em `.product-price b.pb-1`, **status** na classe/ícone `lstatus`:
+    `Coberto`, `Vencendo`, `Vencedor`, `Coberto e Vendido`, `Não vendido`).
+  - Toggle vigia: `POST vigiar_peca.asp` (`idpeca/idcliente/idleilao/base`, resposta `+`/`-`).
 
-```bash
-bun install            # necessário na 1ª vez da sessão (deps não vêm no clone)
-bun run lint           # eslint (warnings pré-existentes em ui/badge e ui/button são esperados)
-bunx tsc --noEmit      # typecheck
-bunx prettier --check <arquivos>
-bun run build          # build de produção (Vite + Nitro); gera .output (ignorado no git)
-```
+## Nº do lote (detalhe crítico)
+- **A listagem geral NÃO traz o nº do lote** (confirmado). Ele só existe no **catálogo
+  da casa**. O link de cada lote embute tudo:
+  `abre_catalogo.asp?t=1|<domínio-da-casa>|<idLeilao>|<idPeca>` → `parseAuctionRef`
+  extrai domínio + idLeilao (então **cada casa usa a própria URL**, automaticamente).
+- `fetchLoteMap(domain, idLeilao)` busca **`<domínio>/catalogo.asp?Num=<idLeilao>`**
+  (público) e cruza `idPeca → nº do lote`. **1 requisição por leilão**, não por lote.
+- **Parser por posição** (`parseCatalogLotes`, em `leiloesbr-catalog.server.ts`): NÃO
+  depende da classe do container (o catálogo completo tem `peca.asp?ID` + `LoteProd`
+  fora de `.prod-box`, que só aparece nos “destaques” do `leilao.asp`). Para cada
+  `peca.asp?ID=<idPeca>`, pega o `Lote: <n>` (bloco `LoteProd`) no trecho até a próxima
+  `peca.asp`.
+- **Casas fora da plataforma LeilõesBR** (ex.: `abreucolecionismo`,
+  `arteseantiquariobenjamin`) renderizam o catálogo via JS → `peca.asp` não vem no HTML
+  → **não rendem número** por esse caminho. Essas continuam cobertas pelo **overlay**:
+  vigias (`l=8`) e lances (`l=4`) trazem o `lote`, sobreposto por `idPeca` no
+  painel/cards (mapa `loteById`).
+- Diagnóstico disponível: `GET /api/cron?step=catdebug&token=…` sonda os catálogos das
+  casas dos primeiros leilões sem número (status/tamanho/contagem de cards/amostra).
 
-Observação: sem `bun install`, o `eslint` falha com `Cannot find package '@eslint/js'`.
+## Cores (padrão do sistema)
+- **Verde** = tenho lance e estou ganhando/arrematei (`bidIsWinning(status)` casa
+  `venc|arremat|arrebat`). **Vermelho** = tenho lance mas coberto. **Amarelo** = só
+  vigiado (sem lance). Precedência: lance vence vigia.
+- Helpers de classificação/agrupamento ficam em `src/components/vinyl/grouping.ts`
+  (`classifyBid`, `houseAnchor`, `computeHouseStats`, `watchedMatchesSearch`,
+  `groupWatchedByHouse`, etc.) após refatoração.
+- **Busca principal + agrupamento dos vigiados/lances:** `watchedMatchesSearch(lot,
+  searchNorm)` casa por **título/artista/casa/nº do lote** (mesma regra das abas de dia).
+  `groupWatchedByHouse<T>(lots)` agrupa por casa e ordena por **nº do lote** (numérico
+  primeiro, depois lexicográfico); é genérico e reutilizado para **vigiados** e **meus
+  lances** (`bidsByHouse`). A aba **“Vigiados”** (ver todos) e a **“Vigiados do dia”**
+  respeitam a busca e são apresentadas **por dia → casa** (mesmo layout das abas de dia,
+  usando `dayLabel`); o contador da aba reflete o resultado da busca.
+- **Badges por casa (ao lado do nome):** `HouseStatBadges` em
+  `src/components/vinyl/badges.tsx`, alimentado por `computeHouseStats` (em
+  `grouping.ts`, tipo `HouseStats = {vigia, green, red}`). As três contagens são
+  **mutuamente exclusivas** e seguem a precedência de cor (lance verde/vermelho vence
+  vigia). Usado em `index.tsx` nos três pontos onde o nome da casa aparece: chips de
+  navegação, seções por casa e “Vigiados do dia”. Há também `BidStatBadges` +
+  `computeBidStats` para a visão “Meus lances”.
+
+## Atualização em background (4x/dia)
+- **Endpoint** `/api/cron` (tratado direto em `src/server.ts`, FORA das server functions
+  → sem Supabase/CSRF), protegido pelo segredo **`CRON_TOKEN`** (lido de `process.env`;
+  token pode vir no header `x-cron-token` ou na query `?token=`). Steps: `chunk` (varre
+  bloco), `enrich` (com `offset`), `catdebug`.
+- **GitHub Actions** `.github/workflows/refresh.yml`: `cron: "0 3,9,15,21 * * *"` (UTC =
+  BRT 00/06/12/18h) + `workflow_dispatch`. Varre em blocos até `nextPage:null`, depois
+  enriquece por `offset` até `done:true`.
+- **Configuração (fora do código):** GitHub secrets `APP_URL`
+  (`https://leilao-finder-buddy.vercel.app`) e `CRON_TOKEN`; e a env `CRON_TOKEN` na
+  **Vercel** (mesmo valor). O `CRON_TOKEN` **não** está no repo.
+- O **“Atualizar tudo”** manual na UI continua existindo (faz chunk + enrich por cursor).
+
+## Ferramenta separada: lance no fechamento (missleiloes)
+- `tools/missleiloes-sniper.user.js` — userscript (Tampermonkey/bookmarklet) que roda **na
+  página do pregão ao vivo** do missleiloes (plataforma white-label; `@match
+  */presencial/presencial.asp*`). NÃO faz parte do app.
+- Mecânica descoberta: pregão **ao vivo com soft-close** (cada lance **reinicia** o
+  cronômetro). Objeto global **`novoPresencial`**: polling (~1s) via `LePregao`
+  (`defineLeRegistro` → `le_registro_pregao_cfbr_v1.asp`), estado em `statusatual`
+  (P→X→1/2/3(VOU BATER)→4(FECHANDO)→F), `valorpecaatual` (próximo lance já calculado),
+  `lancevencedor`; lance por **`Fazerlance()`** → `POST lote_fazerlance.asp`
+  (`idpeca/valor/leilao`). O site **desabilita o botão no 4**; `Fazerlance` só bloqueia
+  `'F'`. Incremento pela função global `incremento()`.
+- v3 do script: **um lance único no status 4 (FECHANDO)**, com Turbo (polling próprio
+  ~250ms) e confirmação pós-lance. Sniping clássico não existe no soft-close; a vantagem
+  é reagir mais rápido que humanos no último instante.
+
+## Feito recentemente
+- **Painel: baseline + nº de lote na 1ª visita** — ✅ concluído (PR #30). Corrigiu os
+  três sintomas relatados: (a) nº do lote sumido para lotes **sem vigia/lance** →
+  enrich passa a rodar também no painel; (b) “último acesso” vazio e (c) variação
+  sempre “novo” → **semente automática** do baseline quando ainda não existe; e o
+  `markSeen` deixou de mascarar erro de gravação. Detalhe na seção **Painel de
+  mudanças**. (Merge trouxe também refino de `loteNum`/ordenação de lote vazio ao fim.)
+- **Busca + vigiados por dia/casa** — ✅ concluído (PR #31, mesclado). A aba
+  **“Vigiados”** (ver todos) passou a **respeitar a busca principal** e a ser
+  apresentada **separada por dia e casa de leilão** (antes era uma grade plana), no mesmo
+  layout das abas de dia. Extraídos `watchedMatchesSearch` e `groupWatchedByHouse`
+  (ver seção **Cores**), depois movidos para `grouping.ts` e reutilizados também em
+  “Meus lances”. (Merge via `mcp__github__merge_pull_request`.)
+- **Badges por casa (UI)** — ✅ concluído (PR #29). Ao lado do nome da casa, além do
+  nº de lotes, mostra **nº de vigia (amarelo)**, **nº com lance coberto (vermelho)** e
+  **nº ganhando (verde)**, padronizado em todos os pontos onde o nome da casa aparece.
+  Ver detalhe na seção **Cores** (`HouseStatBadges`/`computeHouseStats`).
+
+## Pendências (próximas sessões)
+1. **Lance pelo sistema (leiloesbr):** avaliar/implementar dar lance pelo app. Regras do
+   usuário: sempre o **próximo menor valor permitido**; após lançar, **verificar nos
+   segundos seguintes se foi coberto** (o lance automático de outro pode cobrir) e,
+   se for o caso, relançar. **Bloqueio atual:** não temos o **endpoint de lance do
+   leiloesbr** nem a **regra de incremento** dele — precisa que o usuário **capture**
+   (F12 → Network, num lote barato) a requisição de lance (URL/params/resposta) ou o JS
+   que a dispara. Considerar que o leiloesbr provavelmente já tem “lance automático”
+   nativo (pode ser mais seguro). ToS/edital costumam proibir automação — decisão/risco
+   do usuário.
+2. **Confirmar em produção** que o `enrich` por cursor passou a preencher os números
+   (casas da plataforma, ex.: bruce) após o deploy — rodar o workflow e ver `updated>0`.
+   Confirmar também no **painel** (que agora dispara enrich ao abrir) que os lotes sem
+   vigia/lance passam a mostrar número.
+3. **Validar o baseline do painel em produção** (PR #30): 1ª visita deve semear (todos
+   “novo” só nessa visita) e a **2ª visita** já mostrar variação/“último acesso”. Se
+   persistir tudo “novo”, o `markSeen` agora **lança** o erro real (toast) — investigar a
+   gravação em `app_state` (era mascarada antes).
+
+## Convenções de trabalho
+- Branch de trabalho recriada de `origin/main` a cada tarefa (a `main` avança sozinha).
+- Rodapé de atribuição em qualquer post no GitHub. Commits terminam com
+  `Co-Authored-By: Claude ...`.
+- Não colar páginas HTML inteiras no chat (consomem muito contexto/tokens) — pedir só o
+  bloco relevante (um card) quando precisar de HTML de um site.
+
+---
+
+## Migração: saída do Lovable → Supabase próprio + Vercel (2026-08-25)
+
+> Registro da migração para continuidade. A mecânica do app descrita nas seções
+> acima (scraping, baseline, nº de lote, cores) continua válida.
+
+### Build / Auth (detalhes de implementação)
+- **Deploy agora é a Vercel**, não Cloudflare. O Nitro é um **plugin Vite separado**
+  (`import { nitro } from 'nitro/vite'` no `vite.config.ts`) e **auto-detecta a Vercel**
+  via `process.env.VERCEL` (preset forçável por `SERVER_PRESET`/`NITRO_PRESET`). O build
+  gera `.vercel/output` (Build Output API v3). `vercel.json`: `bun run build`,
+  `bun install`, `framework: null`.
+- **`bun install` funciona** agora: `bunfig.toml` aponta para o **npm público**
+  (`registry.npmjs.org`) e o `bun.lock` foi regenerado (a registry privada do Lovable
+  dava 403). Logo, `bun run build` / `bunx tsc --noEmit` / `bun run lint` rodam local.
+- **Auth é Supabase Auth nativo** (Google, **PKCE**) — saiu o broker
+  `@lovable.dev/cloud-auth-js`. Fluxo em `src/routes/auth.tsx`: `signInWithOAuth`
+  com `redirectTo: origin + '/auth'` → volta em `/auth?code=...` →
+  `exchangeCodeForSession(code)`. Client com `flowType:'pkce'` e
+  `detectSessionInUrl:false` (`src/integrations/supabase/client.ts`).
+- **Schema**: consolidado em `supabase/setup.sql` (recria tabelas/triggers/RLS em um
+  projeto novo). As migrations continuam não sendo auto-aplicadas — quem aplica agora é
+  você (SQL Editor ou `psql -f`).
+- **Registry/lint**: os erros `prettier/prettier` em massa eram dos arquivos gerados
+  pelo Lovable (aspas simples); pré-existentes, não faziam parte da migração.
+
+### Infra atual
+- **Supabase**: projeto `rjqzzxhgcelixlgnfcic` (`https://rjqzzxhgcelixlgnfcic.supabase.co`).
+  `supabase/config.toml` atualizado. RLS mantém tudo só para `service_role` (o front não
+  lê o banco direto; server functions usam `supabaseAdmin`).
+- **Vercel**: produção em `https://leilao-finder-buddy.vercel.app` (branch `main`).
+  Previews de PR usam URL com hash que **muda a cada deploy**.
+- **Auth (Supabase → Authentication → URL Configuration)**:
+  - Site URL: `https://leilao-finder-buddy.vercel.app`
+  - Redirect URLs: `https://leilao-finder-buddy.vercel.app/**`,
+    `https://leilao-finder-buddy-*-gilbertomaiarj1984s-projects.vercel.app/**` (previews),
+    `http://localhost:3000/**`.
+  - Google OAuth configurado no Supabase (Providers → Google); no Google Cloud, o
+    Authorized redirect URI é `https://rjqzzxhgcelixlgnfcic.supabase.co/auth/v1/callback`.
+- **Env vars** (ver `.env.example`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`,
+  `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
+  `LEILOESBR_EMAIL`, `LEILOESBR_SENHA`, `CRON_TOKEN`. Na Vercel devem estar em
+  **Production**; mudar env exige **Redeploy**. O `.env` saiu do Git (gitignored).
+- **Segredos rotacionados** após a migração: senha do banco e `service_role`
+  (`sb_secret_`). A `publishable` (`sb_publishable_`) é **pública** por design.
+
+### Como os dados foram migrados
+- Export do Lovable = `.backup` (`pg_dump -Fc`, dump do banco inteiro).
+- Recriamos só `public` com `setup.sql` e restauramos **só os dados**:
+  `pg_restore --data-only --no-owner --no-privileges --schema=public -d <conn> arquivo.backup`.
+- Usuários do `auth` **não** migrados (login refeito com Google; acesso gated por
+  `LEILOESBR_EMAIL`).
+
+### Pendências desta migração
+- [ ] Secrets do cron no GitHub (`APP_URL`, `CRON_TOKEN`) e validar 1ª execução do
+      workflow `refresh.yml`.
+- [ ] (Opcional) Rotacionar o `CRON_TOKEN` (gerado em chat na migração).
+- [ ] (Opcional) Commit dedicado de formatação (prettier) nos arquivos herdados do Lovable.
 
 ---
 
 ## Sessão 2026-08-26 — Rodapé + versionamento do app
 
-**Branch:** `claude/footer-versioning-4646i5` · **PR:** [#35](https://github.com/gilbertomaiarj1984/leilao-finder-buddy/pull/35)
+> Branch `claude/footer-versioning-4646i5` · PR
+> [#35](https://github.com/gilbertomaiarj1984/leilao-finder-buddy/pull/35).
 
 ### O que foi feito
+- **Fonte única da versão:** `src/lib/version.ts` exporta `APP_VERSION` (semver). É o
+  **único** lugar para dar bump. Começou em `0.1.0`. `package.json` também recebeu
+  `"version": "0.1.0"` para o campo ficar consistente.
+- **Rodapé global:** `src/components/Footer.tsx` lê `APP_VERSION` e exibe `v{versão}`,
+  usando os tokens de design (`border`/`muted-foreground`/`card`).
+- **Montagem no root:** `<Footer />` foi adicionado ao `RootComponent` de
+  `src/routes/__root.tsx`, dentro de um wrapper `flex min-h-screen flex-col` (conteúdo em
+  `flex-1`) → aparece em **todas** as rotas via `<Outlet />` e fica sempre no fim da página.
+- Validado: prettier, `bun run lint` (só os warnings pré-existentes em `ui/badge` e
+  `ui/button`), `bunx tsc --noEmit` e `bun run build` — todos verdes.
 
-1. **Fonte única de versão** — `src/lib/version.ts` exporta `APP_VERSION` (semver). É o **único** lugar para dar bump. Começou em `0.1.0`.
-2. **Rodapé global** — `src/components/Footer.tsx` lê `APP_VERSION` e exibe `v{versão}` no rodapé. Usa tokens de design (`border`, `muted-foreground`, `card`).
-3. **Montagem global** — o `<Footer />` foi adicionado ao `RootComponent` em `src/routes/__root.tsx`, dentro de um wrapper flex (`flex min-h-screen flex-col` + `flex-1` no conteúdo) para que apareça em **todas** as rotas via `<Outlet />` e fique sempre no fim da página.
-4. **`package.json`** — adicionado `"version": "0.1.0"` para manter o campo consistente com o app.
+### Convenção de versionamento (usar nos PRs)
+- **Bump em `src/lib/version.ts` a cada release**, seguindo semver: **PATCH** = correção;
+  **MINOR** = nova funcionalidade compatível; **MAJOR** = mudança incompatível.
+- **Colocar o número da versão no título do PR** (ex.: `v0.2.0 — filtro por casa`).
+- O rodapé em produção mostra a versão no ar → confirma visualmente qual PR foi implantado.
+- Versão atual ao fim desta sessão: **v0.1.0**.
 
-Validado: prettier, lint (só warnings pré-existentes), `tsc --noEmit` e `build` — todos verdes.
+### Observação de processo (aprendizado)
+- Este arquivo **já existia na `main`**; a branch de trabalho tinha sido criada de uma
+  base anterior à sua criação. Ao criar o arquivo "do zero" na branch, houve conflito
+  add/add contra a `main`, resolvido mesclando `origin/main` e mantendo o conteúdo real +
+  **acrescentando esta seção ao final**. Reforço da convenção já registrada: **recriar/
+  atualizar a branch a partir de `origin/main` antes de cada tarefa** e, ao "mesclar
+  notas", **fazer fetch da `main` e só então acrescentar ao final**.
 
-### Convenção de versionamento (importante para PRs)
-
-- **Bump em `src/lib/version.ts` a cada release**, seguindo semver:
-  - **PATCH** (`0.1.1`) → correção de bug / ajuste pequeno
-  - **MINOR** (`0.2.0`) → nova funcionalidade compatível
-  - **MAJOR** (`1.0.0`) → mudança incompatível
-- **Usar o número da versão no título dos PRs**, ex.: `v0.2.0 — filtro por casa de leilão`.
-- O rodapé em produção mostra qual versão está no ar → dá para confirmar visualmente qual PR foi implantado.
-- Versão atual no fim desta sessão: **v0.1.0**.
-
-### Próximos passos / ideias em aberto
-
+### Ideias em aberto
 - (Opcional) Acompanhar o PR #35: reagir a falhas de CI e comentários de review.
-- (Opcional) Automatizar o bump da versão (ex.: script ou checagem em CI para garantir que `APP_VERSION` foi incrementado no PR).
-- Considerar exibir também o hash/commit ou data do build no rodapé, se for útil rastrear deploys específicos.
+- (Opcional) Automatizar/validar o bump da versão em CI (garantir que `APP_VERSION` foi
+  incrementado quando o PR muda código do app).
+- (Opcional) Exibir também commit/data do build no rodapé, se ajudar a rastrear deploys.

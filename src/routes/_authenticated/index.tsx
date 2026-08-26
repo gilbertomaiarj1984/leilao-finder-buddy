@@ -5,47 +5,47 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  ChevronsUpDown,
   ChevronUp,
   Eye,
-  EyeOff,
   ExternalLink,
   Gavel,
   LayoutDashboard,
   Loader2,
   LogOut,
-  Radio,
   RefreshCw,
-  Trophy,
 } from "lucide-react";
 import { Component, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { BidStatBadges, HouseStatBadges } from "@/components/vinyl/badges";
+import { BidHouseSections, type BidCard } from "@/components/vinyl/bid-house-sections";
+import { ArtistFilter, PriceFilter } from "@/components/vinyl/filters";
+import {
+  artistOptions,
+  bidMatchesSearch,
+  computeBidStats,
+  computeHouseStats,
+  dayLabel,
+  groupByArtist,
+  groupByHouse,
+  groupWatchedByHouse,
+  houseAnchor,
+  matchesPriceRange,
+  watchedDateToKey,
+  watchedMatchesSearch,
+  type HouseGroup,
+} from "@/components/vinyl/grouping";
+import { LiveAuctions } from "@/components/vinyl/live-auctions";
+import { LotCard } from "@/components/vinyl/lot-card";
 import { supabase } from "@/integrations/supabase/client";
 import {
   enrichLotes,
   getAccessStatus,
-  getLiveAuctions,
   getVinylLots,
   listMyBids,
   scrapeVinylChunk,
@@ -53,9 +53,7 @@ import {
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import {
   auctionFinished,
-  bidIsWinning,
   normalizeForMatch,
-  parsePrice,
   UNCLASSIFIED_LABEL,
   type VinylLot,
 } from "@/lib/vinyl-parse";
@@ -84,382 +82,6 @@ export const Route = createFileRoute("/_authenticated/")({
 
 const lotsQuery = { queryKey: ["vinyl-lots"] as const };
 const watchedQuery = { queryKey: ["vinyl-watched"] as const };
-const liveQuery = { queryKey: ["vinyl-live-auctions"] as const };
-
-/** Leilões que já começaram (somem da listagem pública) e tinham lotes de vinil. */
-function LiveAuctions() {
-  const fetchLive = useServerFn(getLiveAuctions);
-  const live = useQuery({
-    ...liveQuery,
-    queryFn: () => fetchLive(),
-    staleTime: 60 * 1000,
-    refetchInterval: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-
-  const auctions = live.data ?? [];
-  if (!auctions.length) return null;
-
-  return (
-    <section className="mb-8 rounded-lg border border-primary/40 bg-primary/5 p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <span className="relative flex h-2.5 w-2.5">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/70" />
-          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
-        </span>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-foreground">
-          Acontecendo agora
-        </h2>
-        <span className="text-xs text-muted-foreground">
-          {auctions.length} leilão(ões) com vinil já iniciados
-        </span>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {auctions.map((auction) => (
-          <a
-            key={auction.idLeilao}
-            href={auction.entryUrl ?? auction.houseUrl ?? "#"}
-            target="_blank"
-            rel="noreferrer"
-            className="group rounded-md border border-border bg-card p-3 transition hover:border-primary"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-sm font-semibold text-foreground">{auction.house}</p>
-              <Radio className="h-4 w-4 shrink-0 text-primary" />
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Início {auction.time}
-              {auction.uf ? ` · ${auction.uf}` : ""} · {auction.lotCount} lote(s) de vinil
-            </p>
-            {auction.sampleTitles.length ? (
-              <p className="mt-2 line-clamp-2 text-xs text-muted-foreground/80">
-                {auction.sampleTitles.join(" · ")}
-              </p>
-            ) : null}
-            <span className="mt-2 inline-flex items-center text-xs font-medium text-primary group-hover:underline">
-              Entrar no leilão ao vivo
-              <ExternalLink className="ml-1 h-3 w-3" />
-            </span>
-          </a>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function dayLabel(dayKey: string, index: number): string {
-  const [y, m, d] = dayKey.split("-").map(Number);
-  const date = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1));
-  const weekday = date.toLocaleDateString("pt-BR", { weekday: "short", timeZone: "UTC" });
-  const prefix = index === 0 ? "Hoje" : index === 1 ? "Amanhã" : weekday.replace(".", "");
-  return `${prefix} ${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
-}
-
-type ArtistGroup = { artist: string; lots: VinylLot[] };
-type HouseGroup = {
-  house: string;
-  houseUrl: string;
-  time: string;
-  lots: VinylLot[];
-  artists: ArtistGroup[];
-  count: number;
-};
-
-function groupByArtist(lots: VinylLot[]): ArtistGroup[] {
-  const byArtist = new Map<string, VinylLot[]>();
-  for (const lot of lots) {
-    const key = lot.artist || UNCLASSIFIED_LABEL;
-    const list = byArtist.get(key) ?? [];
-    list.push(lot);
-    byArtist.set(key, list);
-  }
-  return [...byArtist.entries()]
-    .map(([artist, list]) => ({ artist, lots: list }))
-    .sort((a, b) => {
-      if (a.artist === UNCLASSIFIED_LABEL) return 1;
-      if (b.artist === UNCLASSIFIED_LABEL) return -1;
-      return a.artist.localeCompare(b.artist, "pt-BR");
-    });
-}
-
-function groupByHouse(lots: VinylLot[]): HouseGroup[] {
-  const houses = new Map<string, VinylLot[]>();
-  for (const lot of lots) {
-    const list = houses.get(lot.house) ?? [];
-    list.push(lot);
-    houses.set(lot.house, list);
-  }
-
-  return [...houses.entries()]
-    .map(([house, houseLots]) => ({
-      house,
-      houseUrl: houseLots[0]?.houseUrl ?? "#",
-      time: houseLots[0]?.time ?? "",
-      lots: houseLots,
-      artists: groupByArtist(houseLots),
-      count: houseLots.length,
-    }))
-    .sort((a, b) => b.count - a.count || a.house.localeCompare(b.house, "pt-BR"));
-}
-
-type HouseStats = { vigia: number; green: number; red: number };
-
-/**
- * Conta, para um conjunto de lotes, quantos estão vigiados e quantos têm lance
- * ganhando (verde) ou coberto (vermelho) — mesma regra de cor do LotCard.
- */
-function computeHouseStats(
-  lots: { idPeca: string }[],
-  watchedIds: Set<string>,
-  bidStatusById: Map<string, string>,
-): HouseStats {
-  let vigia = 0;
-  let green = 0;
-  let red = 0;
-  for (const lot of lots) {
-    const status = bidStatusById.get(lot.idPeca);
-    if (status) {
-      // Mesma prioridade das cores do card: lance ganhando = verde, coberto = vermelho.
-      if (bidIsWinning(status)) green += 1;
-      else red += 1;
-    } else if (watchedIds.has(lot.idPeca)) {
-      // Vigiado sem lance = amarelo (nº de vigia).
-      vigia += 1;
-    }
-  }
-  return { vigia, green, red };
-}
-
-/** Contadores ao lado do nome da casa: vigia, lance verde e lance vermelho. */
-function HouseStatBadges({ stats }: { stats: HouseStats }) {
-  return (
-    <>
-      {stats.vigia > 0 ? (
-        <span
-          title="Lotes vigiados"
-          className="inline-flex items-center gap-1 rounded bg-yellow-500/15 px-1.5 py-0.5 text-xs font-medium text-yellow-700 dark:text-yellow-400"
-        >
-          <Eye className="h-3 w-3" />
-          {stats.vigia}
-        </span>
-      ) : null}
-      {stats.green > 0 ? (
-        <span
-          title="Lotes com lance ganhando (verde)"
-          className="inline-flex items-center gap-1 rounded bg-green-500/15 px-1.5 py-0.5 text-xs font-medium text-green-700 dark:text-green-400"
-        >
-          <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden />
-          {stats.green}
-        </span>
-      ) : null}
-      {stats.red > 0 ? (
-        <span
-          title="Lotes com lance coberto (vermelho)"
-          className="inline-flex items-center gap-1 rounded bg-red-500/15 px-1.5 py-0.5 text-xs font-medium text-red-700 dark:text-red-400"
-        >
-          <span className="h-2 w-2 rounded-full bg-red-500" aria-hidden />
-          {stats.red}
-        </span>
-      ) : null}
-    </>
-  );
-}
-
-/**
- * Classifica o status de um lance dado na conta (conta_site.asp?l=4):
- * - "winning": vencendo agora (ganhando)
- * - "won": vencedor / arrematado — o leilão já passou e você levou
- * - "covered": coberto — alguém cobriu o seu lance
- * - "lost": não vendido / demais casos
- */
-type BidState = "winning" | "won" | "covered" | "lost";
-
-function classifyBid(status: string): BidState {
-  const s = (status ?? "").toLowerCase();
-  if (/arremat|vencedor|arrebat/.test(s)) return "won";
-  if (/venc/.test(s)) return "winning";
-  if (/cobert/.test(s)) return "covered";
-  return "lost";
-}
-
-type BidStats = { winning: number; won: number; covered: number; lost: number };
-
-function computeBidStats(bids: { status: string }[]): BidStats {
-  const stats: BidStats = { winning: 0, won: 0, covered: 0, lost: 0 };
-  for (const bid of bids) stats[classifyBid(bid.status)] += 1;
-  return stats;
-}
-
-/** Contadores de lances ao lado do nome da casa: vencendo, vencedor, coberto e perdido. */
-function BidStatBadges({ stats }: { stats: BidStats }) {
-  return (
-    <>
-      {stats.winning > 0 ? (
-        <span
-          title="Lances vencendo (ganhando agora)"
-          className="inline-flex items-center gap-1 rounded bg-green-500/15 px-1.5 py-0.5 text-xs font-medium text-green-700 dark:text-green-400"
-        >
-          <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden />
-          {stats.winning}
-        </span>
-      ) : null}
-      {stats.won > 0 ? (
-        <span
-          title="Lances vencedores (leilão já encerrado)"
-          className="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400"
-        >
-          <Trophy className="h-3 w-3" />
-          {stats.won}
-        </span>
-      ) : null}
-      {stats.covered > 0 ? (
-        <span
-          title="Lances cobertos (alguém cobriu o seu lance)"
-          className="inline-flex items-center gap-1 rounded bg-red-500/15 px-1.5 py-0.5 text-xs font-medium text-red-700 dark:text-red-400"
-        >
-          <span className="h-2 w-2 rounded-full bg-red-500" aria-hidden />
-          {stats.covered}
-        </span>
-      ) : null}
-      {stats.lost > 0 ? (
-        <span
-          title="Lances não vendidos / encerrados sem arremate"
-          className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground"
-        >
-          <span className="h-2 w-2 rounded-full bg-muted-foreground/60" aria-hidden />
-          {stats.lost}
-        </span>
-      ) : null}
-    </>
-  );
-}
-
-// Faixas de valor por casa. Preço vem como "R$ 1.234,56" (BR): ponto de milhar,
-// vírgula decimal. Lotes sem valor numérico entram na faixa "Menor de 50".
-const PRICE_OPTIONS = [
-  { value: "lt50", label: "Menor de 50" },
-  { value: "r51_100", label: "De 51 a 100" },
-  { value: "r101_150", label: "De 101 a 150" },
-  { value: "gt150", label: "Acima de 150" },
-] as const;
-
-function matchesPriceRange(raw: string, range: string): boolean {
-  if (!range) return true;
-  const value = parsePrice(raw);
-  if (value === null) return range === "lt50"; // sem valor: sempre visível, na faixa "Menor de 50"
-  if (range === "lt50") return value <= 50;
-  if (range === "r51_100") return value > 50 && value <= 100;
-  if (range === "r101_150") return value > 100 && value <= 150;
-  return value > 150; // gt150
-}
-
-function houseAnchor(house: string, dayIndex: number): string {
-  return `casa-${dayIndex}-${house
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")}`;
-}
-
-function artistOptions(lots: VinylLot[]): { artist: string; count: number }[] {
-  const counts = new Map<string, number>();
-  for (const lot of lots) {
-    const key = lot.artist || UNCLASSIFIED_LABEL;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  return [...counts.entries()]
-    .map(([artist, count]) => ({ artist, count }))
-    .sort((a, b) => {
-      if (a.artist === UNCLASSIFIED_LABEL) return 1;
-      if (b.artist === UNCLASSIFIED_LABEL) return -1;
-      return a.artist.localeCompare(b.artist, "pt-BR");
-    });
-}
-
-function ArtistFilter({
-  artists,
-  value,
-  onChange,
-  disabled = false,
-}: {
-  artists: { artist: string; count: number }[];
-  value: string;
-  onChange: (next: string) => void;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Popover open={open && !disabled} onOpenChange={(next) => !disabled && setOpen(next)}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          role="combobox"
-          aria-expanded={open}
-          disabled={disabled}
-          className="w-full justify-between sm:w-72"
-        >
-          <span className="truncate">{value || `Todos os artistas (${artists.length})`}</span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-[min(22rem,90vw)] p-0">
-        <Command>
-          <CommandInput placeholder="Buscar artista..." />
-          <CommandList className="max-h-72">
-            <CommandEmpty>Nenhum artista encontrado.</CommandEmpty>
-            <CommandItem
-              value="__todos"
-              onSelect={() => {
-                onChange("");
-                setOpen(false);
-              }}
-            >
-              <Check className={value ? "mr-2 h-4 w-4 opacity-0" : "mr-2 h-4 w-4"} />
-              Todos os artistas
-            </CommandItem>
-            {artists.map((item) => (
-              <CommandItem
-                key={item.artist}
-                value={item.artist}
-                onSelect={() => {
-                  onChange(item.artist === value ? "" : item.artist);
-                  setOpen(false);
-                }}
-              >
-                <Check
-                  className={value === item.artist ? "mr-2 h-4 w-4" : "mr-2 h-4 w-4 opacity-0"}
-                />
-                <span className="truncate">{item.artist}</span>
-                <span className="ml-auto text-xs text-muted-foreground">{item.count}</span>
-              </CommandItem>
-            ))}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function PriceFilter({ value, onChange }: { value: string; onChange: (next: string) => void }) {
-  return (
-    <Select
-      value={value || "__all"}
-      onValueChange={(next) => onChange(next === "__all" ? "" : next)}
-    >
-      <SelectTrigger className="w-full sm:w-44">
-        <SelectValue placeholder="Todos os valores" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="__all">Todos os valores</SelectItem>
-        {PRICE_OPTIONS.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
 
 function HomePage() {
   const navigate = useNavigate();
@@ -545,60 +167,6 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
     }
     return this.props.children;
   }
-}
-
-/** "dd/mm/yyyy" (vigiados) -> "yyyy-mm-dd" (dayKey). */
-function watchedDateToKey(value: string): string {
-  const [dd, mm, yy] = value.split("/");
-  return yy && mm && dd ? `${yy}-${mm}-${dd}` : "";
-}
-
-/** A busca principal casa por título, artista, casa e nº do lote — igual à das abas de dia. */
-function watchedMatchesSearch(
-  lot: { title: string; artist: string; house: string; lote: string },
-  searchNorm: string,
-): boolean {
-  return (
-    !searchNorm ||
-    normalizeForMatch(`${lot.title} ${lot.artist} ${lot.house} ${lot.lote}`).includes(searchNorm)
-  );
-}
-
-/** A busca dos lances casa por título, casa, nº do lote e status do lance. */
-function bidMatchesSearch(
-  bid: { title: string; house: string; lote: string; status: string },
-  searchNorm: string,
-): boolean {
-  return (
-    !searchNorm ||
-    normalizeForMatch(`${bid.title} ${bid.house} ${bid.lote} ${bid.status}`).includes(searchNorm)
-  );
-}
-
-/** Agrupa vigiados por casa de leilão e ordena os lotes pelo nº do lote. */
-function groupWatchedByHouse<T extends { house: string; houseUrl: string; lote: string }>(
-  lots: T[],
-): { house: string; houseUrl: string; lots: T[] }[] {
-  const byHouse = new Map<string, { house: string; houseUrl: string; lots: T[] }>();
-  for (const lot of lots) {
-    const group = byHouse.get(lot.house) ?? {
-      house: lot.house,
-      houseUrl: lot.houseUrl,
-      lots: [] as T[],
-    };
-    group.lots.push(lot);
-    byHouse.set(lot.house, group);
-  }
-  const num = (value: string) => {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
-  };
-  for (const group of byHouse.values()) {
-    group.lots.sort((a, b) => num(a.lote) - num(b.lote) || a.lote.localeCompare(b.lote, "pt-BR"));
-  }
-  return [...byHouse.values()].sort(
-    (a, b) => b.lots.length - a.lots.length || a.house.localeCompare(b.house, "pt-BR"),
-  );
 }
 
 function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
@@ -1566,209 +1134,5 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         )}
       </div>
     </main>
-  );
-}
-
-type CardLot = {
-  title: string;
-  url: string;
-  image: string | null;
-  price: string;
-  time: string;
-  house: string;
-  uf: string;
-  dayKey: string;
-  watched: boolean;
-  lote?: string;
-  myBid?: string;
-};
-
-function LotCard({
-  lot,
-  busy,
-  onToggle,
-  showDate = false,
-  bidStatus,
-}: {
-  lot: CardLot;
-  busy: boolean;
-  onToggle: () => void;
-  showDate?: boolean;
-  bidStatus?: string | null;
-}) {
-  // Cores (mesma regra do painel): meu lance ganhando = verde; meu lance coberto = vermelho;
-  // apenas vigiado = amarelo; caso contrário, borda neutra.
-  const hasBid = bidStatus !== undefined && bidStatus !== null && bidStatus !== "";
-  const winning = hasBid && bidIsWinning(bidStatus as string);
-  const cardClass = hasBid
-    ? winning
-      ? "border-green-500 ring-1 ring-green-500/40"
-      : "border-red-500 ring-1 ring-red-500/40"
-    : lot.watched
-      ? "border-yellow-500 ring-1 ring-yellow-500/40"
-      : "border-border";
-  return (
-    <article className={`flex flex-col overflow-hidden rounded-md border bg-card ${cardClass}`}>
-      <a href={lot.url} target="_blank" rel="noreferrer" className="block bg-secondary">
-        {lot.image ? (
-          <img
-            src={lot.image}
-            alt={lot.title}
-            loading="lazy"
-            className="h-44 w-full object-contain p-2"
-          />
-        ) : (
-          <div className="flex h-44 items-center justify-center text-xs text-muted-foreground">
-            sem imagem
-          </div>
-        )}
-      </a>
-      <div className="flex flex-1 flex-col gap-3 p-4">
-        <p className="line-clamp-3 text-sm leading-snug text-foreground">{lot.title}</p>
-        <div className="mt-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          {lot.lote ? (
-            <span className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground">
-              Lote {lot.lote}
-            </span>
-          ) : null}
-          {lot.myBid ? (
-            <span className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground">
-              Meu lance {lot.myBid}
-            </span>
-          ) : null}
-          {lot.price || !lot.myBid ? (
-            <span className="font-semibold text-primary">{lot.price || "sem valor"}</span>
-          ) : null}
-          {hasBid ? (
-            <span
-              className={
-                winning
-                  ? "rounded bg-green-500/15 px-1.5 py-0.5 font-medium text-green-600 dark:text-green-400"
-                  : "rounded bg-red-500/15 px-1.5 py-0.5 font-medium text-red-600 dark:text-red-400"
-              }
-            >
-              {bidStatus}
-            </span>
-          ) : null}
-          {showDate && lot.dayKey ? <span>{lot.dayKey}</span> : null}
-          {lot.time ? <span>{lot.time}</span> : null}
-          {lot.uf ? <span>{lot.uf}</span> : null}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant={lot.watched ? "default" : "outline"}
-            className="flex-1"
-            onClick={onToggle}
-            disabled={busy}
-          >
-            {busy ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : lot.watched ? (
-              <EyeOff className="mr-2 h-4 w-4" />
-            ) : (
-              <Eye className="mr-2 h-4 w-4" />
-            )}
-            {lot.watched ? "Vigiando" : "Vigiar"}
-          </Button>
-          <Button size="sm" variant="ghost" asChild>
-            <a href={lot.url} target="_blank" rel="noreferrer" aria-label="Abrir lote no leiloeiro">
-              <ExternalLink className="h-4 w-4" />
-            </a>
-          </Button>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-/** Um lance com a URL da casa preenchida (casada pelo nome) para agrupar por casa. */
-type BidCard = {
-  id: string;
-  idPeca: string;
-  idLeilao: string;
-  base: string;
-  lote: string;
-  title: string;
-  myBid: string;
-  status: string;
-  url: string;
-  image: string | null;
-  date: string;
-  house: string;
-  houseUrl: string;
-  uf: string;
-  watched: boolean;
-};
-
-/**
- * Renderiza os lances agrupados por casa de leilão, com o mesmo layout dos vigiados:
- * cada casa vira uma seção com os cartões dos lotes onde você deu lance.
- */
-function BidHouseSections({
-  houses,
-  pending,
-  loteById,
-  onToggle,
-}: {
-  houses: { house: string; houseUrl: string; lots: BidCard[] }[];
-  pending: string | null;
-  loteById: Map<string, string>;
-  onToggle: (bid: { idPeca: string; idLeilao: string; base: string; watch: boolean }) => void;
-}) {
-  return (
-    <div className="space-y-8">
-      {houses.map((houseGroup) => (
-        <section key={houseGroup.house} className="space-y-3">
-          <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
-            <h2 className="text-xl font-semibold tracking-tight text-foreground">
-              {houseGroup.house}
-            </h2>
-            <Badge variant="secondary">{houseGroup.lots.length} lance(s)</Badge>
-            <BidStatBadges stats={computeBidStats(houseGroup.lots)} />
-            {houseGroup.houseUrl && houseGroup.houseUrl !== "#" ? (
-              <a
-                className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                href={houseGroup.houseUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                site da casa <ExternalLink className="h-3 w-3" />
-              </a>
-            ) : null}
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {houseGroup.lots.map((bid) => (
-              <LotCard
-                key={bid.id}
-                lot={{
-                  title: bid.title,
-                  url: bid.url,
-                  image: bid.image,
-                  price: "",
-                  time: "",
-                  house: bid.house,
-                  uf: bid.uf,
-                  dayKey: bid.date,
-                  watched: bid.watched,
-                  lote: bid.lote || loteById.get(bid.idPeca) || "",
-                  myBid: bid.myBid,
-                }}
-                busy={pending === bid.idPeca}
-                bidStatus={bid.status}
-                onToggle={() =>
-                  onToggle({
-                    idPeca: bid.idPeca,
-                    idLeilao: bid.idLeilao,
-                    base: bid.base,
-                    watch: !bid.watched,
-                  })
-                }
-              />
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
   );
 }

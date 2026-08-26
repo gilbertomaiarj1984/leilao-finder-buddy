@@ -50,7 +50,7 @@ export default {
       // Endpoint de atualização periódica (agendador externo, token-gated), fora
       // do fluxo de server functions. Retorna cedo quando o caminho for /api/cron.
       const { handleCron } = await import("./lib/cron.server");
-      const cronResponse = await handleCron(request, env);
+      const cronResponse = await handleCron(request);
       if (cronResponse) return cronResponse;
 
       const handler = await getServerEntry();
