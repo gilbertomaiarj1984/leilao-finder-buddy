@@ -46,6 +46,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   enrichLotes,
   getAccessStatus,
+  getNextBids,
   getVerifiedHouses,
   getVinylLots,
   listMyBids,
@@ -230,6 +231,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const runEnrich = useServerFn(enrichLotes);
   const fetchVerified = useServerFn(getVerifiedHouses);
   const saveVerified = useServerFn(setVerifiedHouses);
+  const fetchNextBids = useServerFn(getNextBids);
 
   const lots = useQuery({
     ...lotsQuery,
@@ -443,6 +445,37 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     for (const b of bids.data ?? []) if (b.myBid) map.set(b.idPeca, b.myBid);
     return map;
   }, [bids.data]);
+  // Próximo lance (NOVO_VALOR do peca.asp) só para VIGIADOS + LANCES (conjunto pequeno;
+  // 1 requisição por lote). Alvos = idPeca + url para montar a URL da peça no servidor.
+  const nextBidTargets = useMemo(() => {
+    const byPeca = new Map<string, { idPeca: string; url: string }>();
+    for (const w of watched.data ?? [])
+      if (w.idPeca && w.url) byPeca.set(w.idPeca, { idPeca: w.idPeca, url: w.url });
+    for (const b of bids.data ?? [])
+      if (b.idPeca && b.url && !byPeca.has(b.idPeca))
+        byPeca.set(b.idPeca, { idPeca: b.idPeca, url: b.url });
+    return [...byPeca.values()];
+  }, [watched.data, bids.data]);
+  const nextBidsKey = useMemo(
+    () =>
+      nextBidTargets
+        .map((t) => t.idPeca)
+        .sort()
+        .join(","),
+    [nextBidTargets],
+  );
+  const nextBids = useQuery({
+    queryKey: ["next-bids", nextBidsKey] as const,
+    queryFn: () => fetchNextBids({ data: { targets: nextBidTargets } }),
+    enabled: nextBidTargets.length > 0,
+    staleTime: 3 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const nextBidById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [idPeca, value] of Object.entries(nextBids.data ?? {})) map.set(idPeca, value);
+    return map;
+  }, [nextBids.data]);
   // A URL do site da casa não vem na página de lances — casamos pelo nome da casa
   // com o que já lemos da varredura geral e dos vigiados.
   const houseUrlByName = useMemo(() => {
@@ -807,6 +840,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                     dayKey: lot.date,
                                     watched: true,
                                     myBid: myBidById.get(lot.idPeca),
+                                    nextBid: nextBidById.get(lot.idPeca),
                                   }}
                                   busy={pending === lot.idPeca}
                                   bidStatus={bidStatusById.get(lot.idPeca)}
@@ -836,6 +870,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                         pending={pending}
                         loteById={loteById}
                         priceById={priceById}
+                        nextBidById={nextBidById}
                         onToggle={(bid) => toggle.mutate(bid)}
                       />
                     )
@@ -988,6 +1023,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                               ...lot,
                                               lote: lot.lote || loteById.get(lot.idPeca) || "",
                                               myBid: myBidById.get(lot.idPeca),
+                                              nextBid: nextBidById.get(lot.idPeca),
                                             }}
                                             busy={pending === lot.idPeca}
                                             bidStatus={bidStatusById.get(lot.idPeca)}
@@ -1229,6 +1265,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                               pending={pending}
                               loteById={loteById}
                               priceById={priceById}
+                              nextBidById={nextBidById}
                               onToggle={(bid) => toggle.mutate(bid)}
                             />
                           </section>

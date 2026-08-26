@@ -128,12 +128,21 @@ Três valores diferentes, de **fontes diferentes** — não confundir:
   conta vem em `<b class="pb-1">` (vigia `l=8` e lances `l=4`).
 - **Meu lance** = `myBid`. Só existe na página **"Meus lances"** (`l=4`).
 - **Próximo lance** = **NÃO existe na listagem nem nas páginas de conta.** Só está no
-  **detalhe do lote** (`peca.asp`) e no **pregão ao vivo** (`novoPresencial.valorpecaatual`,
-  calculado pelo JS do site — usado só no userscript do missleiloes). Decisão: buscar
-  por lote via `peca.asp` (1 requisição por lote → background/chunk, como o enrich de
-  nº de lote). **Pendente:** amostra do bloco de preço do `peca.asp` para escrever o
-  parser (não há rede para o site daqui). O card (`lot-card.tsx`) já tem o campo
-  `nextBid` e mostra "Próximo" quando presente.
+  **detalhe do lote** (`peca.asp`), que embute um JSON `loadData`: **`data[0].NOVO_VALOR`**
+  é o próximo lance já calculado pelo site (e `VALOR_VALUE` = valor atual, `VENCENDO`,
+  `MOSTRABTN_STATUS` = status, `LOTENUM` = nº do lote). **Só o lote ABERTO traz
+  `NOVO_VALOR`** — os itens de `data.listalotes` (catálogo) têm `VALOR_VALUE` mas **não**
+  `NOVO_VALOR` → é **1 requisição por lote**. Por isso o próximo lance é buscado só para
+  **vigiados + lances** (conjunto pequeno), nunca para a listagem inteira.
+  - Implementação: `src/lib/leiloesbr-lot-details.server.ts` (`fetchNextBids`, monta
+    `<domínio>/peca.asp?id=<idPeca>` via `parseAuctionRef` ou a própria URL da peça,
+    concorrência 8, teto 100, regex `"NOVO_VALOR":"(\d+)"` → BRL) → server fn
+    `getNextBids` → query `["next-bids", key]` no `index.tsx` (só vigiados+lances,
+    `staleTime` 3min) → mapa `nextBidById` sobreposto nos cards. Não persiste (o valor
+    muda com os lances; busca ao vivo com cache curto).
+  - **NÃO inferir o incremento** por conta própria: o texto de "Termos" da casa cita "5%
+    em múltiplos de dez", mas o `NOVO_VALOR` real diverge disso (ex.: atual 20 → 25). O
+    valor autoritativo é o `NOVO_VALOR` do próprio site.
 - **`base`** (do `data-watch="idPeca,email,idLeilao,base"`) **NÃO é o incremento** — é a
   "base"/plataforma (nas queries de conta, `b=0` = base LeilõesBR). Não usar como próximo lance.
 - **Regra de UI (card):** todo lote mostra **"Atual"**; **"Próximo"** quando houver
@@ -249,11 +258,9 @@ Três valores diferentes, de **fontes diferentes** — não confundir:
 
 ## Pendências (próximas sessões)
 
-0. **Próximo lance (`peca.asp`):** exibir o "próximo lance" em todos os lotes. Decidido
-   buscar por lote no detalhe (`peca.asp`), em background/chunk como o enrich de nº de
-   lote, persistindo no banco. **Bloqueio:** falta uma **amostra do bloco de preço do
-   `peca.asp`** (não há rede para o site daqui) para escrever o parser. UI já pronta
-   (`nextBid` no card). Ver seção **Valores do lote**.
+0. **Próximo lance (`peca.asp`):** ✅ feito para **vigiados + lances** (via `NOVO_VALOR`
+   do `peca.asp` — ver seção **Valores do lote**). Estender para "todos os lotes" segue
+   inviável (1 req/lote); se um dia for necessário, precisaria de outra fonte em massa.
 1. **Lance pelo sistema (leiloesbr):** avaliar/implementar dar lance pelo app. Regras do
    usuário: sempre o **próximo menor valor permitido**; após lançar, **verificar nos
    segundos seguintes se foi coberto** (o lance automático de outro pode cobrir) e,
