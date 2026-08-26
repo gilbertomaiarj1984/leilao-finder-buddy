@@ -82,6 +82,32 @@ export const listMyBids = createServerFn({ method: "GET" })
     }
   });
 
+/**
+ * Próximo lance (NOVO_VALOR do `peca.asp`) por lote. 1 requisição por lote → usar só
+ * para conjuntos pequenos (vigiados + lances). Best-effort: {} em erro.
+ */
+export const getNextBids = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { targets?: { idPeca: string; url: string }[] } | undefined) => ({
+    targets: Array.isArray(input?.targets)
+      ? input!.targets
+          .filter((t) => t && typeof t.idPeca === "string" && typeof t.url === "string")
+          .slice(0, 100)
+      : [],
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    if (!data.targets.length) return {} as Record<string, string>;
+    try {
+      const { fetchNextBids } = await import("./leiloesbr-lot-details.server");
+      return await fetchNextBids(data.targets);
+    } catch (error) {
+      console.error("[leiloesbr] não foi possível ler os próximos lances", error);
+      return {} as Record<string, string>;
+    }
+  });
+
 /** Casas marcadas como verificadas (durável no servidor; global). */
 export const getVerifiedHouses = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
