@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS public.lots (
 );
 CREATE INDEX IF NOT EXISTS lots_day_key_idx ON public.lots (day_key);
 
+DROP TRIGGER IF EXISTS update_lots_updated_at ON public.lots;
 CREATE TRIGGER update_lots_updated_at BEFORE UPDATE ON public.lots
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
@@ -70,6 +71,7 @@ CREATE TABLE IF NOT EXISTS public.known_artists (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+DROP TRIGGER IF EXISTS update_known_artists_updated_at ON public.known_artists;
 CREATE TRIGGER update_known_artists_updated_at BEFORE UPDATE ON public.known_artists
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
@@ -83,19 +85,66 @@ CREATE TABLE IF NOT EXISTS public.app_state (
 );
 
 -- ---------------------------------------------------------------------
+-- lot_ai — avaliação da IA por lote (cache durável; 1 avaliação por disco).
+-- `id` casa com lots.id ("${idLeilao}-${idPeca}"); `title_hash` guarda o hash
+-- do título avaliado, então só re-avaliamos quando o título muda.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.lot_ai (
+  id           text PRIMARY KEY,
+  title_hash   text NOT NULL,
+  score        integer,
+  rarity       text,
+  deal         text,
+  album        text,           -- artista/álbum identificado (da capa, quando houver)
+  reason       text,
+  tags         jsonb NOT NULL DEFAULT '[]',
+  model        text,
+  evaluated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------
+-- lot_market — âncora de mercado do Discogs por lote (cache; best-effort).
+-- `id` = lots.id; `basis` = hash de (album||title) consultado (invalida o cache
+-- quando a identificação muda). `matched=false` guarda os que não casaram, para
+-- não reconsultar toda rodada. Preços em BRL (stats com curr_abbr=BRL).
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.lot_market (
+  id                  text PRIMARY KEY,
+  basis               text NOT NULL,
+  matched             boolean NOT NULL DEFAULT false,
+  release_id          integer,
+  release_title       text,
+  year                integer,
+  num_for_sale        integer,
+  lowest_price        numeric,
+  currency            text,
+  suggested_price     numeric,
+  suggested_condition text,
+  have                integer,
+  want                integer,
+  checked_at          timestamptz NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------
 -- Segurança: RLS on + acesso somente para service_role (estado final)
 -- ---------------------------------------------------------------------
 ALTER TABLE public.seen_auctions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lots          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.known_artists ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_state     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lot_ai        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lot_market    ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.seen_auctions FROM anon, authenticated;
 REVOKE ALL ON public.lots          FROM anon, authenticated;
 REVOKE ALL ON public.known_artists FROM anon, authenticated;
 REVOKE ALL ON public.app_state     FROM anon, authenticated;
+REVOKE ALL ON public.lot_ai        FROM anon, authenticated;
+REVOKE ALL ON public.lot_market    FROM anon, authenticated;
 
 GRANT ALL ON public.seen_auctions TO service_role;
 GRANT ALL ON public.lots          TO service_role;
 GRANT ALL ON public.known_artists TO service_role;
 GRANT ALL ON public.app_state     TO service_role;
+GRANT ALL ON public.lot_ai        TO service_role;
+GRANT ALL ON public.lot_market    TO service_role;

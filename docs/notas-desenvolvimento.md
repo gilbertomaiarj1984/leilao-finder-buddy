@@ -425,3 +425,95 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
 - (Opcional) Exibir também commit/data do build no rodapé, se ajudar a rastrear deploys.
 - [x] Commit dedicado de formatação (prettier) nos arquivos herdados do Lovable — feito
       na revisão geral (PR #34, fase de lint/format).
+
+---
+
+## Sessão 2026-08-26 — IA de avaliação de lotes + página "Análise de Lotes" (v0.4.0)
+
+> Branch `claude/ia-avaliacao-lps-dn0qkj`. Objetivo: uma IA **de baixo custo** avalia os
+> lotes garimpados e sugere as melhores obras/oportunidades; página nova ranqueada por
+> nota + nota no canto do card no site principal.
+
+### Como funciona a IA (mecânica)
+
+- **Modelo/custo:** `claude-haiku-4-5` (o Claude mais barato) via **Batches API** da
+  Anthropic (~50% do preço, assíncrona). Chave em **`ANTHROPIC_API_KEY`** (`process.env`;
+  secret no GitHub + env na Vercel). **Opcional:** sem a chave, tudo faz **no-op** e o app
+  segue normal (só não mostra nota).
+- **1 request de batch por lote** (`custom_id = lots.id`): o mapeamento resultado→lote fica
+  trivial e robusto entre **submeter** e **coletar** (execuções diferentes do cron). Custo
+  em **centavos** (single-user, poucas centenas de lotes).
+- **Cache por título:** tabela **`lot_ai`** (`supabase/setup.sql`; RLS só service_role) com
+  `title_hash` (djb2→base36 do título). Só entram lotes **sem avaliação ou com título
+  mudado** (`selectLotsToEvaluate`) → rodadas seguintes custam ~zero. **Aplicar o
+  `setup.sql` no Supabase** (não é auto-migrado); `types.ts` recebeu a tabela à mão.
+- **Camada isolada** (ponto plugável): `src/lib/ai-eval.server.ts` (funções puras +
+  `submitEvalBatch`/`collectEvalBatch`, SDK importado dinamicamente) e
+  `src/lib/lot-ai.server.ts` (`getAllLotAi`/`upsertLotAi`). Saída por lote:
+  `score`(0-100), `rarity`(comum→muito_raro), `deal`(caro/justo/barato/indefinido),
+  `album` (identificação), `reason`, `tags[]`. Parsing tolerante a cercas (`parseEvalObject`).
+- **Visão (capa):** quando o lote tem `image` http(s), ela vai como bloco `image`
+  (source `url`, ANTES do texto) no request — o Haiku 4.5 usa a capa para **identificar** o
+  disco (título do leilão costuma ser genérico) e devolve `album` (artista/álbum), exibido
+  no overlay/coluna. `usableImage` descarta URLs não-http (ex.: `data:`). Sem imagem, é
+  texto puro. Custo por imagem é pequeno (thumbnail), ainda em centavos no batch.
+- **`matchesInterests` é do servidor/UI, NÃO da IA:** `buildInterestMatcher`
+  (`ai-score-utils.ts`) casa a lista de interesses (`app_state` chave `user_interests`)
+  com o título via `normalizeForMatch` — determinístico e barato, não gasta tokens.
+
+### Cron (assíncrono)
+
+- Novo **`step=aieval`** em `cron.server.ts` (mesmo `CRON_TOKEN`), idempotente: lê
+  `app_state.ai_batch` (`{batchId, submittedAt, hashes}`); se há batch pendente **coleta**
+  (grava `lot_ai` + limpa a chave); senão **submete** os lotes selecionados. Lê os lotes da
+  janela via `scrapeVinylLots(false)` (banco/cache, sem varrer o site).
+- **`.github/workflows/refresh.yml`:** após o `enrich`, laço curto de `aieval` (com `sleep`)
+  para submeter e tentar coletar na mesma run; se o batch ainda processa, a execução
+  6-horária seguinte coleta.
+
+### UI
+
+- **Nova rota `src/routes/_authenticated/analise.tsx`** (nos moldes do `dashboard.tsx`):
+  **Top 100 por nota** no topo + abaixo **por dia → casa** ordenado por nota, com o mesmo
+  **expandir/retrair** (nav sticky, `houseAnchor`) e apresentação de valores. Botão **"Meus
+  interesses"** (dialog + textarea → `setUserInterests`). Link **"Análise"** no header do
+  `index.tsx`.
+- **Site principal inalterado**, só a **nota no canto superior direito do card**
+  (`ScoreCorner`) com **overlay ao passar o mouse/focar** mostrando o que compõe a nota
+  (raridade, oportunidade, match, motivo, tags). Componentes em
+  `src/components/vinyl/ai-score.tsx`; helpers puros em `ai-score-utils.ts` (arquivos
+  separados por causa do react-refresh, e o nome `.ts`/`.tsx` **não pode colidir** —
+  o especificador resolve `.ts` antes de `.tsx`).
+- Query `["lot-ai"]` + `["user-interests"]` no `index.tsx` e na Análise; `aiFor(lot)` junta
+  a avaliação (por id) com o match de interesses (do título).
+
+### Pendências desta feature
+
+- [ ] **Configurar `ANTHROPIC_API_KEY`** (secret no GitHub + env na Vercel) e **aplicar o
+      `lot_ai` do `setup.sql`** no Supabase; então disparar `refresh.yml` e conferir
+      `submitted>0`/`collected>0` e a página Análise populada.
+
+## Sessão 2026-08-26 — Âncora de mercado via Discogs (v0.5.0)
+
+> Mesma branch. Adiciona preço/demanda **real** do Discogs para embasar a nota/oportunidade.
+
+- **API Discogs** (`api.discogs.com`, grátis; rate limit **60 req/min com token**). Endpoints:
+  `GET /database/search?type=release&q=…` (acha `release_id`), `GET /marketplace/stats/{id}?curr_abbr=BRL`
+  (menor preço + nº à venda), `GET /marketplace/price_suggestions/{id}` (sugerido por condição,
+  **exige token**), e `community.{have,want}` (demanda). ≤3 requisições por lote casado.
+- **Env `DISCOGS_TOKEN`** (GitHub secret + Vercel). **Opcional:** sem ele, o passo faz no-op.
+- **Camada** `src/lib/discogs.server.ts` (sem SDK; `fetch` + **throttle** ~1.1s respeitando o
+  rate limit; parsing **defensivo**). Puras: `buildQuery` (usa o `album` da IA, limpa "lote…",
+  ignora coletânea), `pickBestRelease` (overlap de tokens + vinil), `computeMarketDeal`,
+  `pickSuggested`. Persistência `src/lib/lot-market.server.ts` (tabela **`lot_market`**, cache
+  por `basis` = hash de album||título; `matched=false` não reconsulta).
+- **Cron** novo `step=market` (chunked, `max` por rodada, no-op sem token) + laço no
+  `refresh.yml` após o `aieval`. Lê os lotes via `scrapeVinylLots(false)`.
+- **Matching é best-effort:** só casa lotes de 1 disco identificável (a capa/`album` ajuda);
+  coletâneas/"lote com N" ficam `matched=false`.
+- **UI:** `getLotMarket` server fn + query `["lot-market"]`; `LotMarket`/`marketDeal`/`fmtMoney`/
+  `toLotMarket` em `ai-score-utils.ts`. O overlay do card e a coluna da Análise mostram
+  **menor preço à venda, sugerido (condição), procura/oferta** e um chip **barato/justo/caro vs.
+  mercado** (recalculado no cliente com o preço ao vivo); o Top 100 mostra o chip de mercado.
+- **Pendência:** aplicar `lot_market` do `setup.sql` no Supabase; cadastrar `DISCOGS_TOKEN`;
+  disparar `refresh.yml` e conferir `step=market` com `updated>0`.

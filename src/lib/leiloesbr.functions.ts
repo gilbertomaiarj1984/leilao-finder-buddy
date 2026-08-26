@@ -131,6 +131,59 @@ export const setVerifiedHouses = createServerFn({ method: "POST" })
     return await setVerifiedHouses(data.keys);
   });
 
+/** Lista de interesses do usuário (artistas/álbuns/gêneros). Global. */
+export const getUserInterests = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getUserInterests } = await import("./app-state.server");
+    return await getUserInterests();
+  });
+
+/** Grava a lista completa de interesses (sobrescreve). */
+export const setUserInterests = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { items?: string[] } | undefined) => ({
+    items: Array.isArray(input?.items) ? input!.items.filter((s) => typeof s === "string") : [],
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setUserInterests } = await import("./app-state.server");
+    return await setUserInterests(data.items);
+  });
+
+/** Avaliações da IA por lote (score/raridade/oportunidade/motivo/tags). Best-effort: [] em erro. */
+export const getLotAi = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    try {
+      const { getAllLotAi } = await import("./lot-ai.server");
+      return await getAllLotAi();
+    } catch (error) {
+      console.error("[lot-ai] não foi possível ler as avaliações", error);
+      return [];
+    }
+  });
+
+/** Âncora de mercado do Discogs por lote (preço/demanda). Best-effort: [] em erro. */
+export const getLotMarket = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    try {
+      const { getAllLotMarket } = await import("./lot-market.server");
+      return await getAllLotMarket();
+    } catch (error) {
+      console.error("[lot-market] não foi possível ler o mercado", error);
+      return [];
+    }
+  });
+
 /** Baseline de preços do último acesso ao painel. */
 export const getDashboardBaseline = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

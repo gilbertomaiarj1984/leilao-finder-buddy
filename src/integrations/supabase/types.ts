@@ -53,6 +53,96 @@ export type Database = {
         }
         Relationships: []
       }
+      lot_ai: {
+        Row: {
+          album: string | null
+          deal: string | null
+          evaluated_at: string
+          id: string
+          model: string | null
+          rarity: string | null
+          reason: string | null
+          score: number | null
+          tags: Json
+          title_hash: string
+        }
+        Insert: {
+          album?: string | null
+          deal?: string | null
+          evaluated_at?: string
+          id: string
+          model?: string | null
+          rarity?: string | null
+          reason?: string | null
+          score?: number | null
+          tags?: Json
+          title_hash: string
+        }
+        Update: {
+          album?: string | null
+          deal?: string | null
+          evaluated_at?: string
+          id?: string
+          model?: string | null
+          rarity?: string | null
+          reason?: string | null
+          score?: number | null
+          tags?: Json
+          title_hash?: string
+        }
+        Relationships: []
+      }
+      lot_market: {
+        Row: {
+          basis: string
+          checked_at: string
+          currency: string | null
+          have: number | null
+          id: string
+          lowest_price: number | null
+          matched: boolean
+          num_for_sale: number | null
+          release_id: number | null
+          release_title: string | null
+          suggested_condition: string | null
+          suggested_price: number | null
+          want: number | null
+          year: number | null
+        }
+        Insert: {
+          basis: string
+          checked_at?: string
+          currency?: string | null
+          have?: number | null
+          id: string
+          lowest_price?: number | null
+          matched?: boolean
+          num_for_sale?: number | null
+          release_id?: number | null
+          release_title?: string | null
+          suggested_condition?: string | null
+          suggested_price?: number | null
+          want?: number | null
+          year?: number | null
+        }
+        Update: {
+          basis?: string
+          checked_at?: string
+          currency?: string | null
+          have?: number | null
+          id?: string
+          lowest_price?: number | null
+          matched?: boolean
+          num_for_sale?: number | null
+          release_id?: number | null
+          release_title?: string | null
+          suggested_condition?: string | null
+          suggested_price?: number | null
+          want?: number | null
+          year?: number | null
+        }
+        Relationships: []
+      }
       lots: {
         Row: {
           artist: string
