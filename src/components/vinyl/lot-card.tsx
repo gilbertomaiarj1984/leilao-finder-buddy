@@ -15,6 +15,7 @@ export type CardLot = {
   watched: boolean;
   lote?: string;
   myBid?: string;
+  nextBid?: string; // próximo lance mínimo (quando conhecido — via peca.asp)
 };
 
 export function LotCard({
@@ -65,13 +66,24 @@ export function LotCard({
               Lote {lot.lote}
             </span>
           ) : null}
-          {lot.myBid ? (
-            <span className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground">
-              Meu lance {lot.myBid}
+          <span className="font-semibold text-primary" title="Valor atual">
+            Atual {lot.price || "sem valor"}
+          </span>
+          {lot.nextBid ? (
+            <span
+              className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground"
+              title="Próximo lance mínimo"
+            >
+              Próximo {lot.nextBid}
             </span>
           ) : null}
-          {lot.price || !lot.myBid ? (
-            <span className="font-semibold text-primary">{lot.price || "sem valor"}</span>
+          {lot.myBid ? (
+            <span
+              className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground"
+              title="Meu lance"
+            >
+              Meu lance {lot.myBid}
+            </span>
           ) : null}
           {hasBid ? (
             <span

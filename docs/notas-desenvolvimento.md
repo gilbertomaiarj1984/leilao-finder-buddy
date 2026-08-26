@@ -120,6 +120,47 @@ searchNorm)` casa por **título/artista/casa/nº do lote** (mesma regra das abas
   navegação, seções por casa e “Vigiados do dia”. Há também `BidStatBadges` +
   `computeBidStats` para a visão “Meus lances”.
 
+## Valores do lote: atual / próximo / meu lance (conceito)
+
+Três valores diferentes, de **fontes diferentes** — não confundir:
+
+- **Valor atual** = `price`. Vem do `.venda-price` na listagem geral; nas páginas de
+  conta vem em `<b class="pb-1">` (vigia `l=8` e lances `l=4`).
+- **Meu lance** = `myBid`. Só existe na página **"Meus lances"** (`l=4`).
+- **Próximo lance** = **NÃO existe na listagem nem nas páginas de conta.** Só está no
+  **detalhe do lote** (`peca.asp`) e no **pregão ao vivo** (`novoPresencial.valorpecaatual`,
+  calculado pelo JS do site — usado só no userscript do missleiloes). Decisão: buscar
+  por lote via `peca.asp` (1 requisição por lote → background/chunk, como o enrich de
+  nº de lote). **Pendente:** amostra do bloco de preço do `peca.asp` para escrever o
+  parser (não há rede para o site daqui). O card (`lot-card.tsx`) já tem o campo
+  `nextBid` e mostra "Próximo" quando presente.
+- **`base`** (do `data-watch="idPeca,email,idLeilao,base"`) **NÃO é o incremento** — é a
+  "base"/plataforma (nas queries de conta, `b=0` = base LeilõesBR). Não usar como próximo lance.
+- **Regra de UI (card):** todo lote mostra **"Atual"**; **"Próximo"** quando houver
+  `nextBid`; **"Meu lance"** quando houver `myBid`.
+- **"Meus lances" (`l=4`) não traz o valor atual** → casar por **`id`
+  (`${idLeilao}-${idPeca}`)** com a varredura geral (`priceById` no `index.tsx`, mesma
+  ideia de `loteById`/`houseUrlByName`) para exibir o "Atual" nesses cards.
+
+## Casas verificadas: persistência (conceito)
+
+- **"Marcar casa como verificada"** (chave `${dia}|${casa}`) agora **PERSISTE no
+  servidor**: `app_state`, chave `verified_houses` (array global, mesmo modelo do
+  baseline). Server fns `getVerifiedHouses` / `setVerifiedHouses` (em
+  `app-state.server.ts` + `leiloesbr.functions.ts`).
+- **Por que mudou:** antes ficava **só no `localStorage`** do navegador → perdia ao
+  trocar de navegador/dispositivo, limpar dados do site ou usar a **URL de preview**
+  (origem diferente da produção → outro `localStorage`). Foi assim que a marcação
+  "sumiu numa atualização".
+- **localStorage vira cache** (pinta a tela na hora); a fonte da verdade é o servidor.
+  No 1º load há **migração única** localStorage → servidor (não perde o que já existia).
+
+## Última atualização da lista (conceito)
+
+- `getVinylLots` retorna **`updatedAt`** = maior `updated_at` da tabela `lots` na janela
+  (o trigger `update_lots_updated_at` toca a coluna a cada upsert); fallback `memCache.at`.
+  Exibido sob o botão **"Atualizar tudo"** (`formatUpdatedAt`, fuso São Paulo).
+
 ## Atualização em background (4x/dia)
 
 - **Endpoint** `/api/cron` (tratado direto em `src/server.ts`, FORA das server functions
@@ -201,6 +242,11 @@ searchNorm)` casa por **título/artista/casa/nº do lote** (mesma regra das abas
 
 ## Pendências (próximas sessões)
 
+0. **Próximo lance (`peca.asp`):** exibir o "próximo lance" em todos os lotes. Decidido
+   buscar por lote no detalhe (`peca.asp`), em background/chunk como o enrich de nº de
+   lote, persistindo no banco. **Bloqueio:** falta uma **amostra do bloco de preço do
+   `peca.asp`** (não há rede para o site daqui) para escrever o parser. UI já pronta
+   (`nextBid` no card). Ver seção **Valores do lote**.
 1. **Lance pelo sistema (leiloesbr):** avaliar/implementar dar lance pelo app. Regras do
    usuário: sempre o **próximo menor valor permitido**; após lançar, **verificar nos
    segundos seguintes se foi coberto** (o lance automático de outro pode cobrir) e,

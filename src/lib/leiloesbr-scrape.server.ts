@@ -243,6 +243,28 @@ function rowToLot(row: LotRow): VinylLot {
 const LOT_COLUMNS =
   "id, id_leilao, id_peca, base, lote, title, url, image, price, day_key, start_time, uf, house, house_url, artist";
 
+/**
+ * Instante da última atualização dos lotes da janela = maior `updated_at` no banco
+ * (o trigger `update_lots_updated_at` toca a coluna a cada upsert). Best-effort:
+ * retorna null quando o banco está indisponível (aí o cliente cai no cache em memória).
+ */
+async function latestUpdatedAt(windowStart: string, windowEnd: string): Promise<string | null> {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data } = await supabaseAdmin
+      .from("lots")
+      .select("updated_at")
+      .gte("day_key", windowStart)
+      .lte("day_key", windowEnd)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return (data as { updated_at: string } | null)?.updated_at ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function readLots(windowStart: string, windowEnd: string): Promise<VinylLot[]> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const out: VinylLot[] = [];
@@ -415,7 +437,7 @@ export async function enrichMissingLotes(
  */
 export async function scrapeVinylLots(
   force = false,
-): Promise<{ days: string[]; lots: VinylLot[] }> {
+): Promise<{ days: string[]; lots: VinylLot[]; updatedAt: string | null }> {
   const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
@@ -426,8 +448,11 @@ export async function scrapeVinylLots(
   if (!force) {
     const lots = await mergeSources(windowStart, windowEnd, []);
     if (lots.length) {
-      memCache = { at: memCache?.at ?? Date.now(), days, lots };
-      return { days, lots };
+      const at = memCache?.at ?? Date.now();
+      memCache = { at, days, lots };
+      const updatedAt =
+        (await latestUpdatedAt(windowStart, windowEnd)) ?? new Date(at).toISOString();
+      return { days, lots, updatedAt };
     }
   }
 
@@ -442,8 +467,9 @@ export async function scrapeVinylLots(
   }
   await fillArtists(fresh);
 
+  const at = Date.now();
   const lots = await mergeSources(windowStart, windowEnd, fresh);
-  memCache = { at: Date.now(), days, lots };
+  memCache = { at, days, lots };
 
   if (fresh.length) {
     try {
@@ -453,11 +479,14 @@ export async function scrapeVinylLots(
       console.error("[leiloesbr] não foi possível persistir os lotes", error);
     }
   }
-  return { days, lots };
+  const updatedAt = (await latestUpdatedAt(windowStart, windowEnd)) ?? new Date(at).toISOString();
+  return { days, lots, updatedAt };
 }
 
 /** Re-varre apenas UM dia, mescla (não apaga os demais) e faz upsert best-effort. */
-export async function refreshVinylDay(day: string): Promise<{ days: string[]; lots: VinylLot[] }> {
+export async function refreshVinylDay(
+  day: string,
+): Promise<{ days: string[]; lots: VinylLot[]; updatedAt: string | null }> {
   const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
@@ -471,8 +500,9 @@ export async function refreshVinylDay(day: string): Promise<{ days: string[]; lo
   }
   await fillArtists(fresh);
 
+  const at = fresh.length ? Date.now() : (memCache?.at ?? Date.now());
   const lots = await mergeSources(windowStart, windowEnd, fresh);
-  memCache = { at: memCache?.at ?? Date.now(), days, lots };
+  memCache = { at, days, lots };
 
   if (fresh.length) {
     try {
@@ -481,7 +511,8 @@ export async function refreshVinylDay(day: string): Promise<{ days: string[]; lo
       console.error("[leiloesbr] não foi possível persistir os lotes do dia", error);
     }
   }
-  return { days, lots };
+  const updatedAt = (await latestUpdatedAt(windowStart, windowEnd)) ?? new Date(at).toISOString();
+  return { days, lots, updatedAt };
 }
 
 /**

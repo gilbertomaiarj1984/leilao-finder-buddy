@@ -14,7 +14,7 @@ import {
   LogOut,
   RefreshCw,
 } from "lucide-react";
-import { Component, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -46,9 +46,11 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   enrichLotes,
   getAccessStatus,
+  getVerifiedHouses,
   getVinylLots,
   listMyBids,
   scrapeVinylChunk,
+  setVerifiedHouses,
 } from "@/lib/leiloesbr.functions";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import {
@@ -169,6 +171,21 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
+/** "26/08 às 14:30" no fuso de São Paulo, ou "" quando não há data. */
+function formatUpdatedAt(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const fmt = new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  });
+  return fmt.format(date).replace(", ", " às ");
+}
+
 function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
   const [tab, setTab] = useState<string>("day-0");
   const [artistFilter, setArtistFilter] = useState<string>("");
@@ -194,29 +211,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       else next.add(key);
       return next;
     });
-  // Casas já verificadas (chave `${dia}|${casa}`): marcador verde que persiste no
-  // navegador e move a casa para a seção "Já verificadas" no fim da lista.
-  const [verifiedHouses, setVerifiedHouses] = useState<Set<string>>(new Set());
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("garimpo:verifiedHouses");
-      if (raw) setVerifiedHouses(new Set<string>(JSON.parse(raw)));
-    } catch {
-      /* localStorage indisponível: segue sem persistência */
-    }
-  }, []);
-  const toggleVerified = (key: string) =>
-    setVerifiedHouses((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      try {
-        localStorage.setItem("garimpo:verifiedHouses", JSON.stringify([...next]));
-      } catch {
-        /* localStorage indisponível: segue sem persistência */
-      }
-      return next;
-    });
+  // Casas já verificadas (chave `${dia}|${casa}`): marcador verde que move a casa
+  // para a seção "Já verificadas" no fim da lista. PERSISTE no servidor (app_state,
+  // via getVerifiedHouses/setVerifiedHouses) — antes ficava só no localStorage do
+  // navegador, que se perdia ao trocar de dispositivo/navegador ou usar a URL de
+  // preview (outra origem). O localStorage vira só um cache local (leitura instantânea).
+  const [verifiedHouses, setVerifiedSet] = useState<Set<string>>(new Set());
   const setHouseArtistFor = (key: string, value: string) =>
     setHouseArtist((prev) => ({ ...prev, [key]: value }));
   const setHousePriceFor = (key: string, value: string) =>
@@ -228,6 +228,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const runToggle = useServerFn(toggleWatch);
   const runChunk = useServerFn(scrapeVinylChunk);
   const runEnrich = useServerFn(enrichLotes);
+  const fetchVerified = useServerFn(getVerifiedHouses);
+  const saveVerified = useServerFn(setVerifiedHouses);
 
   const lots = useQuery({
     ...lotsQuery,
@@ -250,6 +252,76 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
+
+  // Casas verificadas: fonte da verdade é o servidor (app_state). O localStorage é só
+  // um cache para pintar a tela na hora, sem esperar a rede.
+  const LS_VERIFIED = "garimpo:verifiedHouses";
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_VERIFIED);
+      if (raw) setVerifiedSet(new Set<string>(JSON.parse(raw)));
+    } catch {
+      /* localStorage indisponível: segue sem cache */
+    }
+  }, []);
+  const verifiedQuery = useQuery({
+    queryKey: ["verified-houses"] as const,
+    queryFn: () => fetchVerified(),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const migratedVerified = useRef(false);
+  useEffect(() => {
+    if (!verifiedQuery.data || migratedVerified.current) return;
+    migratedVerified.current = true;
+    const server = new Set<string>(verifiedQuery.data);
+    // Migração única: se o localStorage tinha marcações que o servidor ainda não
+    // conhece (estado pré-persistência), envia para o servidor para não perdê-las.
+    let local: string[] = [];
+    try {
+      local = JSON.parse(localStorage.getItem(LS_VERIFIED) ?? "[]");
+    } catch {
+      local = [];
+    }
+    const merged = new Set<string>([...server, ...local]);
+    setVerifiedSet(merged);
+    try {
+      localStorage.setItem(LS_VERIFIED, JSON.stringify([...merged]));
+    } catch {
+      /* ignore */
+    }
+    if (merged.size > server.size) {
+      void saveVerified({ data: { keys: [...merged] } }).catch(() => {
+        /* best-effort: a marcação continua no cache local */
+      });
+    }
+  }, [verifiedQuery.data, saveVerified]);
+  const toggleVerified = (key: string) => {
+    setVerifiedSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      const list = [...next];
+      try {
+        localStorage.setItem(LS_VERIFIED, JSON.stringify(list));
+      } catch {
+        /* localStorage indisponível: segue sem cache */
+      }
+      // Persiste no servidor; em falha, reverte o estado local e avisa.
+      void saveVerified({ data: { keys: list } })
+        .then(() => queryClient.setQueryData(["verified-houses"], list))
+        .catch((error: unknown) => {
+          setVerifiedSet(prev);
+          try {
+            localStorage.setItem(LS_VERIFIED, JSON.stringify([...prev]));
+          } catch {
+            /* ignore */
+          }
+          toast.error((error as Error)?.message || "Não foi possível salvar a casa verificada");
+        });
+      return next;
+    });
+  };
 
   const [pending, setPending] = useState<string | null>(null);
   const [refreshingDay, setRefreshingDay] = useState<string | null>(null);
@@ -357,6 +429,13 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     for (const b of bids.data ?? []) if (b.lote) map.set(b.idPeca, b.lote);
     return map;
   }, [watched.data, bids.data]);
+  // Valor ATUAL por lote (id `${idLeilao}-${idPeca}`). Não vem na página "Meus lances"
+  // nem "Vigiados" — casamos pela varredura geral para exibir o valor atual nesses cards.
+  const priceById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const lot of lots.data?.lots ?? []) if (lot.price) map.set(lot.id, lot.price);
+    return map;
+  }, [lots.data]);
   // A URL do site da casa não vem na página de lances — casamos pelo nome da casa
   // com o que já lemos da varredura geral e dos vigiados.
   const houseUrlByName = useMemo(() => {
@@ -394,22 +473,32 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 Painel
               </Link>
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={refreshAll}
-              disabled={refreshingAll || lots.isFetching}
-              title="Forçar atualização geral da lista"
-            >
-              {refreshingAll ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-2 h-4 w-4" />
-              )}
-              {refreshingAll && refreshPct !== null
-                ? `Atualizando… ${refreshPct}%`
-                : "Atualizar tudo"}
-            </Button>
+            <div className="flex flex-col items-start gap-0.5 sm:items-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={refreshAll}
+                disabled={refreshingAll || lots.isFetching}
+                title="Forçar atualização geral da lista"
+              >
+                {refreshingAll ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                {refreshingAll && refreshPct !== null
+                  ? `Atualizando… ${refreshPct}%`
+                  : "Atualizar tudo"}
+              </Button>
+              {lots.data?.updatedAt ? (
+                <span
+                  className="text-[11px] text-muted-foreground"
+                  title="Última atualização da lista"
+                >
+                  Atualizado: {formatUpdatedAt(lots.data.updatedAt)}
+                </span>
+              ) : null}
+            </div>
             <span className="text-xs text-muted-foreground">{email}</span>
             <Button variant="ghost" size="sm" onClick={() => void onSignOut()}>
               <LogOut className="mr-2 h-4 w-4" />
@@ -734,6 +823,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                         houses={bidsByHouse}
                         pending={pending}
                         loteById={loteById}
+                        priceById={priceById}
                         onToggle={(bid) => toggle.mutate(bid)}
                       />
                     )
@@ -1120,6 +1210,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                               houses={houses}
                               pending={pending}
                               loteById={loteById}
+                              priceById={priceById}
                               onToggle={(bid) => toggle.mutate(bid)}
                             />
                           </section>
