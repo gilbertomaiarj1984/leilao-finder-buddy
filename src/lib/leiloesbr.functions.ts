@@ -82,6 +82,29 @@ export const listMyBids = createServerFn({ method: "GET" })
     }
   });
 
+/** Casas marcadas como verificadas (durável no servidor; global). */
+export const getVerifiedHouses = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getVerifiedHouses } = await import("./app-state.server");
+    return await getVerifiedHouses();
+  });
+
+/** Grava a lista completa de casas verificadas (sobrescreve). */
+export const setVerifiedHouses = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { keys?: string[] } | undefined) => ({
+    keys: Array.isArray(input?.keys) ? input!.keys.filter((k) => typeof k === "string") : [],
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setVerifiedHouses } = await import("./app-state.server");
+    return await setVerifiedHouses(data.keys);
+  });
+
 /** Baseline de preços do último acesso ao painel. */
 export const getDashboardBaseline = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

@@ -33,11 +33,13 @@ export function BidHouseSections({
   houses,
   pending,
   loteById,
+  priceById,
   onToggle,
 }: {
   houses: { house: string; houseUrl: string; lots: BidCard[] }[];
   pending: string | null;
   loteById: Map<string, string>;
+  priceById: Map<string, string>;
   onToggle: (bid: { idPeca: string; idLeilao: string; base: string; watch: boolean }) => void;
 }) {
   return (
@@ -69,7 +71,8 @@ export function BidHouseSections({
                   title: bid.title,
                   url: bid.url,
                   image: bid.image,
-                  price: "",
+                  // Valor atual não vem na página de lances — casado por id com a varredura.
+                  price: priceById.get(bid.id) ?? "",
                   time: "",
                   house: bid.house,
                   uf: bid.uf,
