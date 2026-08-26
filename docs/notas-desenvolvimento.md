@@ -368,11 +368,15 @@ Três valores diferentes, de **fontes diferentes** — não confundir:
 
 ### Convenção de versionamento (usar nos PRs)
 
-- **Bump em `src/lib/version.ts` a cada release**, seguindo semver: **PATCH** = correção;
-  **MINOR** = nova funcionalidade compatível; **MAJOR** = mudança incompatível.
+- **Bump em `src/lib/version.ts` (`APP_VERSION`) + `package.json` em TODO PR**
+  (obrigatório), seguindo semver: **PATCH** = correção; **MINOR** = nova funcionalidade
+  compatível; **MAJOR** = mudança incompatível.
+- **Enforço por CI:** `.github/workflows/version-bump.yml` roda em todo `pull_request`
+  para a `main` e **falha** se `APP_VERSION` não for maior que a da base.
 - **Colocar o número da versão no título do PR** (ex.: `v0.2.0 — filtro por casa`).
 - O rodapé em produção mostra a versão no ar → confirma visualmente qual PR foi implantado.
-- Versão atual ao fim desta sessão: **v0.1.0**.
+- Versão atual: **v0.2.0** (subiu de 0.1.0 ao introduzir a regra + acumular as features
+  recentes: valor atual/última atualização/casas verificadas).
 
 ### Observação de processo (aprendizado)
 

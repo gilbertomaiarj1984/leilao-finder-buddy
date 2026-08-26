@@ -1,0 +1,46 @@
+name: Version bump
+
+# Todo PR para a main deve subir a versão do app (src/lib/version.ts → APP_VERSION),
+# que é o número mostrado no rodapé em produção. Este job falha o PR se a versão não
+# aumentar em relação à base.
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: APP_VERSION precisa subir em relação à base
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          extract() { grep -oE '"[0-9]+\.[0-9]+\.[0-9]+"' "$1" | tr -d '"' | head -1; }
+
+          git fetch origin "$BASE_REF" --depth=1
+          git show "origin/${BASE_REF}:src/lib/version.ts" > /tmp/base-version.ts 2>/dev/null || true
+
+          head_ver="$(extract src/lib/version.ts || true)"
+          base_ver="$(extract /tmp/base-version.ts || true)"
+          echo "base=$base_ver head=$head_ver"
+
+          if [ -z "$head_ver" ]; then
+            echo "::error file=src/lib/version.ts::APP_VERSION não encontrado (formato esperado: X.Y.Z)."
+            exit 1
+          fi
+          if [ "$base_ver" = "$head_ver" ]; then
+            echo "::error file=src/lib/version.ts::APP_VERSION não foi atualizado (continua $head_ver). Faça o bump em src/lib/version.ts (e package.json) neste PR."
+            exit 1
+          fi
+
+          # Garante que a versão do head é ESTRITAMENTE maior que a da base (semver).
+          top="$(printf '%s\n%s\n' "$base_ver" "$head_ver" | sort -V | tail -1)"
+          if [ "$top" != "$head_ver" ]; then
+            echo "::error file=src/lib/version.ts::APP_VERSION ($head_ver) precisa ser MAIOR que a base ($base_ver)."
+            exit 1
+          fi
+
+          echo "OK: $base_ver -> $head_ver"
