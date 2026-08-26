@@ -9,23 +9,21 @@
 App que garimpa **discos de vinil** em leilão no **LeilõesBR** e casas parceiras,
 agrupando por **dia → casa de leilão → artista**, com **vigia** e **lances**
 sincronizados com a conta do usuário. Stack: **TanStack Start + React 19 + Supabase**,
-construído no **Lovable**, deploy alvo **Cloudflare** (via nitro).
+deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última seção.)_
 
 ## Restrições do ambiente (importantes)
-- **Sandbox sem rede para os sites** (`leiloesbr.com.br`, CDNs, domínios das casas,
-  e a própria URL `*.lovable.app`): egress bloqueado. Não dá para testar scraping/lance
-  daqui — validar por análise estática + `bun -e` de funções puras, e o **usuário**
-  testa na prévia/produção.
-- **Sem `bun install`** no sandbox (registry privado da Lovable dá 403). `node_modules`
-  existe, então `node_modules/.bin/tsc --noEmit` funciona para typecheck.
-- **Migrações `.sql` do repo NÃO são aplicadas** — mudanças de schema são feitas pelo
-  **Lovable** (foi assim que surgiram as tabelas `lots`, `known_artists`, `app_state`).
+- **Não dá para testar scraping/lance daqui** (sem rede para os sites de leilão) —
+  validar por análise estática + `bun -e` de funções puras; o **usuário** testa na
+  prévia/produção.
+- **`bun install` funciona** (npm público no `bunfig.toml`), então `bun run build`,
+  `bunx tsc --noEmit` e `bun run lint` rodam localmente.
+- **Migrações `.sql` do repo NÃO são auto-aplicadas** — o schema é recriado via
+  `supabase/setup.sql` (SQL Editor ou `psql -f`). As tabelas (`lots`, `known_artists`,
+  `app_state`, `seen_auctions`) já existem no projeto Supabase.
 - **Git push HTTPS costuma funcionar**; quando não, usar os tools `mcp__github__*`.
-  Fluxo: branch de trabalho → PR → **merge commit** (`merge_method:"merge"`, nunca
-  squash/rebase) para preservar o histórico sincronizado com o Lovable.
-- **Lovable auto-commita na `main`** (autor `gpt-engineer-app[bot]`) — não reescrever
-  histórico publicado; sempre **recriar a branch a partir de `origin/main`** antes de
-  trabalhar (a `main` anda sozinha).
+  Fluxo: branch de trabalho → PR → merge.
+- **Recriar a branch a partir de `origin/main`** antes de cada tarefa (a `main` pode
+  receber commits de outras sessões/PRs).
 - Ao interagir com o usuário: **responder em português**.
 
 ## Arquitetura de dados
@@ -117,16 +115,15 @@ construído no **Lovable**, deploy alvo **Cloudflare** (via nitro).
 
 ## Atualização em background (4x/dia)
 - **Endpoint** `/api/cron` (tratado direto em `src/server.ts`, FORA das server functions
-  → sem Supabase/CSRF), protegido pelo segredo **`CRON_TOKEN`** (lido de `process.env`
-  **ou** do binding `env` do Cloudflare; token pode vir no header `x-cron-token` ou na
-  query `?token=`). Steps: `chunk` (varre bloco), `enrich` (com `offset`), `catdebug`.
+  → sem Supabase/CSRF), protegido pelo segredo **`CRON_TOKEN`** (lido de `process.env`;
+  token pode vir no header `x-cron-token` ou na query `?token=`). Steps: `chunk` (varre
+  bloco), `enrich` (com `offset`), `catdebug`.
 - **GitHub Actions** `.github/workflows/refresh.yml`: `cron: "0 3,9,15,21 * * *"` (UTC =
   BRT 00/06/12/18h) + `workflow_dispatch`. Varre em blocos até `nextPage:null`, depois
   enriquece por `offset` até `done:true`.
 - **Configuração (fora do código):** GitHub secrets `APP_URL`
-  (`https://leilao-finder-buddy.lovable.app`) e `CRON_TOKEN`; e a env `CRON_TOKEN` no
-  **Lovable** (mesmo valor). O `CRON_TOKEN` foi rotacionado pelo usuário; **não** está no
-  repo.
+  (`https://leilao-finder-buddy.vercel.app`) e `CRON_TOKEN`; e a env `CRON_TOKEN` na
+  **Vercel** (mesmo valor). O `CRON_TOKEN` **não** está no repo.
 - O **“Atualizar tudo”** manual na UI continua existindo (faz chunk + enrich por cursor).
 
 ## Ferramenta separada: lance no fechamento (missleiloes)
@@ -156,9 +153,7 @@ construído no **Lovable**, deploy alvo **Cloudflare** (via nitro).
   apresentada **separada por dia e casa de leilão** (antes era uma grade plana), no mesmo
   layout das abas de dia. Extraídos `watchedMatchesSearch` e `groupWatchedByHouse`
   (ver seção **Cores**), depois movidos para `grouping.ts` e reutilizados também em
-  “Meus lances”. Nota de ambiente: nesta sessão o `bun install` falhou (registry privado
-  Lovable, 403) e o `node_modules` **não existia**, então o typecheck local não rodou —
-  validação por revisão estática; o merge foi feito via `mcp__github__merge_pull_request`.
+  “Meus lances”. (Merge via `mcp__github__merge_pull_request`.)
 - **Badges por casa (UI)** — ✅ concluído (PR #29). Ao lado do nome da casa, além do
   nº de lotes, mostra **nº de vigia (amarelo)**, **nº com lance coberto (vermelho)** e
   **nº ganhando (verde)**, padronizado em todos os pontos onde o nome da casa aparece.
@@ -189,3 +184,63 @@ construído no **Lovable**, deploy alvo **Cloudflare** (via nitro).
   `Co-Authored-By: Claude ...`.
 - Não colar páginas HTML inteiras no chat (consomem muito contexto/tokens) — pedir só o
   bloco relevante (um card) quando precisar de HTML de um site.
+
+---
+
+## Migração: saída do Lovable → Supabase próprio + Vercel (2026-08-25)
+
+> Registro da migração para continuidade. A mecânica do app descrita nas seções
+> acima (scraping, baseline, nº de lote, cores) continua válida.
+
+### Build / Auth (detalhes de implementação)
+- **Deploy agora é a Vercel**, não Cloudflare. O Nitro é um **plugin Vite separado**
+  (`import { nitro } from 'nitro/vite'` no `vite.config.ts`) e **auto-detecta a Vercel**
+  via `process.env.VERCEL` (preset forçável por `SERVER_PRESET`/`NITRO_PRESET`). O build
+  gera `.vercel/output` (Build Output API v3). `vercel.json`: `bun run build`,
+  `bun install`, `framework: null`.
+- **`bun install` funciona** agora: `bunfig.toml` aponta para o **npm público**
+  (`registry.npmjs.org`) e o `bun.lock` foi regenerado (a registry privada do Lovable
+  dava 403). Logo, `bun run build` / `bunx tsc --noEmit` / `bun run lint` rodam local.
+- **Auth é Supabase Auth nativo** (Google, **PKCE**) — saiu o broker
+  `@lovable.dev/cloud-auth-js`. Fluxo em `src/routes/auth.tsx`: `signInWithOAuth`
+  com `redirectTo: origin + '/auth'` → volta em `/auth?code=...` →
+  `exchangeCodeForSession(code)`. Client com `flowType:'pkce'` e
+  `detectSessionInUrl:false` (`src/integrations/supabase/client.ts`).
+- **Schema**: consolidado em `supabase/setup.sql` (recria tabelas/triggers/RLS em um
+  projeto novo). As migrations continuam não sendo auto-aplicadas — quem aplica agora é
+  você (SQL Editor ou `psql -f`).
+- **Registry/lint**: os erros `prettier/prettier` em massa eram dos arquivos gerados
+  pelo Lovable (aspas simples); pré-existentes, não faziam parte da migração.
+
+### Infra atual
+- **Supabase**: projeto `rjqzzxhgcelixlgnfcic` (`https://rjqzzxhgcelixlgnfcic.supabase.co`).
+  `supabase/config.toml` atualizado. RLS mantém tudo só para `service_role` (o front não
+  lê o banco direto; server functions usam `supabaseAdmin`).
+- **Vercel**: produção em `https://leilao-finder-buddy.vercel.app` (branch `main`).
+  Previews de PR usam URL com hash que **muda a cada deploy**.
+- **Auth (Supabase → Authentication → URL Configuration)**:
+  - Site URL: `https://leilao-finder-buddy.vercel.app`
+  - Redirect URLs: `https://leilao-finder-buddy.vercel.app/**`,
+    `https://leilao-finder-buddy-*-gilbertomaiarj1984s-projects.vercel.app/**` (previews),
+    `http://localhost:3000/**`.
+  - Google OAuth configurado no Supabase (Providers → Google); no Google Cloud, o
+    Authorized redirect URI é `https://rjqzzxhgcelixlgnfcic.supabase.co/auth/v1/callback`.
+- **Env vars** (ver `.env.example`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`,
+  `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
+  `LEILOESBR_EMAIL`, `LEILOESBR_SENHA`, `CRON_TOKEN`. Na Vercel devem estar em
+  **Production**; mudar env exige **Redeploy**. O `.env` saiu do Git (gitignored).
+- **Segredos rotacionados** após a migração: senha do banco e `service_role`
+  (`sb_secret_`). A `publishable` (`sb_publishable_`) é **pública** por design.
+
+### Como os dados foram migrados
+- Export do Lovable = `.backup` (`pg_dump -Fc`, dump do banco inteiro).
+- Recriamos só `public` com `setup.sql` e restauramos **só os dados**:
+  `pg_restore --data-only --no-owner --no-privileges --schema=public -d <conn> arquivo.backup`.
+- Usuários do `auth` **não** migrados (login refeito com Google; acesso gated por
+  `LEILOESBR_EMAIL`).
+
+### Pendências desta migração
+- [ ] Secrets do cron no GitHub (`APP_URL`, `CRON_TOKEN`) e validar 1ª execução do
+      workflow `refresh.yml`.
+- [ ] (Opcional) Rotacionar o `CRON_TOKEN` (gerado em chat na migração).
+- [ ] (Opcional) Commit dedicado de formatação (prettier) nos arquivos herdados do Lovable.
