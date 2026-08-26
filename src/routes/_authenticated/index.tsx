@@ -43,12 +43,18 @@ import {
 } from "@/components/vinyl/grouping";
 import { LiveAuctions } from "@/components/vinyl/live-auctions";
 import { LotCard } from "@/components/vinyl/lot-card";
-import { buildInterestMatcher, type LotAi } from "@/components/vinyl/ai-score-utils";
+import {
+  buildInterestMatcher,
+  toLotMarket,
+  type LotAi,
+  type LotMarket,
+} from "@/components/vinyl/ai-score-utils";
 import { supabase } from "@/integrations/supabase/client";
 import {
   enrichLotes,
   getAccessStatus,
   getLotAi,
+  getLotMarket,
   getNextBids,
   getUserInterests,
   getVerifiedHouses,
@@ -237,6 +243,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const saveVerified = useServerFn(setVerifiedHouses);
   const fetchNextBids = useServerFn(getNextBids);
   const fetchLotAi = useServerFn(getLotAi);
+  const fetchLotMarket = useServerFn(getLotMarket);
   const fetchInterests = useServerFn(getUserInterests);
 
   const lots = useQuery({
@@ -291,12 +298,24 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     () => buildInterestMatcher(interestsQuery.data ?? []),
     [interestsQuery.data],
   );
+  const lotMarketQuery = useQuery({
+    queryKey: ["lot-market"] as const,
+    queryFn: () => fetchLotMarket(),
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const marketById = useMemo(() => {
+    const map = new Map<string, LotMarket>();
+    for (const r of lotMarketQuery.data ?? []) map.set(r.id, toLotMarket(r));
+    return map;
+  }, [lotMarketQuery.data]);
   // Junta a avaliação (por id) com o "casa com meus interesses" (calculado do título).
   const aiFor = (lot: { id: string; title?: string }): LotAi | undefined => {
     const base = aiById.get(lot.id);
     if (!base) return undefined;
     return { ...base, matchesInterests: matchesInterest(lot.title ?? "") };
   };
+  const marketFor = (lot: { id: string }): LotMarket | undefined => marketById.get(lot.id);
 
   // Casas verificadas: fonte da verdade é o servidor (app_state). O localStorage é só
   // um cache para pintar a tela na hora, sem esperar a rede.
@@ -893,6 +912,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   }}
                                   busy={pending === lot.idPeca}
                                   ai={aiFor(lot)}
+                                  market={marketFor(lot)}
                                   bidStatus={bidStatusById.get(lot.idPeca)}
                                   onToggle={() =>
                                     toggle.mutate({
@@ -1077,6 +1097,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                             }}
                                             busy={pending === lot.idPeca}
                                             ai={aiFor(lot)}
+                                            market={marketFor(lot)}
                                             bidStatus={bidStatusById.get(lot.idPeca)}
                                             onToggle={() =>
                                               toggle.mutate({
@@ -1234,6 +1255,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                       }}
                                       busy={pending === lot.idPeca}
                                       ai={aiFor(lot)}
+                                      market={marketFor(lot)}
                                       bidStatus={bidStatusById.get(lot.idPeca)}
                                       onToggle={() =>
                                         toggle.mutate({

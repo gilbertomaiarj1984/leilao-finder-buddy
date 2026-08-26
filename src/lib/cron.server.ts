@@ -74,6 +74,69 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json({ submitted: count, batchId });
     }
 
+    // Âncora de mercado (Discogs). Chunked como o enrich: cada chamada consulta até
+    // `max` lotes ainda não casados (throttle interno respeita o rate limit). Sem
+    // DISCOGS_TOKEN → no-op explícito.
+    if (step === "market") {
+      const { discogsConfigured, buildQuery, fetchMarket } = await import("./discogs.server");
+      if (!discogsConfigured()) return json({ skipped: "DISCOGS_TOKEN não configurado" });
+      const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
+      const { getAllLotAi } = await import("./lot-ai.server");
+      const { getAllLotMarket, upsertLotMarket, selectLotsForMarket, marketBasis } =
+        await import("./lot-market.server");
+      const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 12, 1), 40);
+      const [snapshot, aiRows, marketRows] = await Promise.all([
+        scrapeVinylLots(false),
+        getAllLotAi(),
+        getAllLotMarket(),
+      ]);
+      const targets = selectLotsForMarket(snapshot.lots, aiRows, marketRows, max);
+      if (!targets.length) return json({ done: true, updated: 0 });
+
+      const rows = [];
+      for (const t of targets) {
+        const basis = marketBasis(t.album, t.title);
+        const query = buildQuery(t.album, t.title);
+        if (!query) {
+          rows.push({
+            id: t.id,
+            basis,
+            matched: false,
+            release_id: null,
+            release_title: null,
+            year: null,
+            num_for_sale: null,
+            lowest_price: null,
+            currency: null,
+            suggested_price: null,
+            suggested_condition: null,
+            have: null,
+            want: null,
+          });
+          continue;
+        }
+        const m = await fetchMarket(query);
+        rows.push({
+          id: t.id,
+          basis,
+          matched: m.matched,
+          release_id: m.releaseId,
+          release_title: m.releaseTitle,
+          year: m.year,
+          num_for_sale: m.numForSale,
+          lowest_price: m.lowestPrice,
+          currency: m.currency,
+          suggested_price: m.suggestedPrice,
+          suggested_condition: m.suggestedCondition,
+          have: m.have,
+          want: m.want,
+        });
+      }
+      const updated = await upsertLotMarket(rows);
+      // Ainda há mais? (a seleção pega os primeiros `max`; se veio cheio, provavelmente há resto)
+      return json({ updated, done: targets.length < max });
+    }
+
     // Diagnóstico: sonda os catálogos das casas dos primeiros leilões sem nº de lote.
     if (step === "catdebug") {
       const { listMissingAuctions } = await import("./leiloesbr-scrape.server");
@@ -114,7 +177,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json({ missingAuctions: auctions.length, probes });
     }
 
-    return json({ error: "step inválido (use chunk|enrich|aieval|catdebug)" }, 400);
+    return json({ error: "step inválido (use chunk|enrich|aieval|market|catdebug)" }, 400);
   } catch (error) {
     console.error("[cron] falha", error);
     return json({ error: (error as Error)?.message ?? "cron failed" }, 500);

@@ -492,5 +492,28 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
 - [ ] **Configurar `ANTHROPIC_API_KEY`** (secret no GitHub + env na Vercel) e **aplicar o
       `lot_ai` do `setup.sql`** no Supabase; então disparar `refresh.yml` e conferir
       `submitted>0`/`collected>0` e a página Análise populada.
-- [ ] (Opcional) Enriquecer o prompt com mais sinais (o usuário marcou "algo mais" sem
-      texto) ou cruzar com preço de mercado real (ex.: Discogs) para o `deal` ser autoritativo.
+
+## Sessão 2026-08-26 — Âncora de mercado via Discogs (v0.5.0)
+
+> Mesma branch. Adiciona preço/demanda **real** do Discogs para embasar a nota/oportunidade.
+
+- **API Discogs** (`api.discogs.com`, grátis; rate limit **60 req/min com token**). Endpoints:
+  `GET /database/search?type=release&q=…` (acha `release_id`), `GET /marketplace/stats/{id}?curr_abbr=BRL`
+  (menor preço + nº à venda), `GET /marketplace/price_suggestions/{id}` (sugerido por condição,
+  **exige token**), e `community.{have,want}` (demanda). ≤3 requisições por lote casado.
+- **Env `DISCOGS_TOKEN`** (GitHub secret + Vercel). **Opcional:** sem ele, o passo faz no-op.
+- **Camada** `src/lib/discogs.server.ts` (sem SDK; `fetch` + **throttle** ~1.1s respeitando o
+  rate limit; parsing **defensivo**). Puras: `buildQuery` (usa o `album` da IA, limpa "lote…",
+  ignora coletânea), `pickBestRelease` (overlap de tokens + vinil), `computeMarketDeal`,
+  `pickSuggested`. Persistência `src/lib/lot-market.server.ts` (tabela **`lot_market`**, cache
+  por `basis` = hash de album||título; `matched=false` não reconsulta).
+- **Cron** novo `step=market` (chunked, `max` por rodada, no-op sem token) + laço no
+  `refresh.yml` após o `aieval`. Lê os lotes via `scrapeVinylLots(false)`.
+- **Matching é best-effort:** só casa lotes de 1 disco identificável (a capa/`album` ajuda);
+  coletâneas/"lote com N" ficam `matched=false`.
+- **UI:** `getLotMarket` server fn + query `["lot-market"]`; `LotMarket`/`marketDeal`/`fmtMoney`/
+  `toLotMarket` em `ai-score-utils.ts`. O overlay do card e a coluna da Análise mostram
+  **menor preço à venda, sugerido (condição), procura/oferta** e um chip **barato/justo/caro vs.
+  mercado** (recalculado no cliente com o preço ao vivo); o Top 100 mostra o chip de mercado.
+- **Pendência:** aplicar `lot_market` do `setup.sql` no Supabase; cadastrar `DISCOGS_TOKEN`;
+  disparar `refresh.yml` e conferir `step=market` com `updated>0`.

@@ -27,10 +27,20 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScoreChips, ScoreDetails } from "@/components/vinyl/ai-score";
-import { buildInterestMatcher, scoreTone, type LotAi } from "@/components/vinyl/ai-score-utils";
+import {
+  buildInterestMatcher,
+  dealLabel,
+  dealTone,
+  marketDeal,
+  scoreTone,
+  toLotMarket,
+  type LotAi,
+  type LotMarket,
+} from "@/components/vinyl/ai-score-utils";
 import { houseAnchor } from "@/components/vinyl/grouping";
 import {
   getLotAi,
+  getLotMarket,
   getUserInterests,
   getVinylLots,
   setUserInterests,
@@ -136,6 +146,7 @@ function AnalisePage() {
   const queryClient = useQueryClient();
   const fetchLots = useServerFn(getVinylLots);
   const fetchLotAi = useServerFn(getLotAi);
+  const fetchLotMarket = useServerFn(getLotMarket);
   const fetchInterests = useServerFn(getUserInterests);
   const saveInterests = useServerFn(setUserInterests);
 
@@ -166,6 +177,12 @@ function AnalisePage() {
     staleTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
+  const lotMarketQuery = useQuery({
+    queryKey: ["lot-market"] as const,
+    queryFn: () => fetchLotMarket(),
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
 
   const saveInterestsMut = useMutation({
     mutationFn: (items: string[]) => saveInterests({ data: { items } }),
@@ -193,11 +210,17 @@ function AnalisePage() {
     () => buildInterestMatcher(interestsQuery.data ?? []),
     [interestsQuery.data],
   );
+  const marketById = useMemo(() => {
+    const map = new Map<string, LotMarket>();
+    for (const r of lotMarketQuery.data ?? []) map.set(r.id, toLotMarket(r));
+    return map;
+  }, [lotMarketQuery.data]);
   const aiFor = (lot: VinylLot): LotAi | undefined => {
     const base = aiById.get(lot.id);
     if (!base) return undefined;
     return { ...base, matchesInterests: matchesInterest(lot.title) };
   };
+  const marketFor = (lot: VinylLot): LotMarket | undefined => marketById.get(lot.id);
   // Score para ordenação: sem avaliação vai para o fim (-1).
   const scoreOf = (lot: VinylLot) => aiById.get(lot.id)?.score ?? -1;
 
@@ -285,11 +308,18 @@ function AnalisePage() {
                   <tbody>
                     {top.map((lot, i) => {
                       const ai = aiFor(lot)!;
+                      const market = marketFor(lot);
+                      const mDeal = market ? marketDeal(lot.price, market) : "indefinido";
                       return (
                         <tr key={lot.id} className="border-t border-border/60 align-top">
                           <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
                           <td className="px-3 py-2">
                             <ScoreChips ai={ai} />
+                            {mDeal !== "indefinido" ? (
+                              <p className={`mt-1 text-[11px] font-medium ${dealTone(mDeal)}`}>
+                                {dealLabel(mDeal)} vs. mercado
+                              </p>
+                            ) : null}
                             {ai.reason ? (
                               <p className="mt-1 max-w-xs text-xs text-muted-foreground">
                                 {ai.reason}
@@ -456,7 +486,11 @@ function AnalisePage() {
                                             >
                                               <td className="px-2 py-2">
                                                 {ai ? (
-                                                  <ScoreDetails ai={ai} />
+                                                  <ScoreDetails
+                                                    ai={ai}
+                                                    market={marketFor(lot)}
+                                                    price={lot.price}
+                                                  />
                                                 ) : (
                                                   <span className="text-muted-foreground">—</span>
                                                 )}

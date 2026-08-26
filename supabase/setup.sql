@@ -101,6 +101,29 @@ CREATE TABLE IF NOT EXISTS public.lot_ai (
 );
 
 -- ---------------------------------------------------------------------
+-- lot_market — âncora de mercado do Discogs por lote (cache; best-effort).
+-- `id` = lots.id; `basis` = hash de (album||title) consultado (invalida o cache
+-- quando a identificação muda). `matched=false` guarda os que não casaram, para
+-- não reconsultar toda rodada. Preços em BRL (stats com curr_abbr=BRL).
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.lot_market (
+  id                  text PRIMARY KEY,
+  basis               text NOT NULL,
+  matched             boolean NOT NULL DEFAULT false,
+  release_id          integer,
+  release_title       text,
+  year                integer,
+  num_for_sale        integer,
+  lowest_price        numeric,
+  currency            text,
+  suggested_price     numeric,
+  suggested_condition text,
+  have                integer,
+  want                integer,
+  checked_at          timestamptz NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------
 -- Segurança: RLS on + acesso somente para service_role (estado final)
 -- ---------------------------------------------------------------------
 ALTER TABLE public.seen_auctions ENABLE ROW LEVEL SECURITY;
@@ -108,15 +131,18 @@ ALTER TABLE public.lots          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.known_artists ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_state     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_ai        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lot_market    ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.seen_auctions FROM anon, authenticated;
 REVOKE ALL ON public.lots          FROM anon, authenticated;
 REVOKE ALL ON public.known_artists FROM anon, authenticated;
 REVOKE ALL ON public.app_state     FROM anon, authenticated;
 REVOKE ALL ON public.lot_ai        FROM anon, authenticated;
+REVOKE ALL ON public.lot_market    FROM anon, authenticated;
 
 GRANT ALL ON public.seen_auctions TO service_role;
 GRANT ALL ON public.lots          TO service_role;
 GRANT ALL ON public.known_artists TO service_role;
 GRANT ALL ON public.app_state     TO service_role;
 GRANT ALL ON public.lot_ai        TO service_role;
+GRANT ALL ON public.lot_market    TO service_role;

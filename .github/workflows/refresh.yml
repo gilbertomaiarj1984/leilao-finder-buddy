@@ -62,4 +62,15 @@ jobs:
             sleep 60
           done
 
+          echo "== Âncora de mercado (Discogs) =="
+          # Cada chamada consulta um bloco de lotes (throttle interno ~1req/s, respeitando
+          # o rate limit). Chunked: repetimos até done=true ou acabar as iterações; o resto
+          # completa nas execuções seguintes. No-op sem DISCOGS_TOKEN.
+          for i in $(seq 1 30); do
+            res="$(call "/api/cron?step=market&max=12")"
+            echo "market $i: $res"
+            if echo "$res" | jq -e '.skipped' >/dev/null 2>&1; then break; fi
+            if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
+          done
+
           echo "Concluído."

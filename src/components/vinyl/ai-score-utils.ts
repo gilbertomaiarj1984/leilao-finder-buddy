@@ -1,4 +1,4 @@
-import { normalizeForMatch } from "@/lib/vinyl-parse";
+import { normalizeForMatch, parsePrice } from "@/lib/vinyl-parse";
 
 /** Avaliação da IA consumida pela UI (o que compõe a nota do lote). */
 export type LotAi = {
@@ -46,6 +46,75 @@ export function dealTone(d: string | null): string {
   if (d === "barato") return "text-emerald-600 dark:text-emerald-400";
   if (d === "caro") return "text-red-600 dark:text-red-400";
   return "text-muted-foreground";
+}
+
+/** Âncora de mercado do Discogs consumida pela UI (camelCase; espelha `lot_market`). */
+export type LotMarket = {
+  matched: boolean;
+  releaseId: number | null;
+  releaseTitle: string | null;
+  numForSale: number | null;
+  lowestPrice: number | null;
+  currency: string | null;
+  suggestedPrice: number | null;
+  suggestedCondition: string | null;
+  have: number | null;
+  want: number | null;
+};
+
+/** Converte a linha do banco (snake_case) para o tipo da UI (camelCase). */
+export function toLotMarket(r: {
+  matched: boolean;
+  release_id: number | null;
+  release_title: string | null;
+  num_for_sale: number | null;
+  lowest_price: number | null;
+  currency: string | null;
+  suggested_price: number | null;
+  suggested_condition: string | null;
+  have: number | null;
+  want: number | null;
+}): LotMarket {
+  return {
+    matched: r.matched,
+    releaseId: r.release_id,
+    releaseTitle: r.release_title,
+    numForSale: r.num_for_sale,
+    lowestPrice: r.lowest_price,
+    currency: r.currency,
+    suggestedPrice: r.suggested_price,
+    suggestedCondition: r.suggested_condition,
+    have: r.have,
+    want: r.want,
+  };
+}
+
+/** Formata valor com a moeda do Discogs (BRL na maioria; cai no símbolo genérico). */
+export function fmtMoney(value: number | null, currency: string | null): string {
+  if (value === null) return "—";
+  try {
+    return value.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: currency || "BRL",
+      maximumFractionDigits: 0,
+    });
+  } catch {
+    return `${currency || "R$"} ${value.toFixed(0)}`;
+  }
+}
+
+/** Preço do lote (BRL) vs. mercado: barato/justo/caro. "indefinido" sem base comparável. */
+export function marketDeal(
+  price: string,
+  m: LotMarket | undefined,
+): "barato" | "justo" | "caro" | "indefinido" {
+  if (!m || !m.matched) return "indefinido";
+  const p = parsePrice(price);
+  const ref = m.lowestPrice ?? m.suggestedPrice;
+  if (p === null || ref === null || ref <= 0) return "indefinido";
+  if (p <= ref * 0.7) return "barato";
+  if (p >= ref * 1.15) return "caro";
+  return "justo";
 }
 
 /**

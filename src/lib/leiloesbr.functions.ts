@@ -169,6 +169,21 @@ export const getLotAi = createServerFn({ method: "GET" })
     }
   });
 
+/** Âncora de mercado do Discogs por lote (preço/demanda). Best-effort: [] em erro. */
+export const getLotMarket = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    try {
+      const { getAllLotMarket } = await import("./lot-market.server");
+      return await getAllLotMarket();
+    } catch (error) {
+      console.error("[lot-market] não foi possível ler o mercado", error);
+      return [];
+    }
+  });
+
 /** Baseline de preços do último acesso ao painel. */
 export const getDashboardBaseline = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
