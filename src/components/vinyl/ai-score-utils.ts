@@ -130,3 +130,65 @@ export function buildInterestMatcher(interests: string[]): (text: string) => boo
     return terms.some((term) => t.includes(term));
   };
 }
+
+// Palavras genéricas (formato/qualificadores) que não devem contar como token de match.
+const WANT_STOPWORDS = new Set([
+  "lp",
+  "lps",
+  "disco",
+  "discos",
+  "vinil",
+  "vinis",
+  "album",
+  "vol",
+  "volume",
+  "parte",
+  "compacto",
+  "the",
+  "de",
+  "da",
+  "do",
+]);
+
+function meaningfulTokens(text: string): string[] {
+  return normalizeForMatch(text)
+    .split(" ")
+    .filter((w) => w.length >= 3 && !WANT_STOPWORDS.has(w));
+}
+
+/**
+ * Matcher da "sondagem": casa por **sobreposição de tokens** entre o núcleo do item (label
+ * sem o parêntese de ano/nota) e o texto do lote (título + álbum identificado). Um item com
+ * 2+ tokens significativos casa quando o lote compartilha ≥2 deles; item de 1 token casa por
+ * substring. Ignora palavras genéricas de vinil. Só itens NÃO adquiridos.
+ */
+export function buildWantlistMatcher(
+  items: { label: string; acquired: boolean }[],
+): (text: string) => boolean {
+  const cores = items
+    .filter((i) => !i.acquired)
+    .map((i) => meaningfulTokens(i.label.replace(/\([^)]*\)/g, " ")))
+    .filter((toks) => toks.length > 0);
+  if (!cores.length) return () => false;
+  return (text: string) => {
+    const lotToks = new Set(meaningfulTokens(text));
+    if (!lotToks.size) return false;
+    return cores.some((core) => {
+      const shared = core.filter((t) => lotToks.has(t)).length;
+      // 1 token: exige o token presente; 2+: exige ao menos 2 compartilhados.
+      return core.length === 1 ? shared >= 1 : shared >= 2;
+    });
+  };
+}
+
+/** Faixas de nota (ranges) para o filtro da Análise. */
+export type ScoreRange = "all" | "80" | "60" | "40" | "lt40";
+
+export function scoreInRange(score: number | null, range: ScoreRange): boolean {
+  if (range === "all") return true;
+  if (score === null) return false;
+  if (range === "80") return score >= 80;
+  if (range === "60") return score >= 60 && score < 80;
+  if (range === "40") return score >= 40 && score < 60;
+  return score < 40; // lt40
+}

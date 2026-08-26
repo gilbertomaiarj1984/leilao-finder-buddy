@@ -552,3 +552,46 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
    formatos JSON do Discogs **não foram verificados em fonte primária** (egress bloqueado na
    sessão); o parsing é defensivo sobre os formatos padrão — se algum campo vier com nome
    diferente, é ajuste pontual em `src/lib/discogs.server.ts` (`fetchMarket`).
+
+## Sessão 2026-08-26 — Filtros na Análise + Sondagem (v0.6.0)
+
+> Mesma branch/PR #51. Três pedidos do usuário: Top 100 recolhível, filtros que também
+> filtram o Top 100, e uma "sondagem" (rascunho de obras) persistida como input da Análise.
+
+### Estado (o que foi feito nesta sessão)
+
+- **1ª execução do `refresh.yml` rodou** com `ANTHROPIC_API_KEY` + `DISCOGS_TOKEN`
+  configurados: `aieval` submeteu e coletou **800 lotes** (batch 1); batch 2 (mais 800)
+  ficou pendente para a coleta seguinte. (Há ~1729 lotes → ~2–3 rodadas p/ avaliar tudo.)
+- **Filtros na Análise** (`analise.tsx` reescrito): busca (título/álbum/casa), **dia**,
+  **casa**, **faixa de nota** (`ScoreRange`: 80+/60–79/40–59/<40) e **☑ só sondagem**.
+  Tudo alimenta um `filteredLots` único que serve **o Top 100 E a lista por dia/casa** — as
+  abas de dia viraram um **filtro `dia`** + seções por dia/casa (mesmo expandir/retrair).
+- **Top 100 recolhível** (botão chevron; `topOpen`).
+- **Sondagem** (feature nova, tudo persistido em `wantlist_items`):
+  - Tabela `wantlist_items` (`id,label,note,year,acquired,...`) em `setup.sql` + `types.ts`.
+  - `src/lib/wantlist.server.ts`: **`parseWantlistText`** (pura — remove "NN.", colchetes,
+    "Bônus:"; extrai ano do 1º parêntese → `year`+`note`; testada com o exemplo Tim Maia) +
+    CRUD (`getWantlist`/`addWantlistItems` dedup por **label+ano**/`updateWantlistItem`/
+    `deleteWantlistItem`). Server fns `getWantlist`/`importWantlist`/`updateWantlist`/
+    `deleteWantlist` em `leiloesbr.functions.ts`.
+  - UI `WantlistDialog` (na Análise): abas **Importar texto** (cola rascunho) e **Lista**
+    (busca, editar rótulo, **marcar adquirido** ✓, excluir). Botão "Sondagem" no header.
+  - Match: `buildWantlistMatcher` (`ai-score-utils.ts`) por **sobreposição de tokens**
+    (ignora `lp/vinil/vol/...`; item 1 token = substring, 2+ = ≥2 tokens compartilhados;
+    só itens **não adquiridos**), casando contra **título + álbum identificado**. Lote que
+    casa ganha o ⭐ (junto com interesses) e entra no filtro "só sondagem".
+- Validado: `tsc`, `lint` (só os 2 warnings pré-existentes), `build`; puras testadas com
+  `bun -e` (parse, matcher, faixas de nota). Bump **0.5.0 → 0.6.0**.
+
+### Pendências (retomar aqui)
+
+- [ ] **Aplicar o `wantlist_items` do `setup.sql`** no Supabase (o `setup.sql` é
+      re-executável; ou rode o `CREATE TABLE IF NOT EXISTS wantlist_items` + RLS/grants).
+      Sem isso, os endpoints de sondagem dão erro ao gravar.
+- [ ] **Merge da PR #51 + deploy** para os endpoints novos (sondagem) valerem na produção,
+      e então importar o rascunho real de sondagem pela UI.
+- [ ] Rodar o `refresh.yml` mais 1–2× para avaliar os ~929 lotes restantes e completar o
+      `market`.
+- [ ] (Ideia) Ordenar/priorizar por "oportunidade de mercado" ou por "sondagem" além da nota
+      da IA; hoje a ordenação é sempre pela `score` (sondagem/mercado são destaque/filtro).

@@ -184,6 +184,72 @@ export const getLotMarket = createServerFn({ method: "GET" })
     }
   });
 
+/** Sondagem: obras que o usuário está caçando (persistidas). Best-effort: [] em erro. */
+export const getWantlist = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    try {
+      const { getWantlist } = await import("./wantlist.server");
+      return await getWantlist();
+    } catch (error) {
+      console.error("[wantlist] não foi possível ler a sondagem", error);
+      return [];
+    }
+  });
+
+/** Importa um rascunho em texto (uma linha = um item); ignora duplicatas. */
+export const importWantlist = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { text?: string } | undefined) => ({ text: input?.text ?? "" }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { parseWantlistText, addWantlistItems } = await import("./wantlist.server");
+    const added = await addWantlistItems(parseWantlistText(data.text));
+    return { added };
+  });
+
+/** Atualiza um item da sondagem (rótulo/nota/adquirido). */
+export const updateWantlist = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (
+      input: { id?: string; label?: string; note?: string | null; acquired?: boolean } | undefined,
+    ) => ({
+      id: String(input?.id ?? ""),
+      label: input?.label,
+      note: input?.note,
+      acquired: input?.acquired,
+    }),
+  )
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    if (!data.id) throw new Error("id obrigatório");
+    const { updateWantlistItem } = await import("./wantlist.server");
+    await updateWantlistItem(data.id, {
+      label: data.label,
+      note: data.note,
+      acquired: data.acquired,
+    });
+    return { ok: true };
+  });
+
+/** Remove um item da sondagem. */
+export const deleteWantlist = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { id?: string } | undefined) => ({ id: String(input?.id ?? "") }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    if (!data.id) throw new Error("id obrigatório");
+    const { deleteWantlistItem } = await import("./wantlist.server");
+    await deleteWantlistItem(data.id);
+    return { ok: true };
+  });
+
 /** Baseline de preços do último acesso ao painel. */
 export const getDashboardBaseline = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

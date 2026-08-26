@@ -143,6 +143,36 @@ export type Database = {
         }
         Relationships: []
       }
+      wantlist_items: {
+        Row: {
+          acquired: boolean
+          created_at: string
+          id: string
+          label: string
+          note: string | null
+          updated_at: string
+          year: number | null
+        }
+        Insert: {
+          acquired?: boolean
+          created_at?: string
+          id?: string
+          label: string
+          note?: string | null
+          updated_at?: string
+          year?: number | null
+        }
+        Update: {
+          acquired?: boolean
+          created_at?: string
+          id?: string
+          label?: string
+          note?: string | null
+          updated_at?: string
+          year?: number | null
+        }
+        Relationships: []
+      }
       lots: {
         Row: {
           artist: string

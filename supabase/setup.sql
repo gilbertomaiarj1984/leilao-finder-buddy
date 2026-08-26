@@ -126,6 +126,26 @@ CREATE TABLE IF NOT EXISTS public.lot_market (
 );
 
 -- ---------------------------------------------------------------------
+-- wantlist_items — "sondagem": obras que o usuário está caçando (rascunho em
+-- texto importado, uma linha = um item). Persistente; dá para pesquisar, editar
+-- e marcar `acquired`. Serve de input extra para a Análise (destaque nos lotes
+-- que casam). Global (single-user).
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.wantlist_items (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  label      text NOT NULL,
+  note       text,
+  year       integer,
+  acquired   boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+DROP TRIGGER IF EXISTS update_wantlist_items_updated_at ON public.wantlist_items;
+CREATE TRIGGER update_wantlist_items_updated_at BEFORE UPDATE ON public.wantlist_items
+FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- ---------------------------------------------------------------------
 -- Segurança: RLS on + acesso somente para service_role (estado final)
 -- ---------------------------------------------------------------------
 ALTER TABLE public.seen_auctions ENABLE ROW LEVEL SECURITY;
@@ -134,6 +154,7 @@ ALTER TABLE public.known_artists ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_state     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_ai        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_market    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wantlist_items ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.seen_auctions FROM anon, authenticated;
 REVOKE ALL ON public.lots          FROM anon, authenticated;
@@ -141,6 +162,7 @@ REVOKE ALL ON public.known_artists FROM anon, authenticated;
 REVOKE ALL ON public.app_state     FROM anon, authenticated;
 REVOKE ALL ON public.lot_ai        FROM anon, authenticated;
 REVOKE ALL ON public.lot_market    FROM anon, authenticated;
+REVOKE ALL ON public.wantlist_items FROM anon, authenticated;
 
 GRANT ALL ON public.seen_auctions TO service_role;
 GRANT ALL ON public.lots          TO service_role;
@@ -148,3 +170,4 @@ GRANT ALL ON public.known_artists TO service_role;
 GRANT ALL ON public.app_state     TO service_role;
 GRANT ALL ON public.lot_ai        TO service_role;
 GRANT ALL ON public.lot_market    TO service_role;
+GRANT ALL ON public.wantlist_items TO service_role;
