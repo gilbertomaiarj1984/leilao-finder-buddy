@@ -158,6 +158,29 @@ Três valores diferentes, de **fontes diferentes** — não confundir:
   (`${idLeilao}-${idPeca}`)** com a varredura geral (`priceById` no `index.tsx`, mesma
   ideia de `loteById`/`houseUrlByName`) para exibir o "Atual" nesses cards.
 
+### Referência: JSON `loadData` do `peca.asp` (fonte rica)
+
+A página `<domínio-da-casa>/peca.asp?id=<idPeca>` (pública, o JSON vem mesmo deslogado)
+embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. Campos úteis:
+
+- **`data[0]`** (o lote ABERTO):
+  - `ID` (idPeca), `NUMLEILAO`/`ID_LEILAO` (idLeilao), **`LOTENUM`** (nº do lote),
+    `PECA`/`DESCRICAO` (título).
+  - **`VALOR_VALUE`** = valor atual · **`NOVO_VALOR`** = próximo lance (já calculado) ·
+    `VALOR_LABEL` = `"Valor atual:"` ou `"Valor inicial:"` (sem lances ainda).
+  - `VENCENDO` (bool) · `MOSTRABTN_STATUS` (`"Não vendido"`, etc.) · `QTDLANCE` (nº de
+    lances) · `VALMAX` · `ULTIDCLI` (id do último cliente que lançou) · `VPASTA` (imagem).
+- **`data[0].listalotes[]`** = o **catálogo INTEIRO** do leilão. Cada item traz `ID`,
+  **`LOTENUM`**, `MINI_DESCRICAO`, **`VALOR_VALUE`** (atual), `VALMAX`, `QTDLANCE`,
+  `ULTIDCLI`, `MOSTRABTN_STATUS` — mas **NÃO** `NOVO_VALOR`. → **fonte alternativa em
+  massa** de nº de lote + valor atual (1 requisição pega o leilão todo); útil para casas
+  cujo catálogo HTML é JS-rendered (onde `parseCatalogLotes` do `catalogo.asp` falha).
+- **`data[0].navinfo[]`** = `{PREVID, NEXTID}` (navegação anterior/próximo lote).
+
+> **Só `data[0]` tem `NOVO_VALOR`** — por isso o próximo lance é 1 req/lote. Mas se um dia
+> precisar de nº de lote/valor atual em massa para casas JS-rendered, o `listalotes` de
+> **um** `peca.asp` do leilão resolve o leilão inteiro.
+
 ## Casas verificadas: persistência (conceito)
 
 - **"Marcar casa como verificada"** (chave `${dia}|${casa}`) agora **PERSISTE no
