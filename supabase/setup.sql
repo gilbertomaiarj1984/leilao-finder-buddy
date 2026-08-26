@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS public.lots (
 );
 CREATE INDEX IF NOT EXISTS lots_day_key_idx ON public.lots (day_key);
 
+DROP TRIGGER IF EXISTS update_lots_updated_at ON public.lots;
 CREATE TRIGGER update_lots_updated_at BEFORE UPDATE ON public.lots
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
@@ -70,6 +71,7 @@ CREATE TABLE IF NOT EXISTS public.known_artists (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+DROP TRIGGER IF EXISTS update_known_artists_updated_at ON public.known_artists;
 CREATE TRIGGER update_known_artists_updated_at BEFORE UPDATE ON public.known_artists
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
