@@ -55,6 +55,7 @@ export type Database = {
       }
       lot_ai: {
         Row: {
+          album: string | null
           deal: string | null
           evaluated_at: string
           id: string
@@ -66,6 +67,7 @@ export type Database = {
           title_hash: string
         }
         Insert: {
+          album?: string | null
           deal?: string | null
           evaluated_at?: string
           id: string
@@ -77,6 +79,7 @@ export type Database = {
           title_hash: string
         }
         Update: {
+          album?: string | null
           deal?: string | null
           evaluated_at?: string
           id?: string

@@ -11,6 +11,7 @@ export type LotAiRow = {
   score: number | null;
   rarity: string | null;
   deal: string | null;
+  album: string | null;
   reason: string | null;
   tags: string[];
   model: string | null;
@@ -28,7 +29,7 @@ export async function getAllLotAi(): Promise<LotAiRow[]> {
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabaseAdmin
       .from("lot_ai")
-      .select("id, title_hash, score, rarity, deal, reason, tags, model")
+      .select("id, title_hash, score, rarity, deal, album, reason, tags, model")
       .range(from, from + PAGE - 1);
     if (error) throw error;
     const batch = data ?? [];
@@ -39,6 +40,7 @@ export async function getAllLotAi(): Promise<LotAiRow[]> {
         score: r.score,
         rarity: r.rarity,
         deal: r.deal,
+        album: r.album,
         reason: r.reason,
         tags: toTags(r.tags),
         model: r.model,
@@ -59,6 +61,7 @@ export async function upsertLotAi(rows: LotAiRow[]): Promise<number> {
     score: r.score,
     rarity: r.rarity,
     deal: r.deal,
+    album: r.album,
     reason: r.reason,
     tags: r.tags,
     model: r.model,

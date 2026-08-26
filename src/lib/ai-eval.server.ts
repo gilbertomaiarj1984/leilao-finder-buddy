@@ -18,7 +18,13 @@ export const AI_MODEL = "claude-haiku-4-5";
 /** Teto de lotes avaliados por rodada de cron (evita batches gigantes). */
 export const MAX_PER_ROUND = 800;
 
-export type EvalLot = { id: string; title: string; price: string; house: string };
+export type EvalLot = {
+  id: string;
+  title: string;
+  price: string;
+  house: string;
+  image: string | null;
+};
 
 const RARITIES = ["comum", "interessante", "raro", "muito_raro"] as const;
 const DEALS = ["caro", "justo", "barato", "indefinido"] as const;
@@ -36,7 +42,7 @@ export function titleHash(title: string): string {
  * `title_hash` divergente (título mudou). Teto por rodada.
  */
 export function selectLotsToEvaluate(
-  lots: Pick<VinylLot, "id" | "title" | "price" | "house">[],
+  lots: Pick<VinylLot, "id" | "title" | "price" | "house" | "image">[],
   aiRows: Pick<LotAiRow, "id" | "title_hash">[],
   max = MAX_PER_ROUND,
 ): EvalLot[] {
@@ -45,26 +51,40 @@ export function selectLotsToEvaluate(
   for (const lot of lots) {
     if (!lot.id || !lot.title) continue;
     if (known.get(lot.id) === titleHash(lot.title)) continue;
-    out.push({ id: lot.id, title: lot.title, price: lot.price, house: lot.house });
+    out.push({
+      id: lot.id,
+      title: lot.title,
+      price: lot.price,
+      house: lot.house,
+      image: lot.image,
+    });
     if (out.length >= max) break;
   }
   return out;
 }
 
+/** URL de imagem http(s) aproveitável pela API de visão (senão texto puro). */
+function usableImage(url: string | null): string | null {
+  return url && /^https?:\/\//i.test(url) ? url : null;
+}
+
 const SYSTEM_PROMPT =
   "Você avalia discos de vinil (LPs, compactos, bolachões) que vão a leilão no Brasil, " +
-  "para um colecionador. Estime o valor de coleção do disco e se o preço pedido é uma boa " +
+  "para um colecionador. Quando houver imagem da capa, use-a para IDENTIFICAR o disco " +
+  "(artista, álbum, selo/gravadora, país e época) — o título do leilão costuma ser " +
+  "incompleto ou genérico. Estime o valor de coleção e se o preço pedido é uma boa " +
   "oportunidade, usando seu conhecimento de música e discografia. Seja realista: a grande " +
   "maioria dos discos é comum e de baixo valor. Responda SOMENTE com um objeto JSON, sem " +
   "nenhum texto fora do JSON.";
 
-/** Prompt de usuário para UM lote. */
+/** Prompt de usuário (texto) para UM lote. A imagem, quando houver, vai num bloco à parte. */
 export function buildUserPrompt(lot: EvalLot): string {
   const price = parsePrice(lot.price);
   const info = {
     titulo: lot.title,
     casa: lot.house,
     preco_reais: price ?? null,
+    tem_imagem: Boolean(usableImage(lot.image)),
   };
   return (
     "Avalie este disco de vinil e devolva um objeto JSON com EXATAMENTE estas chaves:\n" +
@@ -72,21 +92,30 @@ export function buildUserPrompt(lot: EvalLot): string {
     '- "rarity": um de "comum","interessante","raro","muito_raro"\n' +
     '- "deal": um de "caro","justo","barato","indefinido" (preço pedido vs. valor estimado; ' +
     '"indefinido" quando não houver preço)\n' +
+    '- "album": artista e álbum que você identificou (da capa, se houver; "" se não souber)\n' +
     '- "reason": 1 frase curta em português justificando a nota\n' +
-    '- "tags": array curto de gênero/estilo/época (ex.: ["mpb","1972","psicodelia"])\n\n' +
+    '- "tags": array curto de gênero/estilo/época/selo (ex.: ["mpb","1972","odeon"])\n\n' +
     "Disco:\n" +
     JSON.stringify(info) +
     "\n\nResponda só com o objeto JSON."
   );
 }
 
-/** Parâmetros de mensagem para um lote (usado no request de batch). */
+type ContentBlock =
+  { type: "text"; text: string } | { type: "image"; source: { type: "url"; url: string } };
+
+/** Parâmetros de mensagem para um lote (usado no request de batch). Inclui a capa (visão). */
 export function buildLotParams(lot: EvalLot) {
+  const img = usableImage(lot.image);
+  const content: ContentBlock[] = [];
+  // A imagem vem ANTES do texto (recomendação da API de visão).
+  if (img) content.push({ type: "image", source: { type: "url", url: img } });
+  content.push({ type: "text", text: buildUserPrompt(lot) });
   return {
     model: AI_MODEL,
     max_tokens: 400,
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user" as const, content: buildUserPrompt(lot) }],
+    messages: [{ role: "user" as const, content }],
   };
 }
 
@@ -118,6 +147,10 @@ export function parseEvalObject(
     typeof obj["deal"] === "string" && (DEALS as readonly string[]).includes(obj["deal"])
       ? (obj["deal"] as string)
       : null;
+  const album =
+    typeof obj["album"] === "string" && obj["album"].trim()
+      ? obj["album"].trim().slice(0, 200)
+      : null;
   const reason = typeof obj["reason"] === "string" ? obj["reason"].slice(0, 400) : null;
   const tags = Array.isArray(obj["tags"])
     ? (obj["tags"] as unknown[])
@@ -125,8 +158,8 @@ export function parseEvalObject(
         .map((t) => t.slice(0, 40))
         .slice(0, 8)
     : [];
-  if (score === null && !rarity && !deal && !reason && tags.length === 0) return null;
-  return { score, rarity, deal, reason, tags };
+  if (score === null && !rarity && !deal && !album && !reason && tags.length === 0) return null;
+  return { score, rarity, deal, album, reason, tags };
 }
 
 /** Extrai o texto concatenado dos blocos `text` de uma mensagem de resposta. */
@@ -191,6 +224,7 @@ export async function collectEvalBatch(
       score: parsed.score,
       rarity: parsed.rarity,
       deal: parsed.deal,
+      album: parsed.album,
       reason: parsed.reason,
       tags: parsed.tags,
       model: AI_MODEL,

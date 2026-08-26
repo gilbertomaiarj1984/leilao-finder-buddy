@@ -5,6 +5,7 @@ export type LotAi = {
   score: number | null;
   rarity: string | null;
   deal: string | null;
+  album: string | null;
   reason: string | null;
   tags: string[];
   matchesInterests?: boolean;

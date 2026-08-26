@@ -451,7 +451,12 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
   `submitEvalBatch`/`collectEvalBatch`, SDK importado dinamicamente) e
   `src/lib/lot-ai.server.ts` (`getAllLotAi`/`upsertLotAi`). Saída por lote:
   `score`(0-100), `rarity`(comum→muito_raro), `deal`(caro/justo/barato/indefinido),
-  `reason`, `tags[]`. Parsing tolerante a cercas de código (`parseEvalObject`).
+  `album` (identificação), `reason`, `tags[]`. Parsing tolerante a cercas (`parseEvalObject`).
+- **Visão (capa):** quando o lote tem `image` http(s), ela vai como bloco `image`
+  (source `url`, ANTES do texto) no request — o Haiku 4.5 usa a capa para **identificar** o
+  disco (título do leilão costuma ser genérico) e devolve `album` (artista/álbum), exibido
+  no overlay/coluna. `usableImage` descarta URLs não-http (ex.: `data:`). Sem imagem, é
+  texto puro. Custo por imagem é pequeno (thumbnail), ainda em centavos no batch.
 - **`matchesInterests` é do servidor/UI, NÃO da IA:** `buildInterestMatcher`
   (`ai-score-utils.ts`) casa a lista de interesses (`app_state` chave `user_interests`)
   com o título via `normalizeForMatch` — determinístico e barato, não gasta tokens.

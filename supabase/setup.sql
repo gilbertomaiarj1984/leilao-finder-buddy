@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS public.lot_ai (
   score        integer,
   rarity       text,
   deal         text,
+  album        text,           -- artista/álbum identificado (da capa, quando houver)
   reason       text,
   tags         jsonb NOT NULL DEFAULT '[]',
   model        text,

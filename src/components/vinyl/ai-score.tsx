@@ -10,6 +10,7 @@ export function ScoreDetails({ ai }: { ai: LotAi }) {
         <Sparkles className="h-3.5 w-3.5 text-primary" />
         Nota {ai.score ?? "—"} / 100
       </div>
+      {ai.album ? <p className="font-medium text-foreground">{ai.album}</p> : null}
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-muted-foreground">
         <dt>Raridade:</dt>
         <dd className="font-medium text-foreground">{rarityLabel(ai.rarity)}</dd>

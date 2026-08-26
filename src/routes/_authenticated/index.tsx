@@ -281,6 +281,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         score: r.score,
         rarity: r.rarity,
         deal: r.deal,
+        album: r.album,
         reason: r.reason,
         tags: r.tags,
       });
