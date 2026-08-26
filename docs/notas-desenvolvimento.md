@@ -517,3 +517,38 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
   mercado** (recalculado no cliente com o preço ao vivo); o Top 100 mostra o chip de mercado.
 - **Pendência:** aplicar `lot_market` do `setup.sql` no Supabase; cadastrar `DISCOGS_TOKEN`;
   disparar `refresh.yml` e conferir `step=market` com `updated>0`.
+
+### Operação: colocar IA + mercado no ar (checklist de deploy)
+
+> Registro operacional destas features. PR do trabalho:
+> [#51](https://github.com/gilbertomaiarj1984/leilao-finder-buddy/pull/51).
+
+1. **O cron chama o app publicado, não o próprio YAML.** `refresh.yml` faz `curl` em
+   **`APP_URL`** = **produção na Vercel = branch `main`**. Logo, os passos novos (`aieval`,
+   `market`) **só respondem após MERGE na `main` + deploy**; antes disso a produção devolve
+   `step inválido` para eles. (Sem merge daria para apontar `APP_URL` à URL de preview da PR,
+   mas o hash muda a cada deploy — mesclar é mais simples.)
+2. **Chaves (env), nos dois lugares + Redeploy na Vercel:**
+   - **`ANTHROPIC_API_KEY`** — gerar em **console.anthropic.com** (pago por uso, separado do
+     Claude.ai): *Billing* (crédito mínimo, ex.: US$5) → *API keys → Create Key* (`sk-ant-…`,
+     aparece 1 vez). Custo real: **centavos/rodada** (Haiku 4.5 + Batches + cache por lote).
+   - **`DISCOGS_TOKEN`** (grátis) — *discogs.com → Settings → Developers → Generate token*.
+   - Cadastrar cada uma em **GitHub → Settings → Secrets → Actions** *e* em **Vercel → Env
+     Variables (Production)**; mudou env na Vercel ⇒ **Redeploy**. Ambas **opcionais**: sem a
+     chave, o passo faz **no-op** (não quebra o scraping).
+3. **Schema (Supabase, não é auto-migrado):** aplicar `supabase/setup.sql` — agora
+   **re-executável** (triggers com `DROP TRIGGER IF EXISTS`; tabelas `IF NOT EXISTS`). Se só
+   faltam as novas, dá para rodar isolado `CREATE TABLE IF NOT EXISTS lot_ai` + `lot_market`
+   + `ENABLE RLS`/`REVOKE`/`GRANT … service_role`.
+4. **Rodar:** GitHub → **Actions** → **"Atualização periódica dos lotes"** → **Run workflow**.
+   Ordem interna: `chunk → enrich → aieval → market`.
+5. **Esperar ~2 rodadas.** `aieval` é assíncrono (Batches): na 1ª run costuma só **submeter**
+   (`pending:true`); `market` depende de avaliação **coletada**, então a 1ª run normalmente dá
+   **`market updated:0` — normal**. Na coleta (fim do laço, ou execução 6-horária seguinte) o
+   `lot_ai` enche e o `market` passa a casar/gravar.
+6. **Conferir no ar:** rodapé com a versão (**v0.5.0**); abrir **Análise de Lotes** (Top 100 +
+   por dia/casa) e o **badge de nota + overlay** nos cards.
+7. **Se o `step=market` vier estranho** (sempre `updated:0` com `lot_ai` cheio, ou erro): os
+   formatos JSON do Discogs **não foram verificados em fonte primária** (egress bloqueado na
+   sessão); o parsing é defensivo sobre os formatos padrão — se algum campo vier com nome
+   diferente, é ajuste pontual em `src/lib/discogs.server.ts` (`fetchMarket`).
