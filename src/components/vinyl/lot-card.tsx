@@ -35,6 +35,10 @@ export function LotCard({
   // apenas vigiado = amarelo; caso contrário, borda neutra.
   const hasBid = bidStatus !== undefined && bidStatus !== null && bidStatus !== "";
   const winning = hasBid && bidIsWinning(bidStatus as string);
+  // Quando estou VENCENDO, o valor atual É o meu lance (a listagem pública traz o
+  // valor defasado, anterior ao meu lance vencedor). Quando estou coberto, o valor
+  // atual é o da listagem (o lance que me cobriu).
+  const currentPrice = winning && lot.myBid ? lot.myBid : lot.price;
   const cardClass = hasBid
     ? winning
       ? "border-green-500 ring-1 ring-green-500/40"
@@ -67,7 +71,7 @@ export function LotCard({
             </span>
           ) : null}
           <span className="font-semibold text-primary" title="Valor atual">
-            Atual {lot.price || "sem valor"}
+            Atual {currentPrice || "sem valor"}
           </span>
           {lot.nextBid ? (
             <span
@@ -77,6 +81,8 @@ export function LotCard({
               Próximo {lot.nextBid}
             </span>
           ) : null}
+          {/* Meu lance vai para a linha de baixo (quebra o flex-wrap). */}
+          {lot.myBid ? <span className="w-full" aria-hidden="true" /> : null}
           {lot.myBid ? (
             <span
               className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground"

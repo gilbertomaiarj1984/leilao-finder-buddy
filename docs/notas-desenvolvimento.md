@@ -137,7 +137,14 @@ Três valores diferentes, de **fontes diferentes** — não confundir:
 - **`base`** (do `data-watch="idPeca,email,idLeilao,base"`) **NÃO é o incremento** — é a
   "base"/plataforma (nas queries de conta, `b=0` = base LeilõesBR). Não usar como próximo lance.
 - **Regra de UI (card):** todo lote mostra **"Atual"**; **"Próximo"** quando houver
-  `nextBid`; **"Meu lance"** quando houver `myBid`.
+  `nextBid`; **"Meu lance"** quando houver `myBid` (numa linha **abaixo** do Atual/Próximo).
+- **Correção do "Atual" quando estou VENCENDO:** a listagem pública traz o valor
+  **defasado** (anterior ao meu lance vencedor). Como quem vence detém o maior lance, o
+  valor atual **É o meu lance** → o `LotCard` usa `myBid` como "Atual" quando
+  `bidIsWinning(status)`. Coberto continua com o valor da listagem (o lance que me cobriu).
+  Por isso `myBid` é passado a **todos** os cards (abas de dia/vigiados também, via
+  `myBidById`), não só em "Meus lances" — senão o mesmo lote apareceria com valor
+  diferente entre abas.
 - **"Meus lances" (`l=4`) não traz o valor atual** → casar por **`id`
   (`${idLeilao}-${idPeca}`)** com a varredura geral (`priceById` no `index.tsx`, mesma
   ideia de `loteById`/`houseUrlByName`) para exibir o "Atual" nesses cards.
