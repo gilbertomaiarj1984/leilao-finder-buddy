@@ -517,3 +517,52 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
   mercado** (recalculado no cliente com o preço ao vivo); o Top 100 mostra o chip de mercado.
 - **Pendência:** aplicar `lot_market` do `setup.sql` no Supabase; cadastrar `DISCOGS_TOKEN`;
   disparar `refresh.yml` e conferir `step=market` com `updated>0`.
+
+## Sessão 2026-08-26 — Sondagem (wantlist) + filtros da Análise (v0.6.0)
+
+> Branch `claude/wantlist-items-setup-lsdx4w`. Sobre a base da Análise (PR #51, já mesclada
+> na `main`). Objetivo: subir um rascunho de obras que estou caçando (a "sondagem"), usá-lo
+> como input extra da análise e dar filtros à página.
+
+### Sondagem (wantlist_items)
+
+- **Tabela `wantlist_items`** (`supabase/setup.sql`; RLS só service_role, igual às demais):
+  `raw` (linha original), `work` (obra), `year` (int, opcional), `note` (observação),
+  `norm` (obra normalizada p/ casar com os títulos dos lotes), `acquired` (já adquiri),
+  `position` (ordem) + `created_at`/`updated_at` (trigger). **Aplicar o `setup.sql` no
+  Supabase** (não é auto-migrado); `types.ts` recebeu a tabela à mão.
+- **Parser puro** `src/lib/wantlist-parse.ts` (`parseWantlistText`): uma obra por linha,
+  tolerante a numeração ("01."), parênteses de ano/nota ("(1975 - Fase Cult/Rara)",
+  `(1976 - "Rodésia")`) e colchetes com rótulo (`[Bônus/Cult: ...]` → nota "Bônus/Cult").
+  Dedup por obra normalizada + ano. Client-safe (usado no preview do diálogo).
+- **CRUD** `src/lib/wantlist.server.ts` (`getAllWantlist`/`importWantlistText`/
+  `addWantlistItem`/`updateWantlistItem`/`deleteWantlistItem`); `importWantlistText`
+  **acrescenta** (não apaga) e ignora duplicatas contra a lista atual.
+- **Server fns** em `leiloesbr.functions.ts`: `getWantlist`, `importWantlist`,
+  `addWantlistItem`, `updateWantlistItem`, `deleteWantlistItem`.
+- **Diálogo "Sondagem"** no header da Análise: colar texto (com contagem de obras
+  reconhecidas), pesquisar, editar inline, marcar **adquirido** (sai do radar) e remover.
+
+### Casamento com os lotes (input extra da análise)
+
+- `matchesWant` reusa `buildInterestMatcher` (determinístico, sem IA) sobre os `work` das
+  obras **não adquiridas**. Os lotes que casam ganham **🎯** ao lado do título (Top 100 e
+  por casa) e alimentam o filtro **"Só sondagem"**.
+
+### Filtros da Análise (valem para o Top 100 E o por dia/casa)
+
+- Estado de filtro único → `filtered` (base do Top 100 e da visão por dia). Campos:
+  **busca por título** (normalizada), **dia** (select), **casa** (select), **faixa de nota**
+  (mín–máx 0–100) e **só sondagem**. Botão **Limpar** quando há filtro ativo; rodapé com
+  contagem ("N lotes no filtro / M casam com a sondagem").
+- **Top 100 recolhível** (chevron no título) e marcado como "filtrado" quando há filtro.
+- As abas por dia passaram a ser **controladas** (`value=dayKey`) para casar com o filtro de
+  dia; contagem de cada aba já reflete o `filtered`.
+
+### Pendências desta feature
+
+- [ ] **Aplicar o `wantlist_items` do `setup.sql`** no Supabase (o `setup.sql` é
+      re-executável; ou rode só o `CREATE TABLE IF NOT EXISTS wantlist_items` + índice/RLS/
+      grants). Sem isso, importar/gravar a sondagem dá erro.
+- [ ] Merge desta branch + deploy; então importar o rascunho real pela UI e conferir o 🎯
+      e o filtro "Só sondagem".
