@@ -286,10 +286,12 @@ searchNorm)` casa por **título/artista/casa/nº do lote** (mesma regra das abas
 
 ### Pendências desta migração
 
-- [ ] Secrets do cron no GitHub (`APP_URL`, `CRON_TOKEN`) e validar 1ª execução do
-      workflow `refresh.yml`.
+- [x] Secrets do cron no GitHub (`APP_URL`, `CRON_TOKEN`) e validar 1ª execução do
+      workflow `refresh.yml` — a atualização periódica 4×/dia está no ar (ver
+      **Atualização em background**).
 - [ ] (Opcional) Rotacionar o `CRON_TOKEN` (gerado em chat na migração).
-- [ ] (Opcional) Commit dedicado de formatação (prettier) nos arquivos herdados do Lovable.
+- [x] (Opcional) Commit dedicado de formatação (prettier) nos arquivos herdados do
+      Lovable — feito na revisão geral (PR #34, fase de lint/format).
 
 ---
 
@@ -299,6 +301,7 @@ searchNorm)` casa por **título/artista/casa/nº do lote** (mesma regra das abas
 > [#35](https://github.com/gilbertomaiarj1984/leilao-finder-buddy/pull/35).
 
 ### O que foi feito
+
 - **Fonte única da versão:** `src/lib/version.ts` exporta `APP_VERSION` (semver). É o
   **único** lugar para dar bump. Começou em `0.1.0`. `package.json` também recebeu
   `"version": "0.1.0"` para o campo ficar consistente.
@@ -311,6 +314,7 @@ searchNorm)` casa por **título/artista/casa/nº do lote** (mesma regra das abas
   `ui/button`), `bunx tsc --noEmit` e `bun run build` — todos verdes.
 
 ### Convenção de versionamento (usar nos PRs)
+
 - **Bump em `src/lib/version.ts` a cada release**, seguindo semver: **PATCH** = correção;
   **MINOR** = nova funcionalidade compatível; **MAJOR** = mudança incompatível.
 - **Colocar o número da versão no título do PR** (ex.: `v0.2.0 — filtro por casa`).
@@ -318,6 +322,7 @@ searchNorm)` casa por **título/artista/casa/nº do lote** (mesma regra das abas
 - Versão atual ao fim desta sessão: **v0.1.0**.
 
 ### Observação de processo (aprendizado)
+
 - Este arquivo **já existia na `main`**; a branch de trabalho tinha sido criada de uma
   base anterior à sua criação. Ao criar o arquivo "do zero" na branch, houve conflito
   add/add contra a `main`, resolvido mesclando `origin/main` e mantendo o conteúdo real +
@@ -326,6 +331,7 @@ searchNorm)` casa por **título/artista/casa/nº do lote** (mesma regra das abas
   notas", **fazer fetch da `main` e só então acrescentar ao final**.
 
 ### Ideias em aberto
+
 - (Opcional) Acompanhar o PR #35: reagir a falhas de CI e comentários de review.
 - (Opcional) Automatizar/validar o bump da versão em CI (garantir que `APP_VERSION` foi
   incrementado quando o PR muda código do app).
