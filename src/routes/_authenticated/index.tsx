@@ -436,6 +436,13 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     for (const lot of lots.data?.lots ?? []) if (lot.price) map.set(lot.id, lot.price);
     return map;
   }, [lots.data]);
+  // Meu lance por peça — para exibir "Meu lance" e corrigir o "Atual" (quando venço, o
+  // valor atual É o meu lance) também nas abas de dia/vigiados, não só em "Meus lances".
+  const myBidById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const b of bids.data ?? []) if (b.myBid) map.set(b.idPeca, b.myBid);
+    return map;
+  }, [bids.data]);
   // A URL do site da casa não vem na página de lances — casamos pelo nome da casa
   // com o que já lemos da varredura geral e dos vigiados.
   const houseUrlByName = useMemo(() => {
@@ -795,7 +802,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                               {houseGroup.lots.map((lot) => (
                                 <LotCard
                                   key={lot.id}
-                                  lot={{ ...lot, dayKey: lot.date, watched: true }}
+                                  lot={{
+                                    ...lot,
+                                    dayKey: lot.date,
+                                    watched: true,
+                                    myBid: myBidById.get(lot.idPeca),
+                                  }}
                                   busy={pending === lot.idPeca}
                                   bidStatus={bidStatusById.get(lot.idPeca)}
                                   onToggle={() =>
@@ -975,6 +987,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                             lot={{
                                               ...lot,
                                               lote: lot.lote || loteById.get(lot.idPeca) || "",
+                                              myBid: myBidById.get(lot.idPeca),
                                             }}
                                             busy={pending === lot.idPeca}
                                             bidStatus={bidStatusById.get(lot.idPeca)}
@@ -1126,7 +1139,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   {houseGroup.lots.map((lot) => (
                                     <LotCard
                                       key={lot.id}
-                                      lot={{ ...lot, dayKey: lot.date, watched: true }}
+                                      lot={{
+                                        ...lot,
+                                        dayKey: lot.date,
+                                        watched: true,
+                                        myBid: myBidById.get(lot.idPeca),
+                                      }}
                                       busy={pending === lot.idPeca}
                                       bidStatus={bidStatusById.get(lot.idPeca)}
                                       onToggle={() =>
