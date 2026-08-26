@@ -1,5 +1,6 @@
-// Fonte única da versão do app. Bump aqui a cada release e use este número
-// no título/descrição dos PRs (ex.: "v0.1.0 — ...").
+// Fonte única da versão do app. **Bump aqui em TODO PR** (obrigatório — o CI
+// `version-bump.yml` falha o PR se este número não subir) e use-o no título do
+// PR (ex.: "v0.2.0 — ...").
 //
 // Convenção (semver): MAJOR.MINOR.PATCH
 // - PATCH: correções de bug e ajustes pequenos
@@ -8,4 +9,4 @@
 //
 // O rodapé (`src/components/Footer.tsx`) lê esta constante e a exibe em todas
 // as telas, para acompanhar em produção qual versão está no ar.
-export const APP_VERSION = "0.1.0";
+export const APP_VERSION = "0.2.0";

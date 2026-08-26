@@ -25,5 +25,9 @@ com **Supabase** como backend e deploy na **Vercel**.
 - **Recriar a branch de trabalho a partir de `origin/main` antes de cada tarefa**
   (a `main` pode receber commits de outras sessões/PRs).
 - Fluxo: branch de trabalho → PR → merge.
+- **Subir a versão do app em TODO PR:** bump em `src/lib/version.ts` (`APP_VERSION`) e
+  no `package.json`, seguindo semver (PATCH=correção, MINOR=nova função, MAJOR=quebra).
+  É o número mostrado no rodapé em produção. **Obrigatório** — o CI `version-bump.yml`
+  falha o PR se a versão não subir. Coloque a versão no título do PR (ex.: `v0.2.0 — …`).
 - Rodapé de atribuição em qualquer post no GitHub; commits terminam com
   `Co-Authored-By: Claude ...`.
