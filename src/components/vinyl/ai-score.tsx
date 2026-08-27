@@ -83,6 +83,35 @@ function MarketBlock({ market, price }: { market: LotMarket; price?: string }) {
   );
 }
 
+// Cores da raridade (menor → maior valor): comum=vermelho, interessante=amarelo,
+// raro=metade amarelo/metade verde, muito_raro=verde.
+const RARITY_RED = "text-red-600 dark:text-red-400";
+const RARITY_YELLOW = "text-yellow-600 dark:text-yellow-400";
+const RARITY_GREEN = "text-green-600 dark:text-green-400";
+
+/**
+ * Rótulo da raridade colorido pela escala. Em "raro", a palavra é dividida ao meio:
+ * a 1ª metade em amarelo e a 2ª em verde (transição de interessante → muito raro).
+ */
+export function RarityLabel({ rarity }: { rarity: string | null }) {
+  const label = rarityLabel(rarity);
+  if (rarity === "comum") return <span className={`font-medium ${RARITY_RED}`}>{label}</span>;
+  if (rarity === "interessante")
+    return <span className={`font-medium ${RARITY_YELLOW}`}>{label}</span>;
+  if (rarity === "muito_raro")
+    return <span className={`font-medium ${RARITY_GREEN}`}>{label}</span>;
+  if (rarity === "raro") {
+    const mid = Math.ceil(label.length / 2);
+    return (
+      <span className="font-medium">
+        <span className={RARITY_YELLOW}>{label.slice(0, mid)}</span>
+        <span className={RARITY_GREEN}>{label.slice(mid)}</span>
+      </span>
+    );
+  }
+  return <span className="text-muted-foreground">{label}</span>;
+}
+
 /** Legenda da raridade (menor → maior valor). O usuário não sabia qual extremo é o mais raro. */
 export function RarityLegend() {
   return (
@@ -90,7 +119,9 @@ export function RarityLegend() {
       <span className="font-medium uppercase tracking-wide">Raridade:</span>
       {RARITY_LEGEND.map((r, i) => (
         <span key={r.key} className="inline-flex items-center gap-1.5">
-          <span className="rounded bg-secondary px-1.5 py-0.5 text-foreground">{r.label}</span>
+          <span className="rounded bg-secondary px-1.5 py-0.5">
+            <RarityLabel rarity={r.key} />
+          </span>
           {i < RARITY_LEGEND.length - 1 ? <span aria-hidden="true">→</span> : null}
         </span>
       ))}
@@ -299,7 +330,9 @@ export function ScoreDetails({
       {ai.album ? <p className="font-medium text-foreground">{ai.album}</p> : null}
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-muted-foreground">
         <dt>Raridade:</dt>
-        <dd className="font-medium text-foreground">{rarityLabel(ai.rarity)}</dd>
+        <dd>
+          <RarityLabel rarity={ai.rarity} />
+        </dd>
         <dt>Oportunidade:</dt>
         <dd className={`font-medium ${dealTone(ai.deal)}`}>{dealLabel(ai.deal)}</dd>
         {ai.matchesInterests ? (

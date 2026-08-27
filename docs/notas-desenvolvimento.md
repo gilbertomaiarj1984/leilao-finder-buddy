@@ -664,3 +664,12 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
   (`LotSummary` → `saveTagsMut`) e nos cards do site principal (`LotCard.onEditTags` →
   `editTags(lot.id)`), com atualização otimista do cache `["lot-ai"]`. Só afeta lotes que já têm
   linha em `lot_ai` (é onde há tags).
+
+### v0.8.1 — raridade colorida pela escala
+
+- A raridade tem **4 valores fixos** vindos da IA (`RARITIES` em `ai-eval.server.ts`):
+  `comum`/`interessante`/`raro`/`muito_raro` (menor → maior; não é editável, é gerada junto da
+  nota). Novo componente `RarityLabel` (`ai-score.tsx`) colore pela escala: **comum=vermelho**,
+  **interessante=amarelo**, **raro=metade amarelo/metade verde** (palavra dividida ao meio) e
+  **muito_raro=verde**. Usado na `RarityLegend`, no `ScoreDetails` (hover) e no `LotSummary` das
+  tabelas.
