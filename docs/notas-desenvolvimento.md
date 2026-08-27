@@ -673,3 +673,13 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
   **interessante=amarelo**, **raro=metade amarelo/metade verde** (palavra dividida ao meio) e
   **muito_raro=verde**. Usado na `RarityLegend`, no `ScoreDetails` (hover) e no `LotSummary` das
   tabelas.
+
+### v0.9.0 — filtro por raridade + feedback na edição de tags
+
+- **Filtro por raridade** na Análise: `<select>` "Raridade" (Todas + os 4 valores via
+  `RARITY_LEGEND`), entra em `filtered`/`filtersActive`/`resetFilters` (estado `rarityFilter`).
+- **Edição de tags — validação/feedback:** `updateLotTags` passou a usar `.select("tags")` →
+  **erro claro** quando o lote não tem linha em `lot_ai` ("ainda não avaliado pela IA") e
+  **devolve as tags realmente gravadas** (jsonb), não o array computado. As mutações de tags (na
+  Análise e no `index.tsx`) ganharam **toast de sucesso** ("Tags atualizadas") além do de erro —
+  antes a gravação era silenciosa, então uma falha (ou um lote sem avaliação) não dava sinal.

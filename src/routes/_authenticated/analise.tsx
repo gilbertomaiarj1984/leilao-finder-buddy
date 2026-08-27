@@ -45,6 +45,7 @@ import {
   discogsUrl,
   fmtMoney,
   marketDeal,
+  RARITY_LEGEND,
   rowStatusTone,
   scoreTone,
   toLotMarket,
@@ -594,6 +595,7 @@ function AnalisePage() {
   const [dayFilter, setDayFilter] = useState("");
   const [scoreMin, setScoreMin] = useState("");
   const [scoreMax, setScoreMax] = useState("");
+  const [rarityFilter, setRarityFilter] = useState("");
   const [onlyWant, setOnlyWant] = useState(false);
   const [onlyWatched, setOnlyWatched] = useState(false);
   const [onlyBid, setOnlyBid] = useState(false);
@@ -720,7 +722,10 @@ function AnalisePage() {
   const saveTagsMut = useMutation({
     mutationFn: (v: { id: string; tags: string[] }) => saveTags({ data: v }),
     onMutate: (v: { id: string; tags: string[] }) => patchTags(v.id, v.tags),
-    onSuccess: (res: { id: string; tags: string[] }) => patchTags(res.id, res.tags),
+    onSuccess: (res: { id: string; tags: string[] }) => {
+      patchTags(res.id, res.tags);
+      toast.success("Tags atualizadas");
+    },
     onError: (e: Error) => {
       toast.error(e.message || "Não foi possível salvar as tags");
       void queryClient.invalidateQueries({ queryKey: ["lot-ai"] });
@@ -843,6 +848,7 @@ function AnalisePage() {
       if (onlyWant && !wantByLot.has(l.id)) return false;
       if (onlyWatched && !watchedIds.has(l.idPeca)) return false;
       if (onlyBid && !bidStatusById.has(l.idPeca)) return false;
+      if (rarityFilter && (aiById.get(l.id)?.rarity ?? null) !== rarityFilter) return false;
       if (scoreActive) {
         const s = aiById.get(l.id)?.score ?? null;
         if (s === null) return false;
@@ -859,6 +865,7 @@ function AnalisePage() {
     onlyWant,
     onlyWatched,
     onlyBid,
+    rarityFilter,
     scoreMin,
     scoreMax,
     aiById,
@@ -890,6 +897,7 @@ function AnalisePage() {
     dayFilter ||
     scoreMin ||
     scoreMax ||
+    rarityFilter ||
     onlyWant ||
     onlyWatched ||
     onlyBid,
@@ -900,6 +908,7 @@ function AnalisePage() {
     setDayFilter("");
     setScoreMin("");
     setScoreMax("");
+    setRarityFilter("");
     setOnlyWant(false);
     setOnlyWatched(false);
     setOnlyBid(false);
@@ -1013,6 +1022,23 @@ function AnalisePage() {
                     {houses.map((h) => (
                       <option key={h} value={h}>
                         {h}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Raridade
+                  </label>
+                  <select
+                    value={rarityFilter}
+                    onChange={(e) => setRarityFilter(e.target.value)}
+                    className={selectClass}
+                  >
+                    <option value="">Todas</option>
+                    {RARITY_LEGEND.map((r) => (
+                      <option key={r.key} value={r.key}>
+                        {r.label}
                       </option>
                     ))}
                   </select>
