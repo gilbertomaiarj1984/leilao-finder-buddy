@@ -1,4 +1,4 @@
-import { normalizeForMatch, parsePrice } from "@/lib/vinyl-parse";
+import { bidIsWinning, normalizeForMatch, parsePrice } from "@/lib/vinyl-parse";
 
 /** Avaliação da IA consumida pela UI (o que compõe a nota do lote). */
 export type LotAi = {
@@ -28,6 +28,16 @@ const DEAL_LABEL: Record<string, string> = {
 export function rarityLabel(r: string | null): string {
   return r ? (RARITY_LABEL[r] ?? r) : "—";
 }
+
+/**
+ * Ordem da raridade, do MENOR para o MAIOR valor. Alimenta a legenda da Análise
+ * (o usuário não sabia qual extremo é o "mais raro").
+ */
+export const RARITY_ORDER = ["comum", "interessante", "raro", "muito_raro"] as const;
+export const RARITY_LEGEND: { key: string; label: string }[] = RARITY_ORDER.map((key) => ({
+  key,
+  label: RARITY_LABEL[key] ?? key,
+}));
 export function dealLabel(d: string | null): string {
   return d ? (DEAL_LABEL[d] ?? d) : "—";
 }
@@ -118,6 +128,26 @@ export function marketDeal(
   if (p <= ref * 0.7) return "barato";
   if (p >= ref * 1.15) return "caro";
   return "justo";
+}
+
+/** URL pública do release no Discogs (para tornar a âncora de mercado clicável em todo lugar). */
+export function discogsUrl(releaseId: number | null | undefined): string | null {
+  return releaseId ? `https://www.discogs.com/release/${releaseId}` : null;
+}
+
+/**
+ * Cor da BORDA de um item conforme o padrão do site (mesma regra do `LotCard`/painel):
+ * meu lance ganhando = verde; meu lance coberto = vermelho; apenas vigiado = amarelo;
+ * caso contrário, neutro. Usado como borda esquerda nas linhas das tabelas da Análise.
+ */
+export function rowStatusTone(bidStatus: string | null | undefined, watched: boolean): string {
+  const hasBid = bidStatus !== undefined && bidStatus !== null && bidStatus !== "";
+  if (hasBid)
+    return bidIsWinning(bidStatus)
+      ? "border-l-4 border-l-green-500"
+      : "border-l-4 border-l-red-500";
+  if (watched) return "border-l-4 border-l-yellow-500";
+  return "border-l-4 border-l-transparent";
 }
 
 /**

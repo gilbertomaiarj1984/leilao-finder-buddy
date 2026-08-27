@@ -588,3 +588,35 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
 - Novo `src/lib/wantlist-match.ts` (ver "Casamento com os lotes" acima). A Análise passou a
   confrontar cada lote com todas as obras não adquiridas via `bestWantForLot` (mapa
   `wantByLot` memoizado por lote) em vez do substring. `LotTitle` recebe `want` (obra + %).
+
+## Sessão 2026-08-27 — Refino da Análise: leitura, hover da nota e filtros (v0.7.0)
+
+> Branch `claude/analise-filtros-top-100-l7x7nv`. Ajustes de UX pedidos na Análise.
+
+- **Caixa de filtro ilegível (fundo/letra brancos):** a paleta padrão (`:root`) é escura,
+  mas faltava `color-scheme: dark`, então o dropdown nativo do `<select>` renderizava em tema
+  claro (fundo branco) com o texto claro em cima. Corrigido com `color-scheme: dark` no `:root`
+  (`src/styles.css`) — vale para todos os controles nativos (select, opções, scrollbar).
+- **Hover da nota abrindo À ESQUERDA, sem ser cortado:** novo `HoverDetails` em
+  `src/components/vinyl/ai-score.tsx` renderiza o painel de detalhes via **portal**
+  (`createPortal`, `position: fixed`) para escapar do `overflow` (tabela com scroll horizontal
+  e `overflow-hidden` do card). Abre à esquerda do gatilho; sem espaço, cai para baixo. É
+  **interativo** (o mouse entra no painel) → o link do Discogs dentro dele fica clicável. Só
+  monta no cliente (estilo começa `null`, sem SSR do portal). `ScoreBadge` (novo, coluna "Nota"
+  das tabelas) e `ScoreCorner` (canto do card) usam o mesmo `HoverDetails`.
+- **Top 100 e tabela por casa reestruturados:** coluna **Nota** à esquerda (selo + hover),
+  **Título** ao centro, e abaixo dele `LotSummary` (raridade, oportunidade, deal vs. mercado +
+  **link Discogs**, motivo da IA e **tags**). Após o "Atual", **botão de vigiar** (`WatchButton`)
+  e **borda esquerda colorida** por status (`rowStatusTone`: verde ganhando / vermelho coberto /
+  amarelo vigiado) — mesmo padrão do `LotCard`. "Atual" corrigido para o `myBid` quando estou
+  vencendo (igual à página principal).
+- **Legenda de raridade:** `RarityLegend` (comum → interessante → raro → muito_raro; menor →
+  maior) no rodapé dos filtros. Ordem/labels em `RARITY_ORDER`/`RARITY_LEGEND` (`ai-score-utils`).
+- **Tags da IA em todo lugar:** `LotTags` reutilizável — no front do `LotCard` (site principal)
+  e no `LotSummary` das tabelas. (Ideia futura: filtro por tag.)
+- **Filtros no formato da página principal:** carreguei `listWatched`/`listMyBids` na Análise e
+  adicionei os chips **Vigiando** e **Com lance** (além de "Só sondagem", agora também chip), no
+  mesmo estilo dos botões de dia do `index.tsx` (`filterChipClass`). O botão de vigiar da tabela
+  usa a mutação `toggleWatch` e invalida `["vinyl-watched"]`.
+- Validado: `bunx tsc --noEmit`, `bun run lint` (só os 2 warnings pré-existentes de shadcn) e
+  `bun run build` — verdes.

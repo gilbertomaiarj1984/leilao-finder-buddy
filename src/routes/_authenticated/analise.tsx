@@ -8,6 +8,9 @@ import {
   ChevronRight,
   Crosshair,
   ExternalLink,
+  Eye,
+  EyeOff,
+  Gavel,
   Loader2,
   Pencil,
   Plus,
@@ -34,12 +37,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScoreChips, ScoreDetails } from "@/components/vinyl/ai-score";
+import { LotTags, RarityLegend, ScoreBadge } from "@/components/vinyl/ai-score";
 import {
   buildInterestMatcher,
   dealLabel,
   dealTone,
+  discogsUrl,
   marketDeal,
+  rarityLabel,
+  rowStatusTone,
   scoreTone,
   toLotMarket,
   type LotAi,
@@ -55,10 +61,12 @@ import {
   getVinylLots,
   getWantlist,
   importWantlist,
+  listMyBids,
   setUserInterests,
   updateWantlistItem,
 } from "@/lib/leiloesbr.functions";
-import { formatDayLabel, normalizeForMatch, type VinylLot } from "@/lib/vinyl-parse";
+import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
+import { bidIsWinning, formatDayLabel, normalizeForMatch, type VinylLot } from "@/lib/vinyl-parse";
 import {
   bestWantForLot,
   lotIdentity,
@@ -123,6 +131,85 @@ function LotTitle({ lot, want }: { lot: VinylLot; want?: WantHit | null }) {
       </a>
     </span>
   );
+}
+
+/**
+ * Campos que ficam ABAIXO do título nas tabelas: raridade, oportunidade, âncora de mercado
+ * (clicável → Discogs), motivo da IA e tags. A nota (com a explicação completa no hover)
+ * fica na coluna à esquerda via `ScoreBadge`.
+ */
+function LotSummary({ ai, market, price }: { ai?: LotAi; market?: LotMarket; price?: string }) {
+  if (!ai) return null;
+  const mDeal = market ? marketDeal(price ?? "", market) : "indefinido";
+  const href = market?.matched ? discogsUrl(market.releaseId) : null;
+  return (
+    <div className="mt-1 space-y-1">
+      <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+        {ai.rarity ? (
+          <span className="rounded bg-secondary px-1.5 py-0.5 text-foreground">
+            {rarityLabel(ai.rarity)}
+          </span>
+        ) : null}
+        {ai.deal && ai.deal !== "indefinido" ? (
+          <span className={`font-medium ${dealTone(ai.deal)}`}>{dealLabel(ai.deal)}</span>
+        ) : null}
+        {mDeal !== "indefinido" ? (
+          <span className={`font-medium ${dealTone(mDeal)}`}>{dealLabel(mDeal)} vs. mercado</span>
+        ) : null}
+        {href ? (
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-0.5 font-medium text-primary hover:underline"
+          >
+            Discogs <ExternalLink className="h-3 w-3" />
+          </a>
+        ) : null}
+      </div>
+      {ai.reason ? <p className="max-w-md text-xs text-muted-foreground">{ai.reason}</p> : null}
+      <LotTags tags={ai.tags} />
+    </div>
+  );
+}
+
+/** Botão de vigiar/desvigiar (só ícone) para as linhas das tabelas — sincroniza com o LeilõesBR. */
+function WatchButton({
+  watched,
+  busy,
+  onToggle,
+}: {
+  watched: boolean;
+  busy: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Button
+      size="sm"
+      variant={watched ? "default" : "outline"}
+      className="h-8 w-8 p-0"
+      onClick={onToggle}
+      disabled={busy}
+      title={watched ? "Vigiando — clique para remover" : "Vigiar este lote"}
+      aria-label={watched ? "Deixar de vigiar" : "Vigiar"}
+      aria-pressed={watched}
+    >
+      {busy ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : watched ? (
+        <EyeOff className="h-4 w-4" />
+      ) : (
+        <Eye className="h-4 w-4" />
+      )}
+    </Button>
+  );
+}
+
+/** Chip de filtro (liga/desliga) no mesmo formato dos botões da parte principal do site. */
+function filterChipClass(active: boolean): string {
+  return active
+    ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary disabled:opacity-50"
+    : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-50";
 }
 
 function InterestsDialog({
@@ -461,6 +548,9 @@ function AnalisePage() {
   const addWant = useServerFn(addWantlistItem);
   const updateWant = useServerFn(updateWantlistItem);
   const deleteWant = useServerFn(deleteWantlistItem);
+  const fetchWatched = useServerFn(listWatched);
+  const fetchBids = useServerFn(listMyBids);
+  const runToggle = useServerFn(toggleWatch);
 
   const [openHouses, setOpenHouses] = useState<Set<string>>(new Set());
   const toggleHouse = (key: string) =>
@@ -478,8 +568,11 @@ function AnalisePage() {
   const [scoreMin, setScoreMin] = useState("");
   const [scoreMax, setScoreMax] = useState("");
   const [onlyWant, setOnlyWant] = useState(false);
+  const [onlyWatched, setOnlyWatched] = useState(false);
+  const [onlyBid, setOnlyBid] = useState(false);
   const [topOpen, setTopOpen] = useState(true);
   const [activeDay, setActiveDay] = useState("");
+  const [pending, setPending] = useState<string | null>(null);
 
   const lots = useQuery({
     queryKey: ["vinyl-lots"] as const,
@@ -509,6 +602,20 @@ function AnalisePage() {
     queryKey: ["wantlist"] as const,
     queryFn: () => fetchWantlist() as Promise<WantItem[]>,
     staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  // Vigiados + meus lances: alimentam os filtros "Vigiando"/"Com lance", a borda colorida
+  // das linhas, o status do lance e o botão de vigiar (mesma mecânica da página principal).
+  const watchedQuery = useQuery({
+    queryKey: ["vinyl-watched"] as const,
+    queryFn: () => fetchWatched(),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const bidsQuery = useQuery({
+    queryKey: ["vinyl-my-bids"] as const,
+    queryFn: () => fetchBids(),
+    staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
 
@@ -563,6 +670,37 @@ function AnalisePage() {
     updateWantMut.isPending ||
     deleteWantMut.isPending;
 
+  // Vigiar/desvigiar direto na tabela — sincroniza com o LeilõesBR (igual aos cards).
+  const toggle = useMutation({
+    mutationFn: (lot: { idPeca: string; idLeilao: string; base: string; watch: boolean }) =>
+      runToggle({ data: lot }),
+    onMutate: (lot) => setPending(lot.idPeca),
+    onSuccess: (result: { watched: boolean }) => {
+      void queryClient.invalidateQueries({ queryKey: ["vinyl-watched"] });
+      toast.success(result.watched ? "Lote vigiado no LeilõesBR" : "Vigia removida no LeilõesBR");
+    },
+    onError: (e: Error) => toast.error(e.message || "Não foi possível sincronizar a vigia"),
+    onSettled: () => setPending(null),
+  });
+
+  const watchedIds = useMemo(
+    () => new Set((watchedQuery.data ?? []).map((w) => w.idPeca)),
+    [watchedQuery.data],
+  );
+  // Status do meu lance por peça (verde = ganhando, vermelho = coberto).
+  const bidStatusById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const b of bidsQuery.data ?? []) map.set(b.idPeca, b.status);
+    return map;
+  }, [bidsQuery.data]);
+  // Meu lance por peça: corrige o "Atual" quando estou vencendo (a listagem pública traz o
+  // valor defasado — quem vence detém o maior lance).
+  const myBidById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const b of bidsQuery.data ?? []) if (b.myBid) map.set(b.idPeca, b.myBid);
+    return map;
+  }, [bidsQuery.data]);
+
   const aiById = useMemo(() => {
     const map = new Map<string, LotAi>();
     for (const r of lotAiQuery.data ?? [])
@@ -593,6 +731,22 @@ function AnalisePage() {
   const marketFor = (lot: VinylLot): LotMarket | undefined => marketById.get(lot.id);
   // Score para ordenação: sem avaliação vai para o fim (-1).
   const scoreOf = (lot: VinylLot) => aiById.get(lot.id)?.score ?? -1;
+
+  // Estado por lote (vigia/lance) e o valor "Atual" corrigido para quem está vencendo.
+  const isWatched = (lot: VinylLot) => watchedIds.has(lot.idPeca);
+  const bidStatusFor = (lot: VinylLot) => bidStatusById.get(lot.idPeca) ?? null;
+  const currentPriceFor = (lot: VinylLot) => {
+    const status = bidStatusFor(lot);
+    const myBid = myBidById.get(lot.idPeca);
+    return status && bidIsWinning(status) && myBid ? myBid : lot.price;
+  };
+  const onToggleWatch = (lot: VinylLot) =>
+    toggle.mutate({
+      idPeca: lot.idPeca,
+      idLeilao: lot.idLeilao,
+      base: lot.base,
+      watch: !isWatched(lot),
+    });
 
   const days = lots.data?.days ?? [];
   const allLots = useMemo(() => lots.data?.lots ?? [], [lots.data]);
@@ -643,6 +797,8 @@ function AnalisePage() {
       if (houseFilter && l.house !== houseFilter) return false;
       if (dayFilter && l.dayKey !== dayFilter) return false;
       if (onlyWant && !wantByLot.has(l.id)) return false;
+      if (onlyWatched && !watchedIds.has(l.idPeca)) return false;
+      if (onlyBid && !bidStatusById.has(l.idPeca)) return false;
       if (scoreActive) {
         const s = aiById.get(l.id)?.score ?? null;
         if (s === null) return false;
@@ -651,7 +807,21 @@ function AnalisePage() {
       }
       return true;
     });
-  }, [allLots, search, houseFilter, dayFilter, onlyWant, scoreMin, scoreMax, aiById, wantByLot]);
+  }, [
+    allLots,
+    search,
+    houseFilter,
+    dayFilter,
+    onlyWant,
+    onlyWatched,
+    onlyBid,
+    scoreMin,
+    scoreMax,
+    aiById,
+    wantByLot,
+    watchedIds,
+    bidStatusById,
+  ]);
 
   // Top 100: só lotes já avaliados, maior nota primeiro — dentro do conjunto filtrado.
   const top = useMemo(
@@ -671,7 +841,14 @@ function AnalisePage() {
     [filtered, wantByLot, wantCount],
   );
   const filtersActive = Boolean(
-    search || houseFilter || dayFilter || scoreMin || scoreMax || onlyWant,
+    search ||
+    houseFilter ||
+    dayFilter ||
+    scoreMin ||
+    scoreMax ||
+    onlyWant ||
+    onlyWatched ||
+    onlyBid,
   );
   const resetFilters = () => {
     setSearch("");
@@ -680,7 +857,11 @@ function AnalisePage() {
     setScoreMin("");
     setScoreMax("");
     setOnlyWant(false);
+    setOnlyWatched(false);
+    setOnlyBid(false);
   };
+  const watchedCount = watchedIds.size;
+  const bidCount = bidStatusById.size;
 
   const visibleDays = dayFilter ? days.filter((d) => d === dayFilter) : days;
   const tabValue = visibleDays.includes(activeDay) ? activeDay : (visibleDays[0] ?? "");
@@ -814,17 +995,48 @@ function AnalisePage() {
                     />
                   </div>
                 </div>
-                <label className="flex h-9 items-center gap-1.5 text-sm text-foreground">
-                  <input
-                    type="checkbox"
-                    checked={onlyWant}
-                    onChange={(e) => setOnlyWant(e.target.checked)}
+                {/* Filtros liga/desliga no mesmo formato dos botões da página principal. */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOnlyWatched((v) => !v)}
+                    disabled={watchedCount === 0}
+                    aria-pressed={onlyWatched}
+                    className={filterChipClass(onlyWatched)}
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    Vigiando
+                    {watchedCount ? (
+                      <span className="ml-0.5 text-muted-foreground">{watchedCount}</span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOnlyBid((v) => !v)}
+                    disabled={bidCount === 0}
+                    aria-pressed={onlyBid}
+                    className={filterChipClass(onlyBid)}
+                  >
+                    <Gavel className="h-3.5 w-3.5" />
+                    Com lance
+                    {bidCount ? (
+                      <span className="ml-0.5 text-muted-foreground">{bidCount}</span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOnlyWant((v) => !v)}
                     disabled={wantCount === 0}
-                    className="h-4 w-4 accent-primary"
-                  />
-                  <Target className="h-4 w-4 text-primary" />
-                  Só sondagem
-                </label>
+                    aria-pressed={onlyWant}
+                    className={filterChipClass(onlyWant)}
+                  >
+                    <Target className="h-3.5 w-3.5" />
+                    Só sondagem
+                    {wantCount ? (
+                      <span className="ml-0.5 text-muted-foreground">{wantCount}</span>
+                    ) : null}
+                  </button>
+                </div>
                 {filtersActive ? (
                   <Button variant="ghost" size="sm" onClick={resetFilters}>
                     <X className="mr-1 h-4 w-4" />
@@ -832,12 +1044,15 @@ function AnalisePage() {
                   </Button>
                 ) : null}
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                {filtered.length} lote(s) no filtro.
-                {wantCount
-                  ? ` ${wantMatchCount} casam com a sondagem (${wantCount} obra(s) na lista).`
-                  : ""}
-              </p>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  {filtered.length} lote(s) no filtro.
+                  {wantCount
+                    ? ` ${wantMatchCount} casam com a sondagem (${wantCount} obra(s) na lista).`
+                    : ""}
+                </p>
+                <RarityLegend />
+              </div>
             </section>
 
             {/* ------- Top 100 (recolhível) ------- */}
@@ -868,47 +1083,65 @@ function AnalisePage() {
                   </p>
                 ) : (
                   <div className="overflow-x-auto rounded-md border border-border">
-                    <table className="w-full min-w-[640px] border-collapse text-sm">
+                    <table className="w-full min-w-[720px] border-collapse text-sm">
                       <thead>
                         <tr className="bg-secondary text-left text-xs uppercase tracking-wider text-muted-foreground">
-                          <th className="px-3 py-2 font-medium">#</th>
                           <th className="px-3 py-2 font-medium">Nota</th>
                           <th className="px-3 py-2 font-medium">Título</th>
                           <th className="px-3 py-2 font-medium">Casa / dia</th>
                           <th className="px-3 py-2 text-right font-medium">Atual</th>
+                          <th className="px-3 py-2 text-right font-medium">Vigiar</th>
                         </tr>
                       </thead>
                       <tbody>
                         {top.map((lot, i) => {
                           const ai = aiFor(lot)!;
-                          const market = marketFor(lot);
-                          const mDeal = market ? marketDeal(lot.price, market) : "indefinido";
+                          const status = bidStatusFor(lot);
+                          const watched = isWatched(lot);
                           return (
-                            <tr key={lot.id} className="border-t border-border/60 align-top">
-                              <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
+                            <tr
+                              key={lot.id}
+                              className={`border-t border-border/60 align-top ${rowStatusTone(status, watched)}`}
+                            >
                               <td className="px-3 py-2">
-                                <ScoreChips ai={ai} />
-                                {mDeal !== "indefinido" ? (
-                                  <p className={`mt-1 text-[11px] font-medium ${dealTone(mDeal)}`}>
-                                    {dealLabel(mDeal)} vs. mercado
-                                  </p>
-                                ) : null}
-                                {ai.reason ? (
-                                  <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-                                    {ai.reason}
-                                  </p>
-                                ) : null}
+                                <ScoreBadge
+                                  ai={ai}
+                                  market={marketFor(lot)}
+                                  price={lot.price}
+                                  rank={i + 1}
+                                />
                               </td>
                               <td className="px-3 py-2">
                                 <LotTitle lot={lot} want={wantedLot(lot)} />
+                                <LotSummary ai={ai} market={marketFor(lot)} price={lot.price} />
                               </td>
                               <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
                                 {lot.house}
                                 <br />
                                 {formatDayLabel(lot.dayKey, days)} · {lot.time}
                               </td>
-                              <td className="whitespace-nowrap px-3 py-2 text-right font-semibold text-primary">
-                                {lot.price || "sem valor"}
+                              <td className="whitespace-nowrap px-3 py-2 text-right">
+                                <span className="font-semibold text-primary">
+                                  {currentPriceFor(lot) || "sem valor"}
+                                </span>
+                                {status ? (
+                                  <div
+                                    className={`mt-0.5 text-[11px] font-medium ${
+                                      bidIsWinning(status)
+                                        ? "text-green-600 dark:text-green-400"
+                                        : "text-red-600 dark:text-red-400"
+                                    }`}
+                                  >
+                                    {status}
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <WatchButton
+                                  watched={watched}
+                                  busy={pending === lot.idPeca}
+                                  onToggle={() => onToggleWatch(lot)}
+                                />
                               </td>
                             </tr>
                           );
@@ -1048,7 +1281,7 @@ function AnalisePage() {
 
                                   {isOpen ? (
                                     <div className="overflow-x-auto">
-                                      <table className="w-full min-w-[640px] border-collapse text-sm">
+                                      <table className="w-full min-w-[720px] border-collapse text-sm">
                                         <thead>
                                           <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
                                             <th className="px-2 py-2 font-medium">Nota</th>
@@ -1057,19 +1290,24 @@ function AnalisePage() {
                                             <th className="px-2 py-2 text-right font-medium">
                                               Atual
                                             </th>
+                                            <th className="px-2 py-2 text-right font-medium">
+                                              Vigiar
+                                            </th>
                                           </tr>
                                         </thead>
                                         <tbody>
                                           {group.lots.map((lot) => {
                                             const ai = aiFor(lot);
+                                            const status = bidStatusFor(lot);
+                                            const watched = isWatched(lot);
                                             return (
                                               <tr
                                                 key={lot.id}
-                                                className="border-b border-border/60 align-top"
+                                                className={`border-b border-border/60 align-top ${rowStatusTone(status, watched)}`}
                                               >
                                                 <td className="px-2 py-2">
                                                   {ai ? (
-                                                    <ScoreDetails
+                                                    <ScoreBadge
                                                       ai={ai}
                                                       market={marketFor(lot)}
                                                       price={lot.price}
@@ -1083,9 +1321,34 @@ function AnalisePage() {
                                                 </td>
                                                 <td className="px-2 py-2">
                                                   <LotTitle lot={lot} want={wantedLot(lot)} />
+                                                  <LotSummary
+                                                    ai={ai}
+                                                    market={marketFor(lot)}
+                                                    price={lot.price}
+                                                  />
                                                 </td>
-                                                <td className="whitespace-nowrap px-2 py-2 text-right font-semibold text-primary">
-                                                  {lot.price || "sem valor"}
+                                                <td className="whitespace-nowrap px-2 py-2 text-right">
+                                                  <span className="font-semibold text-primary">
+                                                    {currentPriceFor(lot) || "sem valor"}
+                                                  </span>
+                                                  {status ? (
+                                                    <div
+                                                      className={`mt-0.5 text-[11px] font-medium ${
+                                                        bidIsWinning(status)
+                                                          ? "text-green-600 dark:text-green-400"
+                                                          : "text-red-600 dark:text-red-400"
+                                                      }`}
+                                                    >
+                                                      {status}
+                                                    </div>
+                                                  ) : null}
+                                                </td>
+                                                <td className="px-2 py-2 text-right">
+                                                  <WatchButton
+                                                    watched={watched}
+                                                    busy={pending === lot.idPeca}
+                                                    onToggle={() => onToggleWatch(lot)}
+                                                  />
                                                 </td>
                                               </tr>
                                             );

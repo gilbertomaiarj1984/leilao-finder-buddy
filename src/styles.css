@@ -63,6 +63,11 @@
 
 /* Analog / vinyl crate-digging palette: warm charcoal, cream label, amber accent. */
 :root {
+  /* A paleta padrão é escura (charcoal). Sem isto, os controles nativos do
+   * navegador (dropdown do <select>, opções, scrollbar) renderizam em tema
+   * claro → fundo branco com o texto claro em cima = ilegível na caixa de
+   * filtro. `dark` alinha o chrome nativo ao tema do app. */
+  color-scheme: dark;
   --radius: 0.375rem;
   --background: oklch(0.16 0.012 60);
   --foreground: oklch(0.95 0.014 85);
