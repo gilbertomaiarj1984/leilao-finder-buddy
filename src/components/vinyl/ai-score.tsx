@@ -1,5 +1,5 @@
-import { ExternalLink, Sparkles, Star } from "lucide-react";
-import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { ExternalLink, Plus, Sparkles, Star, X } from "lucide-react";
+import { useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import {
@@ -15,9 +15,15 @@ import {
   type LotMarket,
 } from "./ai-score-utils";
 
-/** Bloco do mercado (Discogs): menor preço à venda, sugerido, demanda e oportunidade. */
+/** Bloco do mercado (Discogs): faixa de preço no Brasil (c/ frete), sugerido e demanda. */
 function MarketBlock({ market, price }: { market: LotMarket; price?: string }) {
   const deal = price ? marketDeal(price, market) : "indefinido";
+  const range =
+    market.priceLowBr !== null
+      ? market.priceHighBr !== null && market.priceHighBr > market.priceLowBr
+        ? `${fmtMoney(market.priceLowBr, "BRL")} a ${fmtMoney(market.priceHighBr, "BRL")}`
+        : fmtMoney(market.priceLowBr, "BRL")
+      : null;
   return (
     <div className="mt-1 border-t border-border pt-1.5">
       <div className="flex items-center justify-between font-medium text-foreground">
@@ -27,9 +33,18 @@ function MarketBlock({ market, price }: { market: LotMarket; price?: string }) {
         ) : null}
       </div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-muted-foreground">
+        {range !== null ? (
+          <>
+            <dt>Brasil (c/ frete):</dt>
+            <dd className="font-medium text-foreground">
+              {range}
+              {market.numForSaleBr ? ` · ${market.numForSaleBr} à venda` : ""}
+            </dd>
+          </>
+        ) : null}
         {market.lowestPrice !== null ? (
           <>
-            <dt>Menor à venda:</dt>
+            <dt>Menor (global):</dt>
             <dd className="font-medium text-foreground">
               {fmtMoney(market.lowestPrice, market.currency)}
               {market.numForSale ? ` · ${market.numForSale} à venda` : ""}
@@ -84,16 +99,84 @@ export function RarityLegend() {
   );
 }
 
-/** Chips das tags trazidas pela IA. Reutilizado nos cards e nas tabelas da Análise. */
-export function LotTags({ tags }: { tags: string[] }) {
-  if (!tags.length) return null;
+/**
+ * Chips das tags da IA. Reutilizado nos cards e nas tabelas da Análise. Quando recebe
+ * `onEdit`, fica EDITÁVEL: ao passar o mouse aparece o × em cada tag (remover) e o "+ tag"
+ * (adicionar). Sem `onEdit`, é só leitura (como antes).
+ */
+export function LotTags({ tags, onEdit }: { tags: string[]; onEdit?: (next: string[]) => void }) {
+  const [adding, setAdding] = useState(false);
+  const [value, setValue] = useState("");
+
+  if (!onEdit) {
+    if (!tags.length) return null;
+    return (
+      <div className="flex flex-wrap gap-1">
+        {tags.map((t) => (
+          <span key={t} className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-foreground">
+            {t}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  const commitAdd = () => {
+    const v = value.replace(/\s+/g, " ").trim();
+    if (v && !tags.some((t) => t.toLowerCase() === v.toLowerCase())) onEdit([...tags, v]);
+    setValue("");
+    setAdding(false);
+  };
+  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitAdd();
+    } else if (e.key === "Escape") {
+      setValue("");
+      setAdding(false);
+    }
+  };
+
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="group/tags flex flex-wrap items-center gap-1">
       {tags.map((t) => (
-        <span key={t} className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-foreground">
+        <span
+          key={t}
+          className="inline-flex items-center gap-0.5 rounded bg-secondary px-1.5 py-0.5 text-[10px] text-foreground"
+        >
           {t}
+          <button
+            type="button"
+            onClick={() => onEdit(tags.filter((x) => x !== t))}
+            aria-label={`Remover tag ${t}`}
+            title={`Remover tag "${t}"`}
+            className="opacity-0 transition-opacity hover:text-destructive focus:opacity-100 group-hover/tags:opacity-100"
+          >
+            <X className="h-3 w-3" />
+          </button>
         </span>
       ))}
+      {adding ? (
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={onKey}
+          onBlur={commitAdd}
+          placeholder="nova tag"
+          className="h-5 w-20 rounded border border-input bg-background px-1 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          aria-label="Adicionar tag"
+          title="Adicionar tag"
+          className="inline-flex items-center gap-0.5 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-0 transition-opacity hover:border-primary hover:text-primary focus:opacity-100 group-hover/tags:opacity-100"
+        >
+          <Plus className="h-3 w-3" /> tag
+        </button>
+      )}
     </div>
   );
 }

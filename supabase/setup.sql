@@ -122,8 +122,15 @@ CREATE TABLE IF NOT EXISTS public.lot_market (
   suggested_condition text,
   have                integer,
   want                integer,
+  price_low_br        numeric,  -- menor total (preço + frete) entre vendedores do Brasil
+  price_high_br       numeric,  -- maior total (preço + frete) entre vendedores do Brasil
+  num_for_sale_br     integer,  -- nº de anúncios de vendedores BR considerados
   checked_at          timestamptz NOT NULL DEFAULT now()
 );
+-- Colunas da faixa de preço BR adicionadas depois (bancos já criados): idempotente.
+ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS price_low_br    numeric;
+ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS price_high_br   numeric;
+ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS num_for_sale_br integer;
 
 -- ---------------------------------------------------------------------
 -- wantlist_items — "sondagem": rascunho de obras que o usuário caça.

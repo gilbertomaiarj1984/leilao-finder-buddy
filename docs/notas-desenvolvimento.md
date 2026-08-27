@@ -620,3 +620,47 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
   usa a mutação `toggleWatch` e invalida `["vinyl-watched"]`.
 - Validado: `bunx tsc --noEmit`, `bun run lint` (só os 2 warnings pré-existentes de shadcn) e
   `bun run build` — verdes.
+
+## Sessão 2026-08-27 (2) — Faixa Discogs BR, "Lances do dia" e tags editáveis (v0.8.0)
+
+> Mesma branch `claude/analise-filtros-top-100-l7x7nv` (PR #54 já mesclado; branch recriada de
+> `origin/main`).
+
+### Faixa de preço do Discogs (só Brasil, preço + frete)
+
+- **Por quê:** a API oficial do Discogs **não** dá faixa (só `lowest_price` via `stats`), nem
+  país do vendedor, nem frete. Para "De R$X a R$Y, vendedores BR, com frete", a única fonte é a
+  **página pública de venda** — então fazemos scraping dela.
+- `src/lib/discogs.server.ts`: `fetchBrListings(releaseId)` busca
+  `www.discogs.com/sell/release/<id>?ships_from=Brazil&currency=BRL&sort=price,asc&limit=100`
+  (sem token; UA + `Accept-Language: pt-BR`). Parser puro `parseSellPage` varre as células
+  `.item_price`, lê `.price` e `.item_shipping` (preferindo `data-pricevalue`, caindo no texto
+  pt-BR via `parseBrMoney`) e soma **preço + frete** por anúncio (frete sem valor fixo = 0, ex.:
+  "calculado no checkout"). `summarizeListings` → menor/maior total + contagem. Testável com
+  `bun -e`. Best-effort: se a página não vier/parsear, os campos ficam nulos e a UI cai no `stats`.
+- **Novos campos** `priceLowBr`/`priceHighBr`/`numForSaleBr` em `MarketData` (discogs), na linha
+  `lot_market` (`price_low_br`/`price_high_br`/`num_for_sale_br` — `setup.sql` com `CREATE` +
+  `ALTER ADD COLUMN IF NOT EXISTS`; `types.ts` à mão; select de `getAllLotMarket`; gravação no
+  cron `step=market`), no tipo UI `LotMarket`/`toLotMarket`. O `marketDeal` (UI) passou a ancorar
+  em `priceLowBr` (→ `lowestPrice` → sugerido). UI: `MarketBlock` mostra "Brasil (c/ frete): De X
+  a Y · N à venda" e o `LotSummary` da Análise mostra "Discogs BR: X–Y".
+- **Pendência:** aplicar o `setup.sql` no Supabase (novas colunas) e rodar `refresh.yml`
+  (`step=market`) para popular a faixa. **Risco:** se o Discogs bloquear/alterar o HTML da página
+  de venda, a faixa some (fallback no `stats`). O frete exibido depende do país do comprador na
+  ausência de login — best-effort.
+
+### "Lances do dia" por dia do LEILÃO (bug)
+
+- A página "Meus lances" (`l=4`) traz a **data do lance** (quando lancei), não a data em que o
+  lote vai a pregão → os "Lances do dia"/aba Lances agrupavam pelo dia errado. Corrigido em
+  `index.tsx`: `dayKeyByLotId` (id → `dayKey` da varredura geral) e `bidDayKey(bid)` usado nos dois
+  agrupamentos (toggle do dia + aba Lances), com fallback para `watchedDateToKey(bid.date)`.
+
+### Tags da IA editáveis (add/remove ao passar o mouse)
+
+- `updateLotTags(id, tags)` (`lot-ai.server.ts`, normaliza/dedup/limita a 20) + server fn
+  `setLotTags`. `LotTags` ganhou modo **editável** quando recebe `onEdit`: × por tag (aparece no
+  hover) e "+ tag" para adicionar (Enter confirma, Esc cancela). Ligado nas tabelas da Análise
+  (`LotSummary` → `saveTagsMut`) e nos cards do site principal (`LotCard.onEditTags` →
+  `editTags(lot.id)`), com atualização otimista do cache `["lot-ai"]`. Só afeta lotes que já têm
+  linha em `lot_ai` (é onde há tags).
