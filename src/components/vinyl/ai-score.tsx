@@ -250,11 +250,12 @@ function HoverDetails({ trigger, children }: { trigger: ReactNode; children: Rea
   return (
     <div
       ref={ref}
-      className="inline-flex"
+      className="inline-flex cursor-help"
       onMouseEnter={open}
       onMouseLeave={scheduleClose}
       onFocusCapture={open}
       onBlurCapture={scheduleClose}
+      onClick={open}
     >
       {trigger}
       {style
