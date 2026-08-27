@@ -37,7 +37,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LotTags, RarityLegend, ScoreBadge } from "@/components/vinyl/ai-score";
+import { LotTags, RarityLabel, RarityLegend, ScoreBadge } from "@/components/vinyl/ai-score";
 import {
   buildInterestMatcher,
   dealLabel,
@@ -45,7 +45,6 @@ import {
   discogsUrl,
   fmtMoney,
   marketDeal,
-  rarityLabel,
   rowStatusTone,
   scoreTone,
   toLotMarket,
@@ -165,8 +164,8 @@ function LotSummary({
     <div className="mt-1 space-y-1">
       <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
         {ai.rarity ? (
-          <span className="rounded bg-secondary px-1.5 py-0.5 text-foreground">
-            {rarityLabel(ai.rarity)}
+          <span className="rounded bg-secondary px-1.5 py-0.5">
+            <RarityLabel rarity={ai.rarity} />
           </span>
         ) : null}
         {ai.deal && ai.deal !== "indefinido" ? (
