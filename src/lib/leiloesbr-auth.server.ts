@@ -93,6 +93,14 @@ export type AuthFetchInit = {
 
 const REQUEST_TIMEOUT_MS = 20000;
 
+// Erro com o status HTTP anexado, para o retry distinguir 4xx (definitivo) de 5xx
+// (intermitente). Sem status = falha de rede/timeout (também vale re-tentar).
+class LeiloesBrHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`LeilõesBR respondeu ${status}`);
+  }
+}
+
 async function fetchOnce(url: string, init: AuthFetchInit, cookie?: string): Promise<string> {
   // Timeout para a requisição não travar indefinidamente (evita "fica carregando").
   const controller = new AbortController();
@@ -116,7 +124,7 @@ async function fetchOnce(url: string, init: AuthFetchInit, cookie?: string): Pro
       signal: controller.signal,
       ...(init.body ? { body: init.body } : {}),
     });
-    if (!response.ok) throw new Error(`LeilõesBR respondeu ${response.status}`);
+    if (!response.ok) throw new LeiloesBrHttpError(response.status);
     return await response.text();
   } finally {
     clearTimeout(timer);
@@ -124,6 +132,7 @@ async function fetchOnce(url: string, init: AuthFetchInit, cookie?: string): Pro
 }
 
 // O site devolve 500/502 de forma intermitente sob carga: tentamos algumas vezes.
+// Um 4xx (ex.: 404/403) é definitivo — re-tentar só adiciona latência, então falha logo.
 async function fetchWithRetry(url: string, init: AuthFetchInit, cookie?: string): Promise<string> {
   let lastError: unknown;
   for (let i = 0; i < 3; i++) {
@@ -131,6 +140,9 @@ async function fetchWithRetry(url: string, init: AuthFetchInit, cookie?: string)
       return await fetchOnce(url, init, cookie);
     } catch (error) {
       lastError = error;
+      if (error instanceof LeiloesBrHttpError && error.status >= 400 && error.status < 500) {
+        break;
+      }
       await new Promise((resolve) => setTimeout(resolve, 600 * (i + 1)));
     }
   }
