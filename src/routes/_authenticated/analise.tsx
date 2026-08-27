@@ -52,7 +52,11 @@ import {
   type LotAi,
   type LotMarket,
 } from "@/components/vinyl/ai-score-utils";
-import { houseAnchor } from "@/components/vinyl/grouping";
+import {
+  groupByHouseSimple,
+  houseAnchor,
+  type SimpleHouseGroup,
+} from "@/components/vinyl/grouping";
 import {
   addWantlistItem,
   deleteWantlistItem,
@@ -96,17 +100,7 @@ type WantItem = {
   position: number;
 };
 
-type HouseGroup = { house: string; houseUrl: string; lots: VinylLot[] };
-
-function groupByHouse(lots: VinylLot[]): HouseGroup[] {
-  const byHouse = new Map<string, HouseGroup>();
-  for (const lot of lots) {
-    const group = byHouse.get(lot.house) ?? { house: lot.house, houseUrl: lot.houseUrl, lots: [] };
-    group.lots.push(lot);
-    byHouse.set(lot.house, group);
-  }
-  return [...byHouse.values()];
-}
+type HouseGroup = SimpleHouseGroup;
 
 const selectClass =
   "h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
@@ -1262,7 +1256,7 @@ function AnalisePage() {
 
                   {visibleDays.map((day, index) => {
                     const dayLots = filtered.filter((l) => l.dayKey === day);
-                    const groups = groupByHouse(dayLots);
+                    const groups = groupByHouseSimple(dayLots);
                     for (const g of groups) g.lots.sort((a, b) => scoreOf(b) - scoreOf(a));
                     // Melhor nota da casa (para ordenar as casas).
                     const bestScore = (g: HouseGroup) => (g.lots.length ? scoreOf(g.lots[0]!) : -1);
