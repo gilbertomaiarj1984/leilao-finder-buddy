@@ -59,6 +59,12 @@ import {
   updateWantlistItem,
 } from "@/lib/leiloesbr.functions";
 import { formatDayLabel, normalizeForMatch, type VinylLot } from "@/lib/vinyl-parse";
+import {
+  bestWantForLot,
+  lotIdentity,
+  wantCandidate,
+  type WantCandidate,
+} from "@/lib/wantlist-match";
 import { parseWantlistText } from "@/lib/wantlist-parse";
 
 export const Route = createFileRoute("/_authenticated/analise")({
@@ -95,14 +101,16 @@ function groupByHouse(lots: VinylLot[]): HouseGroup[] {
 const selectClass =
   "h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
-function LotTitle({ lot, wanted }: { lot: VinylLot; wanted?: boolean }) {
+type WantHit = { work: string; year: number | null; score: number };
+
+function LotTitle({ lot, want }: { lot: VinylLot; want?: WantHit | null }) {
+  const wantTitle = want
+    ? `Sondagem: ${want.work}${want.year ? ` (${want.year})` : ""} · ${Math.round(want.score * 100)}%`
+    : undefined;
   return (
-    <span className="inline-flex items-start gap-1">
-      {wanted ? (
-        <Target
-          className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary"
-          aria-label="Casa com a sondagem"
-        />
+    <span className="inline-flex items-start gap-1" title={wantTitle}>
+      {want ? (
+        <Target className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-label={wantTitle} />
       ) : null}
       <a
         href={lot.url}
@@ -572,14 +580,6 @@ function AnalisePage() {
     () => buildInterestMatcher(interestsQuery.data ?? []),
     [interestsQuery.data],
   );
-  // Casamento com a sondagem: obras ainda NÃO adquiridas (as adquiridas saem do radar).
-  const matchesWant = useMemo(
-    () =>
-      buildInterestMatcher(
-        (wantlistQuery.data ?? []).filter((w) => !w.acquired).map((w) => w.work),
-      ),
-    [wantlistQuery.data],
-  );
   const marketById = useMemo(() => {
     const map = new Map<string, LotMarket>();
     for (const r of lotMarketQuery.data ?? []) map.set(r.id, toLotMarket(r));
@@ -605,6 +605,33 @@ function AnalisePage() {
     [allLots],
   );
 
+  // Casamento probabilístico com a sondagem: obras ainda NÃO adquiridas (as adquiridas saem
+  // do radar). Cada lote é confrontado com todas as obras usando artista + disco + ano; só
+  // conta como casamento quando a melhor obra passa de 80% (bestWantForLot).
+  const wantCands = useMemo<WantCandidate[]>(
+    () => (wantlistQuery.data ?? []).filter((w) => !w.acquired).map(wantCandidate),
+    [wantlistQuery.data],
+  );
+  const wantByLot = useMemo(() => {
+    const map = new Map<string, WantHit>();
+    if (!wantCands.length) return map;
+    for (const lot of allLots) {
+      const ai = aiById.get(lot.id);
+      const market = marketById.get(lot.id);
+      const identity = lotIdentity({
+        title: lot.title,
+        artist: lot.artist,
+        album: ai?.album ?? null,
+        marketTitle: market?.releaseTitle ?? null,
+        marketYear: market?.year ?? null,
+      });
+      const best = bestWantForLot(wantCands, identity);
+      if (best) map.set(lot.id, { work: best.cand.work, year: best.cand.year, score: best.score });
+    }
+    return map;
+  }, [wantCands, allLots, aiById, marketById]);
+  const wantedLot = (lot: VinylLot): WantHit | null => wantByLot.get(lot.id) ?? null;
+
   // Aplica os filtros (busca/casa/dia/nota/sondagem) — base tanto do Top 100 quanto do por dia.
   const filtered = useMemo(() => {
     const q = normalizeForMatch(search);
@@ -615,7 +642,7 @@ function AnalisePage() {
       if (q && !normalizeForMatch(l.title).includes(q)) return false;
       if (houseFilter && l.house !== houseFilter) return false;
       if (dayFilter && l.dayKey !== dayFilter) return false;
-      if (onlyWant && !matchesWant(l.title)) return false;
+      if (onlyWant && !wantByLot.has(l.id)) return false;
       if (scoreActive) {
         const s = aiById.get(l.id)?.score ?? null;
         if (s === null) return false;
@@ -624,7 +651,7 @@ function AnalisePage() {
       }
       return true;
     });
-  }, [allLots, search, houseFilter, dayFilter, onlyWant, scoreMin, scoreMax, aiById, matchesWant]);
+  }, [allLots, search, houseFilter, dayFilter, onlyWant, scoreMin, scoreMax, aiById, wantByLot]);
 
   // Top 100: só lotes já avaliados, maior nota primeiro — dentro do conjunto filtrado.
   const top = useMemo(
@@ -640,8 +667,8 @@ function AnalisePage() {
   const evaluated = aiById.size;
   const wantCount = (wantlistQuery.data ?? []).filter((w) => !w.acquired).length;
   const wantMatchCount = useMemo(
-    () => (wantCount ? filtered.filter((l) => matchesWant(l.title)).length : 0),
-    [filtered, matchesWant, wantCount],
+    () => (wantCount ? filtered.filter((l) => wantByLot.has(l.id)).length : 0),
+    [filtered, wantByLot, wantCount],
   );
   const filtersActive = Boolean(
     search || houseFilter || dayFilter || scoreMin || scoreMax || onlyWant,
@@ -873,7 +900,7 @@ function AnalisePage() {
                                 ) : null}
                               </td>
                               <td className="px-3 py-2">
-                                <LotTitle lot={lot} wanted={matchesWant(lot.title)} />
+                                <LotTitle lot={lot} want={wantedLot(lot)} />
                               </td>
                               <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
                                 {lot.house}
@@ -1055,10 +1082,7 @@ function AnalisePage() {
                                                   {lot.lote || "—"}
                                                 </td>
                                                 <td className="px-2 py-2">
-                                                  <LotTitle
-                                                    lot={lot}
-                                                    wanted={matchesWant(lot.title)}
-                                                  />
+                                                  <LotTitle lot={lot} want={wantedLot(lot)} />
                                                 </td>
                                                 <td className="whitespace-nowrap px-2 py-2 text-right font-semibold text-primary">
                                                   {lot.price || "sem valor"}

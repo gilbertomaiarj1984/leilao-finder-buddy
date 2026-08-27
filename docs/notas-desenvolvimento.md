@@ -545,9 +545,23 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
 
 ### Casamento com os lotes (input extra da análise)
 
-- `matchesWant` reusa `buildInterestMatcher` (determinístico, sem IA) sobre os `work` das
-  obras **não adquiridas**. Os lotes que casam ganham **🎯** ao lado do título (Top 100 e
-  por casa) e alimentam o filtro **"Só sondagem"**.
+- **Casamento probabilístico** em `src/lib/wantlist-match.ts` (puro, determinístico, sem
+  IA). Substituiu o substring simples do `buildInterestMatcher` (v0.6.1) porque o título do
+  lote raramente vem escrito igual à obra.
+- **Como pontua** (`scoreWant` → 0..1): compara por **tokens** (palavras normalizadas, sem
+  acento/pontuação; mantém números curtos como o "1"/"2" de "Vol. 1"). `coverage` = fração
+  dos tokens da obra presentes na **identidade do lote** (`lotIdentity`), que junta
+  **título + artista extraído + `album` da IA + `release_title` do Discogs**. **Porta do
+  artista**: se nenhum dos 1–2 primeiros tokens (o nome) aparece, corta forte (×0.4).
+  **Ano**: +0.15 se bate, +0.05 se ±1, **−0.25 se o lote tem ano diferente** (desambigua
+  anos/regravações do mesmo artista); neutro quando o lote não informa ano. Anos vêm do
+  texto (regex) e do `lot_market.year`. Fuzzy leve: token conta como presente por
+  igualdade, substring, ou ~1 typo de distância (`withinOneEdit`).
+- **Limiar 80%** (`WANT_MATCH_THRESHOLD`): só marca casamento quando a **melhor** obra
+  (`bestWantForLot`) passa de 0,8. Os lotes que casam ganham **🎯** ao lado do título (com
+  tooltip "Sondagem: obra (ano) · NN%") e alimentam o filtro **"Só sondagem"**.
+- **Exposto o `year` do mercado** na UI (`LotMarket`/`toLotMarket` em `ai-score-utils.ts`) —
+  já vinha de `getAllLotMarket`, mas era descartado; agora reforça o casamento por ano.
 
 ### Filtros da Análise (valem para o Top 100 E o por dia/casa)
 
@@ -564,5 +578,13 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
 - [ ] **Aplicar o `wantlist_items` do `setup.sql`** no Supabase (o `setup.sql` é
       re-executável; ou rode só o `CREATE TABLE IF NOT EXISTS wantlist_items` + índice/RLS/
       grants). Sem isso, importar/gravar a sondagem dá erro.
-- [ ] Merge desta branch + deploy; então importar o rascunho real pela UI e conferir o 🎯
-      e o filtro "Só sondagem".
+- [x] Merge da sondagem (PR #52, v0.6.0) + deploy na Vercel.
+- [ ] Importar o rascunho real pela UI e conferir o 🎯/tooltip de % e o filtro "Só sondagem".
+      Se o casamento pegar demais/de menos, ajustar `WANT_MATCH_THRESHOLD`/pesos em
+      `wantlist-match.ts`.
+
+### v0.6.1 — casamento probabilístico (artista + disco + ano, ≥80%)
+
+- Novo `src/lib/wantlist-match.ts` (ver "Casamento com os lotes" acima). A Análise passou a
+  confrontar cada lote com todas as obras não adquiridas via `bestWantForLot` (mapa
+  `wantByLot` memoizado por lote) em vez do substring. `LotTitle` recebe `want` (obra + %).
