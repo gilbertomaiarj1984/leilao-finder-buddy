@@ -7,9 +7,12 @@
  * com `bun -e` sem token. O parsing é DEFENSIVO: os formatos do Discogs variam e campos
  * podem faltar; nunca lançamos por causa de um campo ausente — é tudo best-effort.
  */
+import { parse } from "node-html-parser";
+
 import { normalizeForMatch, parsePrice } from "./vinyl-parse";
 
 const BASE = "https://api.discogs.com";
+const SITE = "https://www.discogs.com";
 const UA = "GarimpoDeVinil/1.0 (+https://leilao-finder-buddy.vercel.app)";
 const CURRENCY = "BRL";
 // Intervalo mínimo entre chamadas (60/min = 1/s; usamos folga de ~1.1s).
@@ -27,6 +30,11 @@ export type MarketData = {
   suggestedCondition: string | null;
   have: number | null;
   want: number | null;
+  // Faixa de preço à venda no Discogs considerando SÓ vendedores do Brasil, com o valor
+  // TOTAL (preço + frete exibido) — vendedores costumam mascarar o preço no frete. BRL.
+  priceLowBr: number | null; // menor total (preço + frete) entre vendedores BR
+  priceHighBr: number | null; // maior total (preço + frete) entre vendedores BR
+  numForSaleBr: number | null; // quantidade de anúncios de vendedores BR considerados
 };
 
 export function discogsConfigured(): boolean {
@@ -155,6 +163,73 @@ export function pickSuggested(
   return { price: null, condition: null, currency: null };
 }
 
+/**
+ * Extrai um valor monetário BRL de um texto do Discogs (ex.: "R$ 1.234,56", "R$45,00").
+ * Formato pt-BR: ponto = milhar, vírgula = decimal. Retorna null se não achar número.
+ */
+export function parseBrMoney(text: string): number | null {
+  const m = (text ?? "").match(/(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:,\d{1,2})?)/);
+  if (!m) return null;
+  const n = Number(m[1].replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Lê o valor de um anúncio: prefere o atributo `data-pricevalue` (número já normalizado
+ * pelo próprio Discogs, com ponto decimal), caindo no texto pt-BR visível.
+ */
+function readMoney(el: {
+  getAttribute: (n: string) => string | undefined;
+  text: string;
+}): number | null {
+  const dv = el.getAttribute("data-pricevalue");
+  if (dv) {
+    const n = Number(dv);
+    if (Number.isFinite(n)) return n;
+  }
+  return parseBrMoney(el.text);
+}
+
+export type SellListing = { price: number; shipping: number; total: number };
+
+/**
+ * Faz o parsing da página de venda do Discogs (`/sell/release/<id>`), já filtrada por
+ * vendedores do Brasil e moeda BRL na URL. Para cada anúncio, soma **preço + frete** (o
+ * frete pode não ter valor fixo → conta como 0). Estrutura-resiliente: varre as células
+ * `.item_price` e busca `.price`/`.item_shipping` dentro delas.
+ */
+export function parseSellPage(html: string): SellListing[] {
+  const root = parse(html);
+  const cells = root.querySelectorAll(".item_price");
+  const out: SellListing[] = [];
+  for (const cell of cells) {
+    const priceEl = cell.querySelector(".price");
+    if (!priceEl) continue;
+    const price = readMoney(priceEl);
+    if (price === null || price <= 0) continue;
+    const shipEl = cell.querySelector(".item_shipping");
+    const shipping = shipEl ? (readMoney(shipEl) ?? 0) : 0;
+    out.push({ price, shipping, total: price + Math.max(0, shipping) });
+  }
+  return out;
+}
+
+/** Menor/maior total (preço + frete) e a contagem de anúncios. */
+export function summarizeListings(listings: SellListing[]): {
+  low: number | null;
+  high: number | null;
+  count: number;
+} {
+  if (!listings.length) return { low: null, high: null, count: 0 };
+  let low = Infinity;
+  let high = -Infinity;
+  for (const l of listings) {
+    if (l.total < low) low = l.total;
+    if (l.total > high) high = l.total;
+  }
+  return { low, high, count: listings.length };
+}
+
 // --- Rede (throttle + token) -------------------------------------------------
 
 let lastCallAt = 0;
@@ -187,6 +262,36 @@ async function discogsGet(path: string): Promise<unknown | null> {
 }
 
 /**
+ * Busca a faixa de preço no MERCADO (página pública `/sell/release/<id>`), filtrando por
+ * **vendedores do Brasil** (`ships_from=Brazil`) e **moeda BRL** (`currency=BRL`), ordenado
+ * por preço. Considera o TOTAL (preço + frete) de cada anúncio. Sem token (página pública);
+ * best-effort — devolve tudo nulo se a página não vier/parsear.
+ */
+export async function fetchBrListings(
+  releaseId: number,
+): Promise<{ low: number | null; high: number | null; count: number }> {
+  await throttle();
+  const url =
+    `${SITE}/sell/release/${releaseId}` +
+    `?ships_from=Brazil&currency=${CURRENCY}&sort=price%2Casc&limit=100`;
+  try {
+    const resp = await fetch(url, {
+      headers: {
+        "User-Agent": UA,
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+      },
+    });
+    if (!resp.ok) return { low: null, high: null, count: 0 };
+    const html = await resp.text();
+    return summarizeListings(parseSellPage(html));
+  } catch (e) {
+    console.error(`[discogs] sell/release/${releaseId} falhou`, (e as Error)?.message);
+    return { low: null, high: null, count: 0 };
+  }
+}
+
+/**
  * Consulta o Discogs para um lote (≤3 chamadas: search + stats + price_suggestions).
  * Retorna sempre um MarketData (matched=false quando não casou). Best-effort.
  */
@@ -203,6 +308,9 @@ export async function fetchMarket(query: string): Promise<MarketData> {
     suggestedCondition: null,
     have: null,
     want: null,
+    priceLowBr: null,
+    priceHighBr: null,
+    numForSaleBr: null,
   };
 
   const search = (await discogsGet(
@@ -243,6 +351,14 @@ export async function fetchMarket(query: string): Promise<MarketData> {
   base.suggestedPrice = picked.price;
   base.suggestedCondition = picked.condition;
   if (!base.currency && picked.currency) base.currency = picked.currency;
+
+  // Faixa real no mercado (só vendedores BR, total = preço + frete) — scraping da página
+  // pública de venda. Best-effort: se não vier, os campos ficam nulos e a UI cai no `stats`.
+  const br = await fetchBrListings(releaseId);
+  base.priceLowBr = br.low;
+  base.priceHighBr = br.high;
+  base.numForSaleBr = br.count || null;
+  if ((base.priceLowBr ?? base.priceHighBr) !== null) base.currency = CURRENCY;
 
   return base;
 }

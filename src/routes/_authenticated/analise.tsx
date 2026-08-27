@@ -43,6 +43,7 @@ import {
   dealLabel,
   dealTone,
   discogsUrl,
+  fmtMoney,
   marketDeal,
   rarityLabel,
   rowStatusTone,
@@ -62,6 +63,7 @@ import {
   getWantlist,
   importWantlist,
   listMyBids,
+  setLotTags,
   setUserInterests,
   updateWantlistItem,
 } from "@/lib/leiloesbr.functions";
@@ -138,10 +140,27 @@ function LotTitle({ lot, want }: { lot: VinylLot; want?: WantHit | null }) {
  * (clicável → Discogs), motivo da IA e tags. A nota (com a explicação completa no hover)
  * fica na coluna à esquerda via `ScoreBadge`.
  */
-function LotSummary({ ai, market, price }: { ai?: LotAi; market?: LotMarket; price?: string }) {
+function LotSummary({
+  ai,
+  market,
+  price,
+  onEditTags,
+}: {
+  ai?: LotAi;
+  market?: LotMarket;
+  price?: string;
+  onEditTags?: (next: string[]) => void;
+}) {
   if (!ai) return null;
   const mDeal = market ? marketDeal(price ?? "", market) : "indefinido";
   const href = market?.matched ? discogsUrl(market.releaseId) : null;
+  // Faixa real no Brasil (total = preço + frete). Sempre mostrada quando existe.
+  const range =
+    market?.priceLowBr != null
+      ? market.priceHighBr != null && market.priceHighBr > market.priceLowBr
+        ? `${fmtMoney(market.priceLowBr, "BRL")}–${fmtMoney(market.priceHighBr, "BRL")}`
+        : fmtMoney(market.priceLowBr, "BRL")
+      : null;
   return (
     <div className="mt-1 space-y-1">
       <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
@@ -156,6 +175,14 @@ function LotSummary({ ai, market, price }: { ai?: LotAi; market?: LotMarket; pri
         {mDeal !== "indefinido" ? (
           <span className={`font-medium ${dealTone(mDeal)}`}>{dealLabel(mDeal)} vs. mercado</span>
         ) : null}
+        {range ? (
+          <span
+            className="text-muted-foreground"
+            title="Faixa no Discogs — vendedores do Brasil, já com o frete somado"
+          >
+            Discogs BR: <span className="font-medium text-foreground">{range}</span>
+          </span>
+        ) : null}
         {href ? (
           <a
             href={href}
@@ -168,7 +195,7 @@ function LotSummary({ ai, market, price }: { ai?: LotAi; market?: LotMarket; pri
         ) : null}
       </div>
       {ai.reason ? <p className="max-w-md text-xs text-muted-foreground">{ai.reason}</p> : null}
-      <LotTags tags={ai.tags} />
+      <LotTags tags={ai.tags} onEdit={onEditTags} />
     </div>
   );
 }
@@ -551,6 +578,7 @@ function AnalisePage() {
   const fetchWatched = useServerFn(listWatched);
   const fetchBids = useServerFn(listMyBids);
   const runToggle = useServerFn(toggleWatch);
+  const saveTags = useServerFn(setLotTags);
 
   const [openHouses, setOpenHouses] = useState<Set<string>>(new Set());
   const toggleHouse = (key: string) =>
@@ -681,6 +709,23 @@ function AnalisePage() {
     },
     onError: (e: Error) => toast.error(e.message || "Não foi possível sincronizar a vigia"),
     onSettled: () => setPending(null),
+  });
+
+  // Edição manual de tags: atualiza o cache ["lot-ai"] de forma otimista e persiste.
+  const patchTags = (id: string, tags: string[]) =>
+    queryClient.setQueryData(["lot-ai"], (old: unknown) =>
+      Array.isArray(old)
+        ? old.map((r) => (r && (r as { id: string }).id === id ? { ...r, tags } : r))
+        : old,
+    );
+  const saveTagsMut = useMutation({
+    mutationFn: (v: { id: string; tags: string[] }) => saveTags({ data: v }),
+    onMutate: (v: { id: string; tags: string[] }) => patchTags(v.id, v.tags),
+    onSuccess: (res: { id: string; tags: string[] }) => patchTags(res.id, res.tags),
+    onError: (e: Error) => {
+      toast.error(e.message || "Não foi possível salvar as tags");
+      void queryClient.invalidateQueries({ queryKey: ["lot-ai"] });
+    },
   });
 
   const watchedIds = useMemo(
@@ -1113,7 +1158,12 @@ function AnalisePage() {
                               </td>
                               <td className="px-3 py-2">
                                 <LotTitle lot={lot} want={wantedLot(lot)} />
-                                <LotSummary ai={ai} market={marketFor(lot)} price={lot.price} />
+                                <LotSummary
+                                  ai={ai}
+                                  market={marketFor(lot)}
+                                  price={lot.price}
+                                  onEditTags={(tags) => saveTagsMut.mutate({ id: lot.id, tags })}
+                                />
                               </td>
                               <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
                                 {lot.house}
@@ -1325,6 +1375,9 @@ function AnalisePage() {
                                                     ai={ai}
                                                     market={marketFor(lot)}
                                                     price={lot.price}
+                                                    onEditTags={(tags) =>
+                                                      saveTagsMut.mutate({ id: lot.id, tags })
+                                                    }
                                                   />
                                                 </td>
                                                 <td className="whitespace-nowrap px-2 py-2 text-right">

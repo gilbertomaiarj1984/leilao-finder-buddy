@@ -258,6 +258,23 @@ export const getLotAi = createServerFn({ method: "GET" })
     }
   });
 
+/** Edita manualmente as tags de um lote (add/remove pela UI). Devolve as tags gravadas. */
+export const setLotTags = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { id?: string; tags?: unknown } | undefined) => {
+    if (!input?.id || typeof input.id !== "string") throw new Error("Lote inválido.");
+    const tags = Array.isArray(input.tags)
+      ? input.tags.filter((t): t is string => typeof t === "string")
+      : [];
+    return { id: input.id, tags };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { updateLotTags } = await import("./lot-ai.server");
+    return { id: data.id, tags: await updateLotTags(data.id, data.tags) };
+  });
+
 /** Âncora de mercado do Discogs por lote (preço/demanda). Best-effort: [] em erro. */
 export const getLotMarket = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

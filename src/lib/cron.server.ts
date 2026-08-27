@@ -112,6 +112,9 @@ export async function handleCron(request: Request): Promise<Response | null> {
             suggested_condition: null,
             have: null,
             want: null,
+            price_low_br: null,
+            price_high_br: null,
+            num_for_sale_br: null,
           });
           continue;
         }
@@ -130,6 +133,9 @@ export async function handleCron(request: Request): Promise<Response | null> {
           suggested_condition: m.suggestedCondition,
           have: m.have,
           want: m.want,
+          price_low_br: m.priceLowBr,
+          price_high_br: m.priceHighBr,
+          num_for_sale_br: m.numForSaleBr,
         });
       }
       const updated = await upsertLotMarket(rows);

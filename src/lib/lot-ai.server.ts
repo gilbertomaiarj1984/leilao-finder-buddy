@@ -51,6 +51,32 @@ export async function getAllLotAi(): Promise<LotAiRow[]> {
   return rows;
 }
 
+/**
+ * Atualiza SÓ as tags de um lote (edição manual pelo usuário na UI). Normaliza: apara,
+ * remove vazias/duplicadas (case-insensitive) e limita a 20. Requer que o lote já tenha
+ * uma linha em `lot_ai` (só há tags onde a IA avaliou). Devolve as tags gravadas.
+ */
+export async function updateLotTags(id: string, tags: string[]): Promise<string[]> {
+  const seen = new Set<string>();
+  const clean: string[] = [];
+  for (const t of tags) {
+    const v = String(t ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const key = v.toLowerCase();
+    if (!v || seen.has(key)) continue;
+    seen.add(key);
+    clean.push(v);
+    if (clean.length >= 20) break;
+  }
+  const { error } = await supabaseAdmin.from("lot_ai").update({ tags: clean }).eq("id", id);
+  if (error) {
+    console.error("[lot-ai] falha ao atualizar tags", error);
+    throw new Error(`Não foi possível salvar as tags: ${error.message}`);
+  }
+  return clean;
+}
+
 /** Grava/atualiza avaliações (upsert por `id`, igual ao merge da tabela `lots`). */
 export async function upsertLotAi(rows: LotAiRow[]): Promise<number> {
   if (!rows.length) return 0;

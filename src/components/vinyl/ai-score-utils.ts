@@ -71,6 +71,10 @@ export type LotMarket = {
   suggestedCondition: string | null;
   have: number | null;
   want: number | null;
+  // Faixa real no mercado, só vendedores do Brasil, com TOTAL (preço + frete). BRL.
+  priceLowBr: number | null;
+  priceHighBr: number | null;
+  numForSaleBr: number | null;
 };
 
 /** Converte a linha do banco (snake_case) para o tipo da UI (camelCase). */
@@ -86,6 +90,9 @@ export function toLotMarket(r: {
   suggested_condition: string | null;
   have: number | null;
   want: number | null;
+  price_low_br?: number | null;
+  price_high_br?: number | null;
+  num_for_sale_br?: number | null;
 }): LotMarket {
   return {
     matched: r.matched,
@@ -99,6 +106,9 @@ export function toLotMarket(r: {
     suggestedCondition: r.suggested_condition,
     have: r.have,
     want: r.want,
+    priceLowBr: r.price_low_br ?? null,
+    priceHighBr: r.price_high_br ?? null,
+    numForSaleBr: r.num_for_sale_br ?? null,
   };
 }
 
@@ -123,7 +133,9 @@ export function marketDeal(
 ): "barato" | "justo" | "caro" | "indefinido" {
   if (!m || !m.matched) return "indefinido";
   const p = parsePrice(price);
-  const ref = m.lowestPrice ?? m.suggestedPrice;
+  // Âncora: menor total (preço + frete) de vendedor BR quando houver; senão o menor do
+  // Discogs (stats) e, por fim, o sugerido.
+  const ref = m.priceLowBr ?? m.lowestPrice ?? m.suggestedPrice;
   if (p === null || ref === null || ref <= 0) return "indefinido";
   if (p <= ref * 0.7) return "barato";
   if (p >= ref * 1.15) return "caro";

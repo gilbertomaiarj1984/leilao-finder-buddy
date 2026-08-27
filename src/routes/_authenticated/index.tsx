@@ -61,6 +61,7 @@ import {
   getVinylLots,
   listMyBids,
   scrapeVinylChunk,
+  setLotTags,
   setVerifiedHouses,
 } from "@/lib/leiloesbr.functions";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
@@ -243,6 +244,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const saveVerified = useServerFn(setVerifiedHouses);
   const fetchNextBids = useServerFn(getNextBids);
   const fetchLotAi = useServerFn(getLotAi);
+  const runSaveTags = useServerFn(setLotTags);
   const fetchLotMarket = useServerFn(getLotMarket);
   const fetchInterests = useServerFn(getUserInterests);
 
@@ -470,6 +472,25 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     onSettled: () => setPending(null),
   });
 
+  // Edição manual de tags da IA (add/remove ao passar o mouse): atualiza o cache ["lot-ai"]
+  // otimisticamente e persiste no banco.
+  const patchTags = (id: string, tags: string[]) =>
+    queryClient.setQueryData(["lot-ai"], (old: unknown) =>
+      Array.isArray(old)
+        ? old.map((r) => (r && (r as { id: string }).id === id ? { ...r, tags } : r))
+        : old,
+    );
+  const saveTagsMut = useMutation({
+    mutationFn: (v: { id: string; tags: string[] }) => runSaveTags({ data: v }),
+    onMutate: (v: { id: string; tags: string[] }) => patchTags(v.id, v.tags),
+    onSuccess: (res: { id: string; tags: string[] }) => patchTags(res.id, res.tags),
+    onError: (error: Error) => {
+      toast.error(error.message || "Não foi possível salvar as tags");
+      void queryClient.invalidateQueries({ queryKey: ["lot-ai"] });
+    },
+  });
+  const editTags = (id: string) => (tags: string[]) => saveTagsMut.mutate({ id, tags });
+
   const days = lots.data?.days ?? [];
   const searchNorm = normalizeForMatch(search);
   const matchesSearch = (lot: VinylLot) =>
@@ -500,6 +521,17 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     for (const lot of lots.data?.lots ?? []) if (lot.price) map.set(lot.id, lot.price);
     return map;
   }, [lots.data]);
+  // Dia do LEILÃO de cada lote (id `${idLeilao}-${idPeca}`), pela varredura geral. A página
+  // "Meus lances" mostra a data do lance (quando lancei), não a data em que o lote vai a
+  // pregão — então os lances/vigiados do dia devem ser agrupados por ESTE dia (o do leilão),
+  // não por `bid.date`. Fallback: a data do próprio card quando o lote não está na varredura.
+  const dayKeyByLotId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const lot of lots.data?.lots ?? []) if (lot.dayKey) map.set(lot.id, lot.dayKey);
+    return map;
+  }, [lots.data]);
+  const bidDayKey = (bid: { id: string; date: string }) =>
+    dayKeyByLotId.get(bid.id) || watchedDateToKey(bid.date) || bid.date || "";
   // Meu lance por peça — para exibir "Meu lance" e corrigir o "Atual" (quando venço, o
   // valor atual É o meu lance) também nas abas de dia/vigiados, não só em "Meus lances".
   const myBidById = useMemo(() => {
@@ -716,7 +748,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               const isBidsView = bidsViewDay === day;
               // Lances do dia: a busca principal também filtra aqui.
               const bidsForDay = bidsWithHouseUrl.filter(
-                (bid) => watchedDateToKey(bid.date) === day && bidMatchesSearch(bid, searchNorm),
+                (bid) => bidDayKey(bid) === day && bidMatchesSearch(bid, searchNorm),
               );
               // Lances do dia agrupados por casa e ordenados por nº do lote.
               const bidsByHouse = groupWatchedByHouse(bidsForDay);
@@ -913,6 +945,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   busy={pending === lot.idPeca}
                                   ai={aiFor(lot)}
                                   market={marketFor(lot)}
+                                  onEditTags={editTags(lot.id)}
                                   bidStatus={bidStatusById.get(lot.idPeca)}
                                   onToggle={() =>
                                     toggle.mutate({
@@ -1098,6 +1131,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                             busy={pending === lot.idPeca}
                                             ai={aiFor(lot)}
                                             market={marketFor(lot)}
+                                            onEditTags={editTags(lot.id)}
                                             bidStatus={bidStatusById.get(lot.idPeca)}
                                             onToggle={() =>
                                               toggle.mutate({
@@ -1256,6 +1290,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                       busy={pending === lot.idPeca}
                                       ai={aiFor(lot)}
                                       market={marketFor(lot)}
+                                      onEditTags={editTags(lot.id)}
                                       bidStatus={bidStatusById.get(lot.idPeca)}
                                       onToggle={() =>
                                         toggle.mutate({
@@ -1306,7 +1341,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                   }
                   const byDay = new Map<string, BidCard[]>();
                   for (const bid of filtered) {
-                    const key = watchedDateToKey(bid.date) || bid.date || "";
+                    const key = bidDayKey(bid);
                     const list = byDay.get(key) ?? [];
                     list.push(bid);
                     byDay.set(key, list);

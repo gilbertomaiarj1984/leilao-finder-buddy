@@ -17,6 +17,9 @@ export type LotMarketRow = {
   suggested_condition: string | null;
   have: number | null;
   want: number | null;
+  price_low_br: number | null;
+  price_high_br: number | null;
+  num_for_sale_br: number | null;
 };
 
 export type MarketTarget = { id: string; album: string | null; title: string; price: string };
@@ -35,7 +38,7 @@ export async function getAllLotMarket(): Promise<LotMarketRow[]> {
     const { data, error } = await supabaseAdmin
       .from("lot_market")
       .select(
-        "id, basis, matched, release_id, release_title, year, num_for_sale, lowest_price, currency, suggested_price, suggested_condition, have, want",
+        "id, basis, matched, release_id, release_title, year, num_for_sale, lowest_price, currency, suggested_price, suggested_condition, have, want, price_low_br, price_high_br, num_for_sale_br",
       )
       .range(from, from + PAGE - 1);
     if (error) throw error;

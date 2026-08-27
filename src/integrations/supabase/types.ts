@@ -102,6 +102,9 @@ export type Database = {
           lowest_price: number | null
           matched: boolean
           num_for_sale: number | null
+          num_for_sale_br: number | null
+          price_high_br: number | null
+          price_low_br: number | null
           release_id: number | null
           release_title: string | null
           suggested_condition: string | null
@@ -118,6 +121,9 @@ export type Database = {
           lowest_price?: number | null
           matched?: boolean
           num_for_sale?: number | null
+          num_for_sale_br?: number | null
+          price_high_br?: number | null
+          price_low_br?: number | null
           release_id?: number | null
           release_title?: string | null
           suggested_condition?: string | null
@@ -134,6 +140,9 @@ export type Database = {
           lowest_price?: number | null
           matched?: boolean
           num_for_sale?: number | null
+          num_for_sale_br?: number | null
+          price_high_br?: number | null
+          price_low_br?: number | null
           release_id?: number | null
           release_title?: string | null
           suggested_condition?: string | null

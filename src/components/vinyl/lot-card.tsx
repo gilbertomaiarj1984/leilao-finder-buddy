@@ -28,6 +28,7 @@ export function LotCard({
   bidStatus,
   ai,
   market,
+  onEditTags,
 }: {
   lot: CardLot;
   busy: boolean;
@@ -36,6 +37,7 @@ export function LotCard({
   bidStatus?: string | null;
   ai?: LotAi;
   market?: LotMarket;
+  onEditTags?: (next: string[]) => void;
 }) {
   // Cores (mesma regra do painel): meu lance ganhando = verde; meu lance coberto = vermelho;
   // apenas vigiado = amarelo; caso contrário, borda neutra.
@@ -73,7 +75,7 @@ export function LotCard({
       </a>
       <div className="flex flex-1 flex-col gap-3 p-4">
         <p className="line-clamp-3 text-sm leading-snug text-foreground">{lot.title}</p>
-        {ai?.tags?.length ? <LotTags tags={ai.tags} /> : null}
+        {ai?.tags?.length ? <LotTags tags={ai.tags} onEdit={onEditTags} /> : null}
         <div className="mt-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           {lot.lote ? (
             <span className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground">
