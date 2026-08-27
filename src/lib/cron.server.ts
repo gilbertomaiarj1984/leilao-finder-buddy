@@ -78,7 +78,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     // `max` lotes ainda não casados (throttle interno respeita o rate limit). Sem
     // DISCOGS_TOKEN → no-op explícito.
     if (step === "market") {
-      const { discogsConfigured, buildQuery, fetchMarket } = await import("./discogs.server");
+      const { discogsConfigured, fetchMarket } = await import("./discogs.server");
       if (!discogsConfigured()) return json({ skipped: "DISCOGS_TOKEN não configurado" });
       const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
       const { getAllLotAi } = await import("./lot-ai.server");
@@ -96,29 +96,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
       const rows = [];
       for (const t of targets) {
         const basis = marketBasis(t.album, t.title);
-        const query = buildQuery(t.album, t.title);
-        if (!query) {
-          rows.push({
-            id: t.id,
-            basis,
-            matched: false,
-            release_id: null,
-            release_title: null,
-            year: null,
-            num_for_sale: null,
-            lowest_price: null,
-            currency: null,
-            suggested_price: null,
-            suggested_condition: null,
-            have: null,
-            want: null,
-            price_low_br: null,
-            price_high_br: null,
-            num_for_sale_br: null,
-          });
-          continue;
-        }
-        const m = await fetchMarket(query);
+        const m = await fetchMarket(t.album, t.title);
         rows.push({
           id: t.id,
           basis,

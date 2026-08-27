@@ -699,3 +699,23 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
 - **Hover da nota mais robusto/descoberto:** `HoverDetails` agora abre também no **clique/toque**
   (`onClick`) e com `cursor-help` no selo — cobre toque (sem `mouseenter`) e deixa claro que é
   interativo. Continua abrindo no hover/foco e via portal (não é cortado).
+
+### v0.10.0 — casamento do Discogs por artista+álbum+ano (precisão)
+
+- **Problema:** mesmo com a IA identificando certo (ex.: "The Beatles - Let It Be (1970)"), o
+  match caía numa coletânea ("The Beatles/1967-1970"). Causa: busca por **texto livre** com
+  `per_page=5` + score que premiava só sobreposição de tokens (o nome do artista + ano bastavam
+  pra uma coletânea pontuar).
+- **Correção (`discogs.server.ts`):**
+  - `parseAlbum` quebra o `album` da IA em **{artista, título, ano}** (separa no travessão/hífen;
+    remove "(ano)"); `extractYear` pega o ano do texto do lote como reforço.
+  - `fetchMarket(album, title)` faz **busca estruturada** no Discogs
+    (`artist=…&release_title=…&format=Vinyl&per_page=25`) e só cai para texto livre se não achar.
+  - `pickBestRelease(target, results)` reescrito: pontua por **cobertura dos tokens do álbum**
+    (peso maior) + cobertura do artista + **ano** (bônus/penalidade) + vinil, com **penalidade
+    para coletâneas** (faixa de anos "1967-1970", "greatest hits", "best of"…). **Rejeita (null)**
+    quando o álbum/artista não cobrem o mínimo — melhor não casar do que casar errado.
+  - Cron `step=market` passa `album`+`title` direto ao `fetchMarket` (buildQuery virou interno).
+- **Reprocessar:** o `basis` (hash de album|título) não muda, então os matches ERRADOS já
+  gravados **não** são reconsultados sozinhos. Para refazer, limpar as linhas de `lot_market`
+  (ex.: `DELETE FROM lot_market;` ou só as `matched=false`/suspeitas) e rodar o `refresh.yml`.
