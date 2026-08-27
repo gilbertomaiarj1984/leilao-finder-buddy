@@ -26,6 +26,20 @@ export type MarketTarget = { id: string; album: string | null; title: string; pr
 
 const PAGE = 1000;
 
+// Colunas da faixa BR (adicionadas depois). O schema NÃO é auto-aplicado neste projeto, então
+// o banco pode ainda não tê-las → tratamos como opcionais para não derrubar o cron (500).
+const BR_COLS = ["price_low_br", "price_high_br", "num_for_sale_br"] as const;
+const BASE_COLS =
+  "id, basis, matched, release_id, release_title, year, num_for_sale, lowest_price, currency, suggested_price, suggested_condition, have, want";
+
+/** Erro do Postgres/PostgREST de coluna inexistente (antes de aplicar o `setup.sql`). */
+function isMissingColumn(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === "42703" || error.code === "PGRST204") return true;
+  const msg = error.message ?? "";
+  return BR_COLS.some((c) => msg.includes(c));
+}
+
 /** Base de invalidação do cache: hash do que será consultado (album identificado || título). */
 export function marketBasis(album: string | null, title: string): string {
   return titleHash(`${(album ?? "").trim()}|${title ?? ""}`);
@@ -33,17 +47,31 @@ export function marketBasis(album: string | null, title: string): string {
 
 export async function getAllLotMarket(): Promise<LotMarketRow[]> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  // Tenta com as colunas BR; se o banco ainda não as tem, cai para as colunas base.
+  let withBr = true;
   const rows: LotMarketRow[] = [];
   for (let from = 0; ; from += PAGE) {
+    const cols = withBr ? `${BASE_COLS}, ${BR_COLS.join(", ")}` : BASE_COLS;
     const { data, error } = await supabaseAdmin
       .from("lot_market")
-      .select(
-        "id, basis, matched, release_id, release_title, year, num_for_sale, lowest_price, currency, suggested_price, suggested_condition, have, want, price_low_br, price_high_br, num_for_sale_br",
-      )
+      .select(cols)
       .range(from, from + PAGE - 1);
-    if (error) throw error;
-    const batch = data ?? [];
-    for (const r of batch) rows.push(r as LotMarketRow);
+    if (error) {
+      if (withBr && isMissingColumn(error)) {
+        withBr = false;
+        from -= PAGE; // repete esta página sem as colunas BR
+        continue;
+      }
+      throw error;
+    }
+    const batch = (data ?? []) as unknown as Record<string, unknown>[];
+    for (const r of batch)
+      rows.push({
+        price_low_br: null,
+        price_high_br: null,
+        num_for_sale_br: null,
+        ...r,
+      } as unknown as LotMarketRow);
     if (batch.length < PAGE) break;
   }
   return rows;
@@ -56,6 +84,16 @@ export async function upsertLotMarket(rows: LotMarketRow[]): Promise<number> {
   const payload = rows.map((r) => ({ ...r, checked_at: checkedAt }));
   const { error } = await supabaseAdmin.from("lot_market").upsert(payload, { onConflict: "id" });
   if (error) {
+    // Banco ainda sem as colunas BR (setup.sql não aplicado): grava sem elas em vez de 500.
+    if (isMissingColumn(error)) {
+      const slim = payload.map(({ price_low_br, price_high_br, num_for_sale_br, ...base }) => base);
+      const retry = await supabaseAdmin.from("lot_market").upsert(slim, { onConflict: "id" });
+      if (retry.error) {
+        console.error("[lot-market] falha ao gravar (sem BR)", retry.error);
+        throw new Error(`Não foi possível gravar o mercado: ${retry.error.message}`);
+      }
+      return payload.length;
+    }
     console.error("[lot-market] falha ao gravar", error);
     throw new Error(`Não foi possível gravar o mercado: ${error.message}`);
   }

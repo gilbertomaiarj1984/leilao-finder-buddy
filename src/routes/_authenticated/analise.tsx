@@ -763,6 +763,19 @@ function AnalisePage() {
       });
     return map;
   }, [lotAiQuery.data]);
+  // Mapa id→álbum com identidade ESTÁVEL enquanto os álbuns não mudam (assinatura id:album).
+  // O casamento com a sondagem (`wantByLot`) usa só o álbum; sem isto, editar uma tag muda
+  // `lotAiQuery.data` e forçava o recálculo pesado do casamento (jank de ~1s na edição).
+  const aiAlbumSig = useMemo(
+    () => (lotAiQuery.data ?? []).map((r) => `${r.id}:${r.album ?? ""}`).join("|"),
+    [lotAiQuery.data],
+  );
+  const albumById = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const r of lotAiQuery.data ?? []) map.set(r.id, r.album ?? null);
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiAlbumSig]);
   const matchesInterest = useMemo(
     () => buildInterestMatcher(interestsQuery.data ?? []),
     [interestsQuery.data],
@@ -819,12 +832,11 @@ function AnalisePage() {
     const map = new Map<string, WantHit>();
     if (!wantCands.length) return map;
     for (const lot of allLots) {
-      const ai = aiById.get(lot.id);
       const market = marketById.get(lot.id);
       const identity = lotIdentity({
         title: lot.title,
         artist: lot.artist,
-        album: ai?.album ?? null,
+        album: albumById.get(lot.id) ?? null,
         marketTitle: market?.releaseTitle ?? null,
         marketYear: market?.year ?? null,
       });
@@ -832,7 +844,7 @@ function AnalisePage() {
       if (best) map.set(lot.id, { work: best.cand.work, year: best.cand.year, score: best.score });
     }
     return map;
-  }, [wantCands, allLots, aiById, marketById]);
+  }, [wantCands, allLots, albumById, marketById]);
   const wantedLot = (lot: VinylLot): WantHit | null => wantByLot.get(lot.id) ?? null;
 
   // Aplica os filtros (busca/casa/dia/nota/sondagem) — base tanto do Top 100 quanto do por dia.

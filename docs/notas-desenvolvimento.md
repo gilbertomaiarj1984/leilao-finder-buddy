@@ -683,3 +683,19 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
   **devolve as tags realmente gravadas** (jsonb), não o array computado. As mutações de tags (na
   Análise e no `index.tsx`) ganharam **toast de sucesso** ("Tags atualizadas") além do de erro —
   antes a gravação era silenciosa, então uma falha (ou um lote sem avaliação) não dava sinal.
+
+### v0.9.1 — jank na edição de tags, resiliência do `lot_market` e hover da nota
+
+- **INP/jank (~1s) ao editar tag (Análise):** o update otimista do cache `["lot-ai"]` fazia o
+  casamento pesado com a sondagem (`wantByLot`, O(lotes × obras)) recomputar, mesmo tags não o
+  afetando. Criado `albumById` com **identidade estável** (memo por assinatura `id:album`,
+  `aiAlbumSig`); `wantByLot` passou a depender dele em vez de `aiById` → editar tag não dispara
+  mais o recálculo.
+- **`step=market` dava 500** quando o banco ainda não tinha as colunas BR (`price_low_br` etc.;
+  schema não é auto-aplicado). `getAllLotMarket`/`upsertLotMarket` agora **detectam coluna
+  inexistente** (`isMissingColumn`: código `42703`/`PGRST204` ou nome da coluna na mensagem) e
+  caem para as colunas base — grava/lê sem a faixa BR em vez de derrubar o cron. Aplicar o
+  `setup.sql` (os 3 `ALTER ADD COLUMN IF NOT EXISTS`) habilita a faixa.
+- **Hover da nota mais robusto/descoberto:** `HoverDetails` agora abre também no **clique/toque**
+  (`onClick`) e com `cursor-help` no selo — cobre toque (sem `mouseenter`) e deixa claro que é
+  interativo. Continua abrindo no hover/foco e via portal (não é cortado).
