@@ -69,12 +69,21 @@ export async function updateLotTags(id: string, tags: string[]): Promise<string[
     clean.push(v);
     if (clean.length >= 20) break;
   }
-  const { error } = await supabaseAdmin.from("lot_ai").update({ tags: clean }).eq("id", id);
+  const { data, error } = await supabaseAdmin
+    .from("lot_ai")
+    .update({ tags: clean })
+    .eq("id", id)
+    .select("tags");
   if (error) {
     console.error("[lot-ai] falha ao atualizar tags", error);
     throw new Error(`Não foi possível salvar as tags: ${error.message}`);
   }
-  return clean;
+  // Sem linha afetada = lote ainda não avaliado pela IA (não há onde guardar as tags).
+  if (!data || data.length === 0) {
+    throw new Error("Este lote ainda não foi avaliado pela IA — não há como salvar tags nele.");
+  }
+  // Devolve o que REALMENTE ficou gravado (jsonb), não o array computado.
+  return toTags(data[0]?.tags);
 }
 
 /** Grava/atualiza avaliações (upsert por `id`, igual ao merge da tabela `lots`). */

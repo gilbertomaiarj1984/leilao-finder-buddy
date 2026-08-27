@@ -483,7 +483,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const saveTagsMut = useMutation({
     mutationFn: (v: { id: string; tags: string[] }) => runSaveTags({ data: v }),
     onMutate: (v: { id: string; tags: string[] }) => patchTags(v.id, v.tags),
-    onSuccess: (res: { id: string; tags: string[] }) => patchTags(res.id, res.tags),
+    onSuccess: (res: { id: string; tags: string[] }) => {
+      patchTags(res.id, res.tags);
+      toast.success("Tags atualizadas");
+    },
     onError: (error: Error) => {
       toast.error(error.message || "Não foi possível salvar as tags");
       void queryClient.invalidateQueries({ queryKey: ["lot-ai"] });
