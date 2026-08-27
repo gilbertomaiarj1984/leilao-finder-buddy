@@ -1,7 +1,7 @@
 import { ExternalLink, Eye, EyeOff, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { ScoreCorner } from "@/components/vinyl/ai-score";
+import { LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
 import type { LotAi, LotMarket } from "@/components/vinyl/ai-score-utils";
 import { bidIsWinning } from "@/lib/vinyl-parse";
 
@@ -73,6 +73,7 @@ export function LotCard({
       </a>
       <div className="flex flex-1 flex-col gap-3 p-4">
         <p className="line-clamp-3 text-sm leading-snug text-foreground">{lot.title}</p>
+        {ai?.tags?.length ? <LotTags tags={ai.tags} /> : null}
         <div className="mt-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           {lot.lote ? (
             <span className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground">

@@ -1,11 +1,15 @@
-import { Sparkles, Star } from "lucide-react";
+import { ExternalLink, Sparkles, Star } from "lucide-react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import {
   dealLabel,
   dealTone,
+  discogsUrl,
   fmtMoney,
   marketDeal,
   rarityLabel,
+  RARITY_LEGEND,
   scoreTone,
   type LotAi,
   type LotMarket,
@@ -52,14 +56,143 @@ function MarketBlock({ market, price }: { market: LotMarket; price?: string }) {
       </dl>
       {market.releaseId ? (
         <a
-          href={`https://www.discogs.com/release/${market.releaseId}`}
+          href={discogsUrl(market.releaseId)!}
           target="_blank"
           rel="noreferrer"
-          className="text-primary hover:underline"
+          className="mt-0.5 inline-flex items-center gap-1 font-medium text-primary hover:underline"
         >
-          ver no Discogs
+          ver no Discogs <ExternalLink className="h-3 w-3" />
         </a>
       ) : null}
+    </div>
+  );
+}
+
+/** Legenda da raridade (menor → maior valor). O usuário não sabia qual extremo é o mais raro. */
+export function RarityLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+      <span className="font-medium uppercase tracking-wide">Raridade:</span>
+      {RARITY_LEGEND.map((r, i) => (
+        <span key={r.key} className="inline-flex items-center gap-1.5">
+          <span className="rounded bg-secondary px-1.5 py-0.5 text-foreground">{r.label}</span>
+          {i < RARITY_LEGEND.length - 1 ? <span aria-hidden="true">→</span> : null}
+        </span>
+      ))}
+      <span className="ml-0.5">(menor → maior)</span>
+    </div>
+  );
+}
+
+/** Chips das tags trazidas pela IA. Reutilizado nos cards e nas tabelas da Análise. */
+export function LotTags({ tags }: { tags: string[] }) {
+  if (!tags.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {tags.map((t) => (
+        <span key={t} className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-foreground">
+          {t}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Painel de detalhes que surge ao passar o mouse/focar o gatilho, aberto À ESQUERDA dele.
+ * Renderiza via portal (position: fixed) para NÃO ser cortado por contêineres com overflow
+ * (tabela com scroll horizontal, card com overflow-hidden). É interativo — o mouse pode
+ * entrar no painel para clicar o link do Discogs. Sem espaço à esquerda (telas estreitas),
+ * cai para baixo do gatilho. Só monta no cliente (o estilo começa nulo → sem SSR do portal).
+ */
+const PANEL_WIDTH = 264;
+function HoverDetails({ trigger, children }: { trigger: ReactNode; children: ReactNode }) {
+  const [style, setStyle] = useState<CSSProperties | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelClose = () => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+  };
+  const open = () => {
+    cancelClose();
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    let left = r.left - 6 - PANEL_WIDTH;
+    let top = r.top;
+    if (left < 8) {
+      // Sem espaço à esquerda: abre abaixo, alinhado para caber na tela.
+      left = Math.max(8, Math.min(r.right - PANEL_WIDTH, window.innerWidth - PANEL_WIDTH - 8));
+      top = r.bottom + 6;
+    }
+    setStyle({ position: "fixed", top, left, width: PANEL_WIDTH, zIndex: 60 });
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    timer.current = setTimeout(() => setStyle(null), 140);
+  };
+  return (
+    <div
+      ref={ref}
+      className="inline-flex"
+      onMouseEnter={open}
+      onMouseLeave={scheduleClose}
+      onFocusCapture={open}
+      onBlurCapture={scheduleClose}
+    >
+      {trigger}
+      {style
+        ? createPortal(
+            <div
+              style={style}
+              onMouseEnter={open}
+              onMouseLeave={scheduleClose}
+              className="rounded-md border border-border bg-popover p-3 text-left shadow-md"
+            >
+              {children}
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  );
+}
+
+/**
+ * Selo da nota com a explicação (o que compõe a nota) surgindo À ESQUERDA ao passar o
+ * mouse/focar. Usado na coluna "Nota" das tabelas da Análise.
+ */
+export function ScoreBadge({
+  ai,
+  market,
+  price,
+  rank,
+}: {
+  ai: LotAi;
+  market?: LotMarket;
+  price?: string;
+  rank?: number;
+}) {
+  if (ai.score === null) return <span className="text-muted-foreground">—</span>;
+  return (
+    <div className="flex flex-col items-start gap-0.5">
+      {rank ? <span className="text-[10px] text-muted-foreground">#{rank}</span> : null}
+      <HoverDetails
+        trigger={
+          <button
+            type="button"
+            aria-label={`Nota ${ai.score} de 100 — ver detalhes`}
+            className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-bold shadow ${scoreTone(ai.score)}`}
+          >
+            {ai.matchesInterests ? <Star className="h-3 w-3 fill-current" /> : null}
+            {ai.score}
+          </button>
+        }
+      >
+        <ScoreDetails ai={ai} market={market} price={price} />
+      </HoverDetails>
     </div>
   );
 }
@@ -95,15 +228,8 @@ export function ScoreDetails({
       </dl>
       {ai.reason ? <p className="text-muted-foreground">{ai.reason}</p> : null}
       {ai.tags.length ? (
-        <div className="flex flex-wrap gap-1 pt-0.5">
-          {ai.tags.map((t) => (
-            <span
-              key={t}
-              className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-foreground"
-            >
-              {t}
-            </span>
-          ))}
+        <div className="pt-0.5">
+          <LotTags tags={ai.tags} />
         </div>
       ) : null}
       {market?.matched ? <MarketBlock market={market} price={price} /> : null}
@@ -112,9 +238,9 @@ export function ScoreDetails({
 }
 
 /**
- * Badge de nota no canto do card + overlay ao passar o mouse (ou focar, para
- * teclado/toque). Fica DENTRO do card (que tem overflow-hidden), então o overlay abre
- * para baixo e à esquerda, cabendo na largura do card.
+ * Badge de nota no canto do card. Ao passar o mouse (ou focar), a explicação do que compõe
+ * a nota abre À ESQUERDA do selo via portal — não é cortada pelo overflow-hidden do card e
+ * o link do Discogs dentro dela fica clicável.
  */
 export function ScoreCorner({
   ai,
@@ -127,18 +253,21 @@ export function ScoreCorner({
 }) {
   if (ai.score === null) return null;
   return (
-    <div className="group/score absolute right-2 top-2 z-10">
-      <button
-        type="button"
-        aria-label={`Nota ${ai.score} de 100 — ver detalhes`}
-        className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-bold shadow ${scoreTone(ai.score)}`}
+    <div className="absolute right-2 top-2 z-10">
+      <HoverDetails
+        trigger={
+          <button
+            type="button"
+            aria-label={`Nota ${ai.score} de 100 — ver detalhes`}
+            className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-bold shadow ${scoreTone(ai.score)}`}
+          >
+            {ai.matchesInterests ? <Star className="h-3 w-3 fill-current" /> : null}
+            {ai.score}
+          </button>
+        }
       >
-        {ai.matchesInterests ? <Star className="h-3 w-3 fill-current" /> : null}
-        {ai.score}
-      </button>
-      <div className="pointer-events-none absolute right-0 top-full z-20 mt-1 hidden w-60 rounded-md border border-border bg-popover p-3 text-left shadow-md group-hover/score:block group-focus-within/score:block">
         <ScoreDetails ai={ai} market={market} price={price} />
-      </div>
+      </HoverDetails>
     </div>
   );
 }
