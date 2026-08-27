@@ -17,14 +17,28 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+/**
+ * Compara dois tokens em tempo constante (não vaza o tamanho do prefixo comum por
+ * timing). Só o header `x-cron-token` é aceito — nunca a querystring, que costuma
+ * ir parar em logs de acesso.
+ */
+function tokensMatch(provided: string, expected: string): boolean {
+  if (provided.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < provided.length; i += 1) {
+    diff |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 export async function handleCron(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname !== "/api/cron") return null;
 
   const token = process.env["CRON_TOKEN"];
-  const provided = request.headers.get("x-cron-token") ?? url.searchParams.get("token") ?? "";
+  const provided = request.headers.get("x-cron-token") ?? "";
   if (!token) return json({ error: "CRON_TOKEN não configurado no servidor" }, 503);
-  if (provided !== token) return json({ error: "unauthorized" }, 401);
+  if (!tokensMatch(provided, token)) return json({ error: "unauthorized" }, 401);
 
   const step = url.searchParams.get("step") ?? "";
   try {

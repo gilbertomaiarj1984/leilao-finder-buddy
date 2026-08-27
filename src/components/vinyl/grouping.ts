@@ -26,6 +26,28 @@ export type HouseGroup = {
   count: number;
 };
 
+/**
+ * Nº do lote como número para ordenar. Lote vazio ("", comum na listagem geral) vai para
+ * o FIM: Number("") é 0, então guardamos o caso vazio antes de cair no fallback +Infinity.
+ */
+export function loteNum(value: string): number {
+  const n = value.trim() === "" ? NaN : Number(value);
+  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+}
+
+/** Forma enxuta do agrupamento por casa (`{house, houseUrl, lots}`), preservando a ordem. */
+export type SimpleHouseGroup = { house: string; houseUrl: string; lots: VinylLot[] };
+
+export function groupByHouseSimple(lots: VinylLot[]): SimpleHouseGroup[] {
+  const byHouse = new Map<string, SimpleHouseGroup>();
+  for (const lot of lots) {
+    const group = byHouse.get(lot.house) ?? { house: lot.house, houseUrl: lot.houseUrl, lots: [] };
+    group.lots.push(lot);
+    byHouse.set(lot.house, group);
+  }
+  return [...byHouse.values()];
+}
+
 export function groupByArtist(lots: VinylLot[]): ArtistGroup[] {
   const byArtist = new Map<string, VinylLot[]>();
   for (const lot of lots) {
@@ -203,14 +225,10 @@ export function groupWatchedByHouse<T extends { house: string; houseUrl: string;
     group.lots.push(lot);
     byHouse.set(lot.house, group);
   }
-  const num = (value: string) => {
-    // Lote vazio ("") deve ir para o FIM: Number("") é 0, então guardamos o caso
-    // vazio explicitamente antes de cair no fallback POSITIVE_INFINITY.
-    const n = value.trim() === "" ? NaN : Number(value);
-    return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
-  };
   for (const group of byHouse.values()) {
-    group.lots.sort((a, b) => num(a.lote) - num(b.lote) || a.lote.localeCompare(b.lote, "pt-BR"));
+    group.lots.sort(
+      (a, b) => loteNum(a.lote) - loteNum(b.lote) || a.lote.localeCompare(b.lote, "pt-BR"),
+    );
   }
   return [...byHouse.values()].sort(
     (a, b) => b.lots.length - a.lots.length || a.house.localeCompare(b.house, "pt-BR"),

@@ -24,7 +24,12 @@ import {
   listMyBids,
   markDashboardSeen,
 } from "@/lib/leiloesbr.functions";
-import { houseAnchor } from "@/components/vinyl/grouping";
+import {
+  groupByHouseSimple,
+  houseAnchor,
+  loteNum,
+  type SimpleHouseGroup,
+} from "@/components/vinyl/grouping";
 import { listWatched } from "@/lib/leiloesbr-watch.functions";
 import {
   auctionFinished,
@@ -39,28 +44,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
   component: DashboardPage,
 });
 
-type HouseGroup = { house: string; houseUrl: string; lots: VinylLot[] };
-
-function groupByHouse(lots: VinylLot[]): HouseGroup[] {
-  const byHouse = new Map<string, HouseGroup>();
-  for (const lot of lots) {
-    const group = byHouse.get(lot.house) ?? {
-      house: lot.house,
-      houseUrl: lot.houseUrl,
-      lots: [],
-    };
-    group.lots.push(lot);
-    byHouse.set(lot.house, group);
-  }
-  return [...byHouse.values()];
-}
-
-const loteNum = (v: string) => {
-  // Lote vazio ("", comum na listagem geral) deve ir para o FIM: Number("") é 0,
-  // por isso o guard explícito antes de cair no fallback POSITIVE_INFINITY.
-  const n = v.trim() === "" ? NaN : Number(v);
-  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
-};
+type HouseGroup = SimpleHouseGroup;
 
 type Delta =
   | { kind: "novo" }
@@ -301,7 +285,7 @@ function DashboardPage() {
 
             {days.map((day, index) => {
               const dayLots = allLots.filter((l) => l.dayKey === day);
-              const groups = groupByHouse(dayLots);
+              const groups = groupByHouseSimple(dayLots);
               // Ordena os lotes de cada casa por prioridade (vermelho, amarelo, resto) e nº do lote.
               for (const g of groups) {
                 g.lots.sort(
