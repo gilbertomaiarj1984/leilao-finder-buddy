@@ -53,6 +53,7 @@ export type LotMarket = {
   matched: boolean;
   releaseId: number | null;
   releaseTitle: string | null;
+  year: number | null;
   numForSale: number | null;
   lowestPrice: number | null;
   currency: string | null;
@@ -67,6 +68,7 @@ export function toLotMarket(r: {
   matched: boolean;
   release_id: number | null;
   release_title: string | null;
+  year: number | null;
   num_for_sale: number | null;
   lowest_price: number | null;
   currency: string | null;
@@ -79,6 +81,7 @@ export function toLotMarket(r: {
     matched: r.matched,
     releaseId: r.release_id,
     releaseTitle: r.release_title,
+    year: r.year,
     numForSale: r.num_for_sale,
     lowestPrice: r.lowest_price,
     currency: r.currency,
