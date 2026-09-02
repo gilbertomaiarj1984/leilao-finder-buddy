@@ -21,6 +21,13 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { BidStatBadges, HouseStatBadges } from "@/components/vinyl/badges";
@@ -51,8 +58,10 @@ import {
 } from "@/components/vinyl/ai-score-utils";
 import { supabase } from "@/integrations/supabase/client";
 import {
+  analyzeOnDemand,
   enrichLotes,
   getAccessStatus,
+  getAiMode,
   getLotAi,
   getLotMarket,
   getNextBids,
@@ -61,6 +70,7 @@ import {
   getVinylLots,
   listMyBids,
   scrapeVinylChunk,
+  setAiMode,
   setLotTags,
   setVerifiedHouses,
 } from "@/lib/leiloesbr.functions";
@@ -247,6 +257,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const runSaveTags = useServerFn(setLotTags);
   const fetchLotMarket = useServerFn(getLotMarket);
   const fetchInterests = useServerFn(getUserInterests);
+  const fetchAiMode = useServerFn(getAiMode);
+  const runSetAiMode = useServerFn(setAiMode);
+  const runAnalyze = useServerFn(analyzeOnDemand);
 
   const lots = useQuery({
     ...lotsQuery,
@@ -283,6 +296,66 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     staleTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
+  // Modo da IA automática (controla o gasto de créditos). Fonte da verdade é o servidor.
+  const aiModeQuery = useQuery({
+    queryKey: ["ai-mode"] as const,
+    queryFn: () => fetchAiMode(),
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const aiMode: "off" | "all" | "watched" = aiModeQuery.data ?? "watched";
+  const changeAiMode = (mode: "off" | "all" | "watched") => {
+    const prev = aiModeQuery.data;
+    queryClient.setQueryData(["ai-mode"], mode); // otimista: pinta a seleção na hora
+    void runSetAiMode({ data: { mode } })
+      .then(() =>
+        toast.success(
+          mode === "off"
+            ? "IA desligada — não gasta créditos automaticamente"
+            : mode === "all"
+              ? "IA avaliando todos os lotes novos"
+              : "IA avaliando só vigiados e com lance",
+        ),
+      )
+      .catch((error: unknown) => {
+        queryClient.setQueryData(["ai-mode"], prev);
+        toast.error((error as Error)?.message || "Não foi possível salvar o modo da IA");
+      });
+  };
+
+  // Análise SOB DEMANDA (botões por dia/casa). `analyzing` guarda a chave em execução:
+  // o dia (`day`) ou a casa (`${day}|${casa}`). Roda em laço até esgotar os não avaliados
+  // (ou parar de progredir), depois revalida o cache ["lot-ai"] para as notas aparecerem.
+  const [analyzing, setAnalyzing] = useState<string | null>(null);
+  const analyzeScope = (opts: { day: string; house?: string }) => {
+    if (analyzing) return; // uma análise por vez (evita disparar vários batches síncronos)
+    const key = opts.house ? `${opts.day}|${opts.house}` : opts.day;
+    void (async () => {
+      setAnalyzing(key);
+      let evaluated = 0;
+      try {
+        for (let guard = 0; guard < 60; guard += 1) {
+          const res = await runAnalyze({
+            data: { day: opts.day, house: opts.house, max: 25 },
+          });
+          evaluated += res.evaluated;
+          // Para quando não sobra nada OU quando a rodada não avaliou nada (lotes que
+          // falham sempre voltariam ao "pendente" e causariam laço infinito).
+          if (res.remaining === 0 || res.evaluated === 0) break;
+        }
+        await queryClient.invalidateQueries({ queryKey: ["lot-ai"] });
+        toast.success(
+          evaluated
+            ? `IA avaliou ${evaluated} lote(s) ${opts.house ? "desta casa" : "deste dia"}`
+            : "Nada novo para avaliar aqui (já avaliado)",
+        );
+      } catch (error) {
+        toast.error((error as Error)?.message || "Não foi possível analisar agora");
+      } finally {
+        setAnalyzing(null);
+      }
+    })();
+  };
   const aiById = useMemo(() => {
     const map = new Map<string, LotAi>();
     for (const r of lotAiQuery.data ?? [])
@@ -616,6 +689,25 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 Painel
               </Link>
             </Button>
+            <div
+              className="flex items-center gap-1.5"
+              title="Modo da avaliação automática por IA (controla o gasto de créditos). A análise sob demanda, pelos botões nos dias/casas, funciona em qualquer modo."
+            >
+              <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+              <Select
+                value={aiMode}
+                onValueChange={(value) => changeAiMode(value as "off" | "all" | "watched")}
+              >
+                <SelectTrigger className="h-8 w-[176px] text-xs" aria-label="Modo da IA">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">IA: desligada</SelectItem>
+                  <SelectItem value="all">IA: tudo</SelectItem>
+                  <SelectItem value="watched">IA: vigiados + lances</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex flex-col items-start gap-0.5 sm:items-end">
               <Button
                 variant="outline"
@@ -820,6 +912,21 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                         {bidsForDay.length ? (
                           <span className="ml-0.5 text-muted-foreground">{bidsForDay.length}</span>
                         ) : null}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => analyzeScope({ day })}
+                        disabled={analyzing !== null}
+                        title="Analisar com IA os lotes ainda não avaliados deste dia (sob demanda)"
+                        aria-label={`Analisar com IA ${dayLabel(day, index)}`}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                      >
+                        {analyzing === day ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-3.5 w-3.5" />
+                        )}
+                        Analisar dia
                       </button>
                       {!isWatchedView && !isBidsView ? (
                         <>
@@ -1045,6 +1152,21 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   }
                                 >
                                   <Check className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => analyzeScope({ day, house: group.house })}
+                                  disabled={analyzing !== null}
+                                  title="Analisar com IA os lotes ainda não avaliados desta casa (sob demanda)"
+                                  aria-label={`Analisar com IA ${group.house}`}
+                                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                                >
+                                  {analyzing === houseKey ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Sparkles className="h-3.5 w-3.5" />
+                                  )}
+                                  Analisar
                                 </button>
                                 <button
                                   type="button"

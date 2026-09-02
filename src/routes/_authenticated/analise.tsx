@@ -980,7 +980,8 @@ function AnalisePage() {
         ) : evaluated === 0 ? (
           <p className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
             Nenhum lote avaliado ainda. A avaliação roda em segundo plano (atualização periódica);
-            volte após a próxima rodada.
+            volte após a próxima rodada — ou use os botões “Analisar” por dia/casa na página
+            principal para avaliar agora, sob demanda.
           </p>
         ) : (
           <div className="space-y-8">

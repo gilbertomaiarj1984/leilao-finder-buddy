@@ -275,6 +275,79 @@ export const setLotTags = createServerFn({ method: "POST" })
     return { id: data.id, tags: await updateLotTags(data.id, data.tags) };
   });
 
+/** Modo da avaliação por IA da rodada automática: "off" | "all" | "watched". Global. */
+export const getAiMode = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getAiMode } = await import("./app-state.server");
+    return await getAiMode();
+  });
+
+/** Grava o modo da IA (valida contra os valores permitidos). */
+export const setAiMode = createServerFn({ method: "POST" })
+  .inputValidator((input: { mode?: string } | undefined) => {
+    const allowed = ["off", "all", "watched"] as const;
+    const mode = input?.mode;
+    if (typeof mode !== "string" || !(allowed as readonly string[]).includes(mode)) {
+      throw new Error("Modo da IA inválido.");
+    }
+    return { mode: mode as (typeof allowed)[number] };
+  })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setAiMode } = await import("./app-state.server");
+    return await setAiMode(data.mode);
+  });
+
+/**
+ * Análise SOB DEMANDA de um dia (e opcionalmente de UMA casa desse dia): avalia NA HORA,
+ * de forma síncrona, só os lotes AINDA NÃO avaliados (reaproveita o cache por título).
+ * Roda mesmo com a IA automática desligada. Processa até `max` lotes por chamada e devolve
+ * `remaining` (não avaliados que ficaram de fora) para o cliente repetir em laço.
+ */
+export const analyzeOnDemand = createServerFn({ method: "POST" })
+  .inputValidator((input: { day?: string; house?: string; max?: number } | undefined) => {
+    const day = typeof input?.day === "string" ? input.day.trim() : "";
+    if (!day) throw new Error("Dia obrigatório.");
+    return {
+      day,
+      house: typeof input?.house === "string" && input.house.trim() ? input.house.trim() : null,
+      max: Math.min(Math.max(Number(input?.max) || 25, 1), 50),
+    };
+  })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { aiConfigured, selectLotsToEvaluate, evalLotsSync } = await import("./ai-eval.server");
+    if (!aiConfigured()) {
+      throw new Error("A IA não está configurada (ANTHROPIC_API_KEY ausente no servidor).");
+    }
+    const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
+    const { getAllLotAi, upsertLotAi } = await import("./lot-ai.server");
+    const [snapshot, aiRows] = await Promise.all([scrapeVinylLots(false), getAllLotAi()]);
+
+    // Recorta o dia (e a casa, quando informada) e seleciona só o que falta avaliar.
+    const scope = snapshot.lots.filter(
+      (lot) => lot.dayKey === data.day && (!data.house || lot.house === data.house),
+    );
+    const pending = selectLotsToEvaluate(scope, aiRows, Number.MAX_SAFE_INTEGER);
+    const toEval = pending.slice(0, data.max);
+    if (!toEval.length) return { evaluated: 0, remaining: 0, scope: scope.length };
+
+    const rows = await evalLotsSync(toEval);
+    const evaluated = await upsertLotAi(rows);
+    return {
+      evaluated,
+      remaining: Math.max(0, pending.length - toEval.length),
+      scope: scope.length,
+    };
+  });
+
 /** Âncora de mercado do Discogs por lote (preço/demanda). Best-effort: [] em erro. */
 export const getLotMarket = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

@@ -4,6 +4,7 @@ const BASELINE_KEY = "dashboard_baseline";
 const VERIFIED_HOUSES_KEY = "verified_houses";
 const USER_INTERESTS_KEY = "user_interests";
 const AI_BATCH_KEY = "ai_batch";
+const AI_MODE_KEY = "ai_mode";
 
 export type Baseline = { prices: Record<string, string>; seenAt: string | null };
 
@@ -117,6 +118,54 @@ export async function setUserInterests(items: string[]): Promise<{ savedAt: stri
   if (error) {
     console.error("[app-state] não foi possível gravar os interesses", error);
     throw new Error(`Não foi possível gravar os interesses: ${error.message}`);
+  }
+  return { savedAt };
+}
+
+/**
+ * Modo da avaliação por IA (controla o gasto de créditos da rodada automática do cron):
+ * - `"off"`     → desligada (o cron não coleta nem submete nada).
+ * - `"all"`     → avalia todos os lotes novos (comportamento histórico).
+ * - `"watched"` → só os lotes que o usuário VIGIA ou já deu LANCE (união). Padrão.
+ * Global, um único registro em `app_state` (mesmo modelo das casas verificadas). NÃO afeta
+ * a análise SOB DEMANDA (botões por dia/casa), que é explícita e sempre roda.
+ */
+export type AiMode = "off" | "all" | "watched";
+
+export const AI_MODES: readonly AiMode[] = ["off", "all", "watched"] as const;
+
+/** Modo padrão quando nada foi configurado: econômico (só vigiados + lances). */
+export const DEFAULT_AI_MODE: AiMode = "watched";
+
+export async function getAiMode(): Promise<AiMode> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("app_state")
+      .select("value")
+      .eq("key", AI_MODE_KEY)
+      .maybeSingle();
+    if (error) throw error;
+    const value = data?.value;
+    return typeof value === "string" && (AI_MODES as readonly string[]).includes(value)
+      ? (value as AiMode)
+      : DEFAULT_AI_MODE;
+  } catch (error) {
+    console.error("[app-state] não foi possível ler o modo da IA (usando padrão)", error);
+    return DEFAULT_AI_MODE;
+  }
+}
+
+export async function setAiMode(mode: AiMode): Promise<{ savedAt: string }> {
+  if (!(AI_MODES as readonly string[]).includes(mode)) {
+    throw new Error(`Modo da IA inválido: ${mode}`);
+  }
+  const savedAt = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from("app_state")
+    .upsert({ key: AI_MODE_KEY, value: mode, updated_at: savedAt }, { onConflict: "key" });
+  if (error) {
+    console.error("[app-state] não foi possível gravar o modo da IA", error);
+    throw new Error(`Não foi possível gravar o modo da IA: ${error.message}`);
   }
   return { savedAt };
 }
