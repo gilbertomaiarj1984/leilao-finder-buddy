@@ -64,8 +64,14 @@ export async function handleCron(request: Request): Promise<Response | null> {
       const { aiConfigured, selectLotsToEvaluate, submitEvalBatch, collectEvalBatch } =
         await import("./ai-eval.server");
       if (!aiConfigured()) return json({ skipped: "ANTHROPIC_API_KEY não configurado" });
-      const { getPendingAiBatch, setPendingAiBatch } = await import("./app-state.server");
+      const { getPendingAiBatch, setPendingAiBatch, getAiMode } =
+        await import("./app-state.server");
       const { getAllLotAi, upsertLotAi } = await import("./lot-ai.server");
+
+      // Modo escolhido pelo usuário (controla o gasto de créditos da rodada automática).
+      // "off" → não coleta nem submete; a análise sob demanda (botões) continua funcionando.
+      const mode = await getAiMode();
+      if (mode === "off") return json({ skipped: "IA desligada", mode });
 
       // 1) Há batch em andamento? Tenta coletar.
       const pending = await getPendingAiBatch();
@@ -81,11 +87,33 @@ export async function handleCron(request: Request): Promise<Response | null> {
       const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
       const [snapshot, aiRows] = await Promise.all([scrapeVinylLots(false), getAllLotAi()]);
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 800, 1), 2000);
-      const toEval = selectLotsToEvaluate(snapshot.lots, aiRows, max);
-      if (!toEval.length) return json({ done: true, submitted: 0 });
+
+      // Modo "watched": só avalia lotes que o usuário VIGIA ou já deu LANCE (união). As
+      // contas são lidas com a sessão de servidor (credenciais de ambiente). Best-effort:
+      // se a leitura falhar, cai para conjunto vazio (nada a submeter nesta rodada).
+      let candidates = snapshot.lots;
+      if (mode === "watched") {
+        const ids = new Set<string>();
+        try {
+          const { listWatchedFromSite } = await import("./leiloesbr-watch.server");
+          for (const w of await listWatchedFromSite()) ids.add(w.id);
+        } catch (error) {
+          console.error("[cron] aieval: falha ao ler vigiados (modo watched)", error);
+        }
+        try {
+          const { listMyBidsFromSite } = await import("./leiloesbr-bids.server");
+          for (const b of await listMyBidsFromSite()) ids.add(b.id);
+        } catch (error) {
+          console.error("[cron] aieval: falha ao ler lances (modo watched)", error);
+        }
+        candidates = snapshot.lots.filter((lot) => ids.has(lot.id));
+      }
+
+      const toEval = selectLotsToEvaluate(candidates, aiRows, max);
+      if (!toEval.length) return json({ done: true, submitted: 0, mode });
       const { batchId, hashes, count } = await submitEvalBatch(toEval);
       await setPendingAiBatch({ batchId, submittedAt: new Date().toISOString(), hashes });
-      return json({ submitted: count, batchId });
+      return json({ submitted: count, batchId, mode });
     }
 
     // Âncora de mercado (Discogs). Chunked como o enrich: cada chamada consulta até

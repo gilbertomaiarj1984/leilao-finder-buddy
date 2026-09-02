@@ -163,7 +163,7 @@ export function parseEvalObject(
 }
 
 /** Extrai o texto concatenado dos blocos `text` de uma mensagem de resposta. */
-function messageText(message: { content?: Array<{ type: string; text?: string }> }): string {
+export function messageText(message: { content?: Array<{ type: string; text?: string }> }): string {
   const blocks = message?.content ?? [];
   return blocks
     .filter((b) => b.type === "text" && typeof b.text === "string")
@@ -231,4 +231,61 @@ export async function collectEvalBatch(
     });
   }
   return { done: true, rows };
+}
+
+/** Monta a linha de cache a partir do texto devolvido pelo modelo (null se não aproveitável). */
+function rowFromMessage(
+  lot: EvalLot,
+  message: { content?: Array<{ type: string; text?: string }> },
+): LotAiRow | null {
+  const parsed = parseEvalObject(messageText(message));
+  if (!parsed) return null;
+  return {
+    id: lot.id,
+    title_hash: titleHash(lot.title),
+    score: parsed.score,
+    rarity: parsed.rarity,
+    deal: parsed.deal,
+    album: parsed.album,
+    reason: parsed.reason,
+    tags: parsed.tags,
+    model: AI_MODEL,
+  };
+}
+
+/** Concorrência das chamadas síncronas sob demanda (mantém o servidor dentro do tempo). */
+const SYNC_CONCURRENCY = 4;
+
+/**
+ * Avaliação SÍNCRONA (Messages API) de um conjunto pequeno de lotes — usada pela análise
+ * SOB DEMANDA (botões por dia/casa), onde o usuário espera o resultado NA HORA (a Batches
+ * API é assíncrona e serve à rodada automática). Best-effort POR LOTE: um lote que falhe
+ * (rede/parsing) é ignorado e não derruba os demais. Concorrência limitada.
+ */
+export async function evalLotsSync(lots: EvalLot[]): Promise<LotAiRow[]> {
+  if (!lots.length) return [];
+  const client = await getClient();
+  const rows: LotAiRow[] = [];
+  let cursor = 0;
+
+  const worker = async () => {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      const lot = lots[index];
+      if (!lot) return;
+      try {
+        const message = await client.messages.create(buildLotParams(lot));
+        const row = rowFromMessage(lot, message);
+        if (row) rows.push(row);
+      } catch (error) {
+        console.error(`[ai-eval] falha ao avaliar o lote ${lot.id}`, error);
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(SYNC_CONCURRENCY, lots.length) }, () => worker()),
+  );
+  return rows;
 }
