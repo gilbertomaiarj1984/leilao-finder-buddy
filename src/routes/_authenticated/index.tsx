@@ -79,7 +79,10 @@ import {
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import {
   auctionFinished,
+  isDiscBundle,
+  LOTE_LABEL,
   normalizeForMatch,
+  searchRelevance,
   titleCase,
   UNCLASSIFIED_LABEL,
   type VinylLot,
@@ -392,7 +395,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const albumFor = (lot: { id: string }): string | null => albumById.get(lot.id) ?? null;
   // Artista efetivo: o identificado pela IA (parte antes do "-") quando existir, senão o
   // artista heurístico do título. Alimenta o agrupamento e o filtro "por artista".
-  const effectiveArtist = (lot: { id: string; artist: string }): string => {
+  const effectiveArtist = (lot: { id: string; artist: string; title?: string }): string => {
+    // Lote de vários discos vem primeiro: agrupa como "Lote" mesmo que a IA tenha
+    // arriscado um álbum específico para o conjunto.
+    if (isDiscBundle(lot.title ?? "") || lot.artist === LOTE_LABEL) return LOTE_LABEL;
     const parsed = parseAiAlbum(albumById.get(lot.id) ?? null).artist;
     return parsed ? titleCase(parsed) : lot.artist;
   };
@@ -606,11 +612,16 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
 
   const days = lots.data?.days ?? [];
   const searchNorm = normalizeForMatch(search);
-  const matchesSearch = (lot: VinylLot) =>
-    !searchNorm ||
-    normalizeForMatch(
-      `${lot.title} ${lot.artist} ${lot.house} ${lot.lote} ${albumFor(lot) ?? ""}`,
-    ).includes(searchNorm);
+  // Relevância da busca: identidade (álbum da IA + artista + título) tem prioridade;
+  // casa e nº do lote entram só como campos fracos, para não trazer lotes "muito
+  // diferentes" quando o termo casa apenas no nome da casa.
+  const searchScore = (lot: VinylLot) =>
+    searchRelevance(
+      `${albumFor(lot) ?? ""} ${lot.artist} ${lot.title}`,
+      `${lot.house} ${lot.lote}`,
+      searchNorm,
+    );
+  const matchesSearch = (lot: VinylLot) => searchScore(lot) > 0;
   const watchedIds = useMemo(
     () => new Set((watched.data ?? []).map((item) => item.idPeca)),
     [watched.data],
@@ -1154,6 +1165,50 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                         </Button>
                       ) : null}
                     </div>
+                  ) : searchNorm ? (
+                    // Busca ativa: lista única ordenada por relevância (mais exato →
+                    // parecido), em vez do agrupamento por casa, para o topo bater com o
+                    // que foi digitado.
+                    (() => {
+                      const ranked = [...visibleLots].sort(
+                        (a, b) => searchScore(b) - searchScore(a),
+                      );
+                      return (
+                        <div className="space-y-4">
+                          <p className="text-sm text-muted-foreground">
+                            {ranked.length} resultado(s) para “{search.trim()}”, dos mais parecidos
+                            aos menos.
+                          </p>
+                          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            {ranked.map((lot) => (
+                              <LotCard
+                                key={lot.id}
+                                lot={{
+                                  ...lot,
+                                  lote: lot.lote || loteById.get(lot.idPeca) || "",
+                                  myBid: myBidById.get(lot.idPeca),
+                                  nextBid: nextBidById.get(lot.idPeca),
+                                }}
+                                busy={pending === lot.idPeca}
+                                ai={aiFor(lot)}
+                                market={marketFor(lot)}
+                                album={albumFor(lot)}
+                                onEditTags={editTags(lot.id)}
+                                bidStatus={bidStatusById.get(lot.idPeca)}
+                                onToggle={() =>
+                                  toggle.mutate({
+                                    idPeca: lot.idPeca,
+                                    idLeilao: lot.idLeilao,
+                                    base: lot.base,
+                                    watch: !lot.watched,
+                                  })
+                                }
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()
                   ) : (
                     (() => {
                       const renderHouse = (group: HouseGroup) => {
