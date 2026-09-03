@@ -114,17 +114,17 @@ function AuctionCard({ auction }: { auction: PresencialAuction }) {
               size="sm"
               onClick={openInTab}
               disabled={loading !== null}
-              title="Abrir o pregão em nova aba, já logado na sua conta"
+              title="Abrir o pregão em nova aba pelo app (login da casa fica salvo)"
             >
               <LogIn className="mr-2 h-4 w-4" />
-              {loading === "tab" ? "Entrando…" : "Entrar ao vivo (logado)"}
+              {loading === "tab" ? "Entrando…" : "Entrar ao vivo"}
             </Button>
             <Button
               size="sm"
               variant="outline"
               onClick={toggleFrame}
               disabled={loading !== null}
-              title="Abrir o pregão logado aqui dentro do app"
+              title="Abrir o pregão aqui dentro do app"
             >
               {showFrame ? (
                 <X className="mr-2 h-4 w-4" />
@@ -157,7 +157,8 @@ function AuctionCard({ auction }: { auction: PresencialAuction }) {
             />
           </div>
           <p className="mt-1.5 text-xs text-muted-foreground">
-            Aberto já logado na sua conta. Não carregou?{" "}
+            Se a casa pedir login, entre com sua conta aqui mesmo — a sessão fica salva no app. Não
+            carregou?{" "}
             <button
               type="button"
               onClick={openInTab}
@@ -172,7 +173,7 @@ function AuctionCard({ auction }: { auction: PresencialAuction }) {
               rel="noreferrer"
               className="font-medium text-primary hover:underline"
             >
-              no site da casa (deslogado)
+              no site da casa
             </a>
             .
           </p>

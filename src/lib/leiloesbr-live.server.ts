@@ -11,7 +11,7 @@
  * pela server function `openLiveAuction` (atrás do login do app) e guardado num cookie
  * httpOnly com Path amarrado à origem da casa.
  */
-import { absorbSetCookie, getSessionCookieFor } from "./leiloesbr-auth.server";
+import { absorbSetCookie, getSessionCookieLenient } from "./leiloesbr-auth.server";
 
 const PREFIX = "/api/live/";
 const COOKIE_NAME = "lp_auth";
@@ -235,38 +235,34 @@ export async function handleLiveProxy(request: Request): Promise<Response | null
   const isPost = request.method === "POST";
   const reqBody = isPost ? await request.arrayBuffer() : undefined;
 
-  async function callHouse(forceLogin: boolean): Promise<Response> {
-    const cookie = await getSessionCookieFor(pathOrigin!, forceLogin);
+  // Auto-login best-effort: onde a casa é da plataforma leiloesbr, entra logado; onde
+  // não é (login próprio), segue DESLOGADO e o usuário loga no formulário da casa
+  // dentro do proxy — o cookie de sessão dela é absorvido no servidor e persiste.
+  const { cookie } = await getSessionCookieLenient(pathOrigin);
+
+  let houseRes: Response;
+  try {
     const headers: Record<string, string> = {
       "User-Agent": UA,
       Accept: request.headers.get("accept") ?? "*/*",
-      Cookie: cookie,
       Referer: referer,
     };
+    if (cookie) headers["Cookie"] = cookie;
     const ct = request.headers.get("content-type");
     if (ct) headers["Content-Type"] = ct;
     const xrw = request.headers.get("x-requested-with");
     if (xrw) headers["X-Requested-With"] = xrw;
-    return await fetch(targetUrl, {
+    houseRes = await fetch(targetUrl, {
       method: request.method,
       headers,
       ...(reqBody ? { body: reqBody } : {}),
       redirect: "manual",
     });
-  }
-
-  let houseRes: Response;
-  try {
-    houseRes = await callHouse(false);
-    // Sessão pode ter caído: uma nova tentativa forçando login.
-    if (houseRes.status === 401 || houseRes.status === 403) {
-      houseRes = await callHouse(true);
-    }
   } catch (error) {
     console.error("[live-proxy] falha ao acessar o pregão", error);
     // App de usuário único: mostra o motivo real para facilitar o diagnóstico.
     const detail = error instanceof Error ? error.message : "erro desconhecido";
-    return htmlError(`Falha ao entrar no pregão da casa: ${detail}`, 502);
+    return htmlError(`A casa não respondeu: ${detail}`, 502);
   }
 
   // Mantém a sessão viva com os cookies que a casa devolver (não repassa ao navegador).
