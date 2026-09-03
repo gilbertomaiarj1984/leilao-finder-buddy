@@ -925,3 +925,58 @@ lot.artist`, aplicado como override de `artist` ao montar `rawDay` — `groupByH
 
 - Não cria/altera tabela nem depende de secret novo. A lista só aparece preenchida se o
   cron de scraping já tiver gravado leilões **do dia** em `seen_auctions` (com `entry_url`).
+
+## Sessão 2026-09-03 — Controle da IA: liga/desliga por modo + análise sob demanda (v0.11.0)
+
+> Feature entregue na **v0.11.0** (PR #61, mesclado); nota registrada depois. Objetivo:
+> controlar o **gasto de créditos** da avaliação por IA e permitir disparar a análise **na
+> hora**, por dia ou casa, sem esperar a rodada automática do cron.
+
+### Modo da IA automática (nova chave `ai_mode` em `app_state`)
+
+- `getAiMode`/`setAiMode` em `src/lib/app-state.server.ts` (mesmo modelo de
+  `verified_houses`/`user_interests`). Tipo `AiMode = "off" | "all" | "watched"`,
+  **padrão `"watched"`** (`DEFAULT_AI_MODE`); leitura tolerante (valor inválido → padrão).
+  **Sem mudança de schema** — só mais uma chave na tabela `app_state` que já existe.
+- Filtro no **cron** (`cron.server.ts`, `step=aieval`): o modo é lido logo após
+  `aiConfigured()`.
+  - `"off"` → `json({ skipped: "IA desligada", mode })` — não coleta nem submete (a
+    coleta de um batch pendente também espera religar).
+  - `"all"` → comportamento histórico (candidatos = todos os `snapshot.lots`).
+  - `"watched"` → só lotes que o usuário **vigia ∪ deu lance**. Os ids vêm de
+    `listWatchedFromSite()` + `listMyBidsFromSite()` (leitura **server-side** com a sessão
+    de credenciais de ambiente; best-effort em try/catch), casando com `VinylLot.id` (ambos
+    `${idLeilao}-${idPeca}`), **antes** de `selectLotsToEvaluate`.
+
+### Análise sob demanda (síncrona, botões por dia/casa)
+
+- `evalLotsSync(lots)` em `src/lib/ai-eval.server.ts`: usa a **Messages API síncrona**
+  (`client.messages.create`, concorrência 4, best-effort por lote) — distinta da **Batches
+  API** assíncrona do cron, porque aqui o usuário espera o resultado na hora. Reusa
+  `buildLotParams`/`parseEvalObject`/`titleHash`; `messageText` virou export.
+- Server fn **`analyzeOnDemand({ day, house?, max })`** em `leiloesbr.functions.ts`
+  (`requireSupabaseAuth` → `assertAllowed`; erro claro sem `ANTHROPIC_API_KEY`): recorta o
+  dia (e a casa, quando dada), seleciona **só os não avaliados** (`selectLotsToEvaluate`,
+  cache por título), avalia até `max` (25) e devolve `{ evaluated, remaining }` para o
+  cliente repetir em laço. Roda **em qualquer modo**, inclusive com a IA desligada.
+
+### UI (`index.tsx`)
+
+- `Select` de modo no header (query `["ai-mode"]`, gravação otimista com toast) — opções
+  "IA: desligada / tudo / vigiados + lances".
+- Botões **"Analisar dia"** (barra do dia) e **"Analisar"** (cabeçalho da casa) chamam
+  `analyzeOnDemand` em laço até `remaining===0` **ou** `evaluated===0` (evita laço infinito
+  em lotes que falham sempre), depois revalidam `["lot-ai"]`. Estado único `analyzing`
+  (chave = `day` para o dia, `${day}|${casa}` para a casa; desabilita os demais botões
+  enquanto roda). Texto da página Análise cita esses botões.
+
+### Decisão consciente
+
+- O **padrão passou a ser `"watched"`** (econômico): após o deploy a IA automática deixa de
+  avaliar todo lote novo. "IA: tudo" restaura o comportamento antigo.
+
+### Pendências (validar em produção)
+
+- Persistência do modo (`app_state.ai_mode`); cron em `off` → `{skipped:"IA desligada"}`;
+  cron em `watched` submetendo só vigiados/lances; e os botões "Analisar" populando as notas
+  (`["lot-ai"]`) sem passar pela Batches API.
