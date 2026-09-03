@@ -1,4 +1,4 @@
-import type { VinylLot } from "./vinyl-parse";
+import { auctionFinished, auctionStarted, type VinylLot } from "./vinyl-parse";
 
 export type LiveAuction = {
   idLeilao: string;
@@ -11,6 +11,12 @@ export type LiveAuction = {
   lotCount: number;
   sampleTitles: string[];
   uf: string | null;
+};
+
+/** Leilão do dia com a URL do pregão presencial e o status derivado do horário. */
+export type PresencialAuction = LiveAuction & {
+  presencialUrl: string | null;
+  status: "upcoming" | "live" | "ended";
 };
 
 /** "19:30h" + "2026-08-21" -> ISO instant in São Paulo time (UTC-3). */
@@ -111,6 +117,69 @@ export async function listLiveAuctions(windowHours = 3): Promise<LiveAuction[]> 
     return (data as Row[] | null)?.map(toAuction) ?? [];
   } catch (error) {
     console.error("[leiloesbr] falha ao listar leilões ao vivo", error);
+    return [];
+  }
+}
+
+/** Data de hoje (YYYY-MM-DD) no fuso de São Paulo — mesmo formato de `day_key`. */
+function todayDayKey(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+}
+
+/**
+ * Monta a URL do pregão presencial da casa a partir do `entry_url` do lote
+ * (abre_catalogo.asp?t=1|<dominio>|<idLeilao>|...): `<dominio>/presencial/presencial.asp?Num=<idLeilao>`.
+ * `null` quando o link não casa o padrão (casas fora da plataforma LeilõesBR).
+ */
+function presencialUrlFrom(
+  entryUrl: string | null,
+  parseAuctionRef: (url: string) => { domain: string; idLeilao: string } | null,
+): string | null {
+  if (!entryUrl) return null;
+  const ref = parseAuctionRef(entryUrl);
+  if (!ref) return null;
+  const domain = ref.domain.replace(/^http:/i, "https:");
+  return `${domain}/presencial/presencial.asp?Num=${ref.idLeilao}`;
+}
+
+/**
+ * Todos os leilões de vinil do DIA (data de hoje em São Paulo), com o link do
+ * pregão presencial de cada casa e o status (em breve / ao vivo / encerrado),
+ * derivado do horário de início. Best-effort: [] em erro.
+ */
+export async function listTodayAuctions(): Promise<PresencialAuction[]> {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { parseAuctionRef } = await import("./leiloesbr-catalog.server");
+    const today = todayDayKey();
+    const { data, error } = await supabaseAdmin
+      .from("seen_auctions")
+      .select(
+        "id_leilao, house, house_url, entry_url, day_key, start_time, starts_at, lot_count, sample_titles, uf",
+      )
+      .eq("day_key", today)
+      .order("starts_at", { ascending: true });
+    if (error) throw error;
+    const now = Date.now();
+    return (
+      (data as Row[] | null)?.map((row) => {
+        const auction = toAuction(row);
+        const finished = auctionFinished(auction.dayKey, auction.time, now);
+        const started = auctionStarted(auction.dayKey, auction.time, now);
+        const status: PresencialAuction["status"] = finished
+          ? "ended"
+          : started
+            ? "live"
+            : "upcoming";
+        return {
+          ...auction,
+          presencialUrl: presencialUrlFrom(auction.entryUrl, parseAuctionRef),
+          status,
+        };
+      }) ?? []
+    );
+  } catch (error) {
+    console.error("[leiloesbr] falha ao listar leilões do dia", error);
     return [];
   }
 }

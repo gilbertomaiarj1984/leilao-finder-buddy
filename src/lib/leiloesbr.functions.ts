@@ -52,6 +52,16 @@ export const getLiveAuctions = createServerFn({ method: "GET" })
     return await listLiveAuctions();
   });
 
+/** Leilões de vinil do DIA com o link do pregão presencial de cada casa e o status. */
+export const getTodayAuctions = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { listTodayAuctions } = await import("./leiloesbr-auctions.server");
+    return await listTodayAuctions();
+  });
+
 // Preenche o nº do lote (via catálogo da casa) em blocos de leilões, para caber no
 // tempo do servidor. O cliente chama em laço até `remaining` chegar a 0.
 export const enrichLotes = createServerFn({ method: "POST" })
