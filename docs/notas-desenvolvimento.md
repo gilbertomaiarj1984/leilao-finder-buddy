@@ -870,3 +870,58 @@ lot.artist`, aplicado como override de `artist` ao montar `rawDay` — `groupByH
 
 - Os PRs #63 e #64 foram mesclados **sem bump de `APP_VERSION`** (merge via API não barrou
   no `version-bump.yml`). Este PR consolida em **v0.13.0** o fix + as duas features.
+
+## Sessão 2026-09-03 (3) — Página "Leilões ao vivo" (pregão presencial por casa) (v0.14.0)
+
+> Branch `claude/live-auctions-page-tljpox`. Nova página no menu superior (ao lado de
+> "Análise") para **acompanhar ao vivo** o pregão presencial das casas com leilão de vinil
+> **do dia**. **Sem migração de banco e sem novo scraping** — a URL do pregão é derivada do
+> que já está em `seen_auctions`.
+>
+> _Obs.: a feature foi mesclada primeiro no PR #66 (na v0.13.0, sem bump); este registro +
+> o bump para v0.14.0 vêm em seguida (o `version-bump.yml` não barra merge via API)._
+
+### Nova rota `/ao-vivo` (`src/routes/_authenticated/ao-vivo.tsx`)
+
+- Item de menu **"Ao vivo"** (ícone `Radio`) em `index.tsx`, ao lado de "Análise".
+- Lista os leilões de vinil **do dia** (data de hoje em `America/Sao_Paulo`), **um card por
+  casa**, com **badge de status** derivado do horário: `upcoming` (Em breve) / `live`
+  (Ao vivo agora, com ponto pulsante) / `ended` (Encerrado). `useQuery` com
+  `refetchInterval` de 60s para o status virar sozinho.
+- Ações por card: **"Acompanhar ao vivo"** abre `presencialUrl ?? entryUrl ?? houseUrl` em
+  nova aba; **"Abrir aqui"** (só quando há `presencialUrl`) alterna uma **prévia em
+  `<iframe>`** com aviso + link de fallback (sites presenciais costumam bloquear via
+  X-Frame-Options/CSP). Estado vazio amigável quando não há pregão no dia.
+
+### Como a URL do pregão presencial é montada (sem dado novo)
+
+- Padrão pedido: `<dominio-da-casa>/presencial/presencial.asp?Num=<idLeilao>` (ex.:
+  `https://www.leiloesdisco78.com.br/presencial/presencial.asp?Num=64449`).
+- `seen_auctions` já guarda `entry_url` (o `abre_catalogo.asp?t=1|<dominio>|<idLeilao>|...`
+  do lote). **Reuso de `parseAuctionRef`** (`leiloesbr-catalog.server.ts`) para extrair
+  `{domain, idLeilao}`; normaliza `http:`→`https:` e monta a URL. `null` quando o link não
+  casa o padrão (casas **fora** da plataforma LeilõesBR, ex.: `abreucolecionismo`) → o
+  botão cai para o link da casa e a prévia iframe não é oferecida.
+
+### Server (`leiloesbr-auctions.server.ts` + `leiloesbr.functions.ts`)
+
+- Tipo `PresencialAuction = LiveAuction & { presencialUrl: string | null; status }`.
+- `listTodayAuctions()`: consulta `seen_auctions` por `day_key = <hoje>` (São Paulo, via
+  `Intl.DateTimeFormat("en-CA", …)`), ordena por `starts_at`, reusa `toAuction` e deriva
+  `status` com `auctionStarted`/`auctionFinished` (`vinyl-parse.ts`). Best-effort: `[]` em
+  erro (mesmo padrão de `listLiveAuctions`).
+- Server fn **`getTodayAuctions`** (GET, `requireSupabaseAuth` → `assertAllowed`),
+  espelhando `getLiveAuctions`. A seção "Acontecendo agora" da home (`live-auctions.tsx`,
+  janela de ~3h) segue intacta — a página nova é o painel do dia inteiro.
+
+### Validação
+
+- `bun run build` verde (rota `/ao-vivo` no `routeTree.gen.ts`, sem erro de tipo);
+  `eslint` e `prettier --check` limpos nos arquivos alterados. Import do tipo
+  `PresencialAuction` no cliente é **`import type`** (apagado no bundle; não puxa o
+  `.server`).
+
+### Sem pendência de config
+
+- Não cria/altera tabela nem depende de secret novo. A lista só aparece preenchida se o
+  cron de scraping já tiver gravado leilões **do dia** em `seen_auctions` (com `entry_url`).
