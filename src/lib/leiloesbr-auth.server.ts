@@ -38,6 +38,26 @@ function mergeCookies(current: string | undefined, response: Response): string {
   return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
 }
 
+/**
+ * ASP clássico só cria o `ASPSESSIONID` num GET; o `login.asp` associa o usuário à
+ * sessão que JÁ existe no cookie. Um GET de aquecimento semeia esse cookie antes do
+ * POST — necessário nos domínios das casas (no `leiloesbr.com.br` o POST bastava).
+ */
+async function seedSession(origin: string): Promise<void> {
+  try {
+    const res = await fetch(`${origin}/default.asp`, {
+      method: "GET",
+      headers: { "User-Agent": UA, Accept: "text/html" },
+      redirect: "manual",
+    });
+    const merged = mergeCookies(jars.get(origin), res);
+    if (merged) jars.set(origin, merged);
+    await res.arrayBuffer().catch(() => undefined);
+  } catch {
+    /* best-effort: se falhar, o POST ainda tenta */
+  }
+}
+
 async function performLogin(origin: string): Promise<string> {
   const email = process.env["LEILOESBR_EMAIL"];
   const password = process.env["LEILOESBR_SENHA"];
@@ -47,6 +67,9 @@ async function performLogin(origin: string): Promise<string> {
     );
   }
 
+  // Semeia a sessão (GET) para o cookie ASPSESSIONID existir antes do POST de login.
+  await seedSession(origin);
+
   const body = new URLSearchParams({
     campoeml: email,
     campopwd: password,
@@ -54,6 +77,7 @@ async function performLogin(origin: string): Promise<string> {
     AuthenticationMethod: "",
   });
 
+  const seeded = jars.get(origin);
   const response = await fetch(`${origin}/portal/assets/modulos/login/asp/login.asp`, {
     method: "POST",
     headers: {
@@ -62,6 +86,7 @@ async function performLogin(origin: string): Promise<string> {
       "X-Requested-With": "XMLHttpRequest",
       Referer: `${origin}/default.asp`,
       Accept: "*/*",
+      ...(seeded ? { Cookie: seeded } : {}),
     },
     body: body.toString(),
     redirect: "manual",
@@ -72,15 +97,19 @@ async function performLogin(origin: string): Promise<string> {
   try {
     payload = JSON.parse(text) as typeof payload;
   } catch {
-    throw new Error("Resposta inesperada do login do LeilõesBR.");
+    // Diagnóstico: o site devolveu algo que não é o JSON esperado (HTML/redirect/erro).
+    const snippet = text.replace(/\s+/g, " ").trim().slice(0, 160);
+    throw new Error(
+      `Login em ${origin} não retornou JSON (HTTP ${response.status}): ${snippet || "resposta vazia"}`,
+    );
   }
   if (payload.NUM_ERRO && payload.NUM_ERRO !== 0) {
-    throw new Error(payload.MENSAGEM_ERRO ?? "Login no LeilõesBR recusado.");
+    throw new Error(payload.MENSAGEM_ERRO ?? `Login em ${origin} recusado.`);
   }
 
   const cookie = mergeCookies(jars.get(origin), response);
   if (!cookie.includes("ASPSESSIONID")) {
-    throw new Error("Login no LeilõesBR não devolveu sessão.");
+    throw new Error(`Login em ${origin} não devolveu sessão (sem ASPSESSIONID).`);
   }
   jars.set(origin, cookie);
   return cookie;
