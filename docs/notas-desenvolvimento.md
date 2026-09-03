@@ -722,6 +722,30 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
   gravados **não** são reconsultados sozinhos. Para refazer, limpar as linhas de `lot_market`
   (ex.: `DELETE FROM lot_market;` ou só as `matched=false`/suspeitas) e rodar o `refresh.yml`.
 
+### Resumo da sessão de 27/08 (Análise: leitura, Discogs BR, tags, matching) — v0.7.0 → v0.10.0
+
+> Índice consolidado do que esta sessão entregou (detalhes nas subseções acima).
+
+- **Legibilidade dos filtros (v0.7.0):** `color-scheme: dark` no `:root` — dropdown nativo do
+  `<select>` deixou de ficar branco-no-branco.
+- **Top 100 e tabela por casa (v0.7.0):** nota à esquerda com explicação no hover (`HoverDetails`
+  via portal, abre à esquerda/no toque, Discogs clicável), título ao centro com
+  raridade/oportunidade/motivo/tags + faixa Discogs abaixo, botão de vigiar e **borda colorida**
+  por status. Legenda de raridade + filtros no formato da página principal (Vigiando/Com lance).
+- **"Lances do dia" (v0.8.0):** passou a agrupar pelo **dia do leilão** do lote, não pela data
+  do lance.
+- **Faixa Discogs BR (v0.8.0):** scraping da página de venda (só vendedores BR, **preço + frete**)
+  → "De R$X a R$Y"; colunas `price_low_br`/`price_high_br`/`num_for_sale_br` (com
+  `getAllLotMarket`/`upsertLotMarket` tolerantes à ausência das colunas, v0.9.1).
+- **Tags editáveis (v0.8.0):** ×/＋ no hover, nas tabelas da Análise e nos cards; `setLotTags` +
+  `updateLotTags` (v0.9.0/0.9.1 endureceram feedback e validação).
+- **Raridade colorida (v0.8.1)** e **filtro por raridade (v0.9.0)**.
+- **Performance (v0.9.1):** editar tag não recomputa mais o casamento pesado com a sondagem
+  (`albumById` com identidade estável).
+- **Matching do Discogs por artista+álbum+ano (v0.10.0):** busca estruturada + `pickBestRelease`
+  reescrito (penaliza coletânea, rejeita sem cobertura mínima). Vale para lotes novos daqui pra
+  frente (os antigos não são reprocessados por decisão do usuário).
+
 ## Sessão 2026-09-03 — Cards do lote + identificação simplificada da IA (v0.12.0)
 
 > Branch `claude/lote-card-improvements-5vygov`. Três ajustes de UX nos cards + uma
