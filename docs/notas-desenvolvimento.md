@@ -980,3 +980,35 @@ lot.artist`, aplicado como override de `artist` ao montar `rawDay` — `groupByH
 - Persistência do modo (`app_state.ai_mode`); cron em `off` → `{skipped:"IA desligada"}`;
   cron em `watched` submetendo só vigiados/lances; e os botões "Analisar" populando as notas
   (`["lot-ai"]`) sem passar pela Batches API.
+
+## Sessão 2026-08-27 (3) — Revisão geral: endurecimento do cron, retry e DRY (v0.10.2)
+
+> Branch `claude/revisao-simplificada-geral-ajk97l` · PRs
+> [#60](https://github.com/gilbertomaiarj1984/leilao-finder-buddy/pull/60) (mesclado).
+> Revisão simplificada porém geral do código. Nenhum bug sério; ajustes de
+> segurança/robustez e de qualidade (DRY), sem mudança de comportamento.
+
+### Correções (v0.10.1)
+
+- **Cron mais seguro** (`cron.server.ts`): `/api/cron` passou a exigir o header
+  `x-cron-token` (removido o fallback `?token=` da querystring, que vaza em logs de acesso)
+  e a comparar o token em **tempo constante** (`tokensMatch`, evita timing attack). O
+  workflow `refresh.yml` já usava só o header — nada quebrou.
+- **Sem retry inútil em 4xx** (`leiloesbr-auth.server.ts`): `fetchWithRetry` passou a falhar
+  de imediato em 404/403 (definitivos, via `LeiloesBrHttpError` com status) e manteve o
+  backoff só para 5xx/rede/timeout.
+- **Regex de diacríticos unificada** (`vinyl-parse.ts`): `normalizeForMatch` passou a usar
+  `/[̀-ͯ]/g` (mesma forma escapada de `normalize()`), no lugar dos combinantes
+  crus — mais legível e robusto a edições.
+
+### Limpeza / DRY (v0.10.2)
+
+- `grouping.ts` ganhou `groupByHouseSimple` + tipo `SimpleHouseGroup` (forma enxuta
+  `{house, houseUrl, lots}`) e passou a exportar `loteNum` (ordenação por nº de lote, vazio
+  ao fim), reusado internamente por `groupWatchedByHouse`. `dashboard.tsx` e `analise.tsx`
+  deixaram de declarar cópias byte-idênticas de `groupByHouse`/`loteNum` e passaram a
+  importar de `grouping.ts`.
+
+> Observação: quando esta sessão rodou, a `main` estava em v0.10.0; ela avançou depois
+> (v0.11–v0.14) com features de outras sessões (controle de modo da IA, `lot_ident`,
+> categoria "Lote", leilões ao vivo). Os itens acima já estão na `main` atual.
