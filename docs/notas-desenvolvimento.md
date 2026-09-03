@@ -105,8 +105,10 @@ deploy na **Vercel** (Nitro). _(Migrado do Lovable em 2026-08 — ver a última 
 - Helpers de classificação/agrupamento ficam em `src/components/vinyl/grouping.ts`
   (`classifyBid`, `houseAnchor`, `computeHouseStats`, `watchedMatchesSearch`,
   `groupWatchedByHouse`, etc.) após refatoração.
-- **Busca principal + agrupamento dos vigiados/lances:** `watchedMatchesSearch(lot,
-searchNorm)` casa por **título/artista/casa/nº do lote** (mesma regra das abas de dia).
+- **Busca das abas de dia:** ranqueada por `searchRelevance` (identidade primeiro, casa/nº
+  do lote como campos fracos); com busca ativa, vira **lista única por relevância** (ver
+  sessão v0.13.0). **Vigiados/lances:** `watchedMatchesSearch(lot, searchNorm)` casa por
+  **título/artista/casa/nº do lote** (casamento contíguo; ainda **sem** ranqueamento).
   `groupWatchedByHouse<T>(lots)` agrupa por casa e ordena por **nº do lote** (numérico
   primeiro, depois lexicográfico); é genérico e reutilizado para **vigiados** e **meus
   lances** (`bidsByHouse`). A aba **“Vigiados”** (ver todos) e a **“Vigiados do dia”**
@@ -741,7 +743,8 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
 
 - `parseAiAlbum(album) → {artist, album, year}` — espelha `parseAlbum`/`extractYear` de
   `discogs.server.ts` (que é server-only e não pode ser importado no cliente): separa no
-  1º ` - `/`–`/`:`, extrai `(19xx|20xx)`; **artista só quando houve separação real**.
+  1º `-`/`–`/`:`/`/` (a barra entrou depois — ver sessão v0.13.0), extrai
+  `(19xx|20xx)`; **artista só quando houve separação real**.
 - `formatAiAlbum(album, fallbackYear?)` — formato PADRÃO **`Artista — Álbum (Ano)`**
   (`titleCase` no artista; usa `market.year` como fallback do ano). Usado no `LotCard` e
   no `LotTitle` da Análise.
@@ -754,7 +757,7 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
 - Busca: `matchesSearch` (dia), `watchedMatchesSearch`/`bidMatchesSearch` (param opcional
   `album` novo em `grouping.ts`) e o `filtered` da Análise concatenam o álbum resolvido.
 - Filtro por artista: `effectiveArtist(lot) = parseAiAlbum(albumResolvido).artist ||
-  lot.artist`, aplicado como override de `artist` ao montar `rawDay` — `groupByHouse`/
+lot.artist`, aplicado como override de `artist` ao montar `rawDay` — `groupByHouse`/
   `groupByArtist`/`artistOptions` e os predicados de filtro passam a usar o artista da IA
   **sem alterar `grouping.ts`** (que continua puro/por-lote).
 
@@ -806,3 +809,64 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
 - Depois **disparar o `refresh.yml`** (Actions → Run workflow) para popular `lot_ident`
   (`step=aiident`) e conferir o `step=market` casando lotes só identificados. Requer
   `ANTHROPIC_API_KEY` já configurado (senão o passo faz no-op).
+
+## Sessão 2026-09-03 (2) — Fix classificação IA + categoria "Lote" + busca por relevância (v0.13.0)
+
+> Branch `claude/lote-classification-ai-title-7b44oz`. Três ajustes na classificação/busca
+> da listagem por dia. Tudo em funções puras/client-safe (`vinyl-parse.ts`,
+> `ai-score-utils.ts`, `discogs.server.ts`, `grouping.ts`) + o consumo em `index.tsx`.
+> **Sem migração de banco** e **sem re-varredura/re-IA**: o artista é recalculado do
+> título/álbum na UI, então o reagrupamento vale na hora.
+
+### 1. Lotes caíam no grupo espúrio "Artista" (PR #63)
+
+- **Sintoma:** lotes com título de IA **correto** (ex.: `a-ha / Hunting High and Low`)
+  agrupados sob "Artista".
+- **Causa:** o prompt pede `"Artista - Álbum"` (com `-`), mas o modelo às vezes devolve
+  `"Artista / Álbum"` (com `/`). `parseAiAlbum` (`ai-score-utils.ts`) e `parseAlbum`
+  (`discogs.server.ts`) só separavam em `-–—:`, então não isolavam o artista → o
+  `effectiveArtist` caía no heurístico do título `"LP: Artista: X | Album: Y"`, que extraía
+  o **literal "Artista"**.
+- **Fix:** `/` (com espaços) agora conta como separador nas duas funções — regex
+  `/\s[-–—:/]\s/`. `AC/DC` não é afetado (barra sem espaços). Defesa extra: `extractArtist`
+  descarta candidatos que são só rótulos de campo (`LABEL_WORDS`: `artista`/`album`/…).
+
+### 2. Categoria "Lote" para conjuntos de discos
+
+- **`isDiscBundle(title)` em `vinyl-parse.ts`**: true quando o título é um **conjunto de
+  vários discos** — `"lote com/de …"`, `"kit com/de …"`, `"coleção de discos"`, quantidade
+  **3+** de discos (`"30 LPs"`), ou `"diversos/vários"` + palavra de disco (`DISC_WORD`).
+  Discos duplos/triplos do **mesmo** álbum (`"2 LPs"`) **não** contam.
+- **`extractArtist` devolve `LOTE_LABEL` ("Lote")** para bundles (antes de cair no
+  UNCLASSIFIED). Em `index.tsx`, `effectiveArtist` checa `isDiscBundle(lot.title)` **antes**
+  do álbum da IA → o conjunto agrupa em "Lote" mesmo que a IA tenha arriscado um álbum.
+- **Ordem dos grupos** (`grouping.ts`, `artistRank`): artistas reais (alfabético) →
+  `"Lote"` → `UNCLASSIFIED_LABEL`. Aplicado em `groupByArtist` e `artistOptions`.
+
+### 3. Busca "mais exato primeiro, parecidos depois"
+
+- **Sintoma:** a busca trazia coisas muito diferentes do digitado (casava o termo em
+  campos fracos, ex.: nome da casa) e sem ordenação.
+- **`searchRelevance(identity, extra, queryNorm)` em `vinyl-parse.ts`** pontua por camadas:
+  5 = identidade começa com o termo · 4 = contém o termo · 3 = todos os termos na
+  identidade · 2 = termo em qualquer campo (casa/nº do lote) · 1 = todos os termos em
+  qualquer campo · 0 = não corresponde. `identity` = `álbum IA + artista + título`;
+  `extra` = `casa + nº do lote`.
+- Em `index.tsx`: `searchScore(lot)` alimenta `matchesSearch` (`> 0`). **Com busca ativa**,
+  a listagem do dia deixa de agrupar por casa e vira **lista única ordenada por relevância**
+  (`[...visibleLots].sort((a,b) => searchScore(b) - searchScore(a))`). Sem busca, mantém o
+  agrupamento por casa → artista de sempre.
+- **Escopo:** só a busca das abas de **dia**. Vigiados/Lances (`watchedMatchesSearch`/
+  `bidMatchesSearch`, `grouping.ts`) seguem com o casamento contíguo antigo.
+
+### Validação
+
+- `bunx tsc --noEmit` e `bun run lint` verdes. Funções puras (`isDiscBundle`,
+  `searchRelevance`, `parseAiAlbum`) testadas com `node`/`bun -e`: bundles vs. álbuns
+  simples ok; busca `"clara nunes"` põe os discos dela no topo (5), match só-na-casa no
+  fim (2) e itens sem relação fora (0).
+
+### Observação de processo
+
+- Os PRs #63 e #64 foram mesclados **sem bump de `APP_VERSION`** (merge via API não barrou
+  no `version-bump.yml`). Este PR consolida em **v0.13.0** o fix + as duas features.
