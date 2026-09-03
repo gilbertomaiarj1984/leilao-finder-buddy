@@ -364,7 +364,8 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.12.0 | Cards (casa verificada fecha, nº no canto esquerdo, álbum acima do título) + `lot_ident` | — |
 | v0.13.0 | Fix classificação IA (separador `/`) + categoria "Lote" + busca por relevância | #63/#64 |
 | v0.14.0 | Página **Ao vivo** (pregão presencial por casa) | #66 |
-| v0.15.0 | Pregão ao vivo **abre já logado** (proxy autenticado `/api/live`, sessão por origem, token HMAC) | — |
+| v0.15.0 | Pregão ao vivo **abre já logado** (proxy autenticado `/api/live`, sessão por origem, token HMAC) | #73 |
+| v0.15.1 | Login da casa: GET de aquecimento (semeia `ASPSESSIONID`) + erro real no proxy p/ diagnóstico | — |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.

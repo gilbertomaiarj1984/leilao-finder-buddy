@@ -170,10 +170,14 @@ function readCookie(request: Request, name: string): string | null {
 }
 
 function htmlError(message: string, status: number): Response {
+  const safe = message.replace(
+    /[&<>]/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] ?? c,
+  );
   const body = `<!doctype html><meta charset="utf-8"><title>Pregão ao vivo</title>
 <body style="font-family:system-ui;padding:2rem;color:#111;background:#fafafa">
 <h1 style="font-size:1.1rem">Não foi possível abrir o pregão logado</h1>
-<p style="color:#555;max-width:40ch">${message}</p></body>`;
+<p style="color:#555;max-width:60ch">${safe}</p></body>`;
   return new Response(body, {
     status,
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
@@ -260,7 +264,9 @@ export async function handleLiveProxy(request: Request): Promise<Response | null
     }
   } catch (error) {
     console.error("[live-proxy] falha ao acessar o pregão", error);
-    return htmlError("A casa não respondeu. Tente novamente em instantes.", 502);
+    // App de usuário único: mostra o motivo real para facilitar o diagnóstico.
+    const detail = error instanceof Error ? error.message : "erro desconhecido";
+    return htmlError(`Falha ao entrar no pregão da casa: ${detail}`, 502);
   }
 
   // Mantém a sessão viva com os cookies que a casa devolver (não repassa ao navegador).
