@@ -92,6 +92,39 @@ export type Database = {
         }
         Relationships: []
       }
+      lot_ident: {
+        Row: {
+          album: string | null
+          confidence: string | null
+          evaluated_at: string
+          id: string
+          model: string | null
+          source: string | null
+          title_hash: string
+          year: number | null
+        }
+        Insert: {
+          album?: string | null
+          confidence?: string | null
+          evaluated_at?: string
+          id: string
+          model?: string | null
+          source?: string | null
+          title_hash: string
+          year?: number | null
+        }
+        Update: {
+          album?: string | null
+          confidence?: string | null
+          evaluated_at?: string
+          id?: string
+          model?: string | null
+          source?: string | null
+          title_hash?: string
+          year?: number | null
+        }
+        Relationships: []
+      }
       lot_market: {
         Row: {
           basis: string

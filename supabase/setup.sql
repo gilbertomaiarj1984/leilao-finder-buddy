@@ -103,6 +103,24 @@ CREATE TABLE IF NOT EXISTS public.lot_ai (
 );
 
 -- ---------------------------------------------------------------------
+-- lot_ident — identificação SIMPLIFICADA da IA por lote (só artista/álbum/ano).
+-- Roda para TODOS os lotes (independente do modo da avaliação completa `lot_ai`),
+-- de forma barata: 1ª passada só com o TÍTULO; quando a confiança vem baixa,
+-- uma 2ª passada usa a CAPA (`source` marca de onde veio). `id` = lots.id;
+-- `title_hash` re-identifica quando o título muda.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.lot_ident (
+  id           text PRIMARY KEY,
+  title_hash   text NOT NULL,
+  album        text,           -- "Artista - Álbum" identificado
+  year         integer,        -- ano quando a IA souber
+  confidence   text,           -- 'alta' | 'media' | 'baixa'
+  source       text,           -- 'title' (só título) | 'image' (usou a capa)
+  model        text,
+  evaluated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------
 -- lot_market — âncora de mercado do Discogs por lote (cache; best-effort).
 -- `id` = lots.id; `basis` = hash de (album||title) consultado (invalida o cache
 -- quando a identificação muda). `matched=false` guarda os que não casaram, para
@@ -165,6 +183,7 @@ ALTER TABLE public.lots           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.known_artists  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_state      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_ai         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lot_ident      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_market     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wantlist_items ENABLE ROW LEVEL SECURITY;
 
@@ -173,6 +192,7 @@ REVOKE ALL ON public.lots           FROM anon, authenticated;
 REVOKE ALL ON public.known_artists  FROM anon, authenticated;
 REVOKE ALL ON public.app_state      FROM anon, authenticated;
 REVOKE ALL ON public.lot_ai         FROM anon, authenticated;
+REVOKE ALL ON public.lot_ident      FROM anon, authenticated;
 REVOKE ALL ON public.lot_market     FROM anon, authenticated;
 REVOKE ALL ON public.wantlist_items FROM anon, authenticated;
 
@@ -181,5 +201,6 @@ GRANT ALL ON public.lots           TO service_role;
 GRANT ALL ON public.known_artists  TO service_role;
 GRANT ALL ON public.app_state      TO service_role;
 GRANT ALL ON public.lot_ai         TO service_role;
+GRANT ALL ON public.lot_ident      TO service_role;
 GRANT ALL ON public.lot_market     TO service_role;
 GRANT ALL ON public.wantlist_items TO service_role;

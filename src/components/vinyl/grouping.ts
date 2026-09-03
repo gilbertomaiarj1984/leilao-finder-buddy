@@ -189,25 +189,38 @@ export function watchedDateToKey(value: string): string {
   return yy && mm && dd ? `${yy}-${mm}-${dd}` : "";
 }
 
-/** A busca principal casa por título, artista, casa e nº do lote — igual à das abas de dia. */
+/**
+ * A busca principal casa por título, artista, casa e nº do lote — igual à das abas de dia.
+ * `album` (opcional) = artista/álbum identificado pela IA, para priorizar essa
+ * identificação também na busca (mais acertiva que o título).
+ */
 export function watchedMatchesSearch(
   lot: { title: string; artist: string; house: string; lote: string },
   searchNorm: string,
+  album?: string | null,
 ): boolean {
   return (
     !searchNorm ||
-    normalizeForMatch(`${lot.title} ${lot.artist} ${lot.house} ${lot.lote}`).includes(searchNorm)
+    normalizeForMatch(
+      `${lot.title} ${lot.artist} ${lot.house} ${lot.lote} ${album ?? ""}`,
+    ).includes(searchNorm)
   );
 }
 
-/** A busca dos lances casa por título, casa, nº do lote e status do lance. */
+/**
+ * A busca dos lances casa por título, casa, nº do lote e status do lance. `album`
+ * (opcional) = artista/álbum identificado pela IA (mesma priorização da busca de dia).
+ */
 export function bidMatchesSearch(
   bid: { title: string; house: string; lote: string; status: string },
   searchNorm: string,
+  album?: string | null,
 ): boolean {
   return (
     !searchNorm ||
-    normalizeForMatch(`${bid.title} ${bid.house} ${bid.lote} ${bid.status}`).includes(searchNorm)
+    normalizeForMatch(
+      `${bid.title} ${bid.house} ${bid.lote} ${bid.status} ${album ?? ""}`,
+    ).includes(searchNorm)
   );
 }
 

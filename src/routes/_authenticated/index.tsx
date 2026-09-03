@@ -52,6 +52,7 @@ import { LiveAuctions } from "@/components/vinyl/live-auctions";
 import { LotCard } from "@/components/vinyl/lot-card";
 import {
   buildInterestMatcher,
+  parseAiAlbum,
   toLotMarket,
   type LotAi,
   type LotMarket,
@@ -63,6 +64,7 @@ import {
   getAccessStatus,
   getAiMode,
   getLotAi,
+  getLotIdent,
   getLotMarket,
   getNextBids,
   getUserInterests,
@@ -78,6 +80,7 @@ import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import {
   auctionFinished,
   normalizeForMatch,
+  titleCase,
   UNCLASSIFIED_LABEL,
   type VinylLot,
 } from "@/lib/vinyl-parse";
@@ -254,6 +257,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const saveVerified = useServerFn(setVerifiedHouses);
   const fetchNextBids = useServerFn(getNextBids);
   const fetchLotAi = useServerFn(getLotAi);
+  const fetchLotIdent = useServerFn(getLotIdent);
   const runSaveTags = useServerFn(setLotTags);
   const fetchLotMarket = useServerFn(getLotMarket);
   const fetchInterests = useServerFn(getUserInterests);
@@ -287,6 +291,14 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const lotAiQuery = useQuery({
     queryKey: ["lot-ai"] as const,
     queryFn: () => fetchLotAi(),
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  // Identificação simplificada (artista/álbum/ano) — roda para TODOS os lotes, barata.
+  // Alimenta a exibição, a busca e o filtro por artista, priorizada sobre o título.
+  const lotIdentQuery = useQuery({
+    queryKey: ["lot-ident"] as const,
+    queryFn: () => fetchLotIdent(),
     staleTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -369,6 +381,21 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       });
     return map;
   }, [lotAiQuery.data]);
+  // Álbum RESOLVIDO por lote: prefere a avaliação completa (`lot_ai`); senão a
+  // identificação simplificada (`lot_ident`). Usado na exibição, busca e no artista efetivo.
+  const albumById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of lotIdentQuery.data ?? []) if (r.album) map.set(r.id, r.album);
+    for (const r of lotAiQuery.data ?? []) if (r.album) map.set(r.id, r.album);
+    return map;
+  }, [lotIdentQuery.data, lotAiQuery.data]);
+  const albumFor = (lot: { id: string }): string | null => albumById.get(lot.id) ?? null;
+  // Artista efetivo: o identificado pela IA (parte antes do "-") quando existir, senão o
+  // artista heurístico do título. Alimenta o agrupamento e o filtro "por artista".
+  const effectiveArtist = (lot: { id: string; artist: string }): string => {
+    const parsed = parseAiAlbum(albumById.get(lot.id) ?? null).artist;
+    return parsed ? titleCase(parsed) : lot.artist;
+  };
   const matchesInterest = useMemo(
     () => buildInterestMatcher(interestsQuery.data ?? []),
     [interestsQuery.data],
@@ -439,7 +466,17 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     setVerifiedSet((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
-      else next.add(key);
+      else {
+        next.add(key);
+        // Ao MARCAR como verificada, fecha a casa (não faz sentido deixá-la expandida
+        // depois de conferida; ela também migra para a seção "Já verificadas").
+        setOpenHouses((open) => {
+          if (!open.has(key)) return open;
+          const n = new Set(open);
+          n.delete(key);
+          return n;
+        });
+      }
       const list = [...next];
       try {
         localStorage.setItem(LS_VERIFIED, JSON.stringify(list));
@@ -571,7 +608,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const searchNorm = normalizeForMatch(search);
   const matchesSearch = (lot: VinylLot) =>
     !searchNorm ||
-    normalizeForMatch(`${lot.title} ${lot.artist} ${lot.house} ${lot.lote}`).includes(searchNorm);
+    normalizeForMatch(
+      `${lot.title} ${lot.artist} ${lot.house} ${lot.lote} ${albumFor(lot) ?? ""}`,
+    ).includes(searchNorm);
   const watchedIds = useMemo(
     () => new Set((watched.data ?? []).map((item) => item.idPeca)),
     [watched.data],
@@ -796,24 +835,32 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 Vigiados
                 <span className="ml-2 text-xs text-muted-foreground">
                   {
-                    (watched.data ?? []).filter((lot) => watchedMatchesSearch(lot, searchNorm))
-                      .length
+                    (watched.data ?? []).filter((lot) =>
+                      watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
+                    ).length
                   }
                 </span>
               </TabsTrigger>
               <TabsTrigger value="bids">
                 Lances
                 <span className="ml-2 text-xs text-muted-foreground">
-                  {(bids.data ?? []).filter((bid) => bidMatchesSearch(bid, searchNorm)).length}
+                  {
+                    (bids.data ?? []).filter((bid) =>
+                      bidMatchesSearch(bid, searchNorm, albumFor(bid)),
+                    ).length
+                  }
                 </span>
               </TabsTrigger>
             </TabsList>
 
             {days.map((day, index) => {
               const rawDay = (lots.data?.lots ?? [])
-                .map((lot) =>
-                  watchedIds.size ? { ...lot, watched: watchedIds.has(lot.idPeca) } : lot,
-                )
+                .map((lot) => ({
+                  ...lot,
+                  watched: watchedIds.size ? watchedIds.has(lot.idPeca) : lot.watched,
+                  // Prioriza o artista identificado pela IA no agrupamento/filtro por artista.
+                  artist: effectiveArtist(lot),
+                }))
                 .filter((lot) => lot.dayKey === day);
               const finishedCount = rawDay.filter((lot) =>
                 auctionFinished(lot.dayKey, lot.time),
@@ -836,14 +883,15 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               // Vigiados do dia: a busca principal também filtra aqui.
               const watchedForDay = (watched.data ?? []).filter(
                 (lot) =>
-                  watchedDateToKey(lot.date) === day && watchedMatchesSearch(lot, searchNorm),
+                  watchedDateToKey(lot.date) === day &&
+                  watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
               );
               // Vigiados do dia agrupados por casa e ordenados por nº do lote.
               const watchedByHouse = groupWatchedByHouse(watchedForDay);
               const isBidsView = bidsViewDay === day;
               // Lances do dia: a busca principal também filtra aqui.
               const bidsForDay = bidsWithHouseUrl.filter(
-                (bid) => bidDayKey(bid) === day && bidMatchesSearch(bid, searchNorm),
+                (bid) => bidDayKey(bid) === day && bidMatchesSearch(bid, searchNorm, albumFor(bid)),
               );
               // Lances do dia agrupados por casa e ordenados por nº do lote.
               const bidsByHouse = groupWatchedByHouse(bidsForDay);
@@ -1055,6 +1103,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   busy={pending === lot.idPeca}
                                   ai={aiFor(lot)}
                                   market={marketFor(lot)}
+                                  album={albumFor(lot)}
                                   onEditTags={editTags(lot.id)}
                                   bidStatus={bidStatusById.get(lot.idPeca)}
                                   onToggle={() =>
@@ -1084,6 +1133,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                         loteById={loteById}
                         priceById={priceById}
                         nextBidById={nextBidById}
+                        albumById={albumById}
                         onToggle={(bid) => toggle.mutate(bid)}
                       />
                     )
@@ -1256,6 +1306,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                             busy={pending === lot.idPeca}
                                             ai={aiFor(lot)}
                                             market={marketFor(lot)}
+                                            album={albumFor(lot)}
                                             onEditTags={editTags(lot.id)}
                                             bidStatus={bidStatusById.get(lot.idPeca)}
                                             onToggle={() =>
@@ -1339,7 +1390,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                   // A busca principal filtra os vigiados; o resultado é apresentado
                   // separado por dia e casa de leilão, igual às abas de dia.
                   const filtered = (watched.data ?? []).filter((lot) =>
-                    watchedMatchesSearch(lot, searchNorm),
+                    watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
                   );
                   if (filtered.length === 0) {
                     return (
@@ -1415,6 +1466,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                       busy={pending === lot.idPeca}
                                       ai={aiFor(lot)}
                                       market={marketFor(lot)}
+                                      album={albumFor(lot)}
                                       onEditTags={editTags(lot.id)}
                                       bidStatus={bidStatusById.get(lot.idPeca)}
                                       onToggle={() =>
@@ -1455,7 +1507,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                   // A busca principal filtra os lances; o resultado é apresentado
                   // separado por dia e casa de leilão, igual às abas de dia e vigiados.
                   const filtered = bidsWithHouseUrl.filter((bid) =>
-                    bidMatchesSearch(bid, searchNorm),
+                    bidMatchesSearch(bid, searchNorm, albumFor(bid)),
                   );
                   if (filtered.length === 0) {
                     return (
@@ -1500,6 +1552,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                               loteById={loteById}
                               priceById={priceById}
                               nextBidById={nextBidById}
+                              albumById={albumById}
                               onToggle={(bid) => toggle.mutate(bid)}
                             />
                           </section>

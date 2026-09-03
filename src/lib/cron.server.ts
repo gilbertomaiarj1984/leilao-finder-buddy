@@ -116,6 +116,69 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json({ submitted: count, batchId, mode });
     }
 
+    // Identificação SIMPLIFICADA (camada `lot_ident`): roda para TODOS os lotes, SEM gate
+    // de modo. Idempotente por chamada (estado próprio `ai_ident_batch`). Sem
+    // ANTHROPIC_API_KEY → no-op. 1ª passada só por título; escala para a capa nos de
+    // baixa confiança. Alimenta exibição/busca/filtro por artista e o Discogs.
+    if (step === "aiident") {
+      const {
+        aiConfigured,
+        selectLotsToIdentify,
+        selectLotsToReident,
+        submitIdentBatch,
+        collectIdentBatch,
+      } = await import("./ai-eval.server");
+      if (!aiConfigured()) return json({ skipped: "ANTHROPIC_API_KEY não configurado" });
+      const { getPendingAiIdentBatch, setPendingAiIdentBatch } = await import("./app-state.server");
+      const { getAllLotIdent, upsertLotIdent } = await import("./lot-ident.server");
+
+      // 1) Batch de identificação em andamento? Coleta.
+      const pending = await getPendingAiIdentBatch();
+      if (pending) {
+        const { done, rows } = await collectIdentBatch(
+          pending.batchId,
+          pending.hashes,
+          pending.source,
+        );
+        if (!done) return json({ pending: true, batchId: pending.batchId });
+        const collected = await upsertLotIdent(rows);
+        await setPendingAiIdentBatch(null);
+        return json({ collected, batchId: pending.batchId, source: pending.source });
+      }
+
+      const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
+      const [snapshot, identRows] = await Promise.all([scrapeVinylLots(false), getAllLotIdent()]);
+      const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 800, 1), 2000);
+
+      // 2) Identifica por TÍTULO os ainda não identificados (ou com título mudado).
+      const toIdent = selectLotsToIdentify(snapshot.lots, identRows, max);
+      if (toIdent.length) {
+        const { batchId, hashes, count } = await submitIdentBatch(toIdent, false);
+        await setPendingAiIdentBatch({
+          batchId,
+          submittedAt: new Date().toISOString(),
+          hashes,
+          source: "title",
+        });
+        return json({ submitted: count, batchId, source: "title" });
+      }
+
+      // 3) Nada por título: reidentifica com a CAPA os de baixa confiança.
+      const toReident = selectLotsToReident(snapshot.lots, identRows, max);
+      if (toReident.length) {
+        const { batchId, hashes, count } = await submitIdentBatch(toReident, true);
+        await setPendingAiIdentBatch({
+          batchId,
+          submittedAt: new Date().toISOString(),
+          hashes,
+          source: "image",
+        });
+        return json({ submitted: count, batchId, source: "image" });
+      }
+
+      return json({ done: true, submitted: 0 });
+    }
+
     // Âncora de mercado (Discogs). Chunked como o enrich: cada chamada consulta até
     // `max` lotes ainda não casados (throttle interno respeita o rate limit). Sem
     // DISCOGS_TOKEN → no-op explícito.
@@ -124,15 +187,23 @@ export async function handleCron(request: Request): Promise<Response | null> {
       if (!discogsConfigured()) return json({ skipped: "DISCOGS_TOKEN não configurado" });
       const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
       const { getAllLotAi } = await import("./lot-ai.server");
+      const { getAllLotIdent } = await import("./lot-ident.server");
       const { getAllLotMarket, upsertLotMarket, selectLotsForMarket, marketBasis } =
         await import("./lot-market.server");
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 12, 1), 40);
-      const [snapshot, aiRows, marketRows] = await Promise.all([
+      const [snapshot, aiRows, identRows, marketRows] = await Promise.all([
         scrapeVinylLots(false),
         getAllLotAi(),
+        getAllLotIdent(),
         getAllLotMarket(),
       ]);
-      const targets = selectLotsForMarket(snapshot.lots, aiRows, marketRows, max);
+      // Álbum por lote: prefere a avaliação completa (`lot_ai`); senão a identificação
+      // simplificada (`lot_ident`). Assim o Discogs casa também lotes só identificados.
+      const albumMap = new Map<string, string | null>();
+      for (const r of identRows) if (r.album) albumMap.set(r.id, r.album);
+      for (const r of aiRows) if (r.album) albumMap.set(r.id, r.album);
+      const albumRows = [...albumMap.entries()].map(([id, album]) => ({ id, album }));
+      const targets = selectLotsForMarket(snapshot.lots, albumRows, marketRows, max);
       if (!targets.length) return json({ done: true, updated: 0 });
 
       const rows = [];
@@ -203,7 +274,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json({ missingAuctions: auctions.length, probes });
     }
 
-    return json({ error: "step inválido (use chunk|enrich|aieval|market|catdebug)" }, 400);
+    return json({ error: "step inválido (use chunk|enrich|aieval|aiident|market|catdebug)" }, 400);
   } catch (error) {
     console.error("[cron] falha", error);
     return json({ error: (error as Error)?.message ?? "cron failed" }, 500);

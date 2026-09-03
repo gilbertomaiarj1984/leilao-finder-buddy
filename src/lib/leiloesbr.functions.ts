@@ -258,6 +258,21 @@ export const getLotAi = createServerFn({ method: "GET" })
     }
   });
 
+/** Identificação simplificada da IA por lote (artista/álbum/ano). Best-effort: [] em erro. */
+export const getLotIdent = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    try {
+      const { getAllLotIdent } = await import("./lot-ident.server");
+      return await getAllLotIdent();
+    } catch (error) {
+      console.error("[lot-ident] não foi possível ler as identificações", error);
+      return [];
+    }
+  });
+
 /** Edita manualmente as tags de um lote (add/remove pela UI). Devolve as tags gravadas. */
 export const setLotTags = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
