@@ -3,16 +3,28 @@ export const BASE_URL = "https://leiloesbr.com.br";
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36";
 
-let cookieHeader: string | null = null;
-let loginPromise: Promise<string> | null = null;
+// Sessão logada por ORIGEM (leiloesbr.com.br e o domínio de cada casa do pregão
+// presencial usam a mesma plataforma/login, mas cada domínio tem seu próprio
+// ASPSESSIONID). Guardamos um "cookie jar" e um login em andamento por origem.
+const jars = new Map<string, string>();
+const logins = new Map<string, Promise<string>>();
 
-function collectCookies(response: Response): string {
+/** Origem canônica (protocolo + host) de uma URL, sem barra final. */
+function originOf(url: string): string {
+  return new URL(url).origin;
+}
+
+/**
+ * Mescla os `Set-Cookie` de uma resposta no jar da origem (mantendo os cookies
+ * já existentes). Aceita o header múltiplo (`getSetCookie`) e o único.
+ */
+function mergeCookies(current: string | undefined, response: Response): string {
   const raw =
     (response.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.() ?? [];
   const single = response.headers.get("set-cookie");
   const all = raw.length ? raw : single ? [single] : [];
   const jar = new Map<string, string>();
-  for (const entry of cookieHeader?.split("; ") ?? []) {
+  for (const entry of current?.split("; ") ?? []) {
     const [name, ...rest] = entry.split("=");
     if (name) jar.set(name, rest.join("="));
   }
@@ -26,7 +38,7 @@ function collectCookies(response: Response): string {
   return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
 }
 
-async function performLogin(): Promise<string> {
+async function performLogin(origin: string): Promise<string> {
   const email = process.env["LEILOESBR_EMAIL"];
   const password = process.env["LEILOESBR_SENHA"];
   if (!email || !password) {
@@ -42,13 +54,13 @@ async function performLogin(): Promise<string> {
     AuthenticationMethod: "",
   });
 
-  const response = await fetch(`${BASE_URL}/portal/assets/modulos/login/asp/login.asp`, {
+  const response = await fetch(`${origin}/portal/assets/modulos/login/asp/login.asp`, {
     method: "POST",
     headers: {
       "User-Agent": UA,
       "Content-Type": "application/x-www-form-urlencoded",
       "X-Requested-With": "XMLHttpRequest",
-      Referer: `${BASE_URL}/default.asp`,
+      Referer: `${origin}/default.asp`,
       Accept: "*/*",
     },
     body: body.toString(),
@@ -66,23 +78,46 @@ async function performLogin(): Promise<string> {
     throw new Error(payload.MENSAGEM_ERRO ?? "Login no LeilõesBR recusado.");
   }
 
-  cookieHeader = collectCookies(response);
-  if (!cookieHeader.includes("ASPSESSIONID")) {
+  const cookie = mergeCookies(jars.get(origin), response);
+  if (!cookie.includes("ASPSESSIONID")) {
     throw new Error("Login no LeilõesBR não devolveu sessão.");
   }
-  return cookieHeader;
+  jars.set(origin, cookie);
+  return cookie;
 }
 
-export async function getSessionCookie(force = false): Promise<string> {
+/** Cookie logado da origem informada (login preguiçoso, compartilhado). */
+export async function getSessionCookieFor(origin: string, force = false): Promise<string> {
   if (force) {
-    cookieHeader = null;
-    loginPromise = null;
+    jars.delete(origin);
+    logins.delete(origin);
   }
-  if (cookieHeader) return cookieHeader;
-  loginPromise ??= performLogin().finally(() => {
-    loginPromise = null;
-  });
-  return await loginPromise;
+  const existing = jars.get(origin);
+  if (existing) return existing;
+  let pending = logins.get(origin);
+  if (!pending) {
+    pending = performLogin(origin).finally(() => {
+      logins.delete(origin);
+    });
+    logins.set(origin, pending);
+  }
+  return await pending;
+}
+
+/** Compat.: sessão logada do domínio principal (leiloesbr.com.br). */
+export async function getSessionCookie(force = false): Promise<string> {
+  return await getSessionCookieFor(BASE_URL, force);
+}
+
+/**
+ * Absorve os `Set-Cookie` de uma resposta da casa no jar da origem, para manter a
+ * sessão viva ao longo do pregão (o site rotaciona/renova cookies durante os lances).
+ */
+export function absorbSetCookie(url: string, response: Response): void {
+  const origin = originOf(url);
+  const current = jars.get(origin);
+  const merged = mergeCookies(current, response);
+  if (merged) jars.set(origin, merged);
 }
 
 export type AuthFetchInit = {

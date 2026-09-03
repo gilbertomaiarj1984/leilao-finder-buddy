@@ -47,6 +47,12 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      // Proxy autenticado do pregão ao vivo (abre já logado dentro do app), fora do
+      // fluxo de server functions. Retorna cedo quando o caminho for /api/live/*.
+      const { handleLiveProxy } = await import("./lib/leiloesbr-live.server");
+      const liveResponse = await handleLiveProxy(request);
+      if (liveResponse) return liveResponse;
+
       // Endpoint de atualização periódica (agendador externo, token-gated), fora
       // do fluxo de server functions. Retorna cedo quando o caminho for /api/cron.
       const { handleCron } = await import("./lib/cron.server");
