@@ -25,6 +25,9 @@ com **Supabase** como backend e deploy na **Vercel**.
 - **Recriar a branch de trabalho a partir de `origin/main` antes de cada tarefa**
   (a `main` pode receber commits de outras sessões/PRs).
 - Fluxo: branch de trabalho → PR → merge.
+- **Atualizar `docs/notas-desenvolvimento.md` antes de mesclar QUALQUER PR** (mudanças de
+  arquitetura/mecânica na seção certa, uma linha no histórico de versões, pendências resolvidas
+  saem da lista).
 - **Subir a versão do app em TODO PR:** bump em `src/lib/version.ts` (`APP_VERSION`) e
   no `package.json`, seguindo semver (PATCH=correção, MINOR=nova função, MAJOR=quebra).
   É o número mostrado no rodapé em produção. **Obrigatório** — o CI `version-bump.yml`
