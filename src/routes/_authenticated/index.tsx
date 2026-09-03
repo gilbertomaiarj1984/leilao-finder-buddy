@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Loader2,
   LogOut,
+  Radio,
   RefreshCw,
   Sparkles,
 } from "lucide-react";
@@ -727,6 +728,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             </p>
           </div>
           <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+            <Button variant="outline" size="sm" asChild title="Leilões ao vivo (pregão presencial)">
+              <Link to="/ao-vivo">
+                <Radio className="mr-2 h-4 w-4" />
+                Ao vivo
+              </Link>
+            </Button>
             <Button variant="outline" size="sm" asChild title="Análise de lotes com IA">
               <Link to="/analise">
                 <Sparkles className="mr-2 h-4 w-4" />
