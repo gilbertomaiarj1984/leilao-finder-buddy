@@ -2,11 +2,23 @@
 // vinil. Sem JSX — a UI que consome isto vive nos componentes ao lado.
 import {
   bidIsWinning,
+  LOTE_LABEL,
   normalizeForMatch,
   parsePrice,
   UNCLASSIFIED_LABEL,
   type VinylLot,
 } from "@/lib/vinyl-parse";
+
+/**
+ * Ordem dos grupos de artista: artistas reais (alfabético) primeiro, depois o balde
+ * "Lote" (conjuntos de discos) e por fim "não classificados". Baldes genéricos vão para o
+ * fim para não poluir a navegação por artista.
+ */
+function artistRank(artist: string): number {
+  if (artist === UNCLASSIFIED_LABEL) return 2;
+  if (artist === LOTE_LABEL) return 1;
+  return 0;
+}
 
 export function dayLabel(dayKey: string, index: number): string {
   const [y, m, d] = dayKey.split("-").map(Number);
@@ -58,11 +70,10 @@ export function groupByArtist(lots: VinylLot[]): ArtistGroup[] {
   }
   return [...byArtist.entries()]
     .map(([artist, list]) => ({ artist, lots: list }))
-    .sort((a, b) => {
-      if (a.artist === UNCLASSIFIED_LABEL) return 1;
-      if (b.artist === UNCLASSIFIED_LABEL) return -1;
-      return a.artist.localeCompare(b.artist, "pt-BR");
-    });
+    .sort(
+      (a, b) =>
+        artistRank(a.artist) - artistRank(b.artist) || a.artist.localeCompare(b.artist, "pt-BR"),
+    );
 }
 
 export function groupByHouse(lots: VinylLot[]): HouseGroup[] {
@@ -176,11 +187,10 @@ export function artistOptions(lots: VinylLot[]): { artist: string; count: number
   }
   return [...counts.entries()]
     .map(([artist, count]) => ({ artist, count }))
-    .sort((a, b) => {
-      if (a.artist === UNCLASSIFIED_LABEL) return 1;
-      if (b.artist === UNCLASSIFIED_LABEL) return -1;
-      return a.artist.localeCompare(b.artist, "pt-BR");
-    });
+    .sort(
+      (a, b) =>
+        artistRank(a.artist) - artistRank(b.artist) || a.artist.localeCompare(b.artist, "pt-BR"),
+    );
 }
 
 /** "dd/mm/yyyy" (vigiados) -> "yyyy-mm-dd" (dayKey). */

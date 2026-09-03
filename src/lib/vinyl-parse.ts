@@ -135,12 +135,37 @@ const PREFIX_PATTERNS: RegExp[] = [
   /^(lps?|long\s*play|discos?\s*de\s*vinil|disco\s*de\s*vinil|discos?|vinis|vinil|compactos?|compacto|bolach[aã]o|album|álbum)\b\s*[-:–,.]?\s*/i,
 ];
 
+/** Rótulo do "artista" para lotes que são um conjunto/coleção de vários discos. */
+export const LOTE_LABEL = "Lote";
+
+// Palavras que confirmam que o título fala de disco(s) — usadas com termos genéricos
+// ("diversos", "coleção de") para só classificar como lote quando há contexto de disco.
+const DISC_WORD = /\b(lps?|discos?|vinis|vinil|compactos?|bolach[aã]o|bolachoes|long play)\b/;
+
 /**
- * Best-effort artist extraction from a lot title. Returns "" when the title looks
- * like a compilation / soundtrack / mixed lot or no artist can be isolated.
+ * true quando o título representa um LOTE de discos (conjunto de vários discos vendidos
+ * juntos), e não um álbum específico. Sinais: "lote com/de ...", "kit com/de ...",
+ * "coleção de discos", quantidade (3+) de discos ("20 LPs") ou "diversos/vários" + disco.
+ * Discos duplos/triplos de um mesmo álbum (ex.: "2 LPs") NÃO contam como lote.
+ */
+export function isDiscBundle(title: string): boolean {
+  const t = normalize(title);
+  if (/\b(lote|kit)\s+(com|de)\b/.test(t)) return true;
+  if (/\bcolecao de\b/.test(t) && DISC_WORD.test(t)) return true;
+  const qty = t.match(/\b(\d+)\s*(lps?|discos?|vinis|vinil|compactos?|bolach[aã]o|bolachoes)\b/);
+  if (qty && Number(qty[1]) >= 3) return true;
+  if (/\b(diversos|varios|varias)\b/.test(t) && DISC_WORD.test(t)) return true;
+  return false;
+}
+
+/**
+ * Best-effort artist extraction from a lot title. Returns `LOTE_LABEL` for lots that are a
+ * bundle of several discs, and "" when the title looks like a compilation / soundtrack or
+ * no artist can be isolated.
  */
 export function extractArtist(title: string): string {
   const normalized = normalize(title);
+  if (isDiscBundle(title)) return LOTE_LABEL;
   if (UNCLASSIFIED_HINTS.some((hint) => normalized.includes(hint))) return "";
 
   let rest = title.replace(/\s+/g, " ").trim();
@@ -305,6 +330,32 @@ export function normalizeForMatch(value: string): string {
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
+}
+
+/**
+ * Relevância de um lote para a busca, para ordenar "mais exato primeiro, parecidos depois".
+ * `queryNorm` já vem normalizado (via `normalizeForMatch`). Camadas, da mais forte à mais
+ * fraca; 0 = não corresponde (não deve aparecer):
+ *   5 — a IDENTIDADE (artista/álbum/título) começa com a frase digitada
+ *   4 — a frase digitada aparece contígua na identidade
+ *   3 — todos os termos aparecem na identidade (ordem livre)
+ *   2 — a frase digitada aparece em qualquer campo (casa/nº do lote inclusos)
+ *   1 — todos os termos aparecem em qualquer campo
+ * Assim, buscar "clara nunes" põe os discos dela na frente e só depois traz um lote de
+ * outra pessoa numa casa que por acaso contém os termos.
+ */
+export function searchRelevance(identity: string, extra: string, queryNorm: string): number {
+  if (!queryNorm) return 1;
+  const id = normalizeForMatch(identity);
+  const full = normalizeForMatch(`${identity} ${extra}`);
+  const tokens = queryNorm.split(" ").filter(Boolean);
+  const allIn = (hay: string) => tokens.every((t) => hay.includes(t));
+  if (id.startsWith(queryNorm)) return 5;
+  if (id.includes(queryNorm)) return 4;
+  if (allIn(id)) return 3;
+  if (full.includes(queryNorm)) return 2;
+  if (allIn(full)) return 1;
+  return 0;
 }
 
 // Nomes de UMA palavra que também são palavras comuns (PT/EN) e gerariam falsos
