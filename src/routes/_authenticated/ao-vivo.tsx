@@ -1,14 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, ExternalLink, Radio, RefreshCw, X } from "lucide-react";
+import { ArrowLeft, ExternalLink, LogIn, Radio, RefreshCw, X } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { PresencialAuction } from "@/lib/leiloesbr-auctions.server";
-import { getTodayAuctions } from "@/lib/leiloesbr.functions";
+import { getTodayAuctions, openLiveAuction } from "@/lib/leiloesbr.functions";
 
 export const Route = createFileRoute("/_authenticated/ao-vivo")({
   head: () => ({ meta: [{ title: "Leilões ao vivo — Garimpo de Vinil" }] }),
@@ -35,10 +35,56 @@ function LiveDot() {
 }
 
 function AuctionCard({ auction }: { auction: PresencialAuction }) {
+  const openLive = useServerFn(openLiveAuction);
   const [showFrame, setShowFrame] = useState(false);
+  const [frameUrl, setFrameUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState<"frame" | "tab" | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const status = STATUS[auction.status];
-  // Link para acompanhar: pregão presencial da casa; se não existir, o site da casa.
+  // Fallback deslogado: pregão presencial da casa; se não existir, o site da casa.
   const watchUrl = auction.presencialUrl ?? auction.entryUrl ?? auction.houseUrl ?? "#";
+
+  // Pede ao servidor a URL do proxy autenticado (abre já logado). Best-effort.
+  async function fetchProxyUrl(): Promise<string> {
+    const { proxyUrl } = await openLive({ data: { url: auction.presencialUrl! } });
+    return proxyUrl;
+  }
+
+  // "Abrir aqui": iframe já logado (via proxy no nosso domínio).
+  async function toggleFrame() {
+    if (showFrame) {
+      setShowFrame(false);
+      return;
+    }
+    setError(null);
+    setLoading("frame");
+    try {
+      setFrameUrl(await fetchProxyUrl());
+      setShowFrame(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível abrir logado.");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  // "Entrar ao vivo": nova aba já logada. Abre a aba na hora do clique (evita o
+  // bloqueador de pop-up) e só então aponta para a URL do proxy.
+  async function openInTab() {
+    setError(null);
+    setLoading("tab");
+    const tab = window.open("about:blank", "_blank", "noopener");
+    try {
+      const url = await fetchProxyUrl();
+      if (tab) tab.location.href = url;
+      else window.location.assign(url);
+    } catch (e) {
+      tab?.close();
+      setError(e instanceof Error ? e.message : "Não foi possível abrir logado.");
+    } finally {
+      setLoading(null);
+    }
+  }
 
   return (
     <div className="flex flex-col rounded-md border border-border bg-card p-3">
@@ -62,45 +108,71 @@ function AuctionCard({ auction }: { auction: PresencialAuction }) {
       ) : null}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button size="sm" asChild>
-          <a href={watchUrl} target="_blank" rel="noreferrer">
-            <Radio className="mr-2 h-4 w-4" />
-            Acompanhar ao vivo
-          </a>
-        </Button>
         {auction.presencialUrl ? (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setShowFrame((v) => !v)}
-            title="Tentar abrir o pregão dentro do app (a casa pode bloquear)"
-          >
-            {showFrame ? <X className="mr-2 h-4 w-4" /> : <ExternalLink className="mr-2 h-4 w-4" />}
-            {showFrame ? "Fechar prévia" : "Abrir aqui"}
+          <>
+            <Button
+              size="sm"
+              onClick={openInTab}
+              disabled={loading !== null}
+              title="Abrir o pregão em nova aba, já logado na sua conta"
+            >
+              <LogIn className="mr-2 h-4 w-4" />
+              {loading === "tab" ? "Entrando…" : "Entrar ao vivo (logado)"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={toggleFrame}
+              disabled={loading !== null}
+              title="Abrir o pregão logado aqui dentro do app"
+            >
+              {showFrame ? (
+                <X className="mr-2 h-4 w-4" />
+              ) : (
+                <ExternalLink className="mr-2 h-4 w-4" />
+              )}
+              {loading === "frame" ? "Abrindo…" : showFrame ? "Fechar" : "Abrir aqui"}
+            </Button>
+          </>
+        ) : (
+          <Button size="sm" asChild>
+            <a href={watchUrl} target="_blank" rel="noreferrer">
+              <Radio className="mr-2 h-4 w-4" />
+              Acompanhar ao vivo
+            </a>
           </Button>
-        ) : null}
+        )}
       </div>
 
-      {showFrame && auction.presencialUrl ? (
+      {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
+
+      {showFrame && frameUrl ? (
         <div className="mt-3">
           <div className="overflow-hidden rounded-md border border-border">
             <iframe
-              src={auction.presencialUrl}
+              src={frameUrl}
               title={`Pregão ao vivo — ${auction.house}`}
               className="h-[420px] w-full bg-background"
-              referrerPolicy="no-referrer"
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
             />
           </div>
           <p className="mt-1.5 text-xs text-muted-foreground">
-            Prévia em branco? A casa bloqueia a incorporação —{" "}
+            Aberto já logado na sua conta. Não carregou?{" "}
+            <button
+              type="button"
+              onClick={openInTab}
+              className="font-medium text-primary hover:underline"
+            >
+              abrir em nova aba
+            </button>{" "}
+            ou{" "}
             <a
-              href={auction.presencialUrl}
+              href={watchUrl}
               target="_blank"
               rel="noreferrer"
               className="font-medium text-primary hover:underline"
             >
-              abrir em nova aba
+              no site da casa (deslogado)
             </a>
             .
           </p>

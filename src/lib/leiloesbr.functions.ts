@@ -62,6 +62,26 @@ export const getTodayAuctions = createServerFn({ method: "GET" })
     return await listTodayAuctions();
   });
 
+/**
+ * Emite a URL do PROXY autenticado para abrir o pregão presencial JÁ LOGADO dentro
+ * do app (iframe ou nova aba). Recebe a `presencialUrl` da casa e devolve um caminho
+ * no nosso domínio (`/api/live/...`) com um token de curta duração. Só o e-mail
+ * autorizado consegue emitir.
+ */
+export const openLiveAuction = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { url?: string } | undefined) => {
+    const url = typeof input?.url === "string" ? input.url.trim() : "";
+    if (!url) throw new Error("URL do pregão obrigatória.");
+    return { url };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { buildLiveProxyUrl } = await import("./leiloesbr-live.server");
+    return { proxyUrl: await buildLiveProxyUrl(data.url) };
+  });
+
 // Preenche o nº do lote (via catálogo da casa) em blocos de leilões, para caber no
 // tempo do servidor. O cliente chama em laço até `remaining` chegar a 0.
 export const enrichLotes = createServerFn({ method: "POST" })
