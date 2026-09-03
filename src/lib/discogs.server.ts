@@ -106,7 +106,8 @@ export function extractYear(text: string): number | null {
 
 /**
  * Quebra o `album` da IA ("Artista - Álbum (1970)") em {artista, título, ano}. Tolerante:
- * separa no primeiro travessão/hífen; sem separador, tudo vira título. Remove o "(ano)".
+ * separa no primeiro travessão/hífen/barra (o modelo às vezes devolve "Artista / Álbum"
+ * no lugar do " - " pedido); sem separador, tudo vira título. Remove o "(ano)".
  */
 export function parseAlbum(album: string): ReleaseTarget {
   const year = extractYear(album);
@@ -114,7 +115,7 @@ export function parseAlbum(album: string): ReleaseTarget {
     .replace(/\((?:\s*\d{4}\s*)\)/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  const parts = s.split(/\s[-–—:]\s/);
+  const parts = s.split(/\s[-–—:/]\s/);
   if (parts.length >= 2 && parts[0].trim()) {
     const artist = parts[0].trim();
     const title = parts.slice(1).join(" - ").trim();

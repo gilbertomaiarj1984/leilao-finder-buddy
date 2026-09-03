@@ -3,7 +3,10 @@ import { bidIsWinning, normalizeForMatch, parsePrice, titleCase } from "@/lib/vi
 /**
  * Quebra o `album` da IA ("Artista - Álbum (1970)") em {artist, album, year}. Versão
  * client-safe (espelha `parseAlbum`/`extractYear` de `discogs.server.ts`, que não pode
- * ser importado no cliente): separa no 1º travessão/hífen/dois-pontos e extrai o ano.
+ * ser importado no cliente): separa no 1º travessão/hífen/dois-pontos/barra e extrai o
+ * ano. O modelo às vezes devolve "Artista / Álbum" em vez do " - " pedido, então " / "
+ * (com espaços) também conta como separador — sem isso o artista caía no heurístico do
+ * título ("LP: Artista: X"), que rendia o literal "Artista" e agrupava tudo errado.
  * Sem separador, `artist` fica null e tudo vira `album`.
  */
 export function parseAiAlbum(album: string | null | undefined): {
@@ -19,7 +22,7 @@ export function parseAiAlbum(album: string | null | undefined): {
     .replace(/\((?:\s*\d{4}\s*)\)/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  const parts = s.split(/\s[-–—:]\s/);
+  const parts = s.split(/\s[-–—:/]\s/);
   if (parts.length >= 2 && parts[0]!.trim()) {
     const artist = parts[0]!.trim();
     const rest = parts.slice(1).join(" - ").trim();

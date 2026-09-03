@@ -124,6 +124,10 @@ const UNCLASSIFIED_HINTS = [
   "selecao",
 ];
 
+// Rótulos de campo que aparecem no próprio título ("Artista: X | Album: Y") e nunca são
+// nomes de artista — usados para descartar candidatos espúrios em `extractArtist`.
+const LABEL_WORDS = new Set(["artista", "album", "albuns", "titulo", "faixa", "faixas"]);
+
 const PREFIX_PATTERNS: RegExp[] = [
   /^lote\s*(n?[ºo°]?\s*\d+)?\s*[-:–]?\s*/i,
   /^\d+\s*(lps?|discos?|vinis|compactos?)\b\s*[-:–]?\s*/i,
@@ -170,6 +174,10 @@ export function extractArtist(title: string): string {
   if (normCandidate.length < 3) return "";
   if (normCandidate.split(" ").length > 5) return "";
   if (/^\d+$/.test(normCandidate)) return "";
+  // Títulos no formato "LP: Artista: X | Album: Y" deixam o rótulo "Artista"/"Álbum"
+  // como 1º token antes do ":"; nunca é um nome de artista real — descarta para não
+  // criar um grupo espúrio "Artista" (o valor real vem da identificação da IA).
+  if (LABEL_WORDS.has(normCandidate)) return "";
   if (UNCLASSIFIED_HINTS.some((hint) => normCandidate.includes(hint))) return "";
 
   return titleCase(candidate);
