@@ -1,5 +1,4 @@
 import { titleHash } from "./ai-eval.server";
-import type { LotAiRow } from "./lot-ai.server";
 import type { VinylLot } from "./vinyl-parse";
 
 /** Linha da tabela `lot_market` (âncora de mercado do Discogs por lote). */
@@ -101,17 +100,18 @@ export async function upsertLotMarket(rows: LotMarketRow[]): Promise<number> {
 }
 
 /**
- * Seleciona lotes para consultar no Discogs: precisam ter **avaliação de IA** (para ter o
- * `album` identificado) e ainda **não** ter uma linha de `lot_market` com o mesmo `basis`
- * (identificação inalterada). Teto por rodada.
+ * Seleciona lotes para consultar no Discogs: precisam ter um **álbum identificado**
+ * (`albumRows` = merge de `lot_ai` + `lot_ident`, ver cron `step=market`) e ainda
+ * **não** ter uma linha de `lot_market` com o mesmo `basis` (identificação inalterada).
+ * Teto por rodada.
  */
 export function selectLotsForMarket(
   lots: Pick<VinylLot, "id" | "title" | "price">[],
-  aiRows: Pick<LotAiRow, "id" | "album">[],
+  albumRows: { id: string; album: string | null }[],
   marketRows: Pick<LotMarketRow, "id" | "basis">[],
   max: number,
 ): MarketTarget[] {
-  const albumById = new Map(aiRows.map((r) => [r.id, r.album]));
+  const albumById = new Map(albumRows.map((r) => [r.id, r.album]));
   const basisById = new Map(marketRows.map((r) => [r.id, r.basis]));
   const out: MarketTarget[] = [];
   for (const lot of lots) {

@@ -1,4 +1,57 @@
-import { bidIsWinning, normalizeForMatch, parsePrice } from "@/lib/vinyl-parse";
+import { bidIsWinning, normalizeForMatch, parsePrice, titleCase } from "@/lib/vinyl-parse";
+
+/**
+ * Quebra o `album` da IA ("Artista - Álbum (1970)") em {artist, album, year}. Versão
+ * client-safe (espelha `parseAlbum`/`extractYear` de `discogs.server.ts`, que não pode
+ * ser importado no cliente): separa no 1º travessão/hífen/dois-pontos e extrai o ano.
+ * Sem separador, `artist` fica null e tudo vira `album`.
+ */
+export function parseAiAlbum(album: string | null | undefined): {
+  artist: string | null;
+  album: string | null;
+  year: number | null;
+} {
+  const raw = (album ?? "").trim();
+  if (!raw) return { artist: null, album: null, year: null };
+  const yearMatch = raw.match(/\b(19|20)\d{2}\b/);
+  const year = yearMatch ? Number(yearMatch[0]) : null;
+  let s = raw
+    .replace(/\((?:\s*\d{4}\s*)\)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const parts = s.split(/\s[-–—:]\s/);
+  if (parts.length >= 2 && parts[0]!.trim()) {
+    const artist = parts[0]!.trim();
+    const rest = parts.slice(1).join(" - ").trim();
+    return { artist: artist || null, album: rest || null, year };
+  }
+  s = s
+    .replace(/\b(19|20)\d{2}\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { artist: null, album: s || null, year };
+}
+
+/**
+ * Formato PADRÃO de exibição do artista/álbum sugerido pela IA: `Artista — Álbum (Ano)`.
+ * Aplica `titleCase` no artista; usa `fallbackYear` (ex.: `market.year`) quando o texto
+ * da IA não traz o ano. Sem artista, mostra só o álbum; string vazia quando não há nada.
+ */
+export function formatAiAlbum(
+  album: string | null | undefined,
+  fallbackYear?: number | null,
+): string {
+  const parsed = parseAiAlbum(album);
+  if (!parsed.artist && !parsed.album) return (album ?? "").trim();
+  const year = parsed.year ?? fallbackYear ?? null;
+  const artist = parsed.artist ? titleCase(parsed.artist) : null;
+  const core = artist
+    ? parsed.album
+      ? `${artist} — ${parsed.album}`
+      : artist
+    : (parsed.album ?? "");
+  return year ? `${core} (${year})` : core;
+}
 
 /** Avaliação da IA consumida pela UI (o que compõe a nota do lote). */
 export type LotAi = {

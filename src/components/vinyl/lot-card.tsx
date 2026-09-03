@@ -2,7 +2,7 @@ import { ExternalLink, Eye, EyeOff, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
-import type { LotAi, LotMarket } from "@/components/vinyl/ai-score-utils";
+import { formatAiAlbum, type LotAi, type LotMarket } from "@/components/vinyl/ai-score-utils";
 import { bidIsWinning } from "@/lib/vinyl-parse";
 
 export type CardLot = {
@@ -28,6 +28,7 @@ export function LotCard({
   bidStatus,
   ai,
   market,
+  album,
   onEditTags,
 }: {
   lot: CardLot;
@@ -37,8 +38,13 @@ export function LotCard({
   bidStatus?: string | null;
   ai?: LotAi;
   market?: LotMarket;
+  // Artista/álbum identificado pela IA (avaliação completa OU identificação simples),
+  // já resolvido pelo pai. Priorizado sobre o título quando existir.
+  album?: string | null;
   onEditTags?: (next: string[]) => void;
 }) {
+  // Linha padrão de identificação da IA (Artista — Álbum (Ano)), quando houver.
+  const aiLabel = album ? formatAiAlbum(album, market?.year) : "";
   // Cores (mesma regra do painel): meu lance ganhando = verde; meu lance coberto = vermelho;
   // apenas vigiado = amarelo; caso contrário, borda neutra.
   const hasBid = bidStatus !== undefined && bidStatus !== null && bidStatus !== "";
@@ -59,6 +65,18 @@ export function LotCard({
       className={`relative flex flex-col overflow-hidden rounded-md border bg-card ${cardClass}`}
     >
       {ai ? <ScoreCorner ai={ai} market={market} price={lot.price} /> : null}
+      {/* Nº do lote no canto superior ESQUERDO, espelhando a nota da IA (canto direito).
+          Visão padrão de todos os cards. */}
+      {lot.lote ? (
+        <div className="absolute left-2 top-2 z-10">
+          <span
+            className="rounded-full bg-secondary px-2 py-0.5 text-xs font-bold text-foreground shadow"
+            title="Nº do lote"
+          >
+            Lote {lot.lote}
+          </span>
+        </div>
+      ) : null}
       <a href={lot.url} target="_blank" rel="noreferrer" className="block bg-secondary">
         {lot.image ? (
           <img
@@ -74,14 +92,25 @@ export function LotCard({
         )}
       </a>
       <div className="flex flex-1 flex-col gap-3 p-4">
-        <p className="line-clamp-3 text-sm leading-snug text-foreground">{lot.title}</p>
+        {/* Artista/álbum da IA (mais acertivo) em destaque; o título original vira
+            linha secundária. Sem identificação, mostra só o título como antes. */}
+        {aiLabel ? (
+          <div>
+            <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
+              {aiLabel}
+            </p>
+            <p
+              className="line-clamp-2 text-xs leading-snug text-muted-foreground"
+              title={lot.title}
+            >
+              {lot.title}
+            </p>
+          </div>
+        ) : (
+          <p className="line-clamp-3 text-sm leading-snug text-foreground">{lot.title}</p>
+        )}
         {ai?.tags?.length ? <LotTags tags={ai.tags} onEdit={onEditTags} /> : null}
         <div className="mt-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          {lot.lote ? (
-            <span className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground">
-              Lote {lot.lote}
-            </span>
-          ) : null}
           <span className="font-semibold text-primary" title="Valor atual">
             Atual {currentPrice || "sem valor"}
           </span>

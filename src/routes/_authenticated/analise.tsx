@@ -44,6 +44,7 @@ import {
   dealTone,
   discogsUrl,
   fmtMoney,
+  formatAiAlbum,
   marketDeal,
   RARITY_LEGEND,
   rowStatusTone,
@@ -61,6 +62,7 @@ import {
   addWantlistItem,
   deleteWantlistItem,
   getLotAi,
+  getLotIdent,
   getLotMarket,
   getUserInterests,
   getVinylLots,
@@ -107,24 +109,53 @@ const selectClass =
 
 type WantHit = { work: string; year: number | null; score: number };
 
-function LotTitle({ lot, want }: { lot: VinylLot; want?: WantHit | null }) {
+function LotTitle({
+  lot,
+  want,
+  album,
+  marketYear,
+}: {
+  lot: VinylLot;
+  want?: WantHit | null;
+  album?: string | null;
+  marketYear?: number | null;
+}) {
   const wantTitle = want
     ? `Sondagem: ${want.work}${want.year ? ` (${want.year})` : ""} · ${Math.round(want.score * 100)}%`
     : undefined;
+  // Artista/álbum da IA (mais acertivo) em destaque; o título original vira linha secundária.
+  const aiLabel = album ? formatAiAlbum(album, marketYear) : "";
   return (
     <span className="inline-flex items-start gap-1" title={wantTitle}>
       {want ? (
         <Target className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-label={wantTitle} />
       ) : null}
-      <a
-        href={lot.url}
-        target="_blank"
-        rel="noreferrer"
-        className="line-clamp-2 text-foreground hover:text-primary hover:underline"
-        title={lot.title}
-      >
-        {lot.title}
-      </a>
+      {aiLabel ? (
+        <span className="flex min-w-0 flex-col">
+          <a
+            href={lot.url}
+            target="_blank"
+            rel="noreferrer"
+            className="line-clamp-2 font-medium text-foreground hover:text-primary hover:underline"
+            title={lot.title}
+          >
+            {aiLabel}
+          </a>
+          <span className="line-clamp-1 text-xs text-muted-foreground" title={lot.title}>
+            {lot.title}
+          </span>
+        </span>
+      ) : (
+        <a
+          href={lot.url}
+          target="_blank"
+          rel="noreferrer"
+          className="line-clamp-2 text-foreground hover:text-primary hover:underline"
+          title={lot.title}
+        >
+          {lot.title}
+        </a>
+      )}
     </span>
   );
 }
@@ -561,6 +592,7 @@ function AnalisePage() {
   const queryClient = useQueryClient();
   const fetchLots = useServerFn(getVinylLots);
   const fetchLotAi = useServerFn(getLotAi);
+  const fetchLotIdent = useServerFn(getLotIdent);
   const fetchLotMarket = useServerFn(getLotMarket);
   const fetchInterests = useServerFn(getUserInterests);
   const saveInterests = useServerFn(setUserInterests);
@@ -606,6 +638,12 @@ function AnalisePage() {
   const lotAiQuery = useQuery({
     queryKey: ["lot-ai"] as const,
     queryFn: () => fetchLotAi(),
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const lotIdentQuery = useQuery({
+    queryKey: ["lot-ident"] as const,
+    queryFn: () => fetchLotIdent(),
     staleTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -764,12 +802,21 @@ function AnalisePage() {
     () => (lotAiQuery.data ?? []).map((r) => `${r.id}:${r.album ?? ""}`).join("|"),
     [lotAiQuery.data],
   );
+  const identAlbumSig = useMemo(
+    () => (lotIdentQuery.data ?? []).map((r) => `${r.id}:${r.album ?? ""}`).join("|"),
+    [lotIdentQuery.data],
+  );
+  // Álbum RESOLVIDO por lote: prefere a avaliação completa (`lot_ai`); senão a
+  // identificação simplificada (`lot_ident`). Identidade estável pelas assinaturas
+  // acima (evita recomputar o casamento pesado da sondagem ao editar uma tag).
   const albumById = useMemo(() => {
     const map = new Map<string, string | null>();
-    for (const r of lotAiQuery.data ?? []) map.set(r.id, r.album ?? null);
+    for (const r of lotIdentQuery.data ?? []) if (r.album) map.set(r.id, r.album);
+    for (const r of lotAiQuery.data ?? []) if (r.album) map.set(r.id, r.album);
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiAlbumSig]);
+  }, [aiAlbumSig, identAlbumSig]);
+  const albumFor = (lot: VinylLot): string | null => albumById.get(lot.id) ?? null;
   const matchesInterest = useMemo(
     () => buildInterestMatcher(interestsQuery.data ?? []),
     [interestsQuery.data],
@@ -848,7 +895,8 @@ function AnalisePage() {
     const max = scoreMax.trim() ? Number(scoreMax) : null;
     const scoreActive = min !== null || max !== null;
     return allLots.filter((l) => {
-      if (q && !normalizeForMatch(l.title).includes(q)) return false;
+      if (q && !normalizeForMatch(`${l.title} ${albumById.get(l.id) ?? ""}`).includes(q))
+        return false;
       if (houseFilter && l.house !== houseFilter) return false;
       if (dayFilter && l.dayKey !== dayFilter) return false;
       if (onlyWant && !wantByLot.has(l.id)) return false;
@@ -875,6 +923,7 @@ function AnalisePage() {
     scoreMin,
     scoreMax,
     aiById,
+    albumById,
     wantByLot,
     watchedIds,
     bidStatusById,
@@ -1189,7 +1238,12 @@ function AnalisePage() {
                                 />
                               </td>
                               <td className="px-3 py-2">
-                                <LotTitle lot={lot} want={wantedLot(lot)} />
+                                <LotTitle
+                                  lot={lot}
+                                  want={wantedLot(lot)}
+                                  album={albumFor(lot)}
+                                  marketYear={marketFor(lot)?.year ?? null}
+                                />
                                 <LotSummary
                                   ai={ai}
                                   market={marketFor(lot)}
@@ -1402,7 +1456,12 @@ function AnalisePage() {
                                                   {lot.lote || "—"}
                                                 </td>
                                                 <td className="px-2 py-2">
-                                                  <LotTitle lot={lot} want={wantedLot(lot)} />
+                                                  <LotTitle
+                                                    lot={lot}
+                                                    want={wantedLot(lot)}
+                                                    album={albumFor(lot)}
+                                                    marketYear={marketFor(lot)?.year ?? null}
+                                                  />
                                                   <LotSummary
                                                     ai={ai}
                                                     market={marketFor(lot)}

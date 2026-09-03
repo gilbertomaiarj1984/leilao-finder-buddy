@@ -35,6 +35,7 @@ export function BidHouseSections({
   loteById,
   priceById,
   nextBidById,
+  albumById,
   onToggle,
 }: {
   houses: { house: string; houseUrl: string; lots: BidCard[] }[];
@@ -42,6 +43,7 @@ export function BidHouseSections({
   loteById: Map<string, string>;
   priceById: Map<string, string>;
   nextBidById: Map<string, string>;
+  albumById?: Map<string, string>;
   onToggle: (bid: { idPeca: string; idLeilao: string; base: string; watch: boolean }) => void;
 }) {
   return (
@@ -86,6 +88,7 @@ export function BidHouseSections({
                 }}
                 busy={pending === bid.idPeca}
                 bidStatus={bid.status}
+                album={albumById?.get(bid.id) ?? null}
                 onToggle={() =>
                   onToggle({
                     idPeca: bid.idPeca,

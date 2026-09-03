@@ -11,6 +11,7 @@
  */
 import { parsePrice, type VinylLot } from "./vinyl-parse";
 import type { LotAiRow } from "./lot-ai.server";
+import type { LotIdentRow } from "./lot-ident.server";
 
 /** Modelo mais barato do Claude (US$1/US$5 por 1M in/out; metade disso no batch). */
 export const AI_MODEL = "claude-haiku-4-5";
@@ -227,6 +228,169 @@ export async function collectEvalBatch(
       album: parsed.album,
       reason: parsed.reason,
       tags: parsed.tags,
+      model: AI_MODEL,
+    });
+  }
+  return { done: true, rows };
+}
+
+// ---------------------------------------------------------------------------
+// Identificação SIMPLIFICADA (camada barata, roda para TODOS os lotes)
+//
+// Diferente da avaliação completa acima (nota/raridade/oportunidade, gated pelo
+// modo), esta passada só descobre **artista/álbum/ano** e alimenta a exibição, a
+// busca, o filtro por artista e a correlação com o Discogs. 1ª passada só com o
+// TÍTULO (barata); quando a confiança vem "baixa", uma 2ª passada usa a CAPA.
+// ---------------------------------------------------------------------------
+
+const CONFIDENCES = ["alta", "media", "baixa"] as const;
+
+const IDENT_SYSTEM_PROMPT =
+  "Você identifica discos de vinil (artista e álbum) que vão a leilão no Brasil. " +
+  "Use seu conhecimento de música e discografia. Responda SOMENTE com um objeto JSON, " +
+  "sem nenhum texto fora do JSON.";
+
+/** Prompt de identificação de UM lote. Sem imagem por padrão (só o título). */
+export function buildIdentUserPrompt(lot: EvalLot, opts?: { withImage?: boolean }): string {
+  const withImage = Boolean(opts?.withImage) && Boolean(usableImage(lot.image));
+  const info = { titulo: lot.title, casa: lot.house, tem_imagem: withImage };
+  return (
+    "Identifique este disco de vinil e devolva um objeto JSON com EXATAMENTE estas chaves:\n" +
+    '- "album": "Artista - Álbum" identificado (use " - " entre artista e álbum; "" se não souber)\n' +
+    '- "year": ano de lançamento (inteiro) ou null se não souber\n' +
+    '- "confidence": "alta" | "media" | "baixa" (sua confiança na identificação)\n\n' +
+    (withImage
+      ? "Use a imagem da capa para identificar — o título do leilão costuma ser genérico.\n"
+      : "Baseie-se apenas no título abaixo.\n") +
+    "Disco:\n" +
+    JSON.stringify(info) +
+    "\n\nResponda só com o objeto JSON."
+  );
+}
+
+/** Parâmetros de mensagem para identificar UM lote. Inclui a capa só quando `withImage`. */
+export function buildIdentParams(lot: EvalLot, withImage: boolean) {
+  const content: ContentBlock[] = [];
+  const img = withImage ? usableImage(lot.image) : null;
+  if (img) content.push({ type: "image", source: { type: "url", url: img } });
+  content.push({ type: "text", text: buildIdentUserPrompt(lot, { withImage }) });
+  return {
+    model: AI_MODEL,
+    max_tokens: 120,
+    system: IDENT_SYSTEM_PROMPT,
+    messages: [{ role: "user" as const, content }],
+  };
+}
+
+/** Extrai {album, year, confidence} do texto devolvido. Null quando não dá para aproveitar. */
+export function parseIdentObject(
+  text: string,
+): { album: string | null; year: number | null; confidence: string | null } | null {
+  if (!text) return null;
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  let obj: Record<string, unknown>;
+  try {
+    obj = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const album =
+    typeof obj["album"] === "string" && obj["album"].trim()
+      ? obj["album"].trim().slice(0, 200)
+      : null;
+  const yearRaw = Number(obj["year"]);
+  const year =
+    Number.isFinite(yearRaw) && yearRaw >= 1900 && yearRaw <= 2100 ? Math.round(yearRaw) : null;
+  const c = typeof obj["confidence"] === "string" ? obj["confidence"].toLowerCase().trim() : "";
+  const confidence = (CONFIDENCES as readonly string[]).includes(c) ? c : null;
+  if (album === null && year === null && confidence === null) return null;
+  return { album, year, confidence };
+}
+
+/**
+ * Lotes que ainda precisam de identificação: sem linha em `lot_ident` ou com
+ * `title_hash` divergente (título mudou). Mesma lógica de `selectLotsToEvaluate`.
+ */
+export function selectLotsToIdentify(
+  lots: Pick<VinylLot, "id" | "title" | "price" | "house" | "image">[],
+  identRows: Pick<LotIdentRow, "id" | "title_hash">[],
+  max = MAX_PER_ROUND,
+): EvalLot[] {
+  return selectLotsToEvaluate(lots, identRows, max);
+}
+
+/**
+ * Lotes para RE-identificar usando a CAPA: já passaram pela identificação por título
+ * (`source='title'`), vieram com confiança **baixa** e têm imagem utilizável. Após a
+ * passada com imagem a linha vira `source='image'` e não é selecionada de novo.
+ */
+export function selectLotsToReident(
+  lots: Pick<VinylLot, "id" | "title" | "price" | "house" | "image">[],
+  identRows: Pick<LotIdentRow, "id" | "confidence" | "source">[],
+  max = MAX_PER_ROUND,
+): EvalLot[] {
+  const byId = new Map(identRows.map((r) => [r.id, r]));
+  const out: EvalLot[] = [];
+  for (const lot of lots) {
+    if (!lot.id || !lot.title) continue;
+    if (!usableImage(lot.image)) continue;
+    const row = byId.get(lot.id);
+    if (!row || row.source !== "title" || row.confidence !== "baixa") continue;
+    out.push({
+      id: lot.id,
+      title: lot.title,
+      price: lot.price,
+      house: lot.house,
+      image: lot.image,
+    });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** Cria um batch de identificação (1 request por lote). `withImage` decide o uso da capa. */
+export async function submitIdentBatch(lots: EvalLot[], withImage: boolean): Promise<SubmitResult> {
+  const client = await getClient();
+  const hashes: Record<string, string> = {};
+  const requests = lots.map((lot) => {
+    hashes[lot.id] = titleHash(lot.title);
+    return { custom_id: lot.id, params: buildIdentParams(lot, withImage) };
+  });
+  const batch = await client.messages.batches.create({ requests: requests as never });
+  return { batchId: batch.id, hashes, count: requests.length };
+}
+
+export type CollectIdentResult = { done: boolean; rows: LotIdentRow[] };
+
+/**
+ * Coleta um batch de identificação. `source` marca de onde veio a identificação
+ * ('title' ou 'image'), para a lógica de escalonamento (só reidentifica os 'title'
+ * de baixa confiança).
+ */
+export async function collectIdentBatch(
+  batchId: string,
+  hashes: Record<string, string>,
+  source: "title" | "image",
+): Promise<CollectIdentResult> {
+  const client = await getClient();
+  const batch = await client.messages.batches.retrieve(batchId);
+  if (batch.processing_status !== "ended") return { done: false, rows: [] };
+
+  const rows: LotIdentRow[] = [];
+  for await (const result of await client.messages.batches.results(batchId)) {
+    if (result.result.type !== "succeeded") continue;
+    const parsed = parseIdentObject(messageText(result.result.message));
+    if (!parsed) continue;
+    const id = result.custom_id;
+    rows.push({
+      id,
+      title_hash: hashes[id] ?? "",
+      album: parsed.album,
+      year: parsed.year,
+      confidence: parsed.confidence,
+      source,
       model: AI_MODEL,
     });
   }

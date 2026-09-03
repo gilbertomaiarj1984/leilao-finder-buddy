@@ -719,3 +719,90 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
 - **Reprocessar:** o `basis` (hash de album|título) não muda, então os matches ERRADOS já
   gravados **não** são reconsultados sozinhos. Para refazer, limpar as linhas de `lot_market`
   (ex.: `DELETE FROM lot_market;` ou só as `matched=false`/suspeitas) e rodar o `refresh.yml`.
+
+## Sessão 2026-09-03 — Cards do lote + identificação simplificada da IA (v0.12.0)
+
+> Branch `claude/lote-card-improvements-5vygov`. Três ajustes de UX nos cards + uma
+> **camada nova de identificação** para priorizar o artista/álbum da IA em toda a base.
+
+### UI dos cards (itens pedidos)
+
+1. **Marcar casa como verificada agora FECHA a casa.** `toggleVerified` (`index.tsx`)
+   remove a chave de `openHouses` ao **marcar** (não mexe ao desmarcar). A casa continua
+   migrando para a seção "Já verificadas".
+2. **Nº do lote no canto superior ESQUERDO do card**, espelhando a nota da IA (canto
+   direito). Selo neutro `absolute left-2 top-2 z-10` no `LotCard`; o chip "Lote N" saiu
+   do rodapé (não duplicar). Visão padrão de todos os cards (o `LotCard` é o único).
+3. **Artista/álbum da IA acima do título, priorizado.** O `album` da IA (campo único
+   "Artista - Álbum") é exibido em destaque acima do título (que vira linha secundária),
+   entra na **busca** e no **filtro/agrupamento por artista**.
+
+### Helpers de formato padrão (`ai-score-utils.ts`, puros/client-safe)
+
+- `parseAiAlbum(album) → {artist, album, year}` — espelha `parseAlbum`/`extractYear` de
+  `discogs.server.ts` (que é server-only e não pode ser importado no cliente): separa no
+  1º ` - `/`–`/`:`, extrai `(19xx|20xx)`; **artista só quando houve separação real**.
+- `formatAiAlbum(album, fallbackYear?)` — formato PADRÃO **`Artista — Álbum (Ano)`**
+  (`titleCase` no artista; usa `market.year` como fallback do ano). Usado no `LotCard` e
+  no `LotTitle` da Análise.
+
+### Busca + filtro por artista da IA
+
+- **Álbum resolvido por lote** = `lot_ai.album` (avaliação completa) **??** `lot_ident.album`
+  (identificação simples). Em `index.tsx`/`analise.tsx`: mapas `albumById` (memoizado por
+  assinatura estável, para não disparar o casamento pesado da sondagem ao editar tag).
+- Busca: `matchesSearch` (dia), `watchedMatchesSearch`/`bidMatchesSearch` (param opcional
+  `album` novo em `grouping.ts`) e o `filtered` da Análise concatenam o álbum resolvido.
+- Filtro por artista: `effectiveArtist(lot) = parseAiAlbum(albumResolvido).artist ||
+  lot.artist`, aplicado como override de `artist` ao montar `rawDay` — `groupByHouse`/
+  `groupByArtist`/`artistOptions` e os predicados de filtro passam a usar o artista da IA
+  **sem alterar `grouping.ts`** (que continua puro/por-lote).
+
+### Camada de identificação simplificada (nova) — `lot_ident`
+
+- **Por quê:** a avaliação completa (`lot_ai`: nota/raridade/oportunidade) segue **gated
+  pelo modo** (padrão: vigiados + lances). Para ter artista/álbum em **todos** os cards,
+  uma passada **barata** identifica só artista/álbum/ano da base inteira, sem rodar a
+  avaliação completa.
+- **Tabela `lot_ident`** (`supabase/setup.sql` + `types.ts` à mão; RLS só service_role):
+  `id` (= lots.id), `title_hash`, `album`, `year`, `confidence` (`alta|media|baixa`),
+  `source` (`title|image`), `model`, `evaluated_at`. **Aplicar o `setup.sql`** (não é
+  auto-migrado).
+- **IA** (`ai-eval.server.ts`, isolado da avaliação completa): `buildIdentUserPrompt`/
+  `buildIdentParams` (max_tokens ~120), `parseIdentObject` ({album,year,confidence}),
+  `selectLotsToIdentify` (sem linha ou título mudado → passada **título**),
+  `selectLotsToReident` (`source='title'` + `confidence='baixa'` + tem imagem → passada
+  **capa**), `submitIdentBatch`/`collectIdentBatch` (Batches API, gravam em `lot_ident`).
+  **Escalonamento título→capa "apenas quando necessário"** (baixa confiança).
+- **Persistência** `src/lib/lot-ident.server.ts` (`getAllLotIdent`/`upsertLotIdent`);
+  server fn `getLotIdent` (`leiloesbr.functions.ts`) → query `["lot-ident"]` na UI.
+- **Cron** novo `step=aiident` (SEM gate de modo; estado próprio `app_state.ai_ident_batch`
+  via `getPendingAiIdentBatch`/`setPendingAiIdentBatch`): coleta pendente → título →
+  reident por capa. Laço `aiident` no `refresh.yml` **antes** do `market`.
+- **Discogs usa o identificado:** `step=market` mescla álbum de `lot_ai` (preferido) +
+  `lot_ident`; `selectLotsForMarket` passou a receber a lista de álbuns mesclada
+  (`{id, album}[]`) — antes só `aiRows`. Assim o Discogs casa também lotes só identificados.
+
+### Validação
+
+- `bunx tsc --noEmit`, `bun run lint` (só os 2 warnings pré-existentes de shadcn),
+  `bun run build` — verdes. Funções puras testadas com `bun -e` (`parseAiAlbum`/
+  `formatAiAlbum`, `parseIdentObject`, `selectLotsToIdentify`/`selectLotsToReident`).
+
+### Pendências de config (rodar no Supabase / GitHub)
+
+- **Aplicar o `setup.sql`** para criar a tabela `lot_ident` (o schema não é auto-migrado).
+  O `setup.sql` é re-executável (tudo `IF NOT EXISTS`); ou rodar só o bloco da tabela:
+  ```sql
+  CREATE TABLE IF NOT EXISTS public.lot_ident (
+    id text PRIMARY KEY, title_hash text NOT NULL, album text, year integer,
+    confidence text, source text, model text,
+    evaluated_at timestamptz NOT NULL DEFAULT now()
+  );
+  ALTER TABLE public.lot_ident ENABLE ROW LEVEL SECURITY;
+  REVOKE ALL ON public.lot_ident FROM anon, authenticated;
+  GRANT ALL ON public.lot_ident TO service_role;
+  ```
+- Depois **disparar o `refresh.yml`** (Actions → Run workflow) para popular `lot_ident`
+  (`step=aiident`) e conferir o `step=market` casando lotes só identificados. Requer
+  `ANTHROPIC_API_KEY` já configurado (senão o passo faz no-op).

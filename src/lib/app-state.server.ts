@@ -4,6 +4,7 @@ const BASELINE_KEY = "dashboard_baseline";
 const VERIFIED_HOUSES_KEY = "verified_houses";
 const USER_INTERESTS_KEY = "user_interests";
 const AI_BATCH_KEY = "ai_batch";
+const AI_IDENT_BATCH_KEY = "ai_ident_batch";
 const AI_MODE_KEY = "ai_mode";
 
 export type Baseline = { prices: Record<string, string>; seenAt: string | null };
@@ -224,5 +225,69 @@ export async function setPendingAiBatch(batch: PendingAiBatch | null): Promise<v
   if (error) {
     console.error("[app-state] não foi possível gravar o batch pendente", error);
     throw new Error(`Não foi possível gravar o batch pendente: ${error.message}`);
+  }
+}
+
+// Batch da IDENTIFICAÇÃO simplificada (camada `lot_ident`), separado do de avaliação.
+// `source` diz se a passada foi por título ou por capa, para a coleta gravar o `source`
+// correto e o escalonamento título→capa funcionar.
+export type PendingAiIdentBatch = {
+  batchId: string;
+  submittedAt: string;
+  hashes: Record<string, string>;
+  source: "title" | "image";
+};
+
+/** Batch de identificação em andamento (para o cron coletar). null quando não há. */
+export async function getPendingAiIdentBatch(): Promise<PendingAiIdentBatch | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("app_state")
+      .select("value")
+      .eq("key", AI_IDENT_BATCH_KEY)
+      .maybeSingle();
+    if (error) throw error;
+    const value = data?.value;
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const v = value as Record<string, unknown>;
+      if (typeof v["batchId"] === "string" && v["batchId"]) {
+        const rawHashes = v["hashes"];
+        const hashes: Record<string, string> = {};
+        if (rawHashes && typeof rawHashes === "object" && !Array.isArray(rawHashes)) {
+          for (const [k, hv] of Object.entries(rawHashes as Record<string, unknown>)) {
+            if (typeof hv === "string") hashes[k] = hv;
+          }
+        }
+        const source = v["source"] === "image" ? "image" : "title";
+        return {
+          batchId: v["batchId"],
+          submittedAt: String(v["submittedAt"] ?? ""),
+          hashes,
+          source,
+        };
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error("[app-state] não foi possível ler o batch de identificação pendente", error);
+    return null;
+  }
+}
+
+export async function setPendingAiIdentBatch(batch: PendingAiIdentBatch | null): Promise<void> {
+  if (batch === null) {
+    const { error } = await supabaseAdmin.from("app_state").delete().eq("key", AI_IDENT_BATCH_KEY);
+    if (error) console.error("[app-state] não foi possível limpar o batch de identificação", error);
+    return;
+  }
+  const { error } = await supabaseAdmin
+    .from("app_state")
+    .upsert(
+      { key: AI_IDENT_BATCH_KEY, value: batch, updated_at: new Date().toISOString() },
+      { onConflict: "key" },
+    );
+  if (error) {
+    console.error("[app-state] não foi possível gravar o batch de identificação", error);
+    throw new Error(`Não foi possível gravar o batch de identificação: ${error.message}`);
   }
 }
