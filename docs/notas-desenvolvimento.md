@@ -577,10 +577,10 @@ embute `var loadData = { "data":[…], "listalotes":[…], "navinfo":[…] };`. 
 
 ### Pendências desta feature
 
-- [ ] **Aplicar o `wantlist_items` do `setup.sql`** no Supabase (o `setup.sql` é
-      re-executável; ou rode só o `CREATE TABLE IF NOT EXISTS wantlist_items` + índice/RLS/
-      grants). Sem isso, importar/gravar a sondagem dá erro.
+- [x] **Aplicar o `wantlist_items` do `setup.sql`** no Supabase — **aplicado em produção**
+      (2026-09-03); a importação/edição da sondagem grava sem erro.
 - [x] Merge da sondagem (PR #52, v0.6.0) + deploy na Vercel.
+- [x] Merge do casamento probabilístico (PR #53, v0.6.1) + deploy na Vercel.
 - [ ] Importar o rascunho real pela UI e conferir o 🎯/tooltip de % e o filtro "Só sondagem".
       Se o casamento pegar demais/de menos, ajustar `WANT_MATCH_THRESHOLD`/pesos em
       `wantlist-match.ts`.
@@ -1036,3 +1036,26 @@ lot.artist`, aplicado como override de `artist` ao montar `rawDay` — `groupByH
 > Observação: quando esta sessão rodou, a `main` estava em v0.10.0; ela avançou depois
 > (v0.11–v0.14) com features de outras sessões (controle de modo da IA, `lot_ident`,
 > categoria "Lote", leilões ao vivo). Os itens acima já estão na `main` atual.
+
+---
+
+## Sessão 2026-09-03 — Confirmação da sondagem em produção (handoff)
+
+> Continuidade da sessão que criou a sondagem. Sem código novo aqui: consolida o estado e
+> atualiza pendências. As mecânicas estão em "Sessão 2026-08-26 — Sondagem (wantlist) +
+> filtros da Análise" (v0.6.0/v0.6.1) acima.
+
+- **`wantlist_items` aplicada no Supabase** (SQL rodado pelo usuário) — importar/editar/
+  marcar adquirido e o casamento com os lotes gravam sem erro em produção. As pendências de
+  migração e de merge (PRs #52 e #53) ficaram **concluídas**.
+- **Estado do casamento:** probabilístico por **artista + disco + ano** (`wantlist-match.ts`,
+  limiar `WANT_MATCH_THRESHOLD = 0.8`); o 🎯 no título traz o tooltip
+  "Sondagem: obra (ano) · NN%". O `lotIdentity` junta título + artista + **álbum
+  identificado** (hoje vindo do `lot_ident`, via `albumById` na Análise) + `release_title`
+  do Discogs; os anos vêm do texto (regex) e do `lot_market.year`.
+- **Nota:** a sondagem **não pesa na nota da IA** — é destaque + filtro ("Só sondagem"),
+  como os interesses (⭐). Dar peso real na nota (bônus determinístico no ranking, ou mandar
+  a lista pro prompt da IA) segue em aberto, caso se queira.
+- **Recomendação:** rodar o `refresh.yml` mais vezes (passos `aieval`/`ident`/`market`)
+  melhora a precisão do casamento ao longo do tempo — quanto mais lotes com `album`/ano
+  identificados, mais sinais o `lotIdentity` tem para comparar.
