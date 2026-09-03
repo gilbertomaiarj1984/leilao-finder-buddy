@@ -285,11 +285,11 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
   - **Abrir JÁ LOGADO (proxy autenticado):** o iframe/nova aba não aponta mais direto para a casa
     (o navegador não teria o cookie do domínio dela → deslogado). Agora passa pelo **proxy reverso**
     `/api/live/<b64-origem>/<caminho>` (`leiloesbr-live.server.ts`, tratado no `server.ts` fora das
-    server functions, como o `/api/cron`). O servidor injeta a sessão logada da casa
-    (`getSessionCookieFor`) e **reescreve** as URLs (absolutas/protocolo-relativo/raiz + `url()` do
-    CSS) para tudo — assets, polling `LePregao`, `POST lote_fazerlance.asp` — continuar passando
-    pelo proxy. Botões: **"Entrar ao vivo (logado)"** (nova aba, abre `about:blank` no clique p/
-    driblar pop-up e depois aponta pro proxy) e **"Abrir aqui"** (iframe). Proteção: token **HMAC**
+    server functions, como o `/api/cron`). O servidor injeta a sessão da casa e **reescreve** as
+    URLs (absolutas/protocolo-relativo/raiz + `url()` do CSS) para tudo — assets, polling
+    `LePregao`, `POST lote_fazerlance.asp` — continuar passando pelo proxy. Botões: **"Entrar ao
+    vivo"** (nova aba, abre `about:blank` no clique p/ driblar pop-up e depois aponta pro proxy) e
+    **"Abrir aqui"** (iframe). Proteção: token **HMAC**
     de 8h (segredo `LIVE_PROXY_SECRET` → fallback `SUPABASE_SERVICE_ROLE_KEY`) emitido pela server
     function `openLiveAuction` (atrás do login do app) e guardado em cookie httpOnly `lp_auth` com
     `Path` amarrado à origem. Guard anti-SSRF: só https em host público. **Trade-off de segurança:**
@@ -297,6 +297,14 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
     `localStorage` do app (onde fica a sessão Supabase). Aceito por ser app de usuário único e a casa
     ser a plataforma em que o próprio usuário já loga; `sandbox` no iframe reduz a superfície.
     Fallback deslogado (link "no site da casa") permanece.
+  - **Auto-login é BEST-EFFORT (`getSessionCookieLenient`):** o `leiloesbr.com.br` é só o portal
+    AGREGADOR; o pregão roda no **site próprio de cada casa**, que pode ter login diferente (ex.:
+    `marcelinolivreiroleiloes.com.br` não tem o `login.asp` da plataforma → devolve HTML). Onde a
+    casa é da plataforma, entra logado; onde não é, o proxy **NÃO falha** — serve a página deslogada
+    (com uma sessão anônima semeada) e o usuário loga no **formulário nativo da casa dentro do
+    proxy**; o `Set-Cookie` da casa é absorvido no jar do servidor (`absorbSetCookie`) e a sessão
+    **persiste**. Por isso não se força re-login em 401/403 (destruiria uma sessão de login manual).
+    Só erro de rede na casa vira 502 (com o motivo real, escapado no HTML).
 - **Split do `index.tsx`:** lógica em `src/components/vinyl/` — `grouping.ts` (puros + tipos),
   `badges.tsx`, `filters.tsx`, `lot-card.tsx`, `bid-house-sections.tsx`, `live-auctions.tsx`,
   `ai-score.tsx` (UI) + `ai-score-utils.ts` (puros/client-safe — `parseAiAlbum`/`formatAiAlbum`,
@@ -365,7 +373,8 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.13.0 | Fix classificação IA (separador `/`) + categoria "Lote" + busca por relevância | #63/#64 |
 | v0.14.0 | Página **Ao vivo** (pregão presencial por casa) | #66 |
 | v0.15.0 | Pregão ao vivo **abre já logado** (proxy autenticado `/api/live`, sessão por origem, token HMAC) | #73 |
-| v0.15.1 | Login da casa: GET de aquecimento (semeia `ASPSESSIONID`) + erro real no proxy p/ diagnóstico | — |
+| v0.15.1 | Login da casa: GET de aquecimento (semeia `ASPSESSIONID`) + erro real no proxy p/ diagnóstico | #74 |
+| v0.15.2 | Auto-login best-effort: casa fora da plataforma abre deslogada p/ login manual (persistido) | — |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.

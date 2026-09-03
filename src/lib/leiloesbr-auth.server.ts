@@ -139,6 +139,28 @@ export async function getSessionCookie(force = false): Promise<string> {
 }
 
 /**
+ * Cookie da origem SEM nunca lançar: tenta o auto-login e, se ele falhar (ex.: a
+ * casa não é da plataforma leiloesbr e usa outro login), devolve ao menos uma
+ * sessão ANÔNIMA (o `ASPSESSIONID` semeado no GET). Assim a página do pregão sempre
+ * abre — deslogada quando preciso — e o LOGIN MANUAL do usuário dentro do proxy
+ * "cola" (o `Set-Cookie` da casa é absorvido no jar do servidor via `absorbSetCookie`).
+ * Devolve `{ cookie, loggedIn }`.
+ */
+export async function getSessionCookieLenient(
+  origin: string,
+): Promise<{ cookie: string; loggedIn: boolean }> {
+  try {
+    const cookie = await getSessionCookieFor(origin);
+    return { cookie, loggedIn: true };
+  } catch (error) {
+    console.error(`[leiloesbr] auto-login falhou em ${origin}; seguindo deslogado`, error);
+    // `performLogin` já semeia o jar (GET) antes do POST que falhou; garante mesmo assim.
+    if (!jars.get(origin)) await seedSession(origin);
+    return { cookie: jars.get(origin) ?? "", loggedIn: false };
+  }
+}
+
+/**
  * Absorve os `Set-Cookie` de uma resposta da casa no jar da origem, para manter a
  * sessão viva ao longo do pregão (o site rotaciona/renova cookies durante os lances).
  */
