@@ -1,6 +1,31 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { PendingWonLot } from "@/lib/collection.server";
+
+/** Normaliza um candidato duplicado vindo da UI (round-trip do resultado da varredura). */
+function normalizePending(input: Record<string, unknown> | undefined): PendingWonLot {
+  const s = (v: unknown) => (typeof v === "string" ? v : "");
+  const sn = (v: unknown) => (typeof v === "string" && v ? v : null);
+  const lotId = s(input?.lotId);
+  if (!lotId) throw new Error("lote inválido");
+  return {
+    lotId,
+    artist: s(input?.artist),
+    album: s(input?.album),
+    title: s(input?.title),
+    year: input?.year == null ? null : Number(input.year) || null,
+    image: sn(input?.image),
+    house: s(input?.house),
+    uf: s(input?.uf),
+    wonPrice: s(input?.wonPrice),
+    wonDate: sn(input?.wonDate),
+    marketLow: sn(input?.marketLow),
+    marketHigh: sn(input?.marketHigh),
+    sourceUrl: s(input?.sourceUrl),
+    existing: s(input?.existing),
+  };
+}
 
 /** Normaliza a entrada dos campos editáveis de um disco (add/update). */
 function normalizeInput(input: Record<string, unknown> | undefined) {
@@ -62,6 +87,17 @@ export const scanCollection = createServerFn({ method: "POST" })
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { importWonLots } = await import("./collection.server");
     return await importWonLots();
+  });
+
+/** Confirma um duplicado sinalizado pela varredura ("adicionar mesmo assim"). */
+export const addWonLot = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: Record<string, unknown> | undefined) => normalizePending(input))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { addPendingWonLot } = await import("./collection.server");
+    return await addPendingWonLot(data);
   });
 
 /** Adiciona um disco manualmente à coleção. */

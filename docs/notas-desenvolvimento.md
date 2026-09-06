@@ -273,15 +273,28 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
   (`getCollection`/`scanCollection`/`addCollectionItem`/`updateCollectionItem`/
   `deleteCollectionItem`). Diálogo de edição/adição reusa `ui/dialog`.
 - **Botão "Atualizar coleção"** → `importWonLots()`: varre **"Minhas compras"**
-  (`conta_site.asp?l=6`) via `leiloesbr-purchases.server.ts` (`listVinylPurchases`, espelha o
-  parser de lances `l=4`; filtra não-vinil por `looksNonVinyl`), e **ACRESCENTA** os lotes
-  ainda ausentes (**de-dup por `lot_id` = `${idLeilao}-${idPeca}`**) — nunca sobrescreve edição
-  do usuário. Semeia artista/álbum/ano e a faixa Discogs **reaproveitando a identificação já
-  gravada** (`lot_ai`/`lot_ident` via `parseAiAlbum`) e o mercado (`lot_market` via `toLotMarket`);
-  **não** dispara IA/Discogs novos. Fallback do artista: `extractArtist(title)`.
-- ⚠️ **Parser de `l=6` não é testável daqui** (sem rede) — é defensivo (mesmos fallbacks do
-  `l=4`: `data-watch ?? data-fav ?? peca.asp?ID=`). Validar com 1 card real do HTML de "Minhas
-  compras" na prévia e ajustar os regexes se algum campo vier vazio.
+  (`conta_site.asp?l=6&t=1&...&pag=N`, **`t=1`** confirmado com o site; lê página a página até
+  uma sem lotes novos) via `leiloesbr-purchases.server.ts` (`listVinylPurchases`; filtra
+  não-vinil por `looksNonVinyl`), e **ACRESCENTA** os lotes ainda ausentes (**de-dup por
+  `lot_id` = `${idLeilao}-${idPeca}`**) — nunca sobrescreve edição do usuário. Semeia
+  artista/álbum/ano e a faixa Discogs **reaproveitando a identificação já gravada**
+  (`lot_ai`/`lot_ident` via `parseAiAlbum`) e o mercado (`lot_market` via `toLotMarket`); **não**
+  dispara IA/Discogs novos. Sem identificação, deriva do próprio título (formato
+  "Artista - Álbum" após limpar o prefixo "LP de …" em `cleanTitlePrefix`); fallback
+  `extractArtist`.
+- **Uso pretendido:** a base de `lots` já acompanha o que o usuário arremata, então a varredura
+  de `l=6` é **carga inicial / emergência**, não o fluxo contínuo.
+- **Duplicados questionados:** mesmo `lot_id` (mesma peça) é ignorado no re-scan; um vinil com
+  **mesmo artista+álbum** de um já existente NÃO entra sozinho — volta em `duplicates`
+  (`PendingWonLot`) para a UI confirmar (diálogo "Possíveis duplicados": *Adicionar* →
+  `addWonLot`/`addPendingWonLot`, ou *Ignorar*). Pode haver 2 cópias propositais. Chave de
+  duplicidade só quando há álbum (`normalizeForMatch(artista+álbum)`).
+- **Parser (`parsePurchaseChunk`):** o HTML CRU do ASP mistura aspas simples/duplas (o "Copy
+  outerHTML" do navegador normaliza p/ duplas), então os regexes aceitam `['"]`. O **título**
+  vem SÓ do texto do `<a>` de `.product-title` (removendo o "Lote: N" e tags) — o regex frouxo
+  antigo atravessava até o link "Histórico de lances" (tooltip) e virava o título de todos os
+  lotes. Preço em `<b class="pb-1 …">` (classe composta), data = data do leilão, casa do
+  `.ellipsis-overflow` (l=6 não traz `pesq-uf`). Testado com card real via `bun -e`.
 
 ## Páginas / UI
 
@@ -400,7 +413,8 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.15.1 | Login da casa: GET de aquecimento (semeia `ASPSESSIONID`) + erro real no proxy p/ diagnóstico | #74 |
 | v0.15.2 | Auto-login best-effort: casa fora da plataforma abre deslogada p/ login manual (persistido) | — |
 | v0.16.0 | Menu **Coleção** (`collection_items`): catálogo por artista, cards/títulos, edição, varredura de "Minhas compras" (`l=6`) | #76 |
-| v0.16.1 | Fix da varredura da Coleção: data vazia "00/00/0000" do `l=6` virava `0000-00-00` e recusava o insert | — |
+| v0.16.1 | Fix da varredura da Coleção: data vazia "00/00/0000" do `l=6` virava `0000-00-00` e recusava o insert | #77 |
+| v0.17.0 | Coleção: parser real do `l=6` (`t=1`, aspas mistas, título do `.product-title`, preço/casa), revisão de duplicados (`PendingWonLot`) | — |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.

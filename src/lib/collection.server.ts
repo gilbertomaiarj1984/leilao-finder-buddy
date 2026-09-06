@@ -1,7 +1,10 @@
 import { fmtMoney, parseAiAlbum, toLotMarket } from "@/components/vinyl/ai-score-utils";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
-import { extractArtist, titleCase } from "@/lib/vinyl-parse";
+import { extractArtist, normalizeForMatch, titleCase } from "@/lib/vinyl-parse";
+
+import type { WonLot } from "./leiloesbr-purchases.server";
+import type { LotMarketRow } from "./lot-market.server";
 
 /**
  * Um disco da coleção do usuário, como a UI consome (camelCase; espelha as colunas
@@ -123,16 +126,135 @@ function brDateToIso(value: string): string | null {
 }
 
 /**
+ * Remove o prefixo de formato dos títulos das casas ("LP de Fulano", "Disco do Fulano",
+ * "Compacto Fulano") para sobrar "Artista - Álbum". Sem isso o heurístico deixava "De
+ * Fulano" como artista (o conector "de/do/da" não era removido junto com "LP").
+ */
+function cleanTitlePrefix(title: string): string {
+  return title
+    .replace(
+      /^(lps?|discos?|vinil|vinis|compactos?|bolach[aã]o|long\s*play)\b\s*(de|do|da|dos|das)?\s*/i,
+      "",
+    )
+    .trim();
+}
+
+/** Um vinil arrematado que a varredura NÃO inseriu porque parece duplicar um já existente
+ * (mesmo artista+álbum). Volta para a UI confirmar "adicionar mesmo assim" ou "ignorar".
+ * Campos em camelCase, prontos para reinserção via `addPendingWonLot`. */
+export type PendingWonLot = {
+  lotId: string;
+  artist: string;
+  album: string;
+  title: string;
+  year: number | null;
+  image: string | null;
+  house: string;
+  uf: string;
+  wonPrice: string;
+  wonDate: string | null; // já em ISO (yyyy-mm-dd)
+  marketLow: string | null;
+  marketHigh: string | null;
+  sourceUrl: string;
+  existing: string; // rótulo do disco já na coleção que casou (p/ mostrar)
+};
+
+type EnrichMaps = {
+  albumById: Map<string, string | null>;
+  yearById: Map<string, number | null>;
+  marketById: Map<string, LotMarketRow>;
+};
+
+/** Deriva os campos de um vinil arrematado (identificação IA > título "Artista - Álbum"). */
+function deriveCandidate(w: WonLot, maps: EnrichMaps): Omit<PendingWonLot, "existing"> {
+  const identified = maps.albumById.get(w.id) ?? null;
+  const cleaned = cleanTitlePrefix(w.title);
+  const source = identified && parseAiAlbum(identified).artist ? identified : cleaned;
+  const parsed = parseAiAlbum(source);
+  const artist = parsed.artist ? titleCase(parsed.artist) : extractArtist(cleaned) || cleaned;
+  const album = parsed.artist ? (parsed.album ?? "") : "";
+
+  const mktRow = maps.marketById.get(w.id);
+  let marketLow: string | null = null;
+  let marketHigh: string | null = null;
+  let marketYear: number | null = null;
+  if (mktRow) {
+    const m = toLotMarket(mktRow);
+    const low = m.priceLowBr ?? m.lowestPrice;
+    const high = m.priceHighBr ?? m.suggestedPrice;
+    marketLow = low != null ? fmtMoney(low, m.currency) : null;
+    marketHigh = high != null ? fmtMoney(high, m.currency) : null;
+    marketYear = m.year;
+  }
+  const year =
+    parseAiAlbum(identified).year ?? parsed.year ?? maps.yearById.get(w.id) ?? marketYear ?? null;
+
+  return {
+    lotId: w.id,
+    artist,
+    album,
+    title: w.title,
+    year,
+    image: w.image,
+    house: w.house,
+    uf: w.uf,
+    wonPrice: w.wonPrice,
+    wonDate: brDateToIso(w.wonDate),
+    marketLow,
+    marketHigh,
+    sourceUrl: w.url,
+  };
+}
+
+/** Candidato (camelCase) -> linha de insert (snake_case). */
+function candidateToRow(
+  c: Omit<PendingWonLot, "existing">,
+  position: number,
+): TablesInsert<"collection_items"> {
+  return {
+    lot_id: c.lotId,
+    source: "auction",
+    artist: c.artist,
+    album: c.album,
+    title: c.title,
+    year: c.year,
+    image: c.image,
+    house: c.house,
+    uf: c.uf,
+    won_price: c.wonPrice,
+    won_date: c.wonDate,
+    market_low: c.marketLow,
+    market_high: c.marketHigh,
+    source_url: c.sourceUrl,
+    position,
+    tags: [],
+  };
+}
+
+/** Chave de duplicidade: artista+álbum normalizado. Vazia quando não há álbum (aí nunca
+ * tratamos como duplicado — não dá para afirmar que dois "LP de Fulano" sejam o mesmo). */
+function albumKey(artist: string, album: string): string {
+  return album.trim() ? normalizeForMatch(`${artist} ${album}`) : "";
+}
+
+/**
  * Varre "Minhas compras" (l=6), filtra vinil e ACRESCENTA à coleção os lotes ainda
  * ausentes (de-dup por `lot_id`) — nunca sobrescreve o que o usuário editou. Semeia
  * artista/álbum/ano e a faixa Discogs reaproveitando a identificação JÁ gravada
  * (lot_ai/lot_ident) e o mercado (lot_market); sem chamadas novas de IA/Discogs.
- * Retorna quantos discos entraram.
+ *
+ * **Duplicados por álbum** (mesmo artista+álbum de um disco já na coleção, mas outro lote)
+ * NÃO entram sozinhos — voltam em `duplicates` para o usuário confirmar (pode ser uma 2ª
+ * cópia proposital). `added` = inseridos automaticamente; `scanned` = vinis lidos.
  */
-export async function importWonLots(): Promise<{ added: number; scanned: number }> {
+export async function importWonLots(): Promise<{
+  added: number;
+  scanned: number;
+  duplicates: PendingWonLot[];
+}> {
   const { listVinylPurchases } = await import("./leiloesbr-purchases.server");
   const won = await listVinylPurchases();
-  if (!won.length) return { added: 0, scanned: 0 };
+  if (!won.length) return { added: 0, scanned: 0, duplicates: [] };
 
   // Identificação/mercado já existentes (best-effort — pode não haver linha p/ o lote).
   const [aiRows, identRows, marketRows, existing] = await Promise.all([
@@ -148,61 +270,59 @@ export async function importWonLots(): Promise<{ added: number; scanned: number 
   const yearById = new Map<string, number | null>();
   for (const r of identRows) if (r.year != null) yearById.set(r.id, r.year);
   const marketById = new Map(marketRows.map((r) => [r.id, r]));
+  const maps: EnrichMaps = { albumById, yearById, marketById };
 
   const have = new Set(existing.filter((i) => i.lotId).map((i) => i.lotId as string));
+  // Álbuns já na coleção (e os já vistos nesta varredura) → detecção de duplicado.
+  const seenAlbum = new Map<string, string>();
+  for (const i of existing) {
+    const k = albumKey(i.artist, i.album);
+    if (k && !seenAlbum.has(k)) seenAlbum.set(k, `${i.artist} — ${i.album}`);
+  }
   let pos = existing.reduce((max, i) => Math.max(max, i.position), 0);
 
   const payload: TablesInsert<"collection_items">[] = [];
+  const duplicates: PendingWonLot[] = [];
   for (const w of won) {
-    if (have.has(w.id)) continue;
+    if (have.has(w.id)) continue; // mesma peça já na coleção → re-scan não duplica
     have.add(w.id);
 
-    const identified = albumById.get(w.id) ?? null;
-    const parsed = parseAiAlbum(identified);
-    const artist = parsed.artist ? titleCase(parsed.artist) : extractArtist(w.title);
-    const album = parsed.album ?? "";
-    const year = parsed.year ?? yearById.get(w.id) ?? null;
-
-    // Faixa Discogs BR (texto) do snapshot atual, quando o lote já foi consultado.
-    const mktRow = marketById.get(w.id);
-    let marketLow: string | null = null;
-    let marketHigh: string | null = null;
-    if (mktRow) {
-      const m = toLotMarket(mktRow);
-      const low = m.priceLowBr ?? m.lowestPrice;
-      const high = m.priceHighBr ?? m.suggestedPrice;
-      marketLow = low != null ? fmtMoney(low, m.currency) : null;
-      marketHigh = high != null ? fmtMoney(high, m.currency) : null;
+    const cand = deriveCandidate(w, maps);
+    const k = albumKey(cand.artist, cand.album);
+    const dupOf = k ? seenAlbum.get(k) : undefined;
+    if (dupOf) {
+      duplicates.push({ ...cand, existing: dupOf });
+      continue;
     }
-
+    if (k) seenAlbum.set(k, `${cand.artist} — ${cand.album}`);
     pos += 1;
-    payload.push({
-      lot_id: w.id,
-      source: "auction",
-      artist,
-      album,
-      title: w.title,
-      year: year ?? (mktRow ? toLotMarket(mktRow).year : null),
-      image: w.image,
-      house: w.house,
-      uf: w.uf,
-      won_price: w.wonPrice,
-      won_date: brDateToIso(w.wonDate),
-      market_low: marketLow,
-      market_high: marketHigh,
-      source_url: w.url,
-      position: pos,
-      tags: [],
-    });
+    payload.push(candidateToRow(cand, pos));
   }
-  if (!payload.length) return { added: 0, scanned: won.length };
 
-  const { error } = await supabaseAdmin.from("collection_items").insert(payload);
-  if (error) {
-    console.error("[collection] falha ao importar compras", error);
-    throw new Error(`Não foi possível atualizar a coleção: ${error.message}`);
+  if (payload.length) {
+    const { error } = await supabaseAdmin.from("collection_items").insert(payload);
+    if (error) {
+      console.error("[collection] falha ao importar compras", error);
+      throw new Error(`Não foi possível atualizar a coleção: ${error.message}`);
+    }
   }
-  return { added: payload.length, scanned: won.length };
+  return { added: payload.length, scanned: won.length, duplicates };
+}
+
+/** Insere um duplicado confirmado pelo usuário ("adicionar mesmo assim"). */
+export async function addPendingWonLot(cand: PendingWonLot): Promise<CollectionItem> {
+  const existing = await getAllCollection();
+  const position = existing.reduce((max, i) => Math.max(max, i.position), 0) + 1;
+  const { data, error } = await supabaseAdmin
+    .from("collection_items")
+    .insert(candidateToRow(cand, position))
+    .select(COLS)
+    .single();
+  if (error) {
+    console.error("[collection] falha ao adicionar duplicado", error);
+    throw new Error(`Não foi possível adicionar o disco: ${error.message}`);
+  }
+  return toItem(data as DbRow);
 }
 
 /** Campos editáveis de um disco (usado por add e update). */

@@ -45,18 +45,30 @@ function parsePurchaseChunk(chunk: string): WonLot | null {
   const flat = chunk.replace(/\s+/g, " ");
   const grab = (re: RegExp) => decode(flat.match(re)?.[1] ?? "");
 
-  // idPeca,email,idLeilao,base — no botão de vigia (ou favorito) do card.
+  // idPeca,email,idLeilao,base — no botão de vigia (ou favorito) do card. O HTML CRU do
+  // ASP mistura aspas simples e duplas nos atributos (o "Copy outerHTML" do navegador
+  // normaliza p/ duplas, mascarando isso), então todos os regexes aqui aceitam ['"].
   const data = (
-    flat.match(/data-watch="([^"]+)"/)?.[1] ??
-    flat.match(/data-fav="([^"]+)"/)?.[1] ??
+    flat.match(/data-watch=['"]([^'"]+)['"]/)?.[1] ??
+    flat.match(/data-fav=['"]([^'"]+)['"]/)?.[1] ??
     ""
   ).split(",");
   const idPeca = data[0]?.trim() || flat.match(/peca\.asp\?ID=(\d+)/i)?.[1] || "";
   if (!idPeca) return null;
 
   const idLeilao = data[2]?.trim() || flat.match(/leilao\.asp\?Num=(\d+)/i)?.[1] || "";
-  const dateMatch = flat.match(/(\d{2}\/\d{2}\/\d{4})/);
-  const url = grab(/<a href="([^"]+)"[^>]*class="stretched-link"/) || BASE_URL;
+
+  // Título: SÓ o texto do <a> dentro de `.product-title` (removido o "Lote: N" e as tags).
+  // NÃO usar um regex frouxo tipo `product-title.*?<a...title=...` — ele atravessava até o
+  // link de "Histórico de lances" (tooltip) e virava o "título" de todos os lotes.
+  const anchorInner = flat.match(/product-title[\s\S]*?<a\b[^>]*>([\s\S]*?)<\/a>/i)?.[1] ?? "";
+  const title = decode(
+    anchorInner.replace(/<span\b[^>]*>[\s\S]*?<\/span>/gi, " ").replace(/<[^>]+>/g, " "),
+  );
+
+  const url = (
+    grab(/<a[^>]*href=['"]([^'"]+)['"][^>]*class=['"][^'"]*stretched-link/i) || BASE_URL
+  ).trim();
   const ref = parseAuctionRef(url);
 
   return {
@@ -64,29 +76,40 @@ function parsePurchaseChunk(chunk: string): WonLot | null {
     idPeca,
     idLeilao,
     base: data[3]?.trim() ?? "0",
-    lote: grab(/title="Lote-?([^"]*)"/),
-    title: grab(/product-title.*?<a [^>]*title='([^']+)'/) || grab(/<\/span><br>\s*([^<]+)/),
-    wonPrice: grab(/<b class="pb-1"[^>]*>([^<]+)</),
-    wonDate: dateMatch?.[1] ?? "",
+    // nº do lote: do title="Lote-N" (stretched-link) ou do <b> dentro do span "Lote:".
+    lote: grab(/title=['"]Lote-?([^'"]*)['"]/i) || grab(/Lote:\s*<b[^>]*>([^<]+)<\/b>/i),
+    title,
     url,
-    image: grab(/<img[^>]*src="([^"]+)"/) || null,
-    house: grab(/ellipsis-overflow">(?:<a[^>]*>)?([^<]+?)\s*-\s*<span class="pesq-uf"/),
-    uf: grab(/class="pesq-uf">([^<]+)</),
+    // valor pago: a classe do <b> tem outras palavras além de pb-1 ("pb-1 font-size-1-0").
+    wonPrice: grab(/<b[^>]*\bpb-1\b[^>]*>([^<]+)</i),
+    // data do arremate = data do leilão ("Leilão <b>N</b> - dd/mm/yyyy"); cai p/ a 1ª data.
+    wonDate:
+      grab(/Leil[aã]o\s*<b>\d+<\/b>\s*-\s*(\d{2}\/\d{2}\/\d{4})/i) ||
+      flat.match(/(\d{2}\/\d{2}\/\d{4})/)?.[1] ||
+      "",
+    image: grab(/<img[^>]*\ssrc=['"]([^'"]+)['"]/i) || null,
+    // casa: texto do link em `.ellipsis-overflow` (l=6 não traz o "- UF"/pesq-uf).
+    house: grab(/ellipsis-overflow[^>]*>(?:\s*<a[^>]*>)?\s*([^<]+?)\s*</i),
+    uf: grab(/class=['"]pesq-uf['"]>([^<]+)</i),
     domain: ref?.domain ?? null,
   };
 }
 
 /**
- * Lê todos os lotes arrematados da conta (conta_site.asp?l=6). t=0 (peças),
- * s=0 (leilões), b=0 (base LeilõesBR). Best-effort: para na 1ª página vazia.
+ * Lê todos os lotes arrematados da conta (conta_site.asp?l=6). **t=1** (compras —
+ * confirmado com a URL real do site), s=0, b=0. Lê página a página até uma página sem
+ * lotes NOVOS (o `seen` também barra o caso de o site repetir a última página quando
+ * `pag` passa do fim). Best-effort.
  */
 export async function listPurchasesFromSite(): Promise<WonLot[]> {
   const seen = new Set<string>();
   const out: WonLot[] = [];
 
-  for (let page = 1; page <= 20; page++) {
+  // Teto alto de segurança (o loop para sozinho na 1ª página sem lotes novos); dá folga
+  // para a lista de compras crescer com o tempo (mais páginas).
+  for (let page = 1; page <= 50; page++) {
     const html = await authFetch(
-      `${BASE_URL}/conta_site.asp?l=6&t=0&s=0&b=0&id=0&p=&order=0&pag=${page}`,
+      `${BASE_URL}/conta_site.asp?l=6&t=1&s=0&b=0&id=0&p=&order=0&pag=${page}`,
       {},
       page === 1 ? looksAnonymous : undefined,
     );
@@ -100,8 +123,8 @@ export async function listPurchasesFromSite(): Promise<WonLot[]> {
       added++;
     }
 
+    // Para quando a página não traz nenhum lote novo (fim da lista ou repetição da última).
     if (added === 0) break;
-    if (!html.includes(`pag=${page + 1}`)) break;
   }
 
   return out;
