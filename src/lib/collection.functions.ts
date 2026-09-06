@@ -89,6 +89,16 @@ export const scanCollection = createServerFn({ method: "POST" })
     return await importWonLots();
   });
 
+/** Diagnóstico da varredura (não grava): quantas peças/páginas/logado por aba. */
+export const debugScanCollection = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { debugPurchases } = await import("./leiloesbr-purchases.server");
+    return await debugPurchases();
+  });
+
 /** Confirma um duplicado sinalizado pela varredura ("adicionar mesmo assim"). */
 export const addWonLot = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
