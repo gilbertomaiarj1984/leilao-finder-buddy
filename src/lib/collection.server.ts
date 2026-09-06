@@ -125,18 +125,44 @@ function brDateToIso(value: string): string | null {
   return iso;
 }
 
+/** Tira pontuacao solta nas pontas (ex.: ": Fulano", "Fulano -"). */
+function trimEdges(s: string): string {
+  return s
+    .replace(/^[\s:;,–—/|-]+/, "")
+    .replace(/[\s:;,–—/|-]+$/, "")
+    .trim();
+}
+
 /**
- * Remove o prefixo de formato dos títulos das casas ("LP de Fulano", "Disco do Fulano",
- * "Compacto Fulano") para sobrar "Artista - Álbum". Sem isso o heurístico deixava "De
- * Fulano" como artista (o conector "de/do/da" não era removido junto com "LP").
+ * Extrai {artista, álbum} do título de compra das casas. Cobre os formatos vistos no `l=6`:
+ * "LP: ARTISTA - ÁLBUM", "LP de Fulano - Álbum" e o rotulado "LP: Artista: X / Album: Y".
+ * Remove o prefixo de formato ("LP"/"Disco"/"Compacto" + conector/`:`), os rótulos
+ * "Artista:"/"Album:" e a pontuação nas pontas — sem isso o artista saía como ": Fulano" ou
+ * ": Artista: Fulano".
  */
-function cleanTitlePrefix(title: string): string {
-  return title
+function parsePurchaseTitle(rawTitle: string): { artist: string; album: string } {
+  let t = rawTitle
     .replace(
-      /^(lps?|discos?|vinil|vinis|compactos?|bolach[aã]o|long\s*play)\b\s*(de|do|da|dos|das)?\s*/i,
+      /^\s*(lps?|discos?|vinil|vinis|compactos?|bolach[aã]o|long\s*play)\b\s*(de|do|da|dos|das)?\s*[:–—-]?\s*/i,
       "",
     )
     .trim();
+
+  // Rotulado: "Artista: X / Album: Y" (ou "- Álbum:").
+  const labeled = t.match(
+    /artista\s*[:-]\s*(.+?)\s*(?:[/|]|\s[-–—]\s)\s*(?:[aá]lbum|album)\s*[:-]\s*(.+)$/i,
+  );
+  if (labeled) return { artist: trimEdges(labeled[1]!), album: trimEdges(labeled[2]!) };
+
+  // Rótulo "Artista:" solto no começo.
+  t = t.replace(/^\s*artista\s*[:-]\s*/i, "").trim();
+
+  // "ARTISTA - ÁLBUM".
+  const parts = t.split(/\s[-–—:/]\s/);
+  if (parts.length >= 2 && parts[0]!.trim()) {
+    return { artist: trimEdges(parts[0]!), album: trimEdges(parts.slice(1).join(" - ")) };
+  }
+  return { artist: trimEdges(t), album: "" };
 }
 
 /** Um vinil arrematado que a varredura NÃO inseriu porque parece duplicar um já existente
@@ -167,12 +193,19 @@ type EnrichMaps = {
 
 /** Deriva os campos de um vinil arrematado (identificação IA > título "Artista - Álbum"). */
 function deriveCandidate(w: WonLot, maps: EnrichMaps): Omit<PendingWonLot, "existing"> {
+  // Prioridade: (1) identificação da IA; senão (2) o próprio título de compra.
   const identified = maps.albumById.get(w.id) ?? null;
-  const cleaned = cleanTitlePrefix(w.title);
-  const source = identified && parseAiAlbum(identified).artist ? identified : cleaned;
-  const parsed = parseAiAlbum(source);
-  const artist = parsed.artist ? titleCase(parsed.artist) : extractArtist(cleaned) || cleaned;
-  const album = parsed.artist ? (parsed.album ?? "") : "";
+  const idParsed = parseAiAlbum(identified);
+  let artist: string;
+  let album: string;
+  if (identified && idParsed.artist) {
+    artist = titleCase(idParsed.artist);
+    album = idParsed.album ?? "";
+  } else {
+    const t = parsePurchaseTitle(w.title);
+    artist = t.artist ? titleCase(t.artist) : extractArtist(w.title) || w.title;
+    album = t.album;
+  }
 
   const mktRow = maps.marketById.get(w.id);
   let marketLow: string | null = null;
@@ -186,8 +219,13 @@ function deriveCandidate(w: WonLot, maps: EnrichMaps): Omit<PendingWonLot, "exis
     marketHigh = high != null ? fmtMoney(high, m.currency) : null;
     marketYear = m.year;
   }
+  const titleYear = w.title.match(/\b(19|20)\d{2}\b/)?.[0];
   const year =
-    parseAiAlbum(identified).year ?? parsed.year ?? maps.yearById.get(w.id) ?? marketYear ?? null;
+    idParsed.year ??
+    (titleYear ? Number(titleYear) : null) ??
+    maps.yearById.get(w.id) ??
+    marketYear ??
+    null;
 
   return {
     lotId: w.id,

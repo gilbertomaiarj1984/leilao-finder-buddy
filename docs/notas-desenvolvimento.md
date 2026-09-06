@@ -415,7 +415,8 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.16.0 | Menu **Coleção** (`collection_items`): catálogo por artista, cards/títulos, edição, varredura de "Minhas compras" (`l=6`) | #76 |
 | v0.16.1 | Fix da varredura da Coleção: data vazia "00/00/0000" do `l=6` virava `0000-00-00` e recusava o insert | #77 |
 | v0.17.0 | Coleção: parser real do `l=6` (`t=1`, aspas mistas, título do `.product-title`, preço/casa), revisão de duplicados (`PendingWonLot`) | #78 |
-| v0.17.1 | Coleção: varredura mescla abas `t=1`+`t=0` (servidor popula `t=0`) + botão **Diagnóstico** (`debugPurchases`) | — |
+| v0.17.1 | Coleção: varredura mescla abas `t=1`+`t=0` (servidor popula `t=0`) + botão **Diagnóstico** (`debugPurchases`) | #79 |
+| v0.17.2 | Coleção: `parsePurchaseTitle` — artista/álbum dos formatos "LP: X - Y" e "LP: Artista: X / Album: Y" (tira ":"/"Artista:") | — |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
