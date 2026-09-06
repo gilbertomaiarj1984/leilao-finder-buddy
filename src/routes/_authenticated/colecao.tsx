@@ -19,9 +19,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CollectionCard } from "@/components/vinyl/collection-card";
 import { collectionLabel } from "@/components/vinyl/collection-utils";
 import { ArtistFilter } from "@/components/vinyl/filters";
-import type { CollectionItem } from "@/lib/collection.server";
+import type { CollectionItem, PendingWonLot } from "@/lib/collection.server";
 import {
   addCollectionItem,
+  addWonLot,
   deleteCollectionItem,
   getCollection,
   scanCollection,
@@ -123,12 +124,14 @@ function ColecaoPage() {
   const fetchCollection = useServerFn(getCollection);
   const scan = useServerFn(scanCollection);
   const addItem = useServerFn(addCollectionItem);
+  const addWon = useServerFn(addWonLot);
   const updateItem = useServerFn(updateCollectionItem);
   const removeItem = useServerFn(deleteCollectionItem);
 
   const [artist, setArtist] = useState("");
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [review, setReview] = useState<PendingWonLot[]>([]);
 
   const query = useQuery<CollectionItem[]>({
     queryKey: ["collection"] as const,
@@ -142,16 +145,35 @@ function ColecaoPage() {
 
   const scanMut = useMutation({
     mutationFn: () => scan(),
-    onSuccess: (res: { added: number; scanned: number }) => {
+    onSuccess: (res: { added: number; scanned: number; duplicates: PendingWonLot[] }) => {
       void invalidate();
+      if (res.duplicates.length) setReview(res.duplicates);
+      const dup = res.duplicates.length
+        ? ` ${res.duplicates.length} possível(is) duplicado(s) para revisar.`
+        : "";
       toast.success(
         res.added > 0
-          ? `${res.added} disco(s) adicionado(s) à coleção.`
-          : "Coleção já está em dia — nada novo para adicionar.",
+          ? `${res.added} disco(s) adicionado(s).${dup}`
+          : res.duplicates.length
+            ? `Nenhum novo automático.${dup}`
+            : "Coleção já está em dia — nada novo para adicionar.",
       );
     },
     onError: (e: Error) => toast.error(e.message || "Falha ao varrer as compras"),
   });
+
+  const addWonMut = useMutation({
+    mutationFn: (p: PendingWonLot) => addWon({ data: p }),
+    onSuccess: (_res, p) => {
+      void invalidate();
+      setReview((list) => list.filter((d) => d.lotId !== p.lotId));
+      toast.success("Disco adicionado.");
+    },
+    onError: (e: Error) => toast.error(e.message || "Não foi possível adicionar"),
+  });
+
+  const ignoreDuplicate = (lotId: string) =>
+    setReview((list) => list.filter((d) => d.lotId !== lotId));
 
   const saveMut = useMutation({
     mutationFn: (d: Draft) => {
@@ -345,7 +367,86 @@ function ColecaoPage() {
         onClose={() => setDraft(null)}
         onSave={() => draft && saveMut.mutate(draft)}
       />
+
+      <ReviewDialog
+        items={review}
+        busy={addWonMut.isPending}
+        onAdd={(p) => addWonMut.mutate(p)}
+        onIgnore={ignoreDuplicate}
+        onClose={() => setReview([])}
+      />
     </main>
+  );
+}
+
+function ReviewDialog({
+  items,
+  busy,
+  onAdd,
+  onIgnore,
+  onClose,
+}: {
+  items: PendingWonLot[];
+  busy: boolean;
+  onAdd: (p: PendingWonLot) => void;
+  onIgnore: (lotId: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={items.length > 0} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Possíveis duplicados</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Estes vinis arrematados parecem já estar na coleção. Se for uma segunda cópia proposital,
+          adicione mesmo assim; senão, ignore.
+        </p>
+        <ul className="space-y-3">
+          {items.map((p) => (
+            <li
+              key={p.lotId}
+              className="flex items-center gap-3 rounded-md border border-border p-2"
+            >
+              {p.image ? (
+                <img
+                  src={p.image}
+                  alt=""
+                  loading="lazy"
+                  className="h-14 w-14 shrink-0 rounded object-contain"
+                />
+              ) : (
+                <div className="h-14 w-14 shrink-0 rounded bg-secondary" />
+              )}
+              <div className="min-w-0 flex-1 text-sm">
+                <p className="truncate font-medium text-foreground">
+                  {[p.artist, p.album].filter(Boolean).join(" — ") || p.title}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  Já na coleção: {p.existing}
+                </p>
+                {p.wonPrice ? (
+                  <p className="text-xs text-muted-foreground">Pago {p.wonPrice}</p>
+                ) : null}
+              </div>
+              <div className="flex shrink-0 flex-col gap-1">
+                <Button size="sm" onClick={() => onAdd(p)} disabled={busy}>
+                  Adicionar
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => onIgnore(p.lotId)} disabled={busy}>
+                  Ignorar
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Fechar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
