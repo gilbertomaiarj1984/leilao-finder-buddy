@@ -96,37 +96,54 @@ function parsePurchaseChunk(chunk: string): WonLot | null {
 }
 
 /**
- * Lê todos os lotes arrematados da conta (conta_site.asp?l=6). **t=1** (compras —
- * confirmado com a URL real do site), s=0, b=0. Lê página a página até uma página sem
- * lotes NOVOS (o `seen` também barra o caso de o site repetir a última página quando
- * `pag` passa do fim). Best-effort.
+ * Lê uma aba (`t`) de "Minhas compras" página a página, acrescentando ao `out` os lotes
+ * NOVOS (dedup por `idPeca` via `seen`). Para na 1ª página sem lote novo (fim da lista ou
+ * repetição da última quando `pag` passa do fim). Retorna quantas páginas com card leu e se
+ * viu uma página logada (tem `data-watch`/`data-fav`).
  */
-export async function listPurchasesFromSite(): Promise<WonLot[]> {
-  const seen = new Set<string>();
-  const out: WonLot[] = [];
-
+async function readTab(
+  t: 0 | 1,
+  seen: Set<string>,
+  out: WonLot[],
+): Promise<{ pagesWithCards: number; loggedIn: boolean }> {
+  let pagesWithCards = 0;
+  let loggedIn = false;
   // Teto alto de segurança (o loop para sozinho na 1ª página sem lotes novos); dá folga
   // para a lista de compras crescer com o tempo (mais páginas).
   for (let page = 1; page <= 50; page++) {
     const html = await authFetch(
-      `${BASE_URL}/conta_site.asp?l=6&t=1&s=0&b=0&id=0&p=&order=0&pag=${page}`,
+      `${BASE_URL}/conta_site.asp?l=6&t=${t}&s=0&b=0&id=0&p=&order=0&pag=${page}`,
       {},
       page === 1 ? looksAnonymous : undefined,
     );
+    if (html.includes("data-watch") || html.includes("data-fav")) loggedIn = true;
 
     let added = 0;
-    for (const chunk of html.split('<div class="oc-item').slice(1)) {
+    const chunks = html.split('<div class="oc-item').slice(1);
+    if (chunks.length) pagesWithCards += 1;
+    for (const chunk of chunks) {
       const won = parsePurchaseChunk(chunk);
       if (!won || seen.has(won.idPeca)) continue;
       seen.add(won.idPeca);
       out.push(won);
       added++;
     }
-
-    // Para quando a página não traz nenhum lote novo (fim da lista ou repetição da última).
     if (added === 0) break;
   }
+  return { pagesWithCards, loggedIn };
+}
 
+/**
+ * Lê todos os lotes arrematados da conta (conta_site.asp?l=6), **mesclando as abas
+ * `t=1` e `t=0`** (dedup por `idPeca`). O navegador do usuário mostra `t=1`, mas na sessão
+ * do SERVIDOR foi o `t=0` que devolveu as compras reais no 1º teste — então lemos as duas
+ * para não depender de qual o servidor popula. Best-effort.
+ */
+export async function listPurchasesFromSite(): Promise<WonLot[]> {
+  const seen = new Set<string>();
+  const out: WonLot[] = [];
+  await readTab(1, seen, out);
+  await readTab(0, seen, out);
   return out;
 }
 
@@ -134,4 +151,33 @@ export async function listPurchasesFromSite(): Promise<WonLot[]> {
 export async function listVinylPurchases(): Promise<WonLot[]> {
   const all = await listPurchasesFromSite();
   return all.filter((w) => !looksNonVinyl(w.title));
+}
+
+/**
+ * Diagnóstico da varredura (não persiste). Retorna, por aba, quantas páginas com card,
+ * se viu página logada, e o total de lotes lidos + uma amostra de títulos — para saber, sem
+ * acesso ao site daqui, se o problema é login, aba (`t`) ou parsing.
+ */
+export async function debugPurchases(): Promise<{
+  loggedIn: boolean;
+  tabs: { t: number; pagesWithCards: number; loggedIn: boolean }[];
+  total: number;
+  vinyl: number;
+  sampleTitles: string[];
+}> {
+  const tabs: { t: number; pagesWithCards: number; loggedIn: boolean }[] = [];
+  const seen = new Set<string>();
+  const out: WonLot[] = [];
+  for (const t of [1, 0] as const) {
+    const r = await readTab(t, seen, out);
+    tabs.push({ t, ...r });
+  }
+  const vinyl = out.filter((w) => !looksNonVinyl(w.title));
+  return {
+    loggedIn: tabs.some((x) => x.loggedIn),
+    tabs,
+    total: out.length,
+    vinyl: vinyl.length,
+    sampleTitles: out.slice(0, 8).map((w) => w.title || "(título vazio)"),
+  };
 }

@@ -23,6 +23,7 @@ import type { CollectionItem, PendingWonLot } from "@/lib/collection.server";
 import {
   addCollectionItem,
   addWonLot,
+  debugScanCollection,
   deleteCollectionItem,
   getCollection,
   scanCollection,
@@ -125,6 +126,7 @@ function ColecaoPage() {
   const scan = useServerFn(scanCollection);
   const addItem = useServerFn(addCollectionItem);
   const addWon = useServerFn(addWonLot);
+  const debugScan = useServerFn(debugScanCollection);
   const updateItem = useServerFn(updateCollectionItem);
   const removeItem = useServerFn(deleteCollectionItem);
 
@@ -132,6 +134,7 @@ function ColecaoPage() {
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [review, setReview] = useState<PendingWonLot[]>([]);
+  const [debug, setDebug] = useState<string | null>(null);
 
   const query = useQuery<CollectionItem[]>({
     queryKey: ["collection"] as const,
@@ -156,7 +159,7 @@ function ColecaoPage() {
           ? `${res.added} disco(s) adicionado(s).${dup}`
           : res.duplicates.length
             ? `Nenhum novo automático.${dup}`
-            : "Coleção já está em dia — nada novo para adicionar.",
+            : "Nada novo. Se você tem compras e nada aparece, clique em Diagnóstico.",
       );
     },
     onError: (e: Error) => toast.error(e.message || "Falha ao varrer as compras"),
@@ -174,6 +177,12 @@ function ColecaoPage() {
 
   const ignoreDuplicate = (lotId: string) =>
     setReview((list) => list.filter((d) => d.lotId !== lotId));
+
+  const debugMut = useMutation({
+    mutationFn: () => debugScan(),
+    onSuccess: (res) => setDebug(JSON.stringify(res, null, 2)),
+    onError: (e: Error) => toast.error(e.message || "Falha no diagnóstico"),
+  });
 
   const saveMut = useMutation({
     mutationFn: (d: Draft) => {
@@ -258,6 +267,15 @@ function ColecaoPage() {
               Adicionar disco
             </Button>
             <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => debugMut.mutate()}
+              disabled={debugMut.isPending}
+              title="Diagnosticar a varredura (não grava nada) — mostra o que o servidor lê do site"
+            >
+              {debugMut.isPending ? "Diagnosticando…" : "Diagnóstico"}
+            </Button>
+            <Button
               size="sm"
               onClick={() => scanMut.mutate()}
               disabled={scanMut.isPending}
@@ -271,6 +289,21 @@ function ColecaoPage() {
       </header>
 
       <div className="mx-auto max-w-6xl px-4 py-6">
+        {debug ? (
+          <div className="mb-4 rounded-md border border-border bg-card p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-semibold text-foreground">
+                Diagnóstico da varredura
+              </span>
+              <Button size="sm" variant="ghost" onClick={() => setDebug(null)}>
+                Fechar
+              </Button>
+            </div>
+            <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all text-xs text-muted-foreground">
+              {debug}
+            </pre>
+          </div>
+        ) : null}
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <ArtistFilter artists={artists} value={artist} onChange={setArtist} />
           <Input
