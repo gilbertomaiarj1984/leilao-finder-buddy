@@ -176,6 +176,45 @@ CREATE TRIGGER update_wantlist_items_updated_at BEFORE UPDATE ON public.wantlist
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- ---------------------------------------------------------------------
+-- collection_items
+-- Catálogo da coleção de vinil do usuário. Populado manualmente e pela
+-- varredura de "Minhas compras" (conta_site.asp?l=6): cada lote de vinil
+-- arrematado vira um item (de-dup por `lot_id`; a varredura só ACRESCENTA,
+-- nunca sobrescreve o que o usuário editou). Agrupado por `artist` na UI;
+-- `album`/`year`/faixa Discogs são semeados no import a partir da
+-- identificação já gravada (lot_ai/lot_ident) e do mercado (lot_market).
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.collection_items (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  lot_id           text UNIQUE,                     -- "${idLeilao}-${idPeca}"; null = item manual
+  source           text NOT NULL DEFAULT 'auction', -- 'auction' | 'manual'
+  artist           text NOT NULL DEFAULT '',
+  album            text NOT NULL DEFAULT '',
+  title            text NOT NULL DEFAULT '',
+  year             integer,
+  image            text,
+  house            text NOT NULL DEFAULT '',
+  uf               text NOT NULL DEFAULT '',
+  won_price        text NOT NULL DEFAULT '',        -- valor pago (texto BR "R$ 1.234,56")
+  won_date         date,
+  condition_media  text NOT NULL DEFAULT '',        -- estado da mídia (grading)
+  condition_sleeve text NOT NULL DEFAULT '',        -- estado da capa (grading)
+  notes            text NOT NULL DEFAULT '',
+  tags             text[] NOT NULL DEFAULT '{}',
+  market_low       text,                            -- snapshot da faixa Discogs BR (menor)
+  market_high      text,                            -- snapshot da faixa Discogs BR (maior)
+  source_url       text NOT NULL DEFAULT '',        -- link do lote no leiloeiro
+  position         integer NOT NULL DEFAULT 0,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS collection_items_artist_idx ON public.collection_items (artist);
+
+DROP TRIGGER IF EXISTS update_collection_items_updated_at ON public.collection_items;
+CREATE TRIGGER update_collection_items_updated_at BEFORE UPDATE ON public.collection_items
+FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- ---------------------------------------------------------------------
 -- Segurança: RLS on + acesso somente para service_role (estado final)
 -- ---------------------------------------------------------------------
 ALTER TABLE public.seen_auctions  ENABLE ROW LEVEL SECURITY;
@@ -186,6 +225,7 @@ ALTER TABLE public.lot_ai         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_ident      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_market     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wantlist_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.collection_items ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.seen_auctions  FROM anon, authenticated;
 REVOKE ALL ON public.lots           FROM anon, authenticated;
@@ -195,6 +235,7 @@ REVOKE ALL ON public.lot_ai         FROM anon, authenticated;
 REVOKE ALL ON public.lot_ident      FROM anon, authenticated;
 REVOKE ALL ON public.lot_market     FROM anon, authenticated;
 REVOKE ALL ON public.wantlist_items FROM anon, authenticated;
+REVOKE ALL ON public.collection_items FROM anon, authenticated;
 
 GRANT ALL ON public.seen_auctions  TO service_role;
 GRANT ALL ON public.lots           TO service_role;
@@ -204,3 +245,4 @@ GRANT ALL ON public.lot_ai         TO service_role;
 GRANT ALL ON public.lot_ident      TO service_role;
 GRANT ALL ON public.lot_market     TO service_role;
 GRANT ALL ON public.wantlist_items TO service_role;
+GRANT ALL ON public.collection_items TO service_role;

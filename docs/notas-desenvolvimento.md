@@ -43,7 +43,7 @@ React 19 (SSR) + Supabase**, deploy na **Vercel** (Nitro). Migrado do Lovable em
   (SQL Editor ou `psql -f`), re-executável (tudo `IF NOT EXISTS`). Ao criar tabela/coluna,
   editar `setup.sql` **e** `src/integrations/supabase/types.ts` à mão. Tabelas: `lots`,
   `known_artists`, `app_state`, `seen_auctions`, `lot_ai`, `lot_ident`, `lot_market`,
-  `wantlist_items`.
+  `wantlist_items`, `collection_items`.
 - **Git push HTTPS costuma funcionar**; quando não, usar os tools `mcp__github__*`.
 
 ## Arquitetura de dados
@@ -259,6 +259,30 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
 - **Não pesa na nota da IA** — é só destaque + filtro (como os interesses ⭐). Dar peso real
   segue em aberto.
 
+## Coleção do usuário (`collection_items`)
+
+- **Catálogo dos vinis que o usuário possui**, agrupado por artista. Página
+  `_authenticated/colecao.tsx` (menu **Coleção** no header do `index.tsx`), duas visões
+  (`Tabs`): **Cards** (`CollectionCard`, mesmo visual dos cards de leilão) e **Títulos**
+  (lista simplificada). **Filtro por artista** (`ArtistFilter` reusado) + **busca** por
+  artista/álbum/título (`normalizeForMatch`).
+- **Editável:** cada disco tem `artist`, `album`, `title`, `year`, `image`, `house`, `uf`,
+  `won_price` (**valor pago**), `won_date`, `condition_media`/`condition_sleeve` (grading),
+  `notes`, `tags[]`, `market_low`/`market_high` (snapshot Discogs). CRUD em
+  `collection.server.ts` (padrão do `wantlist.server.ts`) exposto por `collection.functions.ts`
+  (`getCollection`/`scanCollection`/`addCollectionItem`/`updateCollectionItem`/
+  `deleteCollectionItem`). Diálogo de edição/adição reusa `ui/dialog`.
+- **Botão "Atualizar coleção"** → `importWonLots()`: varre **"Minhas compras"**
+  (`conta_site.asp?l=6`) via `leiloesbr-purchases.server.ts` (`listVinylPurchases`, espelha o
+  parser de lances `l=4`; filtra não-vinil por `looksNonVinyl`), e **ACRESCENTA** os lotes
+  ainda ausentes (**de-dup por `lot_id` = `${idLeilao}-${idPeca}`**) — nunca sobrescreve edição
+  do usuário. Semeia artista/álbum/ano e a faixa Discogs **reaproveitando a identificação já
+  gravada** (`lot_ai`/`lot_ident` via `parseAiAlbum`) e o mercado (`lot_market` via `toLotMarket`);
+  **não** dispara IA/Discogs novos. Fallback do artista: `extractArtist(title)`.
+- ⚠️ **Parser de `l=6` não é testável daqui** (sem rede) — é defensivo (mesmos fallbacks do
+  `l=4`: `data-watch ?? data-fav ?? peca.asp?ID=`). Validar com 1 card real do HTML de "Minhas
+  compras" na prévia e ajustar os regexes se algum campo vier vazio.
+
 ## Páginas / UI
 
 - **`index.tsx` (site principal):** cards por **dia → casa → artista**. `LotCard` mostra nota
@@ -375,6 +399,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.15.0 | Pregão ao vivo **abre já logado** (proxy autenticado `/api/live`, sessão por origem, token HMAC) | #73 |
 | v0.15.1 | Login da casa: GET de aquecimento (semeia `ASPSESSIONID`) + erro real no proxy p/ diagnóstico | #74 |
 | v0.15.2 | Auto-login best-effort: casa fora da plataforma abre deslogada p/ login manual (persistido) | — |
+| v0.16.0 | Menu **Coleção** (`collection_items`): catálogo por artista, cards/títulos, edição, varredura de "Minhas compras" (`l=6`) | — |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
@@ -397,8 +422,13 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 **Validar em produção (não dá para testar daqui)**
 
 4. **Aplicar o `setup.sql`** para as tabelas/colunas mais recentes (`lot_ident`, colunas BR de
-   `lot_market`) caso ainda não tenham sido aplicadas; garantir `ANTHROPIC_API_KEY` e
-   `DISCOGS_TOKEN` configurados (GitHub secret + env Vercel).
+   `lot_market`, **`collection_items`**) caso ainda não tenham sido aplicadas; garantir
+   `ANTHROPIC_API_KEY` e `DISCOGS_TOKEN` configurados (GitHub secret + env Vercel).
+7. **Coleção:** aplicar `collection_items` no banco; conferir o botão **"Atualizar coleção"**
+   (varredura de `conta_site.asp?l=6`) — se algum campo vier vazio, capturar 1 card do HTML de
+   "Minhas compras" (F12) e ajustar os regexes de `leiloesbr-purchases.server.ts`. Confirmar que
+   re-varrer **não** duplica nem apaga edições, e que artista/álbum/ano são semeados da
+   identificação já existente.
 5. **Rodar o `refresh.yml`** (Actions → Run workflow) e conferir cada passo: `enrich`
    (`updated>0`, nº de lote preenchendo), `aiident`/`aieval` (`submitted`/`collected>0`),
    `market` (`updated>0`, inclusive lotes só identificados). Rodar mais vezes melhora o

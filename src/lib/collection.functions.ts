@@ -1,0 +1,104 @@
+import { createServerFn } from "@tanstack/react-start";
+
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+
+/** Normaliza a entrada dos campos editáveis de um disco (add/update). */
+function normalizeInput(input: Record<string, unknown> | undefined) {
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  const patch: {
+    artist?: string;
+    album?: string;
+    title?: string;
+    year?: number | null;
+    house?: string;
+    uf?: string;
+    wonPrice?: string;
+    wonDate?: string | null;
+    conditionMedia?: string;
+    conditionSleeve?: string;
+    notes?: string;
+    tags?: string[];
+  } = {};
+  if (str(input?.artist) !== undefined) patch.artist = String(input!.artist);
+  if (str(input?.album) !== undefined) patch.album = String(input!.album);
+  if (str(input?.title) !== undefined) patch.title = String(input!.title);
+  if (input?.year !== undefined)
+    patch.year = input.year === null ? null : Number(input.year) || null;
+  if (str(input?.house) !== undefined) patch.house = String(input!.house);
+  if (str(input?.uf) !== undefined) patch.uf = String(input!.uf);
+  if (str(input?.wonPrice) !== undefined) patch.wonPrice = String(input!.wonPrice);
+  if (input?.wonDate !== undefined)
+    patch.wonDate = input.wonDate === null ? null : String(input.wonDate) || null;
+  if (str(input?.conditionMedia) !== undefined)
+    patch.conditionMedia = String(input!.conditionMedia);
+  if (str(input?.conditionSleeve) !== undefined)
+    patch.conditionSleeve = String(input!.conditionSleeve);
+  if (str(input?.notes) !== undefined) patch.notes = String(input!.notes);
+  if (Array.isArray(input?.tags))
+    patch.tags = input!.tags.filter((t): t is string => typeof t === "string");
+  return patch;
+}
+
+/** Coleção de vinil do usuário (collection_items). Best-effort: [] em erro. */
+export const getCollection = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    try {
+      const { getAllCollection } = await import("./collection.server");
+      return await getAllCollection();
+    } catch (error) {
+      console.error("[collection] não foi possível ler a coleção", error);
+      return [];
+    }
+  });
+
+/** Varre "Minhas compras" (l=6) e acrescenta os vinis arrematados à coleção. */
+export const scanCollection = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { importWonLots } = await import("./collection.server");
+    return await importWonLots();
+  });
+
+/** Adiciona um disco manualmente à coleção. */
+export const addCollectionItem = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: Record<string, unknown> | undefined) => normalizeInput(input))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { addCollectionItem: add } = await import("./collection.server");
+    return await add(data);
+  });
+
+/** Atualiza um disco da coleção (patch parcial). */
+export const updateCollectionItem = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: (Record<string, unknown> & { id?: string }) | undefined) => {
+    if (!input?.id || typeof input.id !== "string") throw new Error("id obrigatório");
+    return { id: input.id, ...normalizeInput(input) };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { updateCollectionItem: update } = await import("./collection.server");
+    return await update(data);
+  });
+
+/** Remove um disco da coleção. */
+export const deleteCollectionItem = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { id?: string } | undefined) => {
+    if (!input?.id || typeof input.id !== "string") throw new Error("id obrigatório");
+    return { id: input.id };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { deleteCollectionItem: remove } = await import("./collection.server");
+    return await remove(data.id);
+  });

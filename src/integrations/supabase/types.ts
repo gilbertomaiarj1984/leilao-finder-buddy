@@ -185,6 +185,81 @@ export type Database = {
         }
         Relationships: []
       }
+      collection_items: {
+        Row: {
+          album: string
+          artist: string
+          condition_media: string
+          condition_sleeve: string
+          created_at: string
+          house: string
+          id: string
+          image: string | null
+          lot_id: string | null
+          market_high: string | null
+          market_low: string | null
+          notes: string
+          position: number
+          source: string
+          source_url: string
+          tags: string[]
+          title: string
+          uf: string
+          updated_at: string
+          won_date: string | null
+          won_price: string
+          year: number | null
+        }
+        Insert: {
+          album?: string
+          artist?: string
+          condition_media?: string
+          condition_sleeve?: string
+          created_at?: string
+          house?: string
+          id?: string
+          image?: string | null
+          lot_id?: string | null
+          market_high?: string | null
+          market_low?: string | null
+          notes?: string
+          position?: number
+          source?: string
+          source_url?: string
+          tags?: string[]
+          title?: string
+          uf?: string
+          updated_at?: string
+          won_date?: string | null
+          won_price?: string
+          year?: number | null
+        }
+        Update: {
+          album?: string
+          artist?: string
+          condition_media?: string
+          condition_sleeve?: string
+          created_at?: string
+          house?: string
+          id?: string
+          image?: string | null
+          lot_id?: string | null
+          market_high?: string | null
+          market_low?: string | null
+          notes?: string
+          position?: number
+          source?: string
+          source_url?: string
+          tags?: string[]
+          title?: string
+          uf?: string
+          updated_at?: string
+          won_date?: string | null
+          won_price?: string
+          year?: number | null
+        }
+        Relationships: []
+      }
       wantlist_items: {
         Row: {
           acquired: boolean
