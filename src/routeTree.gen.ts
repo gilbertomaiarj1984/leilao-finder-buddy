@@ -14,6 +14,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedAnaliseRouteImport } from './routes/_authenticated/analise'
 import { Route as AuthenticatedAoVivoRouteImport } from './routes/_authenticated/ao-vivo'
+import { Route as AuthenticatedColecaoRouteImport } from './routes/_authenticated/colecao'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
@@ -40,6 +41,11 @@ const AuthenticatedAoVivoRoute = AuthenticatedAoVivoRouteImport.update({
   path: '/ao-vivo',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedColecaoRoute = AuthenticatedColecaoRouteImport.update({
+  id: '/colecao',
+  path: '/colecao',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -51,12 +57,14 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/analise': typeof AuthenticatedAnaliseRoute
   '/ao-vivo': typeof AuthenticatedAoVivoRoute
+  '/colecao': typeof AuthenticatedColecaoRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/analise': typeof AuthenticatedAnaliseRoute
   '/ao-vivo': typeof AuthenticatedAoVivoRoute
+  '/colecao': typeof AuthenticatedColecaoRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/': typeof AuthenticatedIndexRoute
 }
@@ -66,20 +74,22 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/analise': typeof AuthenticatedAnaliseRoute
   '/_authenticated/ao-vivo': typeof AuthenticatedAoVivoRoute
+  '/_authenticated/colecao': typeof AuthenticatedColecaoRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/analise' | '/ao-vivo' | '/dashboard'
+  fullPaths: '/' | '/auth' | '/analise' | '/ao-vivo' | '/colecao' | '/dashboard'
   fileRoutesByTo: FileRoutesByTo
-  to: '/auth' | '/analise' | '/ao-vivo' | '/dashboard' | '/'
+  to: '/auth' | '/analise' | '/ao-vivo' | '/colecao' | '/dashboard' | '/'
   id:
     | '__root__'
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/analise'
     | '/_authenticated/ao-vivo'
+    | '/_authenticated/colecao'
     | '/_authenticated/dashboard'
     | '/_authenticated/'
   fileRoutesById: FileRoutesById
@@ -126,6 +136,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAoVivoRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/colecao': {
+      id: '/_authenticated/colecao'
+      path: '/colecao'
+      fullPath: '/colecao'
+      preLoaderRoute: typeof AuthenticatedColecaoRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
       path: '/dashboard'
@@ -139,6 +156,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAnaliseRoute: typeof AuthenticatedAnaliseRoute
   AuthenticatedAoVivoRoute: typeof AuthenticatedAoVivoRoute
+  AuthenticatedColecaoRoute: typeof AuthenticatedColecaoRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
@@ -146,6 +164,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAnaliseRoute: AuthenticatedAnaliseRoute,
   AuthenticatedAoVivoRoute: AuthenticatedAoVivoRoute,
+  AuthenticatedColecaoRoute: AuthenticatedColecaoRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }

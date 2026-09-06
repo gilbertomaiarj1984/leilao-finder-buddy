@@ -10,6 +10,7 @@ import {
   ExternalLink,
   Gavel,
   LayoutDashboard,
+  Library,
   Loader2,
   LogOut,
   Radio,
@@ -744,6 +745,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               <Link to="/dashboard">
                 <LayoutDashboard className="mr-2 h-4 w-4" />
                 Painel
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild title="Minha coleção de vinil">
+              <Link to="/colecao">
+                <Library className="mr-2 h-4 w-4" />
+                Coleção
               </Link>
             </Button>
             <div
