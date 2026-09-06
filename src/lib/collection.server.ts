@@ -101,10 +101,25 @@ export async function getAllCollection(): Promise<CollectionItem[]> {
   return rows;
 }
 
-/** dd/mm/yyyy (site) -> yyyy-mm-dd (coluna `date`), ou null se não casar. */
+/**
+ * dd/mm/yyyy (site) -> yyyy-mm-dd (coluna `date`), ou null quando não casa OU é uma data
+ * inválida. A página de compras traz datas vazias como "00/00/0000" — que viravam
+ * "0000-00-00" e faziam o Postgres recusar o insert inteiro ("date/time field value out of
+ * range"). Aqui validamos o intervalo e conferimos que a data existe de fato (rejeita 31/02).
+ */
 function brDateToIso(value: string): string | null {
   const m = (value ?? "").match(/(\d{2})\/(\d{2})\/(\d{4})/);
-  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  if (!day || !month || !year || month > 12 || day > 31 || year < 1900) return null;
+  const iso = `${m[3]}-${m[2]}-${m[1]}`;
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime()) || d.getUTCDate() !== day || d.getUTCMonth() + 1 !== month) {
+    return null;
+  }
+  return iso;
 }
 
 /**

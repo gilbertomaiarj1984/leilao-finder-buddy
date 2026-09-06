@@ -399,7 +399,8 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.15.0 | Pregão ao vivo **abre já logado** (proxy autenticado `/api/live`, sessão por origem, token HMAC) | #73 |
 | v0.15.1 | Login da casa: GET de aquecimento (semeia `ASPSESSIONID`) + erro real no proxy p/ diagnóstico | #74 |
 | v0.15.2 | Auto-login best-effort: casa fora da plataforma abre deslogada p/ login manual (persistido) | — |
-| v0.16.0 | Menu **Coleção** (`collection_items`): catálogo por artista, cards/títulos, edição, varredura de "Minhas compras" (`l=6`) | — |
+| v0.16.0 | Menu **Coleção** (`collection_items`): catálogo por artista, cards/títulos, edição, varredura de "Minhas compras" (`l=6`) | #76 |
+| v0.16.1 | Fix da varredura da Coleção: data vazia "00/00/0000" do `l=6` virava `0000-00-00` e recusava o insert | — |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
