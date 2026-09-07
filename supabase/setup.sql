@@ -200,6 +200,7 @@ CREATE TABLE IF NOT EXISTS public.collection_items (
   condition_media  text NOT NULL DEFAULT '',        -- estado da mídia (grading)
   condition_sleeve text NOT NULL DEFAULT '',        -- estado da capa (grading)
   notes            text NOT NULL DEFAULT '',
+  description      text NOT NULL DEFAULT '',         -- descritivo do disco (buscado pela IA)
   tags             text[] NOT NULL DEFAULT '{}',
   market_low       text,                            -- snapshot da faixa Discogs BR (menor)
   market_high      text,                            -- snapshot da faixa Discogs BR (maior)
@@ -209,6 +210,15 @@ CREATE TABLE IF NOT EXISTS public.collection_items (
   updated_at       timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS collection_items_artist_idx ON public.collection_items (artist);
+-- Coluna adicionada depois (bancos já criados): descritivo do disco buscado pela IA.
+ALTER TABLE public.collection_items ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT '';
+
+-- Bucket de Storage para fotos da coleção (upload manual pela edição/inserção). Público
+-- (leitura pela URL, usada direto no <img>); os uploads passam pelo servidor com
+-- service_role, então não precisa de policy de escrita para anon/authenticated.
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('collection', 'collection', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
 
 DROP TRIGGER IF EXISTS update_collection_items_updated_at ON public.collection_items;
 CREATE TRIGGER update_collection_items_updated_at BEFORE UPDATE ON public.collection_items

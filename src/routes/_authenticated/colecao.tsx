@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { ArrowLeft, Disc3, Library, Pencil, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import {
   identifyCollection,
   scanCollection,
   updateCollectionItem,
+  uploadCollectionImage,
 } from "@/lib/collection.functions";
 import {
   COMPILATION_LABEL,
@@ -135,11 +136,13 @@ type Draft = {
   album: string;
   title: string;
   year: string;
+  image: string | null;
   wonPrice: string;
   wonDate: string;
   conditionMedia: string;
   conditionSleeve: string;
   notes: string;
+  description: string;
   tags: string;
 };
 
@@ -149,11 +152,13 @@ const EMPTY_DRAFT: Draft = {
   album: "",
   title: "",
   year: "",
+  image: null,
   wonPrice: "",
   wonDate: "",
   conditionMedia: "",
   conditionSleeve: "",
   notes: "",
+  description: "",
   tags: "",
 };
 
@@ -164,11 +169,13 @@ function toDraft(item: CollectionItem): Draft {
     album: item.album,
     title: item.title,
     year: item.year == null ? "" : String(item.year),
+    image: item.image,
     wonPrice: item.wonPrice,
     wonDate: item.wonDate ?? "",
     conditionMedia: item.conditionMedia,
     conditionSleeve: item.conditionSleeve,
     notes: item.notes,
+    description: item.description,
     tags: item.tags.join(", "),
   };
 }
@@ -183,6 +190,7 @@ function ColecaoPage() {
   const identify = useServerFn(identifyCollection);
   const updateItem = useServerFn(updateCollectionItem);
   const removeItem = useServerFn(deleteCollectionItem);
+  const uploadImage = useServerFn(uploadCollectionImage);
 
   const [artist, setArtist] = useState("");
   const [search, setSearch] = useState("");
@@ -284,11 +292,13 @@ function ColecaoPage() {
         album: d.album,
         title: d.title,
         year: d.year.trim() ? Number(d.year) || null : null,
+        image: d.image,
         wonPrice: d.wonPrice,
         wonDate: d.wonDate.trim() || null,
         conditionMedia: d.conditionMedia,
         conditionSleeve: d.conditionSleeve,
         notes: d.notes,
+        description: d.description,
         tags: d.tags
           .split(",")
           .map((t) => t.trim())
@@ -314,6 +324,23 @@ function ColecaoPage() {
   });
 
   const artists = useMemo(() => artistOptions(items), [items]);
+  // Nomes para o combo do formulário (artistas reais + "Coletâneas"/"Lote"; sem o rótulo genérico).
+  const artistNames = useMemo(
+    () => artists.map((a) => a.artist).filter((a) => a !== UNCLASSIFIED_LABEL),
+    [artists],
+  );
+
+  // Lê o arquivo como data URL e envia ao Storage; devolve a URL pública para gravar em `image`.
+  async function handleUpload(file: File): Promise<string> {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("Falha ao ler o arquivo."));
+      reader.readAsDataURL(file);
+    });
+    const res = (await uploadImage({ data: { dataUrl } })) as { url: string };
+    return res.url;
+  }
 
   const filtered = useMemo(() => {
     const searchNorm = normalizeForMatch(search);
@@ -501,9 +528,11 @@ function ColecaoPage() {
       <EditDialog
         draft={draft}
         saving={saveMut.isPending}
+        artistNames={artistNames}
         onChange={setDraft}
         onClose={() => setDraft(null)}
         onSave={() => draft && saveMut.mutate(draft)}
+        onUpload={handleUpload}
       />
 
       <ReviewDialog
@@ -657,17 +686,39 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 function EditDialog({
   draft,
   saving,
+  artistNames,
   onChange,
   onClose,
   onSave,
+  onUpload,
 }: {
   draft: Draft | null;
   saving: boolean;
+  artistNames: string[];
   onChange: (d: Draft) => void;
   onClose: () => void;
   onSave: () => void;
+  onUpload: (file: File) => Promise<string>;
 }) {
+  const [uploading, setUploading] = useState(false);
   const set = (patch: Partial<Draft>) => draft && onChange({ ...draft, ...patch });
+
+  async function handleFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await onUpload(file);
+      set({ image: url });
+      toast.success("Foto enviada.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao enviar a foto");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
   return (
     <Dialog open={draft !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
@@ -682,8 +733,57 @@ function EditDialog({
               onSave();
             }}
           >
+            <div className="sm:col-span-2">
+              <Field label="Foto (capa)">
+                <div className="flex items-center gap-3">
+                  {draft.image ? (
+                    <img
+                      src={draft.image}
+                      alt=""
+                      className="h-20 w-20 shrink-0 rounded bg-secondary object-contain"
+                    />
+                  ) : (
+                    <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded bg-secondary text-[11px] text-muted-foreground">
+                      sem foto
+                    </div>
+                  )}
+                  <div className="flex flex-col items-start gap-1">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={uploading || saving}
+                      onChange={handleFile}
+                      className="text-xs file:mr-2 file:rounded file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-xs file:text-foreground"
+                    />
+                    {uploading ? (
+                      <span className="text-xs text-muted-foreground">Enviando…</span>
+                    ) : draft.image ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => set({ image: null })}
+                        disabled={saving}
+                      >
+                        Remover foto
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              </Field>
+            </div>
             <Field label="Artista">
-              <Input value={draft.artist} onChange={(e) => set({ artist: e.target.value })} />
+              <Input
+                list="collection-artist-options"
+                value={draft.artist}
+                placeholder="Selecione um artista ou escreva um novo"
+                onChange={(e) => set({ artist: e.target.value })}
+              />
+              <datalist id="collection-artist-options">
+                {artistNames.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
             </Field>
             <Field label="Álbum">
               <Input value={draft.album} onChange={(e) => set({ album: e.target.value })} />
@@ -736,11 +836,22 @@ function EditDialog({
               </Field>
             </div>
             <div className="sm:col-span-2">
+              <Field label="Descritivo do disco (preenchido pela IA — editável)">
+                <textarea
+                  value={draft.description}
+                  onChange={(e) => set({ description: e.target.value })}
+                  rows={3}
+                  placeholder="Descrição do disco (artista, estilo, época, relevância)…"
+                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                />
+              </Field>
+            </div>
+            <div className="sm:col-span-2">
               <Field label="Notas">
                 <textarea
                   value={draft.notes}
                   onChange={(e) => set({ notes: e.target.value })}
-                  rows={3}
+                  rows={2}
                   className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 />
               </Field>

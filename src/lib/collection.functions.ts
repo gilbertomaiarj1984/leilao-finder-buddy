@@ -39,6 +39,7 @@ function normalizeInput(input: Record<string, unknown> | undefined) {
     album?: string;
     title?: string;
     year?: number | null;
+    image?: string | null;
     house?: string;
     uf?: string;
     wonPrice?: string;
@@ -46,6 +47,7 @@ function normalizeInput(input: Record<string, unknown> | undefined) {
     conditionMedia?: string;
     conditionSleeve?: string;
     notes?: string;
+    description?: string;
     tags?: string[];
   } = {};
   if (str(input?.artist) !== undefined) patch.artist = String(input!.artist);
@@ -53,6 +55,8 @@ function normalizeInput(input: Record<string, unknown> | undefined) {
   if (str(input?.title) !== undefined) patch.title = String(input!.title);
   if (input?.year !== undefined)
     patch.year = input.year === null ? null : Number(input.year) || null;
+  if (input?.image !== undefined)
+    patch.image = input.image === null ? null : String(input.image) || null;
   if (str(input?.house) !== undefined) patch.house = String(input!.house);
   if (str(input?.uf) !== undefined) patch.uf = String(input!.uf);
   if (str(input?.wonPrice) !== undefined) patch.wonPrice = String(input!.wonPrice);
@@ -63,6 +67,7 @@ function normalizeInput(input: Record<string, unknown> | undefined) {
   if (str(input?.conditionSleeve) !== undefined)
     patch.conditionSleeve = String(input!.conditionSleeve);
   if (str(input?.notes) !== undefined) patch.notes = String(input!.notes);
+  if (str(input?.description) !== undefined) patch.description = String(input!.description);
   if (Array.isArray(input?.tags))
     patch.tags = input!.tags.filter((t): t is string => typeof t === "string");
   return patch;
@@ -169,4 +174,18 @@ export const deleteCollectionItem = createServerFn({ method: "POST" })
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { deleteCollectionItem: remove } = await import("./collection.server");
     return await remove(data.id);
+  });
+
+/** Envia uma foto (data URL) ao Storage e devolve a URL pública para gravar em `image`. */
+export const uploadCollectionImage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { dataUrl?: string } | undefined) => {
+    if (!input?.dataUrl || typeof input.dataUrl !== "string") throw new Error("imagem obrigatória");
+    return { dataUrl: input.dataUrl };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { uploadCollectionImage: upload } = await import("./collection.server");
+    return await upload(data.dataUrl);
   });
