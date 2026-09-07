@@ -607,6 +607,59 @@ export async function reidentifyCollection(
   return { identified, processed: batch.length, nextOffset: scan, total, done: scan >= total };
 }
 
+/**
+ * Reprocessa UM disco pela IA (por texto) sob demanda — o "reprocessar" do card. Diferente da
+ * passada em massa (`reidentifyCollection`, que só preenche/melhora), este **SOBRESCREVE** o que a
+ * IA identificar: artista/álbum/ano e o descritivo. Nunca apaga com resultado vazio (se a IA não
+ * devolver um campo, o valor atual é mantido). Conjuntos → "Lote" pelo título sem gastar IA.
+ * Requer `ANTHROPIC_API_KEY`. Retorna `{updated}` (false quando não havia nada a mudar).
+ */
+export async function reidentifyCollectionItem(id: string): Promise<{ updated: boolean }> {
+  const { aiConfigured, identCollectionSync } = await import("./ai-eval.server");
+  if (!aiConfigured()) {
+    throw new Error("A IA não está configurada (ANTHROPIC_API_KEY ausente no servidor).");
+  }
+  const item = (await getAllCollection()).find((i) => i.id === id);
+  if (!item) throw new Error("Disco não encontrado na coleção.");
+
+  // Conjuntos ("lote com N discos") → categoria "Lote" pelo título, sem gastar IA.
+  if (isDiscBundle(item.title)) {
+    if (item.artist === LOTE_LABEL) return { updated: false };
+    const { error } = await supabaseAdmin
+      .from("collection_items")
+      .update({ artist: LOTE_LABEL })
+      .eq("id", id);
+    if (error) throw new Error(`Não foi possível gravar: ${error.message}`);
+    return { updated: true };
+  }
+
+  const [r] = await identCollectionSync([
+    {
+      id: item.id,
+      title: item.title.trim() || [item.artist, item.album].filter(Boolean).join(" - "),
+      artist: item.artist,
+      album: item.album,
+      year: item.year,
+    },
+  ]);
+  const parsed = r ? parseAiAlbum(r.album) : { artist: "", album: null, year: null };
+  const artist = canonicalArtist(parsed.artist ? titleCase(parsed.artist) : "", item.title);
+  const album = parsed.album ?? "";
+  const year = r?.year ?? null;
+
+  // SOBRESCREVE cada campo que a IA devolveu; nunca zera com vazio.
+  const patch: TablesUpdate<"collection_items"> = {};
+  if (artist && artist !== item.artist) patch.artist = artist;
+  if (album && album !== item.album) patch.album = album;
+  if (year != null && year !== item.year) patch.year = year;
+  if (r?.description && r.description !== item.description) patch.description = r.description;
+
+  if (!Object.keys(patch).length) return { updated: false };
+  const { error } = await supabaseAdmin.from("collection_items").update(patch).eq("id", id);
+  if (error) throw new Error(`Não foi possível gravar: ${error.message}`);
+  return { updated: true };
+}
+
 /** Campos editáveis de um disco (usado por add e update). */
 export type CollectionInput = {
   artist?: string;
