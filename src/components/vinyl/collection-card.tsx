@@ -1,7 +1,6 @@
 import { ExternalLink, Pencil, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { collectionLabel } from "@/components/vinyl/collection-utils";
 import type { CollectionItem } from "@/lib/collection.server";
 
 export function CollectionCard({
@@ -15,36 +14,34 @@ export function CollectionCard({
   onEdit: () => void;
   onRemove: () => void;
 }) {
-  const label = collectionLabel(item);
-  const showTitle = item.title && item.title !== label;
-  const marketRange =
-    item.marketLow && item.marketHigh
-      ? `${item.marketLow} – ${item.marketHigh}`
-      : (item.marketLow ?? item.marketHigh);
+  const artistLine = item.artist || "(sem artista)";
+  const albumLine =
+    [item.album, item.year ? `(${item.year})` : ""].filter(Boolean).join(" ") ||
+    item.title ||
+    "(sem álbum)";
+  const alt = [item.artist, item.album].filter(Boolean).join(" - ") || item.title || "disco";
 
   return (
     <article className="relative flex flex-col overflow-hidden rounded-md border border-border bg-card">
       {item.sourceUrl ? (
         <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="block bg-secondary">
-          <CardImage image={item.image} alt={label} />
+          <CardImage image={item.image} alt={alt} />
         </a>
       ) : (
         <div className="block bg-secondary">
-          <CardImage image={item.image} alt={label} />
+          <CardImage image={item.image} alt={alt} />
         </div>
       )}
 
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div>
-          <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">{label}</p>
-          {showTitle ? (
-            <p
-              className="line-clamp-2 text-xs leading-snug text-muted-foreground"
-              title={item.title}
-            >
-              {item.title}
-            </p>
-          ) : null}
+          {/* 1ª linha: artista · 2ª linha: álbum + ano */}
+          <p className="line-clamp-2 text-sm font-semibold leading-snug text-foreground">
+            {artistLine}
+          </p>
+          <p className="line-clamp-2 text-xs leading-snug text-muted-foreground" title={albumLine}>
+            {albumLine}
+          </p>
         </div>
 
         {item.tags.length ? (
@@ -60,7 +57,7 @@ export function CollectionCard({
           </div>
         ) : null}
 
-        <div className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           {item.wonPrice ? (
             <span className="font-semibold text-primary" title="Valor pago">
               Pago {item.wonPrice}
@@ -82,20 +79,20 @@ export function CollectionCard({
               Capa {item.conditionSleeve}
             </span>
           ) : null}
-          {marketRange ? (
-            <span className="w-full text-[11px]" title="Faixa de mercado (Discogs BR)">
-              Mercado {marketRange}
-            </span>
-          ) : null}
-          {item.house ? <span>{item.house}</span> : null}
-          {item.uf ? <span>{item.uf}</span> : null}
         </div>
+
+        {/* Descritivo do disco (buscado pela IA) */}
+        {item.description ? (
+          <p className="line-clamp-4 text-xs leading-snug text-muted-foreground">
+            {item.description}
+          </p>
+        ) : null}
 
         {item.notes ? (
           <p className="line-clamp-3 text-xs italic text-muted-foreground/90">{item.notes}</p>
         ) : null}
 
-        <div className="flex items-center gap-2">
+        <div className="mt-auto flex items-center gap-2">
           <Button size="sm" variant="outline" className="flex-1" onClick={onEdit} disabled={busy}>
             <Pencil className="mr-2 h-4 w-4" />
             Editar

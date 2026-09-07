@@ -499,3 +499,137 @@ export async function identLotsSync(lots: EvalLot[], withImage = false): Promise
   );
   return rows;
 }
+
+// ---------------------------------------------------------------------------
+// Identificação + DESCRIÇÃO da Coleção (síncrona, SÓ TEXTO)
+//
+// Usada pela re-identificação da Coleção: além de artista/álbum/ano, pede um
+// descritivo curto do disco. Nunca usa a capa (a imagem do leilão engana o
+// modelo). Recebe também o artista/álbum atuais como pista.
+// ---------------------------------------------------------------------------
+
+const COLLECTION_IDENT_SYSTEM_PROMPT =
+  "Você identifica e descreve discos de vinil de uma coleção, para um colecionador " +
+  "brasileiro. Use seu conhecimento de música e discografia. Baseie-se APENAS no texto " +
+  "informado (não há imagem). Responda SOMENTE com um objeto JSON, sem texto fora dele.";
+
+/** Entrada da identificação da Coleção: título do lote + artista/álbum/ano atuais (pista). */
+export type CollectionIdentInput = {
+  id: string;
+  title: string;
+  artist?: string;
+  album?: string;
+  year?: number | null;
+};
+
+/** Resultado: identificação + descritivo do disco. */
+export type CollectionIdentResult = {
+  id: string;
+  album: string | null;
+  year: number | null;
+  confidence: string | null;
+  description: string | null;
+};
+
+/** Prompt de identificação+descrição de UM disco da coleção (só texto). */
+export function buildCollectionIdentPrompt(input: CollectionIdentInput): string {
+  const info = {
+    titulo: input.title,
+    artista_atual: input.artist || null,
+    album_atual: input.album || null,
+    ano_atual: input.year ?? null,
+  };
+  return (
+    "Identifique e descreva este disco de vinil. Devolva um objeto JSON com EXATAMENTE estas chaves:\n" +
+    '- "album": "Artista - Álbum" (use " - " entre artista e álbum; "" se não souber). ' +
+    "Se for coletânea/vários artistas (sucessos, trilha sonora, novela, seleção), use " +
+    '"Vários Artistas" como artista.\n' +
+    '- "year": ano de lançamento (inteiro) ou null se não souber\n' +
+    '- "confidence": "alta" | "media" | "baixa" (sua confiança na identificação)\n' +
+    '- "description": 2 a 3 frases em português descrevendo o disco (artista, gênero/estilo, ' +
+    'época, relevância e faixas notáveis se souber). "" se não souber.\n\n' +
+    "Use os campos atuais só como pista — corrija se estiverem errados.\n" +
+    "Disco:\n" +
+    JSON.stringify(info) +
+    "\n\nResponda só com o objeto JSON."
+  );
+}
+
+/** Parâmetros de mensagem (só texto) para identificar+descrever UM disco da coleção. */
+export function buildCollectionIdentParams(input: CollectionIdentInput) {
+  return {
+    model: AI_MODEL,
+    max_tokens: 400,
+    system: COLLECTION_IDENT_SYSTEM_PROMPT,
+    messages: [
+      {
+        role: "user" as const,
+        content: [{ type: "text" as const, text: buildCollectionIdentPrompt(input) }],
+      },
+    ],
+  };
+}
+
+/** Extrai {album, year, confidence, description} do texto devolvido. Null se nada aproveitável. */
+export function parseCollectionIdentObject(text: string): Omit<CollectionIdentResult, "id"> | null {
+  if (!text) return null;
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  let obj: Record<string, unknown>;
+  try {
+    obj = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const album =
+    typeof obj["album"] === "string" && obj["album"].trim()
+      ? obj["album"].trim().slice(0, 200)
+      : null;
+  const yearRaw = Number(obj["year"]);
+  const year =
+    Number.isFinite(yearRaw) && yearRaw >= 1900 && yearRaw <= 2100 ? Math.round(yearRaw) : null;
+  const c = typeof obj["confidence"] === "string" ? obj["confidence"].toLowerCase().trim() : "";
+  const confidence = (CONFIDENCES as readonly string[]).includes(c) ? c : null;
+  const description =
+    typeof obj["description"] === "string" && obj["description"].trim()
+      ? obj["description"].trim().slice(0, 800)
+      : null;
+  if (album === null && year === null && confidence === null && description === null) return null;
+  return { album, year, confidence, description };
+}
+
+/**
+ * Identificação + descrição SÍNCRONA (só texto) de um conjunto pequeno de discos da coleção.
+ * Best-effort POR DISCO; **não** persiste (o chamador grava). Retorna só os discos que a IA
+ * de fato aproveitou (com álbum OU descrição).
+ */
+export async function identCollectionSync(
+  inputs: CollectionIdentInput[],
+): Promise<CollectionIdentResult[]> {
+  if (!inputs.length) return [];
+  const client = await getClient();
+  const rows: CollectionIdentResult[] = [];
+  let cursor = 0;
+
+  const worker = async () => {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      const input = inputs[index];
+      if (!input) return;
+      try {
+        const message = await client.messages.create(buildCollectionIdentParams(input));
+        const parsed = parseCollectionIdentObject(messageText(message));
+        if (parsed) rows.push({ id: input.id, ...parsed });
+      } catch (error) {
+        console.error(`[ai-eval] falha ao identificar/descrever o disco ${input.id}`, error);
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(SYNC_CONCURRENCY, inputs.length) }, () => worker()),
+  );
+  return rows;
+}

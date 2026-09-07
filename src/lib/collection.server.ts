@@ -35,6 +35,7 @@ export type CollectionItem = {
   conditionMedia: string;
   conditionSleeve: string;
   notes: string;
+  description: string;
   tags: string[];
   marketLow: string | null;
   marketHigh: string | null;
@@ -43,7 +44,7 @@ export type CollectionItem = {
 };
 
 const COLS =
-  "id, lot_id, source, artist, album, title, year, image, house, uf, won_price, won_date, condition_media, condition_sleeve, notes, tags, market_low, market_high, source_url, position";
+  "id, lot_id, source, artist, album, title, year, image, house, uf, won_price, won_date, condition_media, condition_sleeve, notes, description, tags, market_low, market_high, source_url, position";
 const PAGE = 1000;
 
 type DbRow = {
@@ -62,6 +63,7 @@ type DbRow = {
   condition_media: string | null;
   condition_sleeve: string | null;
   notes: string | null;
+  description: string | null;
   tags: string[] | null;
   market_low: string | null;
   market_high: string | null;
@@ -86,6 +88,7 @@ function toItem(r: DbRow): CollectionItem {
     conditionMedia: r.condition_media ?? "",
     conditionSleeve: r.condition_sleeve ?? "",
     notes: r.notes ?? "",
+    description: r.description ?? "",
     tags: r.tags ?? [],
     marketLow: r.market_low,
     marketHigh: r.market_high,
@@ -505,12 +508,14 @@ export type ReidentifyResult = {
  * Requer `ANTHROPIC_API_KEY`.
  */
 export async function reidentifyCollection(offset = 0, max = 12): Promise<ReidentifyResult> {
-  const { aiConfigured, identLotsSync } = await import("./ai-eval.server");
+  const { aiConfigured, identCollectionSync } = await import("./ai-eval.server");
   if (!aiConfigured()) {
     throw new Error("A IA não está configurada (ANTHROPIC_API_KEY ausente no servidor).");
   }
   const all = await getAllCollection();
-  const work = all.filter((i) => i.title.trim()).sort((a, b) => a.id.localeCompare(b.id));
+  const work = all
+    .filter((i) => i.title.trim() || i.artist.trim() || i.album.trim())
+    .sort((a, b) => a.id.localeCompare(b.id));
   const total = work.length;
   const batch = work.slice(offset, offset + max);
   if (!batch.length) {
@@ -529,9 +534,15 @@ export async function reidentifyCollection(offset = 0, max = 12): Promise<Reiden
     }
   }
 
-  const results = await identLotsSync(
-    aiNeeded.map((i) => ({ id: i.id, title: i.title, price: "", house: i.house, image: i.image })),
-    false, // só por texto
+  // IA por TEXTO: identifica (artista/álbum/ano) e gera o descritivo do disco.
+  const results = await identCollectionSync(
+    aiNeeded.map((i) => ({
+      id: i.id,
+      title: i.title.trim() || [i.artist, i.album].filter(Boolean).join(" - "),
+      artist: i.artist,
+      album: i.album,
+      year: i.year,
+    })),
   );
   const resById = new Map(results.map((r) => [r.id, r]));
 
@@ -543,14 +554,15 @@ export async function reidentifyCollection(offset = 0, max = 12): Promise<Reiden
     const year = r?.year ?? null;
 
     artist = canonicalArtist(artist, item.title);
-    if (!artist) {
-      // IA não identificou e não é coletânea → não mexe (preserva o que já havia).
-      continue;
-    }
     const patch: TablesUpdate<"collection_items"> = {};
-    if (artist !== item.artist) patch.artist = artist;
-    if (album && album !== item.album) patch.album = album;
-    if (year != null && year !== item.year) patch.year = year;
+    // Descritivo: só preenche quando está vazio (não sobrescreve edição do usuário).
+    if (r?.description && !item.description.trim()) patch.description = r.description;
+    if (artist) {
+      if (artist !== item.artist) patch.artist = artist;
+      if (album && album !== item.album) patch.album = album;
+      if (year != null && year !== item.year) patch.year = year;
+    }
+    // IA não identificou artista e não é coletânea → preserva o artista atual (só grava a descrição).
     if (Object.keys(patch).length) patches.set(item.id, patch);
   }
 
@@ -582,6 +594,7 @@ export type CollectionInput = {
   conditionMedia?: string;
   conditionSleeve?: string;
   notes?: string;
+  description?: string;
   tags?: string[];
 };
 
@@ -609,6 +622,7 @@ export async function addCollectionItem(input: CollectionInput): Promise<Collect
       condition_media: (input.conditionMedia ?? "").trim(),
       condition_sleeve: (input.conditionSleeve ?? "").trim(),
       notes: (input.notes ?? "").trim(),
+      description: (input.description ?? "").trim(),
       tags: input.tags ?? [],
       position,
     })
@@ -639,6 +653,7 @@ export async function updateCollectionItem(
   if (typeof input.conditionSleeve === "string")
     patch.condition_sleeve = input.conditionSleeve.trim();
   if (typeof input.notes === "string") patch.notes = input.notes.trim();
+  if (typeof input.description === "string") patch.description = input.description.trim();
   if (Array.isArray(input.tags)) patch.tags = input.tags;
 
   const { data, error } = await supabaseAdmin
@@ -662,4 +677,45 @@ export async function deleteCollectionItem(id: string): Promise<{ ok: true }> {
     throw new Error(`Não foi possível remover o disco: ${error.message}`);
   }
   return { ok: true };
+}
+
+/** Bucket público das fotos da coleção (criado em `supabase/setup.sql`). */
+const IMAGE_BUCKET = "collection";
+/** Teto do upload (imagem já decodificada). Fotos de capa não passam disso. */
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const IMAGE_EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/avif": "avif",
+};
+
+/**
+ * Faz upload de uma foto (data URL base64) ao Storage e devolve a URL pública para gravar em
+ * `image`. Passa pelo servidor com `service_role` (o bucket é público só para leitura). Valida
+ * tipo (imagem) e tamanho. Usado pela edição/inserção manual de um disco.
+ */
+export async function uploadCollectionImage(dataUrl: string): Promise<{ url: string }> {
+  const m = /^data:([^;,]+);base64,(.+)$/s.exec(dataUrl ?? "");
+  if (!m) throw new Error("Imagem inválida (envie um arquivo de imagem).");
+  const contentType = m[1]!.toLowerCase();
+  const ext = IMAGE_EXT[contentType];
+  if (!ext) throw new Error("Formato não suportado. Use JPG, PNG, WEBP, GIF ou AVIF.");
+  const bytes = Buffer.from(m[2]!, "base64");
+  if (!bytes.length) throw new Error("Imagem vazia.");
+  if (bytes.length > MAX_IMAGE_BYTES) {
+    throw new Error(`Imagem muito grande (máx. ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)} MB).`);
+  }
+  const path = `${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabaseAdmin.storage
+    .from(IMAGE_BUCKET)
+    .upload(path, bytes, { contentType, upsert: false });
+  if (error) {
+    console.error("[collection] falha no upload da imagem", error);
+    throw new Error(`Não foi possível enviar a imagem: ${error.message}`);
+  }
+  const { data } = supabaseAdmin.storage.from(IMAGE_BUCKET).getPublicUrl(path);
+  return { url: data.publicUrl };
 }

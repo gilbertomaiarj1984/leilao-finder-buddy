@@ -192,6 +192,7 @@ export type Database = {
           condition_media: string
           condition_sleeve: string
           created_at: string
+          description: string
           house: string
           id: string
           image: string | null
@@ -216,6 +217,7 @@ export type Database = {
           condition_media?: string
           condition_sleeve?: string
           created_at?: string
+          description?: string
           house?: string
           id?: string
           image?: string | null
@@ -240,6 +242,7 @@ export type Database = {
           condition_media?: string
           condition_sleeve?: string
           created_at?: string
+          description?: string
           house?: string
           id?: string
           image?: string | null

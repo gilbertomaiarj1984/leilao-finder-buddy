@@ -279,10 +279,19 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
   tanto na varredura (`deriveCandidate`) quanto na re-identificação por IA.
 - **Editável:** cada disco tem `artist`, `album`, `title`, `year`, `image`, `house`, `uf`,
   `won_price` (**valor pago**), `won_date`, `condition_media`/`condition_sleeve` (grading),
-  `notes`, `tags[]`, `market_low`/`market_high` (snapshot Discogs). CRUD em
-  `collection.server.ts` (padrão do `wantlist.server.ts`) exposto por `collection.functions.ts`
+  `notes`, **`description`** (descritivo do disco, buscado pela IA), `tags[]`,
+  `market_low`/`market_high` (snapshot Discogs). CRUD em `collection.server.ts` (padrão do
+  `wantlist.server.ts`) exposto por `collection.functions.ts`
   (`getCollection`/`scanCollection`/`addCollectionItem`/`updateCollectionItem`/
-  `deleteCollectionItem`). Diálogo de edição/adição reusa `ui/dialog`.
+  `deleteCollectionItem`/`uploadCollectionImage`). Diálogo de edição/adição reusa `ui/dialog`.
+  - **Combo de artista:** o campo Artista é um `<input list>` (datalist) com os artistas já
+    existentes — dá para **escolher um existente ou digitar um novo**.
+  - **Foto:** upload por arquivo → server fn `uploadCollectionImage` (data URL → `service_role`
+    → **Storage bucket público `collection`**, criado no `setup.sql`) grava a URL pública em
+    `image`; dá para trocar/remover na edição e na inserção. Validação de tipo/tamanho (8 MB).
+- **Card (`CollectionCard`):** 1ª linha **artista**, 2ª linha **álbum + ano**; mantém **valor
+  pago** e o grading; exibe o **descritivo** da IA. **Não** mostra faixa de mercado nem casa de
+  leilão. A visão **Títulos** (`collectionLabel`) segue como estava.
 - **Botão "Atualizar coleção"** → `importWonLots()`: varre **"Minhas compras"**
   (`conta_site.asp?l=6&t=1&...&pag=N`, **`t=1`** confirmado com o site; lê página a página até
   uma sem lotes novos) via `leiloesbr-purchases.server.ts` (`listVinylPurchases`; filtra
@@ -300,17 +309,19 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
   `extractArtist`; (4) `canonicalArtist` reduz coletânea/lote à categoria. A varredura retorna
   `sources = {stored, title, none}` (diagnóstico de onde veio cada artista — some no toast).
 - **IA por TEXTO (opt-in, gasta créditos):** botão **"Identificar por texto (IA)"** →
-  `identifyCollection({offset, max})` → `reidentifyCollection` → **`identLotsSync(lots, false)`**.
-  **Nunca usa a capa** — a imagem do leilão engana o modelo (mistura artistas parecidos), por
-  isso `withImage=false` (o `buildIdentParams` monta só o texto). **Re-identifica TODA a coleção**
-  (não só os sem artista) para normalizar a base — corrige casos como Alceu Valença/Alcione que
-  vieram imprecisos. Pagina por **cursor `offset`** (ordem estável por `id`, pois o `artist` muda)
-  e devolve `{identified, processed, nextOffset, total, done}`; o cliente repete em laço até `done`.
-  Conjuntos são classificados como "Lote" pelo título SEM gastar IA; o resto vai à IA por texto e
-  passa por `canonicalArtist` (coletâneas viram "Coletâneas"). Só sobrescreve com valor melhor
-  (nunca apaga identificação existente com resultado vazio). O prompt de identificação
-  (`buildIdentUserPrompt`) instrui a IA a usar "Vários Artistas" em coletâneas. Sem
-  `ANTHROPIC_API_KEY`, erro claro.
+  `identifyCollection({offset, max})` → `reidentifyCollection` → **`identCollectionSync`**
+  (`ai-eval.server.ts`, SÓ TEXTO). Além de artista/álbum/ano, a IA gera o **descritivo**
+  (`description`) do disco. **Nunca usa a capa** — a imagem do leilão engana o modelo (mistura
+  artistas parecidos); o prompt (`buildCollectionIdentPrompt`) recebe título + artista/álbum/ano
+  atuais como pista e instrui a usar "Vários Artistas" em coletâneas. **Re-identifica TODA a
+  coleção** (não só os sem artista) para normalizar a base — corrige casos como Alceu
+  Valença/Alcione. Pagina por **cursor `offset`** (ordem estável por `id`, pois o `artist` muda) e
+  devolve `{identified, processed, nextOffset, total, done}`; o cliente repete em laço até `done`.
+  Conjuntos → "Lote" pelo título SEM gastar IA; o resto vai à IA e passa por `canonicalArtist`
+  (coletâneas viram "Coletâneas"). Só sobrescreve artista/álbum com valor melhor (nunca apaga com
+  resultado vazio); o **descritivo só é preenchido quando está vazio** (não sobrescreve edição do
+  usuário). Sem `ANTHROPIC_API_KEY`, erro claro. (`identLotsSync` segue existindo para o fluxo
+  antigo de leilões.)
 - **Uso pretendido:** a base de `lots` já acompanha o que o usuário arremata, então a varredura
   de `l=6` é **carga inicial / emergência**, não o fluxo contínuo.
 - **Duplicados questionados:** mesmo `lot_id` (mesma peça) é ignorado no re-scan; um vinil com
@@ -447,7 +458,8 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.17.1 | Coleção: varredura mescla abas `t=1`+`t=0` (servidor popula `t=0`) + botão **Diagnóstico** (`debugPurchases`) | #79 |
 | v0.17.2 | Coleção: `parsePurchaseTitle` — artista/álbum dos formatos "LP: X - Y" e "LP: Artista: X / Album: Y" (tira ":"/"Artista:") | #80 |
 | v0.17.3 | Coleção: título rotulado (`Álbum: X \| Artista(s): [Z] \| Ano: N \| Estilo(s):`) → artista/álbum/ano/notas/tags; prioridade banco→título→IA; botão IA por capa opt-in (`identLotsSync`); diagnóstico de fontes | — |
-| v0.18.0 | Coleção: IA **só por texto** (nunca a capa) re-identifica toda a base (`reidentifyCollection`, cursor); agrupamento normalizado por artista (`Alceu Valença`=`Alceu Valenca`); categoria **"Coletâneas"** (`isCompilation`/`canonicalArtist`) | — |
+| v0.18.0 | Coleção: IA **só por texto** (nunca a capa) re-identifica toda a base (`reidentifyCollection`, cursor); agrupamento normalizado por artista (`Alceu Valença`=`Alceu Valenca`); categoria **"Coletâneas"** (`isCompilation`/`canonicalArtist`) | #82 |
+| v0.19.0 | Coleção: card por artista/álbum+ano (remove mercado+casa) + **descritivo do disco pela IA** (`identCollectionSync`, coluna `description`); combo de artista (datalist); **upload de foto** (Storage bucket `collection`, `uploadCollectionImage`) | — |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
@@ -470,8 +482,11 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 **Validar em produção (não dá para testar daqui)**
 
 4. **Aplicar o `setup.sql`** para as tabelas/colunas mais recentes (`lot_ident`, colunas BR de
-   `lot_market`, **`collection_items`**) caso ainda não tenham sido aplicadas; garantir
-   `ANTHROPIC_API_KEY` e `DISCOGS_TOKEN` configurados (GitHub secret + env Vercel).
+   `lot_market`, **`collection_items`** — inclui a coluna nova **`description`** e o **bucket de
+   Storage `collection`**, ambos idempotentes no `setup.sql`) caso ainda não tenham sido
+   aplicadas; garantir `ANTHROPIC_API_KEY` e `DISCOGS_TOKEN` configurados (GitHub secret + env
+   Vercel). **Upload de foto** da Coleção exige o bucket `collection` criado (re-rodar o
+   `setup.sql` cria/torna público).
 7. **Coleção:** aplicar `collection_items` no banco; conferir o botão **"Atualizar coleção"**
    (varredura de `conta_site.asp?l=6`) — se algum campo vier vazio, capturar 1 card do HTML de
    "Minhas compras" (F12) e ajustar os regexes de `leiloesbr-purchases.server.ts`. Confirmar que
