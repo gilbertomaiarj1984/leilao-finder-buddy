@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Disc3, Library, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, Disc3, Library, Pencil, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -26,6 +26,7 @@ import {
   debugScanCollection,
   deleteCollectionItem,
   getCollection,
+  identifyCollection,
   scanCollection,
   updateCollectionItem,
 } from "@/lib/collection.functions";
@@ -127,6 +128,7 @@ function ColecaoPage() {
   const addItem = useServerFn(addCollectionItem);
   const addWon = useServerFn(addWonLot);
   const debugScan = useServerFn(debugScanCollection);
+  const identify = useServerFn(identifyCollection);
   const updateItem = useServerFn(updateCollectionItem);
   const removeItem = useServerFn(deleteCollectionItem);
 
@@ -135,6 +137,7 @@ function ColecaoPage() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [review, setReview] = useState<PendingWonLot[]>([]);
   const [debug, setDebug] = useState<string | null>(null);
+  const [identifying, setIdentifying] = useState(false);
 
   const query = useQuery<CollectionItem[]>({
     queryKey: ["collection"] as const,
@@ -148,15 +151,23 @@ function ColecaoPage() {
 
   const scanMut = useMutation({
     mutationFn: () => scan(),
-    onSuccess: (res: { added: number; scanned: number; duplicates: PendingWonLot[] }) => {
+    onSuccess: (res: {
+      added: number;
+      scanned: number;
+      duplicates: PendingWonLot[];
+      sources: { stored: number; title: number; none: number };
+    }) => {
       void invalidate();
       if (res.duplicates.length) setReview(res.duplicates);
       const dup = res.duplicates.length
         ? ` ${res.duplicates.length} possível(is) duplicado(s) para revisar.`
         : "";
+      const src = res.sources
+        ? ` (banco ${res.sources.stored} · título ${res.sources.title} · sem artista ${res.sources.none})`
+        : "";
       toast.success(
         res.added > 0
-          ? `${res.added} disco(s) adicionado(s).${dup}`
+          ? `${res.added} disco(s) adicionado(s).${dup}${src}`
           : res.duplicates.length
             ? `Nenhum novo automático.${dup}`
             : "Nada novo. Se você tem compras e nada aparece, clique em Diagnóstico.",
@@ -164,6 +175,30 @@ function ColecaoPage() {
     },
     onError: (e: Error) => toast.error(e.message || "Falha ao varrer as compras"),
   });
+
+  // Identifica pela capa (IA) os discos sem artista, em laço até acabar. Opt-in (gasta créditos).
+  async function runIdentify() {
+    setIdentifying(true);
+    try {
+      let total = 0;
+      for (let guard = 0; guard < 50; guard++) {
+        const res = (await identify({ data: { max: 12 } })) as {
+          identified: number;
+          remaining: number;
+        };
+        total += res.identified;
+        void invalidate();
+        if (res.remaining <= 0 || res.identified === 0) break;
+      }
+      toast.success(
+        total > 0 ? `${total} disco(s) identificado(s) pela IA.` : "Nada novo para identificar.",
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao identificar pela IA");
+    } finally {
+      setIdentifying(false);
+    }
+  }
 
   const addWonMut = useMutation({
     mutationFn: (p: PendingWonLot) => addWon({ data: p }),
@@ -221,6 +256,7 @@ function ColecaoPage() {
   });
 
   const artists = useMemo(() => artistOptions(items), [items]);
+  const missingCount = useMemo(() => items.filter((i) => !i.artist.trim()).length, [items]);
 
   const filtered = useMemo(() => {
     const searchNorm = normalizeForMatch(search);
@@ -266,6 +302,18 @@ function ColecaoPage() {
               <Plus className="mr-2 h-4 w-4" />
               Adicionar disco
             </Button>
+            {missingCount > 0 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void runIdentify()}
+                disabled={identifying}
+                title="Identificar pela capa (IA) os discos que ficaram sem artista. Gasta créditos."
+              >
+                <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
+                {identifying ? "Identificando…" : `Identificar faltantes (${missingCount})`}
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               size="sm"

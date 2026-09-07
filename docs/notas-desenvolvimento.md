@@ -279,9 +279,20 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
   `lot_id` = `${idLeilao}-${idPeca}`**) — nunca sobrescreve edição do usuário. Semeia
   artista/álbum/ano e a faixa Discogs **reaproveitando a identificação já gravada**
   (`lot_ai`/`lot_ident` via `parseAiAlbum`) e o mercado (`lot_market` via `toLotMarket`); **não**
-  dispara IA/Discogs novos. Sem identificação, deriva do próprio título (formato
-  "Artista - Álbum" após limpar o prefixo "LP de …" em `cleanTitlePrefix`); fallback
-  `extractArtist`.
+  dispara IA/Discogs novos.
+- **Prioridade da identificação (tudo GRÁTIS antes da IA — poupar créditos), em `deriveCandidate`:**
+  (1) **identificação já gravada** (`lot_ai`/`lot_ident` casada por `id`; estes lotes já rodaram
+  na página de leilão); (2) **título rotulado** — `parsePurchaseTitle` lê os campos do próprio
+  título das casas: `Álbum: X | Código: Y | Artista(s): [`Z`] | Ano: N | Estilo(s): [..] | Label(s):`
+  (o `//` vira `notes`; `Estilo(s)` vira `tags`; artista de `Artista(s):`, álbum de `Álbum:` ou do
+  1º segmento sem rótulo), além de "Artista: X / Album: Y" e "ARTISTA - ÁLBUM"; (3) heurístico
+  `extractArtist`; (4) **IA por capa** só como último recurso (Parte B). A varredura retorna
+  `sources = {stored, title, none}` (diagnóstico de onde veio cada artista — some no toast).
+- **IA por capa (opt-in, gasta créditos):** botão **"Identificar faltantes (N)"** (só aparece com
+  discos sem artista) → `identifyCollection` → `identifyMissing` → **`identLotsSync`** (novo em
+  `ai-eval.server.ts`, wrapper SÍNCRONO da MESMA identificação dos leilões: `buildIdentParams`
+  com a capa + `parseIdentObject`, modelo `AI_MODEL`). Grava artista/álbum/ano só quando a IA
+  retorna artista; roda em laço até `remaining=0`. Sem `ANTHROPIC_API_KEY`, erro claro.
 - **Uso pretendido:** a base de `lots` já acompanha o que o usuário arremata, então a varredura
   de `l=6` é **carga inicial / emergência**, não o fluxo contínuo.
 - **Duplicados questionados:** mesmo `lot_id` (mesma peça) é ignorado no re-scan; um vinil com
@@ -416,7 +427,8 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.16.1 | Fix da varredura da Coleção: data vazia "00/00/0000" do `l=6` virava `0000-00-00` e recusava o insert | #77 |
 | v0.17.0 | Coleção: parser real do `l=6` (`t=1`, aspas mistas, título do `.product-title`, preço/casa), revisão de duplicados (`PendingWonLot`) | #78 |
 | v0.17.1 | Coleção: varredura mescla abas `t=1`+`t=0` (servidor popula `t=0`) + botão **Diagnóstico** (`debugPurchases`) | #79 |
-| v0.17.2 | Coleção: `parsePurchaseTitle` — artista/álbum dos formatos "LP: X - Y" e "LP: Artista: X / Album: Y" (tira ":"/"Artista:") | — |
+| v0.17.2 | Coleção: `parsePurchaseTitle` — artista/álbum dos formatos "LP: X - Y" e "LP: Artista: X / Album: Y" (tira ":"/"Artista:") | #80 |
+| v0.17.3 | Coleção: título rotulado (`Álbum: X \| Artista(s): [Z] \| Ano: N \| Estilo(s):`) → artista/álbum/ano/notas/tags; prioridade banco→título→IA; botão IA por capa opt-in (`identLotsSync`); diagnóstico de fontes | — |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.

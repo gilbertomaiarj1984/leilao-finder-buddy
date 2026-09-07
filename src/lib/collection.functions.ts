@@ -23,6 +23,10 @@ function normalizePending(input: Record<string, unknown> | undefined): PendingWo
     marketLow: sn(input?.marketLow),
     marketHigh: sn(input?.marketHigh),
     sourceUrl: s(input?.sourceUrl),
+    notes: s(input?.notes),
+    tags: Array.isArray(input?.tags)
+      ? input!.tags.filter((t): t is string => typeof t === "string")
+      : [],
     existing: s(input?.existing),
   };
 }
@@ -87,6 +91,22 @@ export const scanCollection = createServerFn({ method: "POST" })
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { importWonLots } = await import("./collection.server");
     return await importWonLots();
+  });
+
+/**
+ * ALTERNATIVA por IA (opt-in): identifica pela capa os discos SEM artista (o título já foi
+ * rastreado na varredura). Processa um bloco e devolve `{ identified, remaining }` p/ laço.
+ */
+export const identifyCollection = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { max?: number } | undefined) => ({
+    max: Math.min(Math.max(Number(input?.max) || 12, 1), 25),
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { identifyMissing } = await import("./collection.server");
+    return await identifyMissing(data.max);
   });
 
 /** Diagnóstico da varredura (não grava): quantas peças/páginas/logado por aba. */

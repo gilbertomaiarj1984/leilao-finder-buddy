@@ -133,36 +133,104 @@ function trimEdges(s: string): string {
     .trim();
 }
 
+/** Normaliza um rótulo de campo ("Álbum", "Artista(s)") p/ comparar (sem acento/`(s)`/plural). */
+function normLabel(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\(s\)/g, "")
+    .replace(/s$/, "")
+    .trim();
+}
+
+/** Limpa o valor de um campo: tira crases/colchetes/aspas. */
+function cleanValue(v: string): string {
+  return v
+    .replace(/[`[\]"']/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** 1º item de um valor que pode ser lista ("A, B" -> "A"). */
+function firstItem(v: string): string {
+  return cleanValue(v)
+    .split(/\s*[,;/]\s*/)[0]!
+    .trim();
+}
+
+const isLabeledSeg = (seg: string) => /^[^:]{1,25}:\s/.test(seg);
+
+type ParsedTitle = {
+  artist: string;
+  album: string;
+  year: number | null;
+  notes: string;
+  tags: string[];
+};
+
 /**
- * Extrai {artista, álbum} do título de compra das casas. Cobre os formatos vistos no `l=6`:
- * "LP: ARTISTA - ÁLBUM", "LP de Fulano - Álbum" e o rotulado "LP: Artista: X / Album: Y".
- * Remove o prefixo de formato ("LP"/"Disco"/"Compacto" + conector/`:`), os rótulos
- * "Artista:"/"Album:" e a pontuação nas pontas — sem isso o artista saía como ": Fulano" ou
- * ": Artista: Fulano".
+ * Extrai artista/álbum/ano (+notas e estilo→tags) do título de compra das casas. Cobre:
+ * - **rotulado por campos** `Álbum: X | Código: Y | Artista(s): [`Z`] | Ano: N | Estilo(s): [..]`
+ *   (Abreu/Vinil 11) — o artista fica em `Artista(s):`, e o estado/observações após `//`;
+ * - `LP: Artista: X / Album: Y`;
+ * - `LP: ARTISTA - ÁLBUM` / `LP de Fulano - Álbum`;
+ * - título simples (vira artista).
+ * `titleCase` é aplicado depois, em `deriveCandidate`.
  */
-function parsePurchaseTitle(rawTitle: string): { artist: string; album: string } {
-  let t = rawTitle
+function parsePurchaseTitle(rawTitle: string): ParsedTitle {
+  // Notas = texto após o 1º "//" (estado da mídia/capa).
+  const halves = rawTitle.split(/\s*\/\/\s*/);
+  const notes = halves.slice(1).join(" · ").trim();
+  // Tira o prefixo de formato ("LP:", "LP de", "Disco:").
+  const head = halves[0]!
     .replace(
       /^\s*(lps?|discos?|vinil|vinis|compactos?|bolach[aã]o|long\s*play)\b\s*(de|do|da|dos|das)?\s*[:–—-]?\s*/i,
       "",
     )
     .trim();
 
-  // Rotulado: "Artista: X / Album: Y" (ou "- Álbum:").
-  const labeled = t.match(
-    /artista\s*[:-]\s*(.+?)\s*(?:[/|]|\s[-–—]\s)\s*(?:[aá]lbum|album)\s*[:-]\s*(.+)$/i,
-  );
-  if (labeled) return { artist: trimEdges(labeled[1]!), album: trimEdges(labeled[2]!) };
+  // Campos rotulados separados por " | " ou " / ".
+  const segments = head.split(/\s*\|\s*|\s+\/\s+/);
+  const fields = new Map<string, string>();
+  for (const seg of segments) {
+    const m = seg.match(/^\s*([^:]{1,20}):\s*(.+)$/);
+    if (m) fields.set(normLabel(m[1]!), m[2]!.trim());
+  }
+  const artista = fields.get("artista") ?? "";
+  let album = fields.get("album") ?? "";
+  // Álbum sem rótulo no 1º segmento (ex.: "Divina Luz | Artista(s): ...").
+  if (artista && !album && segments[0] && !isLabeledSeg(segments[0])) album = segments[0];
 
-  // Rótulo "Artista:" solto no começo.
-  t = t.replace(/^\s*artista\s*[:-]\s*/i, "").trim();
+  if (artista || fields.get("album")) {
+    const anoRaw = fields.get("ano");
+    const estilo = fields.get("estilo");
+    return {
+      artist: artista ? firstItem(artista) : "",
+      album: cleanValue(album),
+      year: anoRaw ? Number((cleanValue(anoRaw).match(/\d{4}/) ?? [])[0]) || null : null,
+      notes,
+      tags: estilo
+        ? cleanValue(estilo)
+            .split(/\s*[,;/]\s*/)
+            .filter(Boolean)
+        : [],
+    };
+  }
 
-  // "ARTISTA - ÁLBUM".
+  // Fallback: "ARTISTA - ÁLBUM" (tirando um rótulo "Artista:" solto no começo).
+  const t = head.replace(/^\s*artista\s*[:-]\s*/i, "").trim();
   const parts = t.split(/\s[-–—:/]\s/);
   if (parts.length >= 2 && parts[0]!.trim()) {
-    return { artist: trimEdges(parts[0]!), album: trimEdges(parts.slice(1).join(" - ")) };
+    return {
+      artist: trimEdges(parts[0]!),
+      album: trimEdges(parts.slice(1).join(" - ")),
+      year: null,
+      notes,
+      tags: [],
+    };
   }
-  return { artist: trimEdges(t), album: "" };
+  return { artist: trimEdges(t), album: "", year: null, notes, tags: [] };
 }
 
 /** Um vinil arrematado que a varredura NÃO inseriu porque parece duplicar um já existente
@@ -182,6 +250,8 @@ export type PendingWonLot = {
   marketLow: string | null;
   marketHigh: string | null;
   sourceUrl: string;
+  notes: string;
+  tags: string[];
   existing: string; // rótulo do disco já na coleção que casou (p/ mostrar)
 };
 
@@ -191,20 +261,39 @@ type EnrichMaps = {
   marketById: Map<string, LotMarketRow>;
 };
 
-/** Deriva os campos de um vinil arrematado (identificação IA > título "Artista - Álbum"). */
-function deriveCandidate(w: WonLot, maps: EnrichMaps): Omit<PendingWonLot, "existing"> {
-  // Prioridade: (1) identificação da IA; senão (2) o próprio título de compra.
+/** De onde veio o artista de um candidato (diagnóstico da varredura). */
+export type ArtistSource = "stored" | "title" | "none";
+
+/**
+ * Deriva os campos de um vinil arrematado, na ordem de prioridade (tudo GRÁTIS):
+ * (1) identificação JÁ gravada (`lot_ai`/`lot_ident`, casada por id); (2) título rotulado
+ * ("Artista(s): …" / "ARTISTA - ÁLBUM"). Ano/notas/tags vêm do título quando presentes.
+ * Devolve também de onde veio o artista, p/ o diagnóstico da varredura.
+ */
+function deriveCandidate(
+  w: WonLot,
+  maps: EnrichMaps,
+): { cand: Omit<PendingWonLot, "existing">; source: ArtistSource } {
   const identified = maps.albumById.get(w.id) ?? null;
   const idParsed = parseAiAlbum(identified);
+  const parsedTitle = parsePurchaseTitle(w.title);
+
   let artist: string;
   let album: string;
+  let source: ArtistSource;
   if (identified && idParsed.artist) {
     artist = titleCase(idParsed.artist);
     album = idParsed.album ?? "";
+    source = "stored";
+  } else if (parsedTitle.artist) {
+    artist = titleCase(parsedTitle.artist);
+    album = parsedTitle.album;
+    source = "title";
   } else {
-    const t = parsePurchaseTitle(w.title);
-    artist = t.artist ? titleCase(t.artist) : extractArtist(w.title) || w.title;
-    album = t.album;
+    const heur = extractArtist(w.title);
+    artist = heur; // "" quando não identifica → cai em "não classificados" (IA opcional depois)
+    album = parsedTitle.album;
+    source = heur ? "title" : "none";
   }
 
   const mktRow = maps.marketById.get(w.id);
@@ -219,28 +308,27 @@ function deriveCandidate(w: WonLot, maps: EnrichMaps): Omit<PendingWonLot, "exis
     marketHigh = high != null ? fmtMoney(high, m.currency) : null;
     marketYear = m.year;
   }
-  const titleYear = w.title.match(/\b(19|20)\d{2}\b/)?.[0];
-  const year =
-    idParsed.year ??
-    (titleYear ? Number(titleYear) : null) ??
-    maps.yearById.get(w.id) ??
-    marketYear ??
-    null;
+  const year = idParsed.year ?? parsedTitle.year ?? maps.yearById.get(w.id) ?? marketYear ?? null;
 
   return {
-    lotId: w.id,
-    artist,
-    album,
-    title: w.title,
-    year,
-    image: w.image,
-    house: w.house,
-    uf: w.uf,
-    wonPrice: w.wonPrice,
-    wonDate: brDateToIso(w.wonDate),
-    marketLow,
-    marketHigh,
-    sourceUrl: w.url,
+    cand: {
+      lotId: w.id,
+      artist,
+      album,
+      title: w.title,
+      year,
+      image: w.image,
+      house: w.house,
+      uf: w.uf,
+      wonPrice: w.wonPrice,
+      wonDate: brDateToIso(w.wonDate),
+      marketLow,
+      marketHigh,
+      sourceUrl: w.url,
+      notes: parsedTitle.notes,
+      tags: parsedTitle.tags,
+    },
+    source,
   };
 }
 
@@ -265,7 +353,8 @@ function candidateToRow(
     market_high: c.marketHigh,
     source_url: c.sourceUrl,
     position,
-    tags: [],
+    notes: c.notes,
+    tags: c.tags,
   };
 }
 
@@ -285,14 +374,18 @@ function albumKey(artist: string, album: string): string {
  * NÃO entram sozinhos — voltam em `duplicates` para o usuário confirmar (pode ser uma 2ª
  * cópia proposital). `added` = inseridos automaticamente; `scanned` = vinis lidos.
  */
+export type ScanSources = { stored: number; title: number; none: number };
+
 export async function importWonLots(): Promise<{
   added: number;
   scanned: number;
   duplicates: PendingWonLot[];
+  sources: ScanSources;
 }> {
+  const emptySources: ScanSources = { stored: 0, title: 0, none: 0 };
   const { listVinylPurchases } = await import("./leiloesbr-purchases.server");
   const won = await listVinylPurchases();
-  if (!won.length) return { added: 0, scanned: 0, duplicates: [] };
+  if (!won.length) return { added: 0, scanned: 0, duplicates: [], sources: emptySources };
 
   // Identificação/mercado já existentes (best-effort — pode não haver linha p/ o lote).
   const [aiRows, identRows, marketRows, existing] = await Promise.all([
@@ -321,11 +414,13 @@ export async function importWonLots(): Promise<{
 
   const payload: TablesInsert<"collection_items">[] = [];
   const duplicates: PendingWonLot[] = [];
+  const sources: ScanSources = { stored: 0, title: 0, none: 0 };
   for (const w of won) {
     if (have.has(w.id)) continue; // mesma peça já na coleção → re-scan não duplica
     have.add(w.id);
 
-    const cand = deriveCandidate(w, maps);
+    const { cand, source } = deriveCandidate(w, maps);
+    sources[source] += 1;
     const k = albumKey(cand.artist, cand.album);
     const dupOf = k ? seenAlbum.get(k) : undefined;
     if (dupOf) {
@@ -344,7 +439,7 @@ export async function importWonLots(): Promise<{
       throw new Error(`Não foi possível atualizar a coleção: ${error.message}`);
     }
   }
-  return { added: payload.length, scanned: won.length, duplicates };
+  return { added: payload.length, scanned: won.length, duplicates, sources };
 }
 
 /** Insere um duplicado confirmado pelo usuário ("adicionar mesmo assim"). */
@@ -361,6 +456,48 @@ export async function addPendingWonLot(cand: PendingWonLot): Promise<CollectionI
     throw new Error(`Não foi possível adicionar o disco: ${error.message}`);
   }
   return toItem(data as DbRow);
+}
+
+/**
+ * ALTERNATIVA por IA (opt-in): identifica pela CAPA os discos que ficaram SEM artista após o
+ * rastreio do título (o título rotulado/heurístico é rastreado ANTES; a IA é o último recurso,
+ * gasta créditos). Reaproveita `identLotsSync` — a MESMA identificação dos lotes de leilão.
+ * Processa até `max` por chamada e devolve `{ identified, remaining }` p/ o cliente repetir em
+ * laço. Só grava quando a IA retorna artista. Requer `ANTHROPIC_API_KEY`.
+ */
+export async function identifyMissing(
+  max = 12,
+): Promise<{ identified: number; remaining: number }> {
+  const { aiConfigured, identLotsSync } = await import("./ai-eval.server");
+  if (!aiConfigured()) {
+    throw new Error("A IA não está configurada (ANTHROPIC_API_KEY ausente no servidor).");
+  }
+  const all = await getAllCollection();
+  const missing = all.filter((i) => !i.artist.trim() && i.image && /^https?:\/\//i.test(i.image));
+  if (!missing.length) return { identified: 0, remaining: 0 };
+
+  const batch = missing.slice(0, max);
+  const results = await identLotsSync(
+    batch.map((i) => ({ id: i.id, title: i.title, price: "", house: i.house, image: i.image })),
+  );
+
+  let identified = 0;
+  for (const r of results) {
+    const parsed = parseAiAlbum(r.album);
+    const artist = parsed.artist ? titleCase(parsed.artist) : "";
+    if (!artist) continue;
+    const item = batch.find((i) => i.id === r.id);
+    const patch: TablesUpdate<"collection_items"> = { artist };
+    if (item && !item.album && parsed.album) patch.album = parsed.album;
+    if (r.year != null && item && item.year == null) patch.year = r.year;
+    const { error } = await supabaseAdmin.from("collection_items").update(patch).eq("id", r.id);
+    if (error) {
+      console.error("[collection] falha ao gravar identificação da IA", error);
+      continue;
+    }
+    identified += 1;
+  }
+  return { identified, remaining: Math.max(0, missing.length - batch.length) };
 }
 
 /** Campos editáveis de um disco (usado por add e update). */
