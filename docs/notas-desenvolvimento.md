@@ -308,30 +308,33 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
   1º segmento sem rótulo), além de "Artista: X / Album: Y" e "ARTISTA - ÁLBUM"; (3) heurístico
   `extractArtist`; (4) `canonicalArtist` reduz coletânea/lote à categoria. A varredura retorna
   `sources = {stored, title, none}` (diagnóstico de onde veio cada artista — some no toast).
-- **IA por TEXTO (opt-in, gasta créditos):** dois botões →
-  `identifyCollection({offset, max, onlyUnidentified})` → `reidentifyCollection` →
-  **`identCollectionSync`**
-  - **"Identificar novos (IA)"** (`onlyUnidentified:true`, **padrão**): gasta IA só nos discos
-    **ainda sem identificação** (`needsIdentification`: artista vazio ou `UNCLASSIFIED_LABEL`),
-    pulando os já identificados **sem custo**. Uso ROTINEIRO e barato (a varredura de compras
-    acrescenta poucos discos por vez).
-  - **"Re-normalizar tudo (IA)"** (`onlyUnidentified:false`): reprocessa **TODA** a base para
-    corrigir identificações antigas imprecisas (ex.: Alceu Valença/Alcione espalhados). Gasta IA
-    na coleção inteira — usar com parcimônia.
-  - O **cursor `nextOffset` anda sobre a lista COMPLETA e estável** (ordenada por `id`), coletando
-    até `max` discos que precisam de IA e pulando os já identificados; assim itens que saem do
-    filtro ao serem identificados **não deslocam o cursor** (nada é pulado entre rodadas).
-    Conjuntos/coletâneas seguem classificados pelo título SEM gastar IA. A IA em si
+- **IA por TEXTO (opt-in, gasta créditos):** dois caminhos, ambos via **`identCollectionSync`**.
+  - **Em massa — botão "Identificar novos (IA)"** no header → `identifyCollection({offset, max,
+    onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda sem
+    identificação** (`needsIdentification`: artista vazio ou `UNCLASSIFIED_LABEL`), pulando os já
+    identificados **sem custo** — uso ROTINEIRO e barato (a varredura de compras acrescenta poucos
+    discos por vez). O `onlyUnidentified` é sempre `true` a partir da UI; o modo completo
+    (`false`, re-normaliza TODA a base) segue existindo na server fn mas **não é exposto** — o
+    reprocesso forçado é POR CARD (abaixo). O **cursor `nextOffset` anda sobre a lista COMPLETA e
+    estável** (ordenada por `id`), coletando até `max` discos que precisam de IA e pulando os já
+    identificados; assim itens que saem do filtro ao serem identificados **não deslocam o cursor**
+    (nada é pulado entre rodadas). Só **preenche/melhora** (nunca apaga com resultado vazio; o
+    descritivo só quando vazio).
+  - **Por disco — ícone "reprocessar" (`RotateCw`) no card** → `reprocessCollectionItem({id})` →
+    `reidentifyCollectionItem`. Refaz UM disco pela IA e **SOBRESCREVE** artista/álbum/ano e o
+    descritivo com o que a IA devolver (nunca zera com vazio). É o "refazer" manual para corrigir
+    um disco específico sem reprocessar a base toda. Estado de "girando" por-id no card.
+  - Em ambos, conjuntos/coletâneas seguem classificados pelo título SEM gastar IA. A IA em si
   (`identCollectionSync`, `ai-eval.server.ts`, SÓ TEXTO), além de artista/álbum/ano, gera o
   **descritivo** (`description`) do disco. **Nunca usa a capa** — a imagem do leilão engana o
   modelo (mistura artistas parecidos); o prompt (`buildCollectionIdentPrompt`) recebe título +
   artista/álbum/ano atuais como pista e instrui a usar "Vários Artistas" em coletâneas. Devolve
-  `{identified, processed, nextOffset, total, done}`; o cliente repete em laço até `done`.
-  Conjuntos → "Lote" pelo título SEM gastar IA; o resto vai à IA e passa por `canonicalArtist`
-  (coletâneas viram "Coletâneas"). Só sobrescreve artista/álbum com valor melhor (nunca apaga com
-  resultado vazio); o **descritivo só é preenchido quando está vazio** (não sobrescreve edição do
-  usuário). Sem `ANTHROPIC_API_KEY`, erro claro. (`identLotsSync` segue existindo para o fluxo
-  antigo de leilões.)
+  `{identified, processed, nextOffset, total, done}` (massa; o cliente repete em laço até `done`)
+  ou `{updated}` (por card). O resto vai à IA e passa por `canonicalArtist` (coletâneas viram
+  "Coletâneas"). **Diferença de sobrescrita:** a passada em massa só preenche/melhora (descritivo
+  só quando vazio, não sobrescreve edição do usuário); o reprocesso por card **sobrescreve** cada
+  campo que a IA devolver. Nenhum dos dois zera com resultado vazio. Sem `ANTHROPIC_API_KEY`, erro
+  claro. (`identLotsSync` segue existindo para o fluxo antigo de leilões.)
 - **Uso pretendido:** a base de `lots` já acompanha o que o usuário arremata, então a varredura
   de `l=6` é **carga inicial / emergência**, não o fluxo contínuo.
 - **Duplicados questionados:** mesmo `lot_id` (mesma peça) é ignorado no re-scan; um vinil com
@@ -471,6 +474,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.18.0 | Coleção: IA **só por texto** (nunca a capa) re-identifica toda a base (`reidentifyCollection`, cursor); agrupamento normalizado por artista (`Alceu Valença`=`Alceu Valenca`); categoria **"Coletâneas"** (`isCompilation`/`canonicalArtist`) | #82 |
 | v0.19.0 | Coleção: card por artista/álbum+ano (remove mercado+casa) + **descritivo do disco pela IA** (`identCollectionSync`, coluna `description`); combo de artista (datalist); **upload de foto** (Storage bucket `collection`, `uploadCollectionImage`) | — |
 | v0.20.0 | Coleção: re-identificação da IA com alcance **`onlyUnidentified`** — botão "Identificar novos (IA)" (padrão, só os discos sem identificação, cursor sobre a lista completa) + "Re-normalizar tudo (IA)"; reduz o gasto de créditos no uso rotineiro | — |
+| v0.21.0 | Coleção: botão em massa passa a reprocessar **só os não-prontos** (remove "Re-normalizar tudo") + **ícone de reprocessar por card** (`RotateCw` → `reprocessCollectionItem`/`reidentifyCollectionItem`) que refaz um disco pela IA e **sobrescreve** | — |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.

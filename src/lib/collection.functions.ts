@@ -121,6 +121,23 @@ export const identifyCollection = createServerFn({ method: "POST" })
     return await reidentifyCollection(data.offset, data.max, data.onlyUnidentified);
   });
 
+/**
+ * Reprocessa UM disco pela IA (texto) sob demanda — o botão "reprocessar" do card.
+ * SOBRESCREVE artista/álbum/ano e descritivo com o que a IA identificar (sem apagar com vazio).
+ */
+export const reprocessCollectionItem = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { id?: string } | undefined) => {
+    if (!input?.id || typeof input.id !== "string") throw new Error("id obrigatório");
+    return { id: input.id };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { reidentifyCollectionItem } = await import("./collection.server");
+    return await reidentifyCollectionItem(data.id);
+  });
+
 /** Diagnóstico da varredura (não grava): quantas peças/páginas/logado por aba. */
 export const debugScanCollection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

@@ -27,6 +27,7 @@ import {
   deleteCollectionItem,
   getCollection,
   identifyCollection,
+  reprocessCollectionItem,
   scanCollection,
   updateCollectionItem,
   uploadCollectionImage,
@@ -188,6 +189,7 @@ function ColecaoPage() {
   const addWon = useServerFn(addWonLot);
   const debugScan = useServerFn(debugScanCollection);
   const identify = useServerFn(identifyCollection);
+  const reprocess = useServerFn(reprocessCollectionItem);
   const updateItem = useServerFn(updateCollectionItem);
   const removeItem = useServerFn(deleteCollectionItem);
   const uploadImage = useServerFn(uploadCollectionImage);
@@ -325,6 +327,16 @@ function ColecaoPage() {
     onError: (e: Error) => toast.error(e.message || "Não foi possível remover"),
   });
 
+  // Reprocessar UM disco pela IA (só texto), sobrescrevendo o atual. Estado por-id p/ o card girar.
+  const reprocessMut = useMutation({
+    mutationFn: (id: string) => reprocess({ data: { id } }),
+    onSuccess: (res: { updated: boolean }) => {
+      void invalidate();
+      toast.success(res.updated ? "Disco reprocessado pela IA." : "IA não encontrou nada a mudar.");
+    },
+    onError: (e: Error) => toast.error(e.message || "Não foi possível reprocessar"),
+  });
+
   const artists = useMemo(() => artistOptions(items), [items]);
   // Nomes para o combo do formulário (artistas reais + "Coletâneas"/"Lote"; sem o rótulo genérico).
   const artistNames = useMemo(
@@ -389,28 +401,16 @@ function ColecaoPage() {
               Adicionar disco
             </Button>
             {items.length > 0 ? (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void runIdentify(true)}
-                  disabled={identifying}
-                  title="Identificar pela IA só os discos ainda sem artista/álbum (só texto, nunca a capa). Barato — pula os já identificados."
-                >
-                  <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
-                  {identifying ? "Identificando…" : "Identificar novos (IA)"}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => void runIdentify(false)}
-                  disabled={identifying}
-                  title="Re-normalizar TODA a coleção pela IA (só texto, nunca a capa): reprocessa todos os discos para corrigir identificações antigas. Gasta créditos em toda a base."
-                >
-                  <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
-                  Re-normalizar tudo (IA)
-                </Button>
-              </>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void runIdentify()}
+                disabled={identifying}
+                title="Identificar pela IA só os discos ainda sem artista/álbum (só texto, nunca a capa). Barato — pula os já identificados. Para refazer um disco específico, use o botão de reprocessar no card."
+              >
+                <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
+                {identifying ? "Identificando…" : "Identificar novos (IA)"}
+              </Button>
             ) : null}
             <Button
               variant="ghost"
@@ -499,8 +499,12 @@ function ColecaoPage() {
                           key={item.id}
                           item={item}
                           busy={busy}
+                          reprocessing={
+                            reprocessMut.isPending && reprocessMut.variables === item.id
+                          }
                           onEdit={() => setDraft(toDraft(item))}
                           onRemove={() => removeMut.mutate(item.id)}
+                          onReprocess={() => reprocessMut.mutate(item.id)}
                         />
                       ))}
                     </div>

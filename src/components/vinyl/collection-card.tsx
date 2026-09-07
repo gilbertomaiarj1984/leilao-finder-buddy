@@ -1,4 +1,4 @@
-import { ExternalLink, Pencil, Trash2 } from "lucide-react";
+import { ExternalLink, Pencil, RotateCw, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { CollectionItem } from "@/lib/collection.server";
@@ -6,13 +6,17 @@ import type { CollectionItem } from "@/lib/collection.server";
 export function CollectionCard({
   item,
   busy,
+  reprocessing = false,
   onEdit,
   onRemove,
+  onReprocess,
 }: {
   item: CollectionItem;
   busy: boolean;
+  reprocessing?: boolean;
   onEdit: () => void;
   onRemove: () => void;
+  onReprocess?: () => void;
 }) {
   const artistLine = item.artist || "(sem artista)";
   const albumLine =
@@ -97,11 +101,23 @@ export function CollectionCard({
             <Pencil className="mr-2 h-4 w-4" />
             Editar
           </Button>
+          {onReprocess ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onReprocess}
+              disabled={busy || reprocessing}
+              aria-label="Reprocessar identificação pela IA"
+              title="Reprocessar pela IA (só texto): refaz artista/álbum/ano e o descritivo, sobrescrevendo o atual."
+            >
+              <RotateCw className={`h-4 w-4 ${reprocessing ? "animate-spin" : ""}`} />
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="ghost"
             onClick={onRemove}
-            disabled={busy}
+            disabled={busy || reprocessing}
             aria-label="Remover disco da coleção"
             title="Remover da coleção"
           >
