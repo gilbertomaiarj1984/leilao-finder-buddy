@@ -453,3 +453,46 @@ export async function evalLotsSync(lots: EvalLot[]): Promise<LotAiRow[]> {
   );
   return rows;
 }
+
+/** Resultado da identificação síncrona por lote. */
+export type IdentResult = {
+  id: string;
+  album: string | null;
+  year: number | null;
+  confidence: string | null;
+};
+
+/**
+ * Identificação SÍNCRONA por CAPA de um conjunto pequeno de lotes — MESMA lógica da
+ * identificação automática (`buildIdentParams` com a imagem + `parseIdentObject`, modelo
+ * `AI_MODEL`), mas sob demanda (a rodada normal é assíncrona via Batches). Best-effort POR
+ * LOTE. **Não** persiste em `lot_ident` — o chamador grava onde quiser. Retorna só os lotes
+ * que a IA de fato identificou (com `album`).
+ */
+export async function identLotsSync(lots: EvalLot[]): Promise<IdentResult[]> {
+  if (!lots.length) return [];
+  const client = await getClient();
+  const rows: IdentResult[] = [];
+  let cursor = 0;
+
+  const worker = async () => {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      const lot = lots[index];
+      if (!lot) return;
+      try {
+        const message = await client.messages.create(buildIdentParams(lot, true));
+        const parsed = parseIdentObject(messageText(message));
+        if (parsed?.album) rows.push({ id: lot.id, ...parsed });
+      } catch (error) {
+        console.error(`[ai-eval] falha ao identificar o lote ${lot.id}`, error);
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(SYNC_CONCURRENCY, lots.length) }, () => worker()),
+  );
+  return rows;
+}
