@@ -236,15 +236,17 @@ function ColecaoPage() {
     onError: (e: Error) => toast.error(e.message || "Falha ao varrer as compras"),
   });
 
-  // Re-identifica TODA a coleção pela IA (só texto, nunca a capa), em laço pelo cursor até
-  // terminar. Define artista/álbum/ano e agrupa coletâneas/lotes. Opt-in (gasta créditos).
-  async function runIdentify() {
+  // Identifica pela IA (só texto, nunca a capa) em laço pelo cursor até terminar. Define
+  // artista/álbum/ano e agrupa coletâneas/lotes. Opt-in (gasta créditos). `onlyUnidentified`
+  // (padrão) gasta IA só nos discos ainda sem identificação — uso rotineiro e barato; `false`
+  // re-normaliza TODA a coleção (corrige identificações antigas), bem mais caro.
+  async function runIdentify(onlyUnidentified = true) {
     setIdentifying(true);
     try {
       let total = 0;
       let offset = 0;
       for (let guard = 0; guard < 500; guard++) {
-        const res = (await identify({ data: { offset, max: 12 } })) as {
+        const res = (await identify({ data: { offset, max: 12, onlyUnidentified } })) as {
           identified: number;
           processed: number;
           nextOffset: number;
@@ -387,16 +389,28 @@ function ColecaoPage() {
               Adicionar disco
             </Button>
             {items.length > 0 ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void runIdentify()}
-                disabled={identifying}
-                title="Re-identificar toda a coleção pela IA (só texto, nunca a capa): define artista/álbum e agrupa coletâneas. Gasta créditos."
-              >
-                <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
-                {identifying ? "Identificando…" : "Identificar por texto (IA)"}
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void runIdentify(true)}
+                  disabled={identifying}
+                  title="Identificar pela IA só os discos ainda sem artista/álbum (só texto, nunca a capa). Barato — pula os já identificados."
+                >
+                  <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
+                  {identifying ? "Identificando…" : "Identificar novos (IA)"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void runIdentify(false)}
+                  disabled={identifying}
+                  title="Re-normalizar TODA a coleção pela IA (só texto, nunca a capa): reprocessa todos os discos para corrigir identificações antigas. Gasta créditos em toda a base."
+                >
+                  <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
+                  Re-normalizar tudo (IA)
+                </Button>
+              </>
             ) : null}
             <Button
               variant="ghost"

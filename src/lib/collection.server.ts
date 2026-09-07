@@ -10,6 +10,7 @@ import {
   LOTE_LABEL,
   normalizeForMatch,
   titleCase,
+  UNCLASSIFIED_LABEL,
 } from "@/lib/vinyl-parse";
 
 import type { WonLot } from "./leiloesbr-purchases.server";
@@ -495,19 +496,36 @@ export type ReidentifyResult = {
   done: boolean;
 };
 
+/** Um disco "ainda não identificado": sem artista, ou caído no balde de não classificados. */
+function needsIdentification(item: CollectionItem): boolean {
+  const a = item.artist.trim();
+  return !a || a === UNCLASSIFIED_LABEL;
+}
+
 /**
  * Re-identifica a coleção **por TEXTO** com a IA (a capa engana o modelo — mistura artistas
  * parecidos), definindo artista/álbum/ano e agrupando coletâneas em "Coletâneas" e conjuntos
- * em "Lote". Passa por TODOS os discos (não só os sem artista) para normalizar a base — ex.:
- * discos de Alceu Valença/Alcione que estavam espalhados por identificação anterior imprecisa.
+ * em "Lote". Só sobrescreve quando há um valor melhor (nunca apaga uma identificação existente
+ * com um resultado vazio). Requer `ANTHROPIC_API_KEY`.
  *
- * Processa uma fatia `[offset, offset+max)` (ordem ESTÁVEL por `id`, pois o `artist` muda e
- * não dá para paginar por artista) e devolve o cursor `nextOffset`. Conjuntos/coletâneas são
- * classificados pelo título SEM gastar IA; o resto vai à IA por texto. Só sobrescreve quando há
- * um valor melhor (nunca apaga uma identificação existente com um resultado vazio).
- * Requer `ANTHROPIC_API_KEY`.
+ * O cursor `nextOffset` percorre a lista COMPLETA ordenada por `id` (ordem estável), e o cliente
+ * repete em laço até `done`. Dois alcances:
+ * - `onlyUnidentified` (padrão): gasta IA só nos discos que ainda precisam de identificação
+ *   (sem artista / não classificados), pulando os já identificados sem custo. É o uso ROTINEIRO
+ *   e barato — cada rodada da varredura de compras acrescenta poucos discos novos.
+ * - `onlyUnidentified=false`: passa por TODOS os discos para RE-NORMALIZAR a base (corrige
+ *   identificações antigas imprecisas — ex.: Alceu Valença/Alcione espalhados). Gasta IA em toda
+ *   a coleção; use com parcimônia.
+ *
+ * Como o cursor anda sobre a lista completa e estável (não sobre o subconjunto filtrado), itens
+ * que saem do filtro ao serem identificados não deslocam o cursor — nada é pulado entre rodadas.
+ * Conjuntos/coletâneas continuam classificados pelo título SEM gastar IA.
  */
-export async function reidentifyCollection(offset = 0, max = 12): Promise<ReidentifyResult> {
+export async function reidentifyCollection(
+  offset = 0,
+  max = 12,
+  onlyUnidentified = true,
+): Promise<ReidentifyResult> {
   const { aiConfigured, identCollectionSync } = await import("./ai-eval.server");
   if (!aiConfigured()) {
     throw new Error("A IA não está configurada (ANTHROPIC_API_KEY ausente no servidor).");
@@ -517,9 +535,19 @@ export async function reidentifyCollection(offset = 0, max = 12): Promise<Reiden
     .filter((i) => i.title.trim() || i.artist.trim() || i.album.trim())
     .sort((a, b) => a.id.localeCompare(b.id));
   const total = work.length;
-  const batch = work.slice(offset, offset + max);
+
+  // Avança o cursor sobre a lista completa coletando até `max` discos que precisam de IA
+  // (todos, quando `onlyUnidentified=false`), pulando os já identificados sem gastar nada.
+  const batch: CollectionItem[] = [];
+  let scan = Math.min(Math.max(offset, 0), total);
+  while (scan < total && batch.length < max) {
+    const item = work[scan]!;
+    scan += 1;
+    if (onlyUnidentified && !needsIdentification(item)) continue;
+    batch.push(item);
+  }
   if (!batch.length) {
-    return { identified: 0, processed: 0, nextOffset: offset, total, done: true };
+    return { identified: 0, processed: 0, nextOffset: total, total, done: true };
   }
 
   // Classificação GRÁTIS pelo título: conjuntos → "Lote". O resto (inclusive coletâneas, que
@@ -576,8 +604,7 @@ export async function reidentifyCollection(offset = 0, max = 12): Promise<Reiden
     identified += 1;
   }
 
-  const nextOffset = offset + batch.length;
-  return { identified, processed: batch.length, nextOffset, total, done: nextOffset >= total };
+  return { identified, processed: batch.length, nextOffset: scan, total, done: scan >= total };
 }
 
 /** Campos editáveis de um disco (usado por add e update). */
