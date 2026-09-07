@@ -99,21 +99,26 @@ export const scanCollection = createServerFn({ method: "POST" })
   });
 
 /**
- * Re-identificação por IA (opt-in, texto — nunca a capa): passa por TODA a coleção definindo
- * artista/álbum/ano e agrupando coletâneas/lotes. Processa um bloco a partir de `offset` e
- * devolve o cursor `nextOffset` p/ o cliente repetir em laço até `done`.
+ * Re-identificação por IA (opt-in, texto — nunca a capa): define artista/álbum/ano e agrupa
+ * coletâneas/lotes. Processa um bloco a partir de `offset` e devolve o cursor `nextOffset` p/ o
+ * cliente repetir em laço até `done`. `onlyUnidentified` (padrão) gasta IA só nos discos ainda
+ * sem identificação (uso rotineiro, barato); `false` re-normaliza TODA a coleção (mais caro).
  */
 export const identifyCollection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { offset?: number; max?: number } | undefined) => ({
-    offset: Math.max(Number(input?.offset) || 0, 0),
-    max: Math.min(Math.max(Number(input?.max) || 12, 1), 25),
-  }))
+  .inputValidator(
+    (input: { offset?: number; max?: number; onlyUnidentified?: boolean } | undefined) => ({
+      offset: Math.max(Number(input?.offset) || 0, 0),
+      max: Math.min(Math.max(Number(input?.max) || 12, 1), 25),
+      // Padrão seguro/barato: só os não identificados. `false` só quando o cliente pede.
+      onlyUnidentified: input?.onlyUnidentified !== false,
+    }),
+  )
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { reidentifyCollection } = await import("./collection.server");
-    return await reidentifyCollection(data.offset, data.max);
+    return await reidentifyCollection(data.offset, data.max, data.onlyUnidentified);
   });
 
 /** Diagnóstico da varredura (não grava): quantas peças/páginas/logado por aba. */
