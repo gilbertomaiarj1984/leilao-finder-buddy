@@ -256,7 +256,9 @@ export function buildIdentUserPrompt(lot: EvalLot, opts?: { withImage?: boolean 
   const info = { titulo: lot.title, casa: lot.house, tem_imagem: withImage };
   return (
     "Identifique este disco de vinil e devolva um objeto JSON com EXATAMENTE estas chaves:\n" +
-    '- "album": "Artista - Álbum" identificado (use " - " entre artista e álbum; "" se não souber)\n' +
+    '- "album": "Artista - Álbum" identificado (use " - " entre artista e álbum; "" se não souber). ' +
+    "Se for uma coletânea/vários artistas (sucessos, trilha sonora, novela, seleção), use " +
+    '"Vários Artistas" como artista.\n' +
     '- "year": ano de lançamento (inteiro) ou null se não souber\n' +
     '- "confidence": "alta" | "media" | "baixa" (sua confiança na identificação)\n\n' +
     (withImage
@@ -463,13 +465,14 @@ export type IdentResult = {
 };
 
 /**
- * Identificação SÍNCRONA por CAPA de um conjunto pequeno de lotes — MESMA lógica da
- * identificação automática (`buildIdentParams` com a imagem + `parseIdentObject`, modelo
- * `AI_MODEL`), mas sob demanda (a rodada normal é assíncrona via Batches). Best-effort POR
- * LOTE. **Não** persiste em `lot_ident` — o chamador grava onde quiser. Retorna só os lotes
- * que a IA de fato identificou (com `album`).
+ * Identificação SÍNCRONA de um conjunto pequeno de lotes — MESMA lógica da identificação
+ * automática (`buildIdentParams` + `parseIdentObject`, modelo `AI_MODEL`), mas sob demanda
+ * (a rodada normal é assíncrona via Batches). `withImage` decide o uso da capa: a Coleção
+ * roda **só por texto** (`withImage=false`) porque a capa de leilão engana o modelo (mistura
+ * artistas parecidos). Best-effort POR LOTE. **Não** persiste — o chamador grava onde quiser.
+ * Retorna só os lotes que a IA de fato identificou (com `album`).
  */
-export async function identLotsSync(lots: EvalLot[]): Promise<IdentResult[]> {
+export async function identLotsSync(lots: EvalLot[], withImage = false): Promise<IdentResult[]> {
   if (!lots.length) return [];
   const client = await getClient();
   const rows: IdentResult[] = [];
@@ -482,7 +485,7 @@ export async function identLotsSync(lots: EvalLot[]): Promise<IdentResult[]> {
       const lot = lots[index];
       if (!lot) return;
       try {
-        const message = await client.messages.create(buildIdentParams(lot, true));
+        const message = await client.messages.create(buildIdentParams(lot, withImage));
         const parsed = parseIdentObject(messageText(message));
         if (parsed?.album) rows.push({ id: lot.id, ...parsed });
       } catch (error) {

@@ -30,28 +30,74 @@ import {
   scanCollection,
   updateCollectionItem,
 } from "@/lib/collection.functions";
-import { LOTE_LABEL, normalizeForMatch, UNCLASSIFIED_LABEL } from "@/lib/vinyl-parse";
+import {
+  COMPILATION_LABEL,
+  LOTE_LABEL,
+  normalizeForMatch,
+  UNCLASSIFIED_LABEL,
+} from "@/lib/vinyl-parse";
 
 export const Route = createFileRoute("/_authenticated/colecao")({
   head: () => ({ meta: [{ title: "Coleção — Garimpo de Vinil" }] }),
   component: ColecaoPage,
 });
 
-// --- Agrupamento/ordenação por artista (mesma regra da listagem de leilões). ---
+// --- Agrupamento/ordenação por artista ---
+// Ordem: artistas reais → "Coletâneas" → "Lote" → não classificados.
 function rankArtist(a: string): number {
-  if (a === UNCLASSIFIED_LABEL) return 2;
-  if (a === LOTE_LABEL) return 1;
+  if (a === UNCLASSIFIED_LABEL) return 3;
+  if (a === LOTE_LABEL) return 2;
+  if (a === COMPILATION_LABEL) return 1;
   return 0;
 }
 
+/**
+ * Chave de agrupamento por artista: normaliza (sem acento/caixa/pontuação) para GARANTIR que
+ * variações do mesmo nome caiam juntas ("Alceu Valença" = "Alceu Valenca"). Vazio → bucket de
+ * não classificados. A exibição usa a melhor variação (mais acentuada/completa).
+ */
+function artistKey(artist: string): string {
+  const a = (artist ?? "").trim();
+  return a ? normalizeForMatch(a) : "";
+}
+
+/** Chave equivalente para o valor do filtro (o rótulo de "não classificados" vira o bucket ""). */
+function filterKey(value: string): string {
+  if (!value || value === UNCLASSIFIED_LABEL) return "";
+  return normalizeForMatch(value);
+}
+
+/** Nº de diacríticos, p/ preferir a grafia acentuada ("Valença" > "Valenca") na exibição. */
+function accentScore(s: string): number {
+  return (s.normalize("NFD").match(/[̀-ͯ]/g) ?? []).length;
+}
+
+/** Escolhe a melhor grafia entre as variações de um mesmo artista (mais acentuada, depois mais longa). */
+function pickCanonical(names: string[]): string {
+  return names
+    .filter(Boolean)
+    .sort(
+      (a, b) =>
+        accentScore(b) - accentScore(a) || b.length - a.length || a.localeCompare(b, "pt-BR"),
+    )[0]!;
+}
+
+function displayName(key: string, variants: string[]): string {
+  if (!key) return UNCLASSIFIED_LABEL;
+  return pickCanonical(variants) || UNCLASSIFIED_LABEL;
+}
+
 function artistOptions(items: CollectionItem[]): { artist: string; count: number }[] {
-  const counts = new Map<string, number>();
+  const buckets = new Map<string, { count: number; variants: string[] }>();
   for (const it of items) {
-    const key = it.artist || UNCLASSIFIED_LABEL;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+    const key = artistKey(it.artist);
+    const b = buckets.get(key) ?? { count: 0, variants: [] };
+    b.count += 1;
+    if (it.artist.trim()) b.variants.push(it.artist);
+    buckets.set(key, b);
   }
-  return [...counts.entries()]
-    .map(([artist, count]) => ({ artist, count }))
+  return [...buckets.entries()]
+    .map(([key, b]) => ({ artist: displayName(key, b.variants), count: b.count }))
     .sort(
       (a, b) =>
         rankArtist(a.artist) - rankArtist(b.artist) || a.artist.localeCompare(b.artist, "pt-BR"),
@@ -63,13 +109,19 @@ type ArtistGroup = { artist: string; items: CollectionItem[] };
 function groupByArtist(items: CollectionItem[]): ArtistGroup[] {
   const map = new Map<string, CollectionItem[]>();
   for (const it of items) {
-    const key = it.artist || UNCLASSIFIED_LABEL;
+    const key = artistKey(it.artist);
     const list = map.get(key) ?? [];
     list.push(it);
     map.set(key, list);
   }
   return [...map.entries()]
-    .map(([artist, list]) => ({ artist, items: list }))
+    .map(([key, list]) => ({
+      artist: displayName(
+        key,
+        list.map((i) => i.artist),
+      ),
+      items: list,
+    }))
     .sort(
       (a, b) =>
         rankArtist(a.artist) - rankArtist(b.artist) || a.artist.localeCompare(b.artist, "pt-BR"),
@@ -176,22 +228,28 @@ function ColecaoPage() {
     onError: (e: Error) => toast.error(e.message || "Falha ao varrer as compras"),
   });
 
-  // Identifica pela capa (IA) os discos sem artista, em laço até acabar. Opt-in (gasta créditos).
+  // Re-identifica TODA a coleção pela IA (só texto, nunca a capa), em laço pelo cursor até
+  // terminar. Define artista/álbum/ano e agrupa coletâneas/lotes. Opt-in (gasta créditos).
   async function runIdentify() {
     setIdentifying(true);
     try {
       let total = 0;
-      for (let guard = 0; guard < 50; guard++) {
-        const res = (await identify({ data: { max: 12 } })) as {
+      let offset = 0;
+      for (let guard = 0; guard < 500; guard++) {
+        const res = (await identify({ data: { offset, max: 12 } })) as {
           identified: number;
-          remaining: number;
+          processed: number;
+          nextOffset: number;
+          total: number;
+          done: boolean;
         };
         total += res.identified;
+        offset = res.nextOffset;
         void invalidate();
-        if (res.remaining <= 0 || res.identified === 0) break;
+        if (res.done || res.processed === 0) break;
       }
       toast.success(
-        total > 0 ? `${total} disco(s) identificado(s) pela IA.` : "Nada novo para identificar.",
+        total > 0 ? `${total} disco(s) atualizado(s) pela IA.` : "Nada para atualizar.",
       );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Falha ao identificar pela IA");
@@ -256,12 +314,11 @@ function ColecaoPage() {
   });
 
   const artists = useMemo(() => artistOptions(items), [items]);
-  const missingCount = useMemo(() => items.filter((i) => !i.artist.trim()).length, [items]);
 
   const filtered = useMemo(() => {
     const searchNorm = normalizeForMatch(search);
     return items.filter((it) => {
-      if (artist && (it.artist || UNCLASSIFIED_LABEL) !== artist) return false;
+      if (artist && filterKey(artist) !== artistKey(it.artist)) return false;
       if (!searchNorm) return true;
       return normalizeForMatch(`${it.artist} ${it.album} ${it.title}`).includes(searchNorm);
     });
@@ -302,16 +359,16 @@ function ColecaoPage() {
               <Plus className="mr-2 h-4 w-4" />
               Adicionar disco
             </Button>
-            {missingCount > 0 ? (
+            {items.length > 0 ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => void runIdentify()}
                 disabled={identifying}
-                title="Identificar pela capa (IA) os discos que ficaram sem artista. Gasta créditos."
+                title="Re-identificar toda a coleção pela IA (só texto, nunca a capa): define artista/álbum e agrupa coletâneas. Gasta créditos."
               >
                 <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
-                {identifying ? "Identificando…" : `Identificar faltantes (${missingCount})`}
+                {identifying ? "Identificando…" : "Identificar por texto (IA)"}
               </Button>
             ) : null}
             <Button

@@ -266,6 +266,17 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
   (`Tabs`): **Cards** (`CollectionCard`, mesmo visual dos cards de leilão) e **Títulos**
   (lista simplificada). **Filtro por artista** (`ArtistFilter` reusado) + **busca** por
   artista/álbum/título (`normalizeForMatch`).
+- **Agrupamento normalizado (garante juntar o artista):** grupos e filtro usam a CHAVE
+  `normalizeForMatch(artist)` (sem acento/caixa/pontuação), então variações do mesmo nome caem
+  juntas ("Alceu Valença" = "Alceu Valenca" = "ALCEU VALENÇA"); o cabeçalho exibe a melhor
+  grafia (`pickCanonical` — mais acentuada, depois mais longa). Ordem dos grupos: artistas reais
+  → **"Coletâneas"** (`COMPILATION_LABEL`) → **"Lote"** (`LOTE_LABEL`) → não classificados
+  (`UNCLASSIFIED_LABEL`).
+- **Coletâneas → grupo "Coletâneas"** (`vinyl-parse.ts`): `isCompilation(title)` (sucessos,
+  vários artistas, trilha sonora/novela, coletânea) e `isVariousArtists(name)` (artista tipo
+  "Vários Artistas"/"Various Artists"). `canonicalArtist(artist, title)` (em `collection.server.ts`)
+  reduz à categoria: conjuntos → "Lote"; coletâneas → "Coletâneas"; senão o artista real. Aplicado
+  tanto na varredura (`deriveCandidate`) quanto na re-identificação por IA.
 - **Editável:** cada disco tem `artist`, `album`, `title`, `year`, `image`, `house`, `uf`,
   `won_price` (**valor pago**), `won_date`, `condition_media`/`condition_sleeve` (grading),
   `notes`, `tags[]`, `market_low`/`market_high` (snapshot Discogs). CRUD em
@@ -286,13 +297,20 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
   título das casas: `Álbum: X | Código: Y | Artista(s): [`Z`] | Ano: N | Estilo(s): [..] | Label(s):`
   (o `//` vira `notes`; `Estilo(s)` vira `tags`; artista de `Artista(s):`, álbum de `Álbum:` ou do
   1º segmento sem rótulo), além de "Artista: X / Album: Y" e "ARTISTA - ÁLBUM"; (3) heurístico
-  `extractArtist`; (4) **IA por capa** só como último recurso (Parte B). A varredura retorna
+  `extractArtist`; (4) `canonicalArtist` reduz coletânea/lote à categoria. A varredura retorna
   `sources = {stored, title, none}` (diagnóstico de onde veio cada artista — some no toast).
-- **IA por capa (opt-in, gasta créditos):** botão **"Identificar faltantes (N)"** (só aparece com
-  discos sem artista) → `identifyCollection` → `identifyMissing` → **`identLotsSync`** (novo em
-  `ai-eval.server.ts`, wrapper SÍNCRONO da MESMA identificação dos leilões: `buildIdentParams`
-  com a capa + `parseIdentObject`, modelo `AI_MODEL`). Grava artista/álbum/ano só quando a IA
-  retorna artista; roda em laço até `remaining=0`. Sem `ANTHROPIC_API_KEY`, erro claro.
+- **IA por TEXTO (opt-in, gasta créditos):** botão **"Identificar por texto (IA)"** →
+  `identifyCollection({offset, max})` → `reidentifyCollection` → **`identLotsSync(lots, false)`**.
+  **Nunca usa a capa** — a imagem do leilão engana o modelo (mistura artistas parecidos), por
+  isso `withImage=false` (o `buildIdentParams` monta só o texto). **Re-identifica TODA a coleção**
+  (não só os sem artista) para normalizar a base — corrige casos como Alceu Valença/Alcione que
+  vieram imprecisos. Pagina por **cursor `offset`** (ordem estável por `id`, pois o `artist` muda)
+  e devolve `{identified, processed, nextOffset, total, done}`; o cliente repete em laço até `done`.
+  Conjuntos são classificados como "Lote" pelo título SEM gastar IA; o resto vai à IA por texto e
+  passa por `canonicalArtist` (coletâneas viram "Coletâneas"). Só sobrescreve com valor melhor
+  (nunca apaga identificação existente com resultado vazio). O prompt de identificação
+  (`buildIdentUserPrompt`) instrui a IA a usar "Vários Artistas" em coletâneas. Sem
+  `ANTHROPIC_API_KEY`, erro claro.
 - **Uso pretendido:** a base de `lots` já acompanha o que o usuário arremata, então a varredura
   de `l=6` é **carga inicial / emergência**, não o fluxo contínuo.
 - **Duplicados questionados:** mesmo `lot_id` (mesma peça) é ignorado no re-scan; um vinil com
@@ -429,6 +447,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.17.1 | Coleção: varredura mescla abas `t=1`+`t=0` (servidor popula `t=0`) + botão **Diagnóstico** (`debugPurchases`) | #79 |
 | v0.17.2 | Coleção: `parsePurchaseTitle` — artista/álbum dos formatos "LP: X - Y" e "LP: Artista: X / Album: Y" (tira ":"/"Artista:") | #80 |
 | v0.17.3 | Coleção: título rotulado (`Álbum: X \| Artista(s): [Z] \| Ano: N \| Estilo(s):`) → artista/álbum/ano/notas/tags; prioridade banco→título→IA; botão IA por capa opt-in (`identLotsSync`); diagnóstico de fontes | — |
+| v0.18.0 | Coleção: IA **só por texto** (nunca a capa) re-identifica toda a base (`reidentifyCollection`, cursor); agrupamento normalizado por artista (`Alceu Valença`=`Alceu Valenca`); categoria **"Coletâneas"** (`isCompilation`/`canonicalArtist`) | — |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.

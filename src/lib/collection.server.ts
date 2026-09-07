@@ -1,7 +1,16 @@
 import { fmtMoney, parseAiAlbum, toLotMarket } from "@/components/vinyl/ai-score-utils";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
-import { extractArtist, normalizeForMatch, titleCase } from "@/lib/vinyl-parse";
+import {
+  COMPILATION_LABEL,
+  extractArtist,
+  isCompilation,
+  isDiscBundle,
+  isVariousArtists,
+  LOTE_LABEL,
+  normalizeForMatch,
+  titleCase,
+} from "@/lib/vinyl-parse";
 
 import type { WonLot } from "./leiloesbr-purchases.server";
 import type { LotMarketRow } from "./lot-market.server";
@@ -265,6 +274,19 @@ type EnrichMaps = {
 export type ArtistSource = "stored" | "title" | "none";
 
 /**
+ * Reduz o artista à sua CATEGORIA canônica quando cabe: conjuntos de discos → "Lote";
+ * coletâneas (título de coletânea sem artista confiável, ou artista "Vários Artistas") →
+ * "Coletâneas". Caso contrário devolve o artista como veio. Assim discos de vários artistas
+ * caem todos no mesmo grupo em vez de espalharem por "não classificados".
+ */
+function canonicalArtist(artist: string, title: string): string {
+  if (isDiscBundle(title)) return LOTE_LABEL;
+  if (artist && isVariousArtists(artist)) return COMPILATION_LABEL;
+  if (!artist.trim() && isCompilation(title)) return COMPILATION_LABEL;
+  return artist;
+}
+
+/**
  * Deriva os campos de um vinil arrematado, na ordem de prioridade (tudo GRÁTIS):
  * (1) identificação JÁ gravada (`lot_ai`/`lot_ident`, casada por id); (2) título rotulado
  * ("Artista(s): …" / "ARTISTA - ÁLBUM"). Ano/notas/tags vêm do título quando presentes.
@@ -309,6 +331,9 @@ function deriveCandidate(
     marketYear = m.year;
   }
   const year = idParsed.year ?? parsedTitle.year ?? maps.yearById.get(w.id) ?? marketYear ?? null;
+
+  // Reduz a coletânea/lote à sua categoria (agrupa em "Coletâneas"/"Lote").
+  artist = canonicalArtist(artist, w.title);
 
   return {
     cand: {
@@ -458,46 +483,89 @@ export async function addPendingWonLot(cand: PendingWonLot): Promise<CollectionI
   return toItem(data as DbRow);
 }
 
+/** Resultado de uma passada de re-identificação (o cliente repete em laço pelo `nextOffset`). */
+export type ReidentifyResult = {
+  identified: number; // discos cujo artista/álbum a passada gravou
+  processed: number; // discos examinados nesta passada
+  nextOffset: number;
+  total: number;
+  done: boolean;
+};
+
 /**
- * ALTERNATIVA por IA (opt-in): identifica pela CAPA os discos que ficaram SEM artista após o
- * rastreio do título (o título rotulado/heurístico é rastreado ANTES; a IA é o último recurso,
- * gasta créditos). Reaproveita `identLotsSync` — a MESMA identificação dos lotes de leilão.
- * Processa até `max` por chamada e devolve `{ identified, remaining }` p/ o cliente repetir em
- * laço. Só grava quando a IA retorna artista. Requer `ANTHROPIC_API_KEY`.
+ * Re-identifica a coleção **por TEXTO** com a IA (a capa engana o modelo — mistura artistas
+ * parecidos), definindo artista/álbum/ano e agrupando coletâneas em "Coletâneas" e conjuntos
+ * em "Lote". Passa por TODOS os discos (não só os sem artista) para normalizar a base — ex.:
+ * discos de Alceu Valença/Alcione que estavam espalhados por identificação anterior imprecisa.
+ *
+ * Processa uma fatia `[offset, offset+max)` (ordem ESTÁVEL por `id`, pois o `artist` muda e
+ * não dá para paginar por artista) e devolve o cursor `nextOffset`. Conjuntos/coletâneas são
+ * classificados pelo título SEM gastar IA; o resto vai à IA por texto. Só sobrescreve quando há
+ * um valor melhor (nunca apaga uma identificação existente com um resultado vazio).
+ * Requer `ANTHROPIC_API_KEY`.
  */
-export async function identifyMissing(
-  max = 12,
-): Promise<{ identified: number; remaining: number }> {
+export async function reidentifyCollection(offset = 0, max = 12): Promise<ReidentifyResult> {
   const { aiConfigured, identLotsSync } = await import("./ai-eval.server");
   if (!aiConfigured()) {
     throw new Error("A IA não está configurada (ANTHROPIC_API_KEY ausente no servidor).");
   }
   const all = await getAllCollection();
-  const missing = all.filter((i) => !i.artist.trim() && i.image && /^https?:\/\//i.test(i.image));
-  if (!missing.length) return { identified: 0, remaining: 0 };
+  const work = all.filter((i) => i.title.trim()).sort((a, b) => a.id.localeCompare(b.id));
+  const total = work.length;
+  const batch = work.slice(offset, offset + max);
+  if (!batch.length) {
+    return { identified: 0, processed: 0, nextOffset: offset, total, done: true };
+  }
 
-  const batch = missing.slice(0, max);
+  // Classificação GRÁTIS pelo título: conjuntos → "Lote". O resto (inclusive coletâneas, que
+  // ainda podem ganhar álbum/ano da IA) vai à passada por texto.
+  const patches = new Map<string, TablesUpdate<"collection_items">>();
+  const aiNeeded: CollectionItem[] = [];
+  for (const item of batch) {
+    if (isDiscBundle(item.title)) {
+      if (item.artist !== LOTE_LABEL) patches.set(item.id, { artist: LOTE_LABEL });
+    } else {
+      aiNeeded.push(item);
+    }
+  }
+
   const results = await identLotsSync(
-    batch.map((i) => ({ id: i.id, title: i.title, price: "", house: i.house, image: i.image })),
+    aiNeeded.map((i) => ({ id: i.id, title: i.title, price: "", house: i.house, image: i.image })),
+    false, // só por texto
   );
+  const resById = new Map(results.map((r) => [r.id, r]));
+
+  for (const item of aiNeeded) {
+    const r = resById.get(item.id);
+    const parsed = r ? parseAiAlbum(r.album) : { artist: "", album: null, year: null };
+    let artist = parsed.artist ? titleCase(parsed.artist) : "";
+    const album = parsed.album ?? "";
+    const year = r?.year ?? null;
+
+    artist = canonicalArtist(artist, item.title);
+    if (!artist) {
+      // IA não identificou e não é coletânea → não mexe (preserva o que já havia).
+      continue;
+    }
+    const patch: TablesUpdate<"collection_items"> = {};
+    if (artist !== item.artist) patch.artist = artist;
+    if (album && album !== item.album) patch.album = album;
+    if (year != null && year !== item.year) patch.year = year;
+    if (Object.keys(patch).length) patches.set(item.id, patch);
+  }
 
   let identified = 0;
-  for (const r of results) {
-    const parsed = parseAiAlbum(r.album);
-    const artist = parsed.artist ? titleCase(parsed.artist) : "";
-    if (!artist) continue;
-    const item = batch.find((i) => i.id === r.id);
-    const patch: TablesUpdate<"collection_items"> = { artist };
-    if (item && !item.album && parsed.album) patch.album = parsed.album;
-    if (r.year != null && item && item.year == null) patch.year = r.year;
-    const { error } = await supabaseAdmin.from("collection_items").update(patch).eq("id", r.id);
+  for (const [id, patch] of patches) {
+    const { error } = await supabaseAdmin.from("collection_items").update(patch).eq("id", id);
     if (error) {
-      console.error("[collection] falha ao gravar identificação da IA", error);
+      console.error("[collection] falha ao gravar re-identificação", error);
       continue;
     }
     identified += 1;
   }
-  return { identified, remaining: Math.max(0, missing.length - batch.length) };
+
+  const nextOffset = offset + batch.length;
+  return { identified, processed: batch.length, nextOffset, total, done: nextOffset >= total };
 }
 
 /** Campos editáveis de um disco (usado por add e update). */
