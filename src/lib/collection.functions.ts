@@ -94,19 +94,21 @@ export const scanCollection = createServerFn({ method: "POST" })
   });
 
 /**
- * ALTERNATIVA por IA (opt-in): identifica pela capa os discos SEM artista (o título já foi
- * rastreado na varredura). Processa um bloco e devolve `{ identified, remaining }` p/ laço.
+ * Re-identificação por IA (opt-in, texto — nunca a capa): passa por TODA a coleção definindo
+ * artista/álbum/ano e agrupando coletâneas/lotes. Processa um bloco a partir de `offset` e
+ * devolve o cursor `nextOffset` p/ o cliente repetir em laço até `done`.
  */
 export const identifyCollection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { max?: number } | undefined) => ({
+  .inputValidator((input: { offset?: number; max?: number } | undefined) => ({
+    offset: Math.max(Number(input?.offset) || 0, 0),
     max: Math.min(Math.max(Number(input?.max) || 12, 1), 25),
   }))
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
-    const { identifyMissing } = await import("./collection.server");
-    return await identifyMissing(data.max);
+    const { reidentifyCollection } = await import("./collection.server");
+    return await reidentifyCollection(data.offset, data.max);
   });
 
 /** Diagnóstico da varredura (não grava): quantas peças/páginas/logado por aba. */

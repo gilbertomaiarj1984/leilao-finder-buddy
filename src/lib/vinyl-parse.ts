@@ -138,6 +138,58 @@ const PREFIX_PATTERNS: RegExp[] = [
 /** Rótulo do "artista" para lotes que são um conjunto/coleção de vários discos. */
 export const LOTE_LABEL = "Lote";
 
+/** Rótulo/sentinela do "artista" para coletâneas (vários artistas, sucessos, trilhas). */
+export const COMPILATION_LABEL = "Coletâneas";
+
+// Sinais no TÍTULO de que o disco é uma coletânea (vários artistas / sucessos / trilha /
+// novela), e não o álbum de um artista específico. Normalizados (sem acento, minúsculo).
+const COMPILATION_HINTS = [
+  "coletanea",
+  "coletaneas",
+  "coletania",
+  "sucessos",
+  "grandes sucessos",
+  "as melhores",
+  "varios artistas",
+  "varios interpretes",
+  "various artists",
+  "diversos interpretes",
+  "diversos artistas",
+  "trilha sonora",
+  "trilha original",
+  "trilha de novela",
+  "novela",
+  "selecao de sucessos",
+];
+
+// Valores de "artista" (vindos da IA ou do título) que representam uma coletânea, não uma
+// pessoa/banda. Comparados já normalizados por `normalizeForMatch`.
+const VARIOUS_ARTIST_NAMES = new Set([
+  "varios",
+  "varios artistas",
+  "varios interpretes",
+  "various",
+  "various artists",
+  "va",
+  "diversos",
+  "diversos artistas",
+  "diversos interpretes",
+  "coletanea",
+  "coletaneas",
+  "artistas variados",
+]);
+
+/** true quando o TÍTULO indica uma coletânea (vários artistas / sucessos / trilha / novela). */
+export function isCompilation(title: string): boolean {
+  const t = normalize(title);
+  return COMPILATION_HINTS.some((hint) => t.includes(hint));
+}
+
+/** true quando um nome de "artista" na verdade representa vários artistas (coletânea). */
+export function isVariousArtists(name: string): boolean {
+  return VARIOUS_ARTIST_NAMES.has(normalizeForMatch(name));
+}
+
 // Palavras que confirmam que o título fala de disco(s) — usadas com termos genéricos
 // ("diversos", "coleção de") para só classificar como lote quando há contexto de disco.
 const DISC_WORD = /\b(lps?|discos?|vinis|vinil|compactos?|bolach[aã]o|bolachoes|long play)\b/;
