@@ -522,13 +522,14 @@ export type CollectionIdentInput = {
   year?: number | null;
 };
 
-/** Resultado: identificação + descritivo do disco. */
+/** Resultado: identificação + descritivo do disco + tags de gênero/estilo. */
 export type CollectionIdentResult = {
   id: string;
   album: string | null;
   year: number | null;
   confidence: string | null;
   description: string | null;
+  tags: string[];
 };
 
 /** Prompt de identificação+descrição de UM disco da coleção (só texto). */
@@ -540,14 +541,21 @@ export function buildCollectionIdentPrompt(input: CollectionIdentInput): string 
     ano_atual: input.year ?? null,
   };
   return (
-    "Identifique e descreva este disco de vinil. Devolva um objeto JSON com EXATAMENTE estas chaves:\n" +
+    "Identifique e descreva EM DETALHE este disco de vinil. Devolva um objeto JSON com " +
+    "EXATAMENTE estas chaves:\n" +
     '- "album": "Artista - Álbum" (use " - " entre artista e álbum; "" se não souber). ' +
     "Se for coletânea/vários artistas (sucessos, trilha sonora, novela, seleção), use " +
     '"Vários Artistas" como artista.\n' +
     '- "year": ano de lançamento (inteiro) ou null se não souber\n' +
     '- "confidence": "alta" | "media" | "baixa" (sua confiança na identificação)\n' +
-    '- "description": 2 a 3 frases em português descrevendo o disco (artista, gênero/estilo, ' +
-    'época, relevância e faixas notáveis se souber). "" se não souber.\n\n' +
+    '- "tags": array de 3 a 6 tags curtas de gênero/estilo/época em português ' +
+    '(ex.: "MPB", "Samba", "Bossa Nova", "Rock", "anos 70"); [] se não souber.\n' +
+    '- "description": um descritivo RICO e DETALHADO em português (vários parágrafos, ' +
+    "quanto mais completo melhor). Baseie-se PRINCIPALMENTE no NOME DO ÁLBUM (além do artista) e " +
+    "traga: (1) o momento histórico do álbum — contexto e ano de lançamento, gravadora, " +
+    "importância na carreira do artista e na música da época; (2) um panorama do artista; e " +
+    "(3) quando souber, comentários FAIXA A FAIXA, destacando as principais músicas. Seja " +
+    'informativo e específico deste álbum. "" só se realmente não conhecer o disco.\n\n' +
     "Use os campos atuais só como pista — corrija se estiverem errados.\n" +
     "Disco:\n" +
     JSON.stringify(info) +
@@ -559,7 +567,8 @@ export function buildCollectionIdentPrompt(input: CollectionIdentInput): string 
 export function buildCollectionIdentParams(input: CollectionIdentInput) {
   return {
     model: AI_MODEL,
-    max_tokens: 400,
+    // Descritivo longo (momento histórico + panorama + faixa a faixa) precisa de folga.
+    max_tokens: 2000,
     system: COLLECTION_IDENT_SYSTEM_PROMPT,
     messages: [
       {
@@ -593,10 +602,28 @@ export function parseCollectionIdentObject(text: string): Omit<CollectionIdentRe
   const confidence = (CONFIDENCES as readonly string[]).includes(c) ? c : null;
   const description =
     typeof obj["description"] === "string" && obj["description"].trim()
-      ? obj["description"].trim().slice(0, 800)
+      ? obj["description"].trim().slice(0, 6000)
       : null;
-  if (album === null && year === null && confidence === null && description === null) return null;
-  return { album, year, confidence, description };
+  const tags = Array.isArray(obj["tags"])
+    ? [
+        ...new Set(
+          obj["tags"]
+            .filter((t): t is string => typeof t === "string")
+            .map((t) => t.replace(/\s+/g, " ").trim().slice(0, 40))
+            .filter(Boolean),
+        ),
+      ].slice(0, 8)
+    : [];
+  if (
+    album === null &&
+    year === null &&
+    confidence === null &&
+    description === null &&
+    tags.length === 0
+  ) {
+    return null;
+  }
+  return { album, year, confidence, description, tags };
 }
 
 /**

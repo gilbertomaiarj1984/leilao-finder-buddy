@@ -503,6 +503,25 @@ function needsIdentification(item: CollectionItem): boolean {
 }
 
 /**
+ * Une as tags atuais com as sugeridas pela IA: ACRESCENTA as novas (dedupe sem caixa) e nunca
+ * remove as que o usuário já tinha — a remoção é sempre manual (padrão das tags dos lotes).
+ * Devolve `null` quando nada muda (para não gravar à toa).
+ */
+function mergeTags(existing: string[], incoming: string[] | null | undefined): string[] | null {
+  if (!incoming || !incoming.length) return null;
+  const out = [...existing];
+  const seen = new Set(existing.map((t) => t.toLowerCase()));
+  for (const t of incoming) {
+    const v = t.trim();
+    if (v && !seen.has(v.toLowerCase())) {
+      out.push(v);
+      seen.add(v.toLowerCase());
+    }
+  }
+  return out.length === existing.length ? null : out;
+}
+
+/**
  * Re-identifica a coleção **por TEXTO** com a IA (a capa engana o modelo — mistura artistas
  * parecidos), definindo artista/álbum/ano e agrupando coletâneas em "Coletâneas" e conjuntos
  * em "Lote". Só sobrescreve quando há um valor melhor (nunca apaga uma identificação existente
@@ -585,6 +604,9 @@ export async function reidentifyCollection(
     const patch: TablesUpdate<"collection_items"> = {};
     // Descritivo: só preenche quando está vazio (não sobrescreve edição do usuário).
     if (r?.description && !item.description.trim()) patch.description = r.description;
+    // Tags: acrescenta as da IA sem remover as do usuário.
+    const mergedTags = mergeTags(item.tags, r?.tags);
+    if (mergedTags) patch.tags = mergedTags;
     if (artist) {
       if (artist !== item.artist) patch.artist = artist;
       if (album && album !== item.album) patch.album = album;
@@ -653,6 +675,9 @@ export async function reidentifyCollectionItem(id: string): Promise<{ updated: b
   if (album && album !== item.album) patch.album = album;
   if (year != null && year !== item.year) patch.year = year;
   if (r?.description && r.description !== item.description) patch.description = r.description;
+  // Tags: acrescenta as da IA sem remover as do usuário (remoção é manual).
+  const mergedTags = mergeTags(item.tags, r?.tags);
+  if (mergedTags) patch.tags = mergedTags;
 
   if (!Object.keys(patch).length) return { updated: false };
   const { error } = await supabaseAdmin.from("collection_items").update(patch).eq("id", id);
