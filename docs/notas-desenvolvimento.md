@@ -108,13 +108,16 @@ React 19 (SSR) + Supabase**, deploy na **Vercel** (Nitro). Migrado do Lovable em
 - **Ícone roxo "já tenho na Coleção"** (`LotCard`, só na **home** `index.tsx`): disco `Disc3`
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
-  Casamento em `wantlist-match.ts` (`ownedCandidate`/`ownedMatchForLot`, separa tokens de
-  **artista** e **álbum**): score 0..1 com **duas faixas** — `>= OWNED_CONFIDENT_MIN` (80%) =
-  ícone confiante; entre `OWNED_MATCH_MIN` (50%) e 80% = ícone **com "?"** (incerto, ex.:
-  artista + ano batem mas o álbum não foi confirmado); abaixo de 50% não marca. Regra do score:
-  **artista + álbum já casa** (ano só reforça; reedição em ano diferente segue confiante);
-  **sem álbum**, no máximo incerto e só quando o **ano** confirma. Peça exata (`lot_id`) casa
-  direto (score 1). `ownedCands` ignora buckets Lote/Coletâneas/Não classificados; mapa
+  Casamento em `wantlist-match.ts` (`ownedCandidate`/`ownedMatchForLot`), **precisão em 1º
+  lugar** (falso positivo é pior que faltar): **EXIGE o nome do álbum**, e só com tokens
+  **distintivos** — descontando os que também são do **artista** (ex.: "A Arte de Jorge Ben" →
+  distintivo só "arte"; senão "jorge"/"ben" casariam quando o lote só CITA o artista como
+  compositor) e palavras **genéricas** (`GENERIC_ALBUM_TOKENS`: "ao vivo"/"sucessos"/…). Score
+  0..1 dirigido pela **cobertura do álbum**, com o **artista** claramente presente
+  (`OWNED_ARTIST_MIN` 0.75); o **ano** só reforça / desempata reedição. Faixas: `>=
+  OWNED_CONFIDENT_MIN` (80%) = ícone confiante; `>= OWNED_MATCH_MIN` (60%) = ícone **com "?"**;
+  abaixo não marca. **Sem álbum distintivo → não marca** (só a peça exata por `lot_id`, score
+  1, no chamador). `ownedCands` ignora buckets Lote/Coletâneas/Não classificados; mapa
   `ownedById` memoizado; prop `owned: OwnedHit` no `LotCard`.
 - Helpers de classificação/agrupamento em `src/components/vinyl/grouping.ts` (`classifyBid`,
   `houseAnchor`, `computeHouseStats`, `groupByHouse`/`groupByHouseSimple`, `groupByArtist`,
@@ -502,6 +505,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.22.0 | Coleção: descritivo da IA rico/longo (momento histórico + faixa a faixa, baseado no nome do álbum) e **rolável** no card; grading (mídia/capa) como `Select` (NM/EX/VG+/VG-/G+/G-); **tags editáveis no card** + geradas pela IA (`mergeTags`); remove "Título original" do formulário | #86 |
 | v0.22.1 | Coleção: tags da IA restritas a **estilo/gênero musical** (sem época/artista/país/formato) | — |
 | v0.23.0 | Home: **ícone roxo "já tenho na Coleção"** no card (abaixo da nota, à direita) quando o lote casa com `collection_items` — casamento por artista/álbum/ano (`ownedMatchForLot`) em **duas faixas**: ≥80% confiante, 50–80% com **"?"** (incerto); peça exata por `lot_id` | #88 |
+| v0.23.1 | Coleção: **precisão** do casamento "já tenho" — EXIGE o nome do álbum com tokens distintivos (desconta o nome do artista e genéricos "ao vivo"/"sucessos"), corrigindo falsos positivos (ex.: lote que só cita o artista como compositor casava "A Arte de Jorge Ben") | #89 |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
