@@ -490,10 +490,18 @@ export const analyzeOnDemand = createServerFn({ method: "POST" })
     const pending = selectLotsToEvaluate(scope, aiRows, Number.MAX_SAFE_INTEGER);
     const toEval = pending.slice(0, data.max);
     if (!toEval.length) {
-      return { evaluated: 0, remaining: 0, scope: scope.length, served: null, switched: false };
+      return {
+        evaluated: 0,
+        remaining: 0,
+        scope: scope.length,
+        served: null,
+        switched: false,
+        failed: 0,
+        error: null,
+      };
     }
 
-    const { rows, served, switched } = await evalLotsSync(toEval, provider);
+    const { rows, served, switched, failed, error } = await evalLotsSync(toEval, provider);
     const evaluated = await upsertLotAi(rows);
     return {
       evaluated,
@@ -502,6 +510,10 @@ export const analyzeOnDemand = createServerFn({ method: "POST" })
       // Qual provedor de fato atendeu (para a UI) e se houve failover por falta de créditos.
       served,
       switched,
+      // Quantos lotes a IA NÃO conseguiu avaliar (erro/vazio) e o motivo — a UI distingue
+      // "a IA falhou" de "nada pendente" (evita o falso "já avaliado").
+      failed,
+      error,
     };
   });
 

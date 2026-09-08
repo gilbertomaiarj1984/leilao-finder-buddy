@@ -340,6 +340,8 @@ function ColecaoPage() {
     setIdentifying(true);
     try {
       let total = 0;
+      let failed = 0;
+      let lastError: string | null = null;
       let offset = 0;
       let switchedTo: AiProvider | null = null;
       for (let guard = 0; guard < 500; guard++) {
@@ -353,17 +355,28 @@ function ColecaoPage() {
           done: boolean;
           served: AiProvider | null;
           switched: boolean;
+          failed: number;
+          error: string | null;
         };
         total += res.identified;
+        failed += res.failed ?? 0;
+        if (res.error) lastError = res.error;
         offset = res.nextOffset;
         if (res.switched && res.served) switchedTo = res.served;
         void invalidate();
         if (res.done || res.processed === 0) break;
       }
       notifySwitch(provider, { switched: !!switchedTo, served: switchedTo });
-      toast.success(
-        total > 0 ? `${total} disco(s) atualizado(s) pela IA.` : "Nada para atualizar.",
-      );
+      if (total > 0) {
+        toast.success(`${total} disco(s) atualizado(s) pela IA.`);
+      } else if (failed > 0) {
+        // Havia discos a identificar, mas a IA não retornou nada — não é "nada para atualizar".
+        toast.error(
+          `A IA não retornou identificação${lastError ? ` (${lastError})` : ""} — verifique a chave/limite`,
+        );
+      } else {
+        toast.success("Nada para atualizar.");
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Falha ao identificar pela IA");
     } finally {
@@ -444,10 +457,20 @@ function ColecaoPage() {
   // Reprocessar UM disco pela IA (só texto), sobrescrevendo o atual. Estado por-id p/ o card girar.
   const reprocessMut = useMutation({
     mutationFn: (vars: { id: string; provider: AiProvider }) => reprocess({ data: vars }),
-    onSuccess: (res: { updated: boolean; served: AiProvider | null; switched: boolean }, vars) => {
+    onSuccess: (
+      res: { updated: boolean; served: AiProvider | null; switched: boolean; error: string | null },
+      vars,
+    ) => {
       void invalidate();
       notifySwitch(vars.provider, res);
-      toast.success(res.updated ? "Disco reprocessado pela IA." : "IA não encontrou nada a mudar.");
+      if (res.updated) {
+        toast.success("Disco reprocessado pela IA.");
+      } else if (res.error) {
+        // A IA não retornou nada (vazio/erro) — não confundir com "nada a mudar".
+        toast.error(`A IA não retornou identificação (${res.error}) — verifique a chave/limite`);
+      } else {
+        toast.success("IA não encontrou nada a mudar.");
+      }
     },
     onError: (e: Error) => toast.error(e.message || "Não foi possível reprocessar"),
   });
