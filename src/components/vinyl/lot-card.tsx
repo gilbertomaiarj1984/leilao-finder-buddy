@@ -1,9 +1,10 @@
-import { ExternalLink, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Disc3, ExternalLink, Eye, EyeOff, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
 import { formatAiAlbum, type LotAi, type LotMarket } from "@/components/vinyl/ai-score-utils";
 import { bidIsWinning } from "@/lib/vinyl-parse";
+import { OWNED_CONFIDENT_MIN, type OwnedHit } from "@/lib/wantlist-match";
 
 export type CardLot = {
   title: string;
@@ -29,6 +30,7 @@ export function LotCard({
   ai,
   market,
   album,
+  owned,
   onEditTags,
 }: {
   lot: CardLot;
@@ -41,6 +43,11 @@ export function LotCard({
   // Artista/álbum identificado pela IA (avaliação completa OU identificação simples),
   // já resolvido pelo pai. Priorizado sobre o título quando existir.
   album?: string | null;
+  // Casamento com a Coleção do usuário (disco que ele JÁ possui), resolvido pelo pai.
+  // Quando presente, o card mostra um ícone roxo "já tenho". `score` ≥ 80% = confiante;
+  // 50–80% = incerto (ícone com "?"). `label` = artista + álbum do item casado (vazio
+  // quando o casamento foi pela peça exata via `lot_id`).
+  owned?: OwnedHit | null;
   onEditTags?: (next: string[]) => void;
 }) {
   // Linha padrão de identificação da IA (Artista — Álbum (Ano)), quando houver.
@@ -65,6 +72,34 @@ export function LotCard({
       className={`relative flex flex-col overflow-hidden rounded-md border bg-card ${cardClass}`}
     >
       {ai ? <ScoreCorner ai={ai} market={market} price={lot.price} /> : null}
+      {/* "Já tenho na Coleção": ícone roxo no canto DIREITO, logo ABAIXO da nota da IA
+          (fica no lugar da nota quando não há nota). Avisa que o disco já está na coleção
+          do usuário, para não arrematar duplicado. Casamento confiante (≥80%) mostra só o
+          disco; incerto (50–80%, ex.: artista e ano batem mas o álbum não pôde ser
+          confirmado) ganha um "?" ao lado. */}
+      {owned
+        ? (() => {
+            const confident = owned.score >= OWNED_CONFIDENT_MIN;
+            const what = owned.label ? `: ${owned.label}` : "";
+            const tip = confident
+              ? `Já tenho na Coleção${what}`
+              : `Provável: já tenho na Coleção${what} (não confirmado — confira o disco)`;
+            return (
+              <div className="absolute right-2 top-9 z-10">
+                <span
+                  className="flex items-center gap-0.5 rounded-full bg-purple-600 px-1.5 py-1 text-white shadow"
+                  title={tip}
+                  aria-label={tip}
+                >
+                  <Disc3 className="h-3.5 w-3.5" />
+                  {!confident ? (
+                    <span className="text-[10px] font-bold leading-none">?</span>
+                  ) : null}
+                </span>
+              </div>
+            );
+          })()
+        : null}
       {/* Nº do lote no canto superior ESQUERDO, espelhando a nota da IA (canto direito).
           Visão padrão de todos os cards. */}
       {lot.lote ? (
