@@ -145,25 +145,55 @@ export function bestWantForLot(
 /**
  * Casamento "já tenho na Coleção": compara um lote com os discos que o usuário JÁ possui.
  *
- * Diferente da sondagem, aqui separamos os tokens de ARTISTA e de ÁLBUM para dosar a
- * confiança em duas faixas:
- *  - **artista + álbum** casam → score alto (o ano é só reforço; uma reedição em ano
- *    diferente ainda é o MESMO álbum que ele tem);
- *  - **artista + ano**, com o álbum NÃO confirmado (a coleção não tem o álbum, ou o lote não
- *    expõe o nome) → score na faixa intermediária (a UI marca com "?").
+ * Precisão em PRIMEIRO lugar (evitar falso positivo é mais importante que pegar tudo). Por
+ * isso o casamento EXIGE o **nome do álbum**, e usa só os tokens **distintivos** dele:
+ *  - descontamos os tokens que também são do ARTISTA (ex.: "A Arte de Jorge Ben" → distintivo
+ *    só "arte"; senão "jorge"/"ben" casariam sempre que o artista aparece, inclusive quando o
+ *    lote só CITA o artista como compositor — "Músicas de Jorge Ben");
+ *  - descontamos palavras genéricas de álbum ("ao vivo", "sucessos", "coletânea"…), que casam
+ *    discos diferentes do mesmo artista.
  *
- * A UI aplica dois limiares: `>= OWNED_CONFIDENT_MIN` (80%) = casamento confiante; entre
- * `OWNED_MATCH_MIN` (50%) e 80% = incerto ("?"); abaixo de 50% não marca.
+ * Regra do score (0..1): o **artista** precisa estar claramente presente (`OWNED_ARTIST_MIN`)
+ * e o **álbum distintivo** precisa aparecer; o score é dirigido pela cobertura do álbum (o ano
+ * só reforça / desempata reedições). Sem álbum distintivo → NÃO marca (só a peça exata por
+ * `lot_id`, tratada no chamador). A UI aplica dois limiares: `>= OWNED_CONFIDENT_MIN` (80%) =
+ * confiante; entre `OWNED_MATCH_MIN` (60%) e 80% = incerto ("?"); abaixo não marca.
  */
-export const OWNED_MATCH_MIN = 0.5;
+export const OWNED_MATCH_MIN = 0.6;
 export const OWNED_CONFIDENT_MIN = 0.8;
+/** O artista precisa aparecer quase inteiro (evita casar "Milton" por "Milton Banana"). */
+const OWNED_ARTIST_MIN = 0.75;
 
-/** Disco da coleção preparado para o casamento (tokens de artista e de álbum separados). */
+/**
+ * Palavras genéricas de título de álbum: sozinhas NÃO distinguem um disco (quase todo artista
+ * tem "ao vivo"/"sucessos"). Removidas dos tokens distintivos do álbum.
+ */
+const GENERIC_ALBUM_TOKENS = new Set([
+  "vivo",
+  "disco",
+  "album",
+  "vol",
+  "volume",
+  "hits",
+  "sucessos",
+  "sucesso",
+  "coletanea",
+  "coletaneas",
+  "colecao",
+  "serie",
+  "gold",
+  "best",
+  "classicos",
+  "classico",
+  "grandes",
+]);
+
+/** Disco da coleção preparado para o casamento (tokens de artista + tokens DISTINTIVOS do álbum). */
 export type OwnedCandidate = {
   id: string;
   label: string; // "Artista Álbum" para o tooltip
   artistTokens: string[];
-  albumTokens: string[];
+  albumTokens: string[]; // já sem sobreposição com o artista nem palavras genéricas
   year: number | null;
 };
 
@@ -176,11 +206,17 @@ export function ownedCandidate(item: {
   album?: string | null;
   year: number | null;
 }): OwnedCandidate {
+  const artistTokens = significantTokens(item.artist);
+  const artistSet = new Set(artistTokens);
+  // Álbum distintivo: tira o que é do artista e o que é genérico.
+  const albumTokens = item.album
+    ? significantTokens(item.album).filter((t) => !artistSet.has(t) && !GENERIC_ALBUM_TOKENS.has(t))
+    : [];
   return {
     id: item.id,
     label: [item.artist, item.album].filter((s): s is string => Boolean(s && s.trim())).join(" "),
-    artistTokens: significantTokens(item.artist),
-    albumTokens: item.album ? significantTokens(item.album) : [],
+    artistTokens,
+    albumTokens,
     year: item.year,
   };
 }
@@ -195,8 +231,14 @@ function coverage(tokens: string[], id: LotIdentity): number {
 
 /** Score 0..1 de o disco `c` da coleção ser o mesmo do lote `id`. */
 function ownedScore(c: OwnedCandidate, id: LotIdentity): number {
+  // Sem tokens distintivos de álbum não dá para confirmar QUAL disco é → não marca.
+  if (!c.albumTokens.length) return 0;
+
   const artistCov = coverage(c.artistTokens, id);
-  if (artistCov <= 0) return 0; // sem o artista, não é ele
+  if (artistCov < OWNED_ARTIST_MIN) return 0; // o artista precisa estar claramente presente
+
+  const albumCov = coverage(c.albumTokens, id);
+  if (albumCov <= 0) return 0; // o álbum não aparece no lote → não é este disco
 
   const yearKnown = c.year != null && id.years.size > 0;
   const yearMatch =
@@ -204,16 +246,13 @@ function ownedScore(c: OwnedCandidate, id: LotIdentity): number {
     (id.years.has(c.year) || id.years.has(c.year - 1) || id.years.has(c.year + 1));
   const yearConflict = yearKnown && !yearMatch;
 
-  if (c.albumTokens.length) {
-    // Artista + álbum já casa (o ano só reforça; conflito de ano penaliza um pouco). Com os
-    // dois cheios → 1.0 (confiante). Álbum parcial/ausente cai para a faixa do "?".
-    const albumCov = coverage(c.albumTokens, id);
-    const s = 0.4 * artistCov + 0.6 * albumCov + (yearMatch ? 0.1 : yearConflict ? -0.2 : 0);
-    return Math.max(0, Math.min(1, s));
-  }
-  // Sem álbum na coleção: no MÁXIMO incerto ("?"), e só quando o ANO confirma o artista.
-  if (yearMatch) return Math.min(0.75, 0.5 + 0.25 * artistCov);
-  return Math.min(0.4, 0.4 * artistCov); // sem álbum e sem ano batendo: fraco → não marca
+  // Score dirigido pela cobertura do ÁLBUM (o discriminador real). Ano só reforça; num
+  // conflito, uma cobertura de álbum alta ainda é reedição do mesmo disco (penaliza pouco),
+  // mas uma cobertura parcial com ano diferente cai fora.
+  let s = albumCov;
+  if (yearMatch) s += 0.1;
+  else if (yearConflict) s -= albumCov >= 0.8 ? 0.05 : 0.3;
+  return Math.max(0, Math.min(1, s));
 }
 
 /** Melhor disco da coleção para o lote (score ≥ 50%), ou null. */
