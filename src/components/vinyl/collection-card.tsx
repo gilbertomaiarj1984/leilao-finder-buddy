@@ -16,8 +16,10 @@ export function CollectionCard({
   item: CollectionItem;
   busy: boolean;
   reprocessing?: boolean;
-  onEdit: () => void;
-  onRemove: () => void;
+  // Opcionais: quando ausentes, o botão correspondente não é renderizado (modo
+  // somente-leitura — ex.: o card exibido no painel de relação da home).
+  onEdit?: () => void;
+  onRemove?: () => void;
   onReprocess?: () => void;
   onTagsChange?: (next: string[]) => void;
 }) {
@@ -93,46 +95,58 @@ export function CollectionCard({
           <p className="line-clamp-3 text-xs italic text-muted-foreground/90">{item.notes}</p>
         ) : null}
 
-        <div className="mt-auto flex items-center gap-2">
-          <Button size="sm" variant="outline" className="flex-1" onClick={onEdit} disabled={busy}>
-            <Pencil className="mr-2 h-4 w-4" />
-            Editar
-          </Button>
-          {onReprocess ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={onReprocess}
-              disabled={busy || reprocessing}
-              aria-label="Reprocessar identificação pela IA"
-              title="Reprocessar pela IA (só texto): refaz artista/álbum/ano e o descritivo, sobrescrevendo o atual."
-            >
-              <RotateCw className={`h-4 w-4 ${reprocessing ? "animate-spin" : ""}`} />
-            </Button>
-          ) : null}
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onRemove}
-            disabled={busy || reprocessing}
-            aria-label="Remover disco da coleção"
-            title="Remover da coleção"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-          {item.sourceUrl ? (
-            <Button size="sm" variant="ghost" asChild>
-              <a
-                href={item.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="Abrir lote no leiloeiro"
+        {onEdit || onRemove || onReprocess || item.sourceUrl ? (
+          <div className="mt-auto flex items-center gap-2">
+            {onEdit ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1"
+                onClick={onEdit}
+                disabled={busy}
               >
-                <ExternalLink className="h-4 w-4" />
-              </a>
-            </Button>
-          ) : null}
-        </div>
+                <Pencil className="mr-2 h-4 w-4" />
+                Editar
+              </Button>
+            ) : null}
+            {onReprocess ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onReprocess}
+                disabled={busy || reprocessing}
+                aria-label="Reprocessar identificação pela IA"
+                title="Reprocessar pela IA (só texto): refaz artista/álbum/ano e o descritivo, sobrescrevendo o atual."
+              >
+                <RotateCw className={`h-4 w-4 ${reprocessing ? "animate-spin" : ""}`} />
+              </Button>
+            ) : null}
+            {onRemove ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onRemove}
+                disabled={busy || reprocessing}
+                aria-label="Remover disco da coleção"
+                title="Remover da coleção"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            ) : null}
+            {item.sourceUrl ? (
+              <Button size="sm" variant="ghost" asChild>
+                <a
+                  href={item.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="Abrir lote no leiloeiro"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </article>
   );

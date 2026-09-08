@@ -52,6 +52,7 @@ import {
 } from "@/components/vinyl/grouping";
 import { LiveAuctions } from "@/components/vinyl/live-auctions";
 import { LotCard } from "@/components/vinyl/lot-card";
+import { OwnedPanel } from "@/components/vinyl/owned-panel";
 import {
   buildInterestMatcher,
   parseAiAlbum,
@@ -62,9 +63,12 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import {
   analyzeOnDemand,
+  applyCollectionDecision,
   enrichLotes,
   getAccessStatus,
   getAiMode,
+  getCollectionFeedback,
+  getCollectionLinks,
   getLotAi,
   getLotIdent,
   getLotMarket,
@@ -92,7 +96,18 @@ import {
   UNCLASSIFIED_LABEL,
   type VinylLot,
 } from "@/lib/vinyl-parse";
-import { lotIdentity, ownedCandidate, ownedMatchForLot, type OwnedHit } from "@/lib/wantlist-match";
+import {
+  lotIdentity,
+  ownedCandidate,
+  ownedMatchForLot,
+  ownedSignatureFromLot,
+  resolveOwned,
+  type CollectionLinks,
+  type LotIdentity,
+  type OwnedFeedback,
+  type OwnedHit,
+  type OwnedResolution,
+} from "@/lib/wantlist-match";
 
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({
@@ -274,6 +289,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const runSetAiMode = useServerFn(setAiMode);
   const runAnalyze = useServerFn(analyzeOnDemand);
   const fetchCollection = useServerFn(getCollection);
+  const fetchCollectionLinks = useServerFn(getCollectionLinks);
+  const fetchCollectionFeedback = useServerFn(getCollectionFeedback);
+  const runApplyDecision = useServerFn(applyCollectionDecision);
 
   const lots = useQuery({
     ...lotsQuery,
@@ -441,6 +459,29 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     staleTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
+  // Relações manuais (override por lote) e aprendizado (feedback por assinatura). Mesmas
+  // chaves de app_state; compartilham cache entre telas.
+  const collectionLinksQuery = useQuery<CollectionLinks>({
+    queryKey: ["collection-links"] as const,
+    queryFn: () => fetchCollectionLinks() as Promise<CollectionLinks>,
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const collectionFeedbackQuery = useQuery<OwnedFeedback[]>({
+    queryKey: ["collection-feedback"] as const,
+    queryFn: () => fetchCollectionFeedback() as Promise<OwnedFeedback[]>,
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const collById = useMemo(() => {
+    const map = new Map<string, CollectionItem>();
+    for (const it of collectionQuery.data ?? []) map.set(it.id, it);
+    return map;
+  }, [collectionQuery.data]);
+  const collLabel = (itemId: string): string => {
+    const it = collById.get(itemId);
+    return it ? [it.artist, it.album].filter(Boolean).join(" ") : "";
+  };
   // Candidatos de casamento a partir da coleção (`ownedCandidate` separa tokens de artista e
   // álbum para dosar a confiança). Ignora buckets ruidosos (Lote/Coletâneas/Não classificados)
   // e artista vazio, que gerariam tokens fracos e falsos positivos.
@@ -459,23 +500,17 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         ),
     [collectionQuery.data],
   );
-  // `lot_id` das peças EXATAS já arrematadas (casamento 100% preciso, sem passar pelo score).
-  const ownedLotIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const it of collectionQuery.data ?? []) if (it.lotId) set.add(it.lotId);
-    return set;
+  // `lot_id` das peças EXATAS já arrematadas → id do item da coleção (casamento 100% preciso).
+  const ownedByLotId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const it of collectionQuery.data ?? []) if (it.lotId) map.set(it.lotId, it.id);
+    return map;
   }, [collectionQuery.data]);
-  // Um match por lote: a peça exata (ownedLotIds, score 1) OU o melhor casamento ≥ 50% contra
-  // a coleção. `score` decide o visual: ≥ 80% = ícone confiante; 50–80% = ícone com "?".
-  const ownedById = useMemo(() => {
-    const map = new Map<string, OwnedHit>();
+  // Identidade de cada lote (título + artista efetivo + álbum IA + release Discogs), reusada
+  // pelo casamento automático, pelo aprendizado e pela assinatura das decisões.
+  const identityById = useMemo(() => {
+    const map = new Map<string, LotIdentity>();
     for (const lot of lots.data?.lots ?? []) {
-      if (ownedLotIds.has(lot.id)) {
-        map.set(lot.id, { id: "", label: "", score: 1 });
-        continue;
-      }
-      if (!ownedCands.length) continue;
-      // Artista efetivo (mesma regra de `effectiveArtist`), inline para manter as deps limpas.
       const parsedArtist = parseAiAlbum(albumById.get(lot.id) ?? null).artist;
       const artist =
         isDiscBundle(lot.title ?? "") || lot.artist === LOTE_LABEL
@@ -484,19 +519,119 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             ? titleCase(parsedArtist)
             : lot.artist;
       const market = marketById.get(lot.id);
-      const identity = lotIdentity({
-        title: lot.title,
-        artist,
-        album: albumById.get(lot.id) ?? null,
-        marketTitle: market?.releaseTitle ?? null,
-        marketYear: market?.year ?? null,
-      });
+      map.set(
+        lot.id,
+        lotIdentity({
+          title: lot.title,
+          artist,
+          album: albumById.get(lot.id) ?? null,
+          marketTitle: market?.releaseTitle ?? null,
+          marketYear: market?.year ?? null,
+        }),
+      );
+    }
+    return map;
+  }, [lots.data, albumById, marketById]);
+  // Casamento AUTOMÁTICO cru (antes de override/aprendizado): peça exata (score 1) ou ≥50%.
+  const ownedAutoById = useMemo(() => {
+    const map = new Map<string, OwnedHit>();
+    for (const lot of lots.data?.lots ?? []) {
+      const exactId = ownedByLotId.get(lot.id);
+      if (exactId) {
+        map.set(lot.id, { id: exactId, label: collLabel(exactId), score: 1 });
+        continue;
+      }
+      if (!ownedCands.length) continue;
+      const identity = identityById.get(lot.id);
+      if (!identity) continue;
       const best = ownedMatchForLot(ownedCands, identity);
       if (best) map.set(lot.id, best);
     }
     return map;
-  }, [ownedCands, ownedLotIds, lots.data, albumById, marketById]);
-  const ownedFor = (lot: { id: string }): OwnedHit | null => ownedById.get(lot.id) ?? null;
+    // collLabel depende de collById (memo estável); ownedByLotId/identityById cobrem os dados.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownedCands, ownedByLotId, identityById, collById]);
+
+  const EMPTY_IDENTITY: LotIdentity = useMemo(
+    () => ({ text: "", tokens: new Set<string>(), years: new Set<number>() }),
+    [],
+  );
+  const links: CollectionLinks = collectionLinksQuery.data ?? {};
+  const feedback: OwnedFeedback[] = collectionFeedbackQuery.data ?? [];
+  const ownedResolutionFor = (lot: { id: string }): OwnedResolution =>
+    resolveOwned(
+      lot.id,
+      links,
+      ownedAutoById.get(lot.id) ?? null,
+      feedback,
+      identityById.get(lot.id) ?? EMPTY_IDENTITY,
+    );
+  // `OwnedHit` efetivo para o ícone do card (cinza quando null).
+  const ownedFor = (lot: { id: string }): OwnedHit | null => {
+    const res = ownedResolutionFor(lot);
+    switch (res.kind) {
+      case "linked":
+        return { id: res.itemId, label: collLabel(res.itemId), score: 1 };
+      case "auto":
+        return res.hit;
+      case "suggested":
+        return { id: res.itemId, label: collLabel(res.itemId), score: res.score };
+      default:
+        return null; // none / rejected → cinza
+    }
+  };
+
+  // Painel de relação (abre ao tocar o ícone) + assinatura da decisão + gravação. O lote é
+  // um formato mínimo (id/título/artista) — serve tanto para VinylLot quanto para os lances.
+  type PanelLot = { id: string; title: string; artist?: string };
+  const [ownedPanelLot, setOwnedPanelLot] = useState<PanelLot | null>(null);
+  const sigForLot = (lot: PanelLot) => {
+    const ai = parseAiAlbum(albumById.get(lot.id) ?? null);
+    const market = marketById.get(lot.id);
+    return ownedSignatureFromLot({
+      artist: ai.artist ?? lot.artist ?? null,
+      album: ai.album ?? null,
+      title: lot.title,
+      year: ai.year ?? market?.year ?? null,
+    });
+  };
+  const applyDecision = (lot: PanelLot, value: string | false | null, itemId: string | null) => {
+    const sig = sigForLot(lot);
+    const prevLinks = collectionLinksQuery.data ?? {};
+    const prevFeedback = collectionFeedbackQuery.data ?? [];
+    // Otimista: reflete na hora nas duas caches.
+    queryClient.setQueryData<CollectionLinks>(["collection-links"], (old) => {
+      const next = { ...(old ?? {}) };
+      if (value === null) delete next[lot.id];
+      else next[lot.id] = value;
+      return next;
+    });
+    queryClient.setQueryData<OwnedFeedback[]>(["collection-feedback"], (old) => {
+      const kept = (old ?? []).filter((e) => e.lotId !== lot.id);
+      if (value === null || !itemId) return kept;
+      return [
+        ...kept,
+        {
+          lotId: lot.id,
+          itemId,
+          verdict: value === false ? "neg" : "pos",
+          artist: sig.artist,
+          album: sig.album,
+          year: sig.year,
+        },
+      ];
+    });
+    void runApplyDecision({ data: { lotId: lot.id, value, itemId, sig } })
+      .catch((error: unknown) => {
+        queryClient.setQueryData(["collection-links"], prevLinks);
+        queryClient.setQueryData(["collection-feedback"], prevFeedback);
+        toast.error((error as Error)?.message || "Não foi possível salvar a relação");
+      })
+      .finally(() => {
+        void queryClient.invalidateQueries({ queryKey: ["collection-links"] });
+        void queryClient.invalidateQueries({ queryKey: ["collection-feedback"] });
+      });
+  };
 
   // Casas verificadas: fonte da verdade é o servidor (app_state). O localStorage é só
   // um cache para pintar a tela na hora, sem esperar a rede.
@@ -1201,6 +1336,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   market={marketFor(lot)}
                                   album={albumFor(lot)}
                                   owned={ownedFor(lot)}
+                                  onOpenOwned={() => setOwnedPanelLot(lot)}
                                   onEditTags={editTags(lot.id)}
                                   bidStatus={bidStatusById.get(lot.idPeca)}
                                   onToggle={() =>
@@ -1231,6 +1367,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                         priceById={priceById}
                         nextBidById={nextBidById}
                         albumById={albumById}
+                        ownedFor={ownedFor}
+                        onOpenOwned={(bid) => setOwnedPanelLot(bid)}
                         onToggle={(bid) => toggle.mutate(bid)}
                       />
                     )
@@ -1280,6 +1418,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                 market={marketFor(lot)}
                                 album={albumFor(lot)}
                                 owned={ownedFor(lot)}
+                                onOpenOwned={() => setOwnedPanelLot(lot)}
                                 onEditTags={editTags(lot.id)}
                                 bidStatus={bidStatusById.get(lot.idPeca)}
                                 onToggle={() =>
@@ -1450,6 +1589,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                             market={marketFor(lot)}
                                             album={albumFor(lot)}
                                             owned={ownedFor(lot)}
+                                            onOpenOwned={() => setOwnedPanelLot(lot)}
                                             onEditTags={editTags(lot.id)}
                                             bidStatus={bidStatusById.get(lot.idPeca)}
                                             onToggle={() =>
@@ -1611,6 +1751,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                       market={marketFor(lot)}
                                       album={albumFor(lot)}
                                       owned={ownedFor(lot)}
+                                      onOpenOwned={() => setOwnedPanelLot(lot)}
                                       onEditTags={editTags(lot.id)}
                                       bidStatus={bidStatusById.get(lot.idPeca)}
                                       onToggle={() =>
@@ -1697,6 +1838,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                               priceById={priceById}
                               nextBidById={nextBidById}
                               albumById={albumById}
+                              ownedFor={ownedFor}
+                              onOpenOwned={(bid) => setOwnedPanelLot(bid)}
                               onToggle={(bid) => toggle.mutate(bid)}
                             />
                           </section>
@@ -1710,6 +1853,46 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           </Tabs>
         )}
       </div>
+      {ownedPanelLot
+        ? (() => {
+            const lot = ownedPanelLot;
+            const res = ownedResolutionFor(lot);
+            const relatedId =
+              res.kind === "linked" || res.kind === "suggested"
+                ? res.itemId
+                : res.kind === "auto"
+                  ? res.hit.id
+                  : null;
+            const relatedItem = relatedId ? (collById.get(relatedId) ?? null) : null;
+            return (
+              <OwnedPanel
+                open
+                onClose={() => setOwnedPanelLot(null)}
+                lotTitle={lot.title}
+                resolution={res}
+                relatedItem={relatedItem}
+                collection={collectionQuery.data ?? []}
+                busy={collectionLinksQuery.isFetching || collectionFeedbackQuery.isFetching}
+                onConfirm={() => {
+                  if (relatedId) applyDecision(lot, relatedId, relatedId);
+                  setOwnedPanelLot(null);
+                }}
+                onReject={() => {
+                  applyDecision(lot, false, relatedId);
+                  setOwnedPanelLot(null);
+                }}
+                onReactivate={() => {
+                  applyDecision(lot, null, null);
+                  setOwnedPanelLot(null);
+                }}
+                onLink={(itemId) => {
+                  applyDecision(lot, itemId, itemId);
+                  setOwnedPanelLot(null);
+                }}
+              />
+            );
+          })()
+        : null}
     </main>
   );
 }

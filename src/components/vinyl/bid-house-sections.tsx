@@ -2,6 +2,8 @@ import { ExternalLink } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 
+import type { OwnedHit } from "@/lib/wantlist-match";
+
 import { BidStatBadges } from "./badges";
 import { computeBidStats } from "./grouping";
 import { LotCard } from "./lot-card";
@@ -36,6 +38,8 @@ export function BidHouseSections({
   priceById,
   nextBidById,
   albumById,
+  ownedFor,
+  onOpenOwned,
   onToggle,
 }: {
   houses: { house: string; houseUrl: string; lots: BidCard[] }[];
@@ -44,6 +48,8 @@ export function BidHouseSections({
   priceById: Map<string, string>;
   nextBidById: Map<string, string>;
   albumById?: Map<string, string>;
+  ownedFor?: (lot: { id: string }) => OwnedHit | null;
+  onOpenOwned?: (bid: { id: string; title: string }) => void;
   onToggle: (bid: { idPeca: string; idLeilao: string; base: string; watch: boolean }) => void;
 }) {
   return (
@@ -89,6 +95,10 @@ export function BidHouseSections({
                 busy={pending === bid.idPeca}
                 bidStatus={bid.status}
                 album={albumById?.get(bid.id) ?? null}
+                owned={ownedFor?.(bid) ?? null}
+                onOpenOwned={
+                  onOpenOwned ? () => onOpenOwned({ id: bid.id, title: bid.title }) : undefined
+                }
                 onToggle={() =>
                   onToggle({
                     idPeca: bid.idPeca,

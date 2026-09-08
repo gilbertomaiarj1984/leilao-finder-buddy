@@ -119,6 +119,28 @@ React 19 (SSR) + Supabase**, deploy na **Vercel** (Nitro). Migrado do Lovable em
   abaixo não marca. **Sem álbum distintivo → não marca** (só a peça exata por `lot_id`, score
   1, no chamador). `ownedCands` ignora buckets Lote/Coletâneas/Não classificados; mapa
   `ownedById` memoizado; prop `owned: OwnedHit` no `LotCard`.
+  - **Coletânea/ao vivo (título genérico)** casa pelo **nome + ano EXATO** (`ownedScore`
+    separa tokens distintivos × genéricos; "Ao Vivo (1989)"/"Seus Sucessos (1978)").
+  - **Relação MANUAL + gerenciável (v0.24.0):** o ícone aparece em **TODO card** — **cinza**
+    (sem relação), **roxo** (relação), **roxo + "?"** (incerta/sugerida). Ao tocar abre o
+    **`OwnedPanel`** (`owned-panel.tsx`) com o **`CollectionCard`** do disco relacionado e ações:
+    **Confirmar** (auto/sugestão → vínculo), **Não tenho** (fica cinza e não re-marca),
+    **Reativar detecção automática**, e um **seletor** (busca) para relacionar/trocar por
+    qualquer disco. `CollectionCard` ganhou `onEdit`/`onRemove` opcionais (modo leitura).
+  - **Persistência (sem schema):** duas chaves em `app_state` — **`collection_links`**
+    (`Record<lotId, itemId|false>`, override por lote) e **`collection_feedback`**
+    (`OwnedFeedback[]`, aprendizado por assinatura). Server `app-state.server.ts`
+    (`getCollectionLinks`/`setCollectionLink`, `getCollectionFeedback`/`addCollectionFeedback`/
+    `removeCollectionFeedbackByLot`) + `leiloesbr.functions.ts` (`getCollectionLinks`/
+    `getCollectionFeedback`/`applyCollectionDecision`). Cliente: queries `["collection-links"]`/
+    `["collection-feedback"]`, gravação otimista.
+  - **Aprendizado (modo "sugere, você confirma"):** `resolveOwned(lotId, links, autoHit,
+    feedback, id)` → `none|rejected|linked|auto|suggested`. Confirmar grava feedback **pos**;
+    "Não tenho" grava **neg**. Em OUTROS lotes: **pos** sem auto → sugere **"?"**; **neg** que
+    casa a assinatura rebaixa um auto-confiante para **"?"** (nunca marca confiante sozinho nem
+    esconde). Reativar remove o feedback do lote (`ownedSignatureFromLot`/`OwnedFeedback` em
+    `wantlist-match.ts`). Vale em **todos** os cards da home, incl. "Meus lances"
+    (`bid-house-sections.tsx` recebe `ownedFor`/`onOpenOwned`).
 - Helpers de classificação/agrupamento em `src/components/vinyl/grouping.ts` (`classifyBid`,
   `houseAnchor`, `computeHouseStats`, `groupByHouse`/`groupByHouseSimple`, `groupByArtist`,
   `watchedMatchesSearch`/`bidMatchesSearch`, `groupWatchedByHouse`, `loteNum` — ordena por nº
@@ -507,6 +529,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.23.0 | Home: **ícone roxo "já tenho na Coleção"** no card (abaixo da nota, à direita) quando o lote casa com `collection_items` — casamento por artista/álbum/ano (`ownedMatchForLot`) em **duas faixas**: ≥80% confiante, 50–80% com **"?"** (incerto); peça exata por `lot_id` | #88 |
 | v0.23.1 | Coleção: **precisão** do casamento "já tenho" — EXIGE o nome do álbum com tokens distintivos (desconta o nome do artista e genéricos "ao vivo"/"sucessos"), corrigindo falsos positivos (ex.: lote que só cita o artista como compositor casava "A Arte de Jorge Ben") | #89 |
 | v0.23.2 | Coleção: casamento "já tenho" mais **preciso** — tolera grafia do artista ("Ellis"≈"Elis", fuzzy 4+ só no artista); separa tokens **distintivos × genéricos** do álbum; **coletânea/ao vivo** (título genérico) casa pelo **nome + ano EXATO** ("Ao Vivo (1989)"/"Seus Sucessos (1978)"); título distintivo dirigido pela cobertura do álbum; **ícone tocável** mostra o disco casado + score | #90 |
+| v0.24.0 | Coleção: **relação manual lote↔Coleção** — ícone em TODO card (cinza/roxo/roxo+?), painel com o card da Coleção (`OwnedPanel`), **vincular/trocar/"não tenho"/reativar** persistidos (`collection_links`), e **aprendizado** por assinatura (`collection_feedback`, `resolveOwned`) que **sugere "?"** em outros lotes (positivo) e rebaixa falsos casamentos (negativo) — modo "sugere, você confirma" | #91 |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.

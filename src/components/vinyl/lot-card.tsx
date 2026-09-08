@@ -1,5 +1,4 @@
 import { Disc3, ExternalLink, Eye, EyeOff, Loader2 } from "lucide-react";
-import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
@@ -32,6 +31,7 @@ export function LotCard({
   market,
   album,
   owned,
+  onOpenOwned,
   onEditTags,
 }: {
   lot: CardLot;
@@ -44,16 +44,13 @@ export function LotCard({
   // Artista/álbum identificado pela IA (avaliação completa OU identificação simples),
   // já resolvido pelo pai. Priorizado sobre o título quando existir.
   album?: string | null;
-  // Casamento com a Coleção do usuário (disco que ele JÁ possui), resolvido pelo pai.
-  // Quando presente, o card mostra um ícone roxo "já tenho". `score` ≥ 80% = confiante;
-  // 50–80% = incerto (ícone com "?"). `label` = artista + álbum do item casado (vazio
-  // quando o casamento foi pela peça exata via `lot_id`).
+  // Relação com a Coleção (disco que o usuário JÁ possui), resolvida pelo pai. O ícone
+  // aparece em TODO card: `null` = cinza (sem relação); `score` ≥ 80% = roxo confiante;
+  // 60–80% = roxo com "?" (incerto/sugerido). Clicar abre o painel (`onOpenOwned`).
   owned?: OwnedHit | null;
+  onOpenOwned?: () => void;
   onEditTags?: (next: string[]) => void;
 }) {
-  // Diagnóstico "já tenho": no toque (celular não tem hover) revela qual disco da Coleção
-  // casou e o score — para rastrear falso positivo/negativo.
-  const [ownedOpen, setOwnedOpen] = useState(false);
   // Linha padrão de identificação da IA (Artista — Álbum (Ano)), quando houver.
   const aiLabel = album ? formatAiAlbum(album, market?.year) : "";
   // Cores (mesma regra do painel): meu lance ganhando = verde; meu lance coberto = vermelho;
@@ -76,43 +73,34 @@ export function LotCard({
       className={`relative flex flex-col overflow-hidden rounded-md border bg-card ${cardClass}`}
     >
       {ai ? <ScoreCorner ai={ai} market={market} price={lot.price} /> : null}
-      {/* "Já tenho na Coleção": ícone roxo no canto DIREITO, logo ABAIXO da nota da IA
-          (fica no lugar da nota quando não há nota). Avisa que o disco já está na coleção
-          do usuário, para não arrematar duplicado. Casamento confiante (≥80%) mostra só o
-          disco; incerto (50–80%, ex.: artista e ano batem mas o álbum não pôde ser
-          confirmado) ganha um "?" ao lado. */}
-      {owned
-        ? (() => {
-            const confident = owned.score >= OWNED_CONFIDENT_MIN;
-            const what = owned.label ? `: ${owned.label}` : "";
-            const tip = confident
-              ? `Já tenho na Coleção${what}`
-              : `Provável: já tenho na Coleção${what} (não confirmado — confira o disco)`;
-            // Detalhe do casamento (aparece ao tocar): qual disco da Coleção e o score.
-            const detail = `${owned.label || "peça exata (lot_id)"} · ${Math.round(owned.score * 100)}%`;
-            return (
-              <div className="absolute right-2 top-9 z-10 flex flex-col items-end gap-1">
-                <button
-                  type="button"
-                  onClick={() => setOwnedOpen((v) => !v)}
-                  className="flex items-center gap-0.5 rounded-full bg-purple-600 px-1.5 py-1 text-white shadow"
-                  title={tip}
-                  aria-label={tip}
-                >
-                  <Disc3 className="h-3.5 w-3.5" />
-                  {!confident ? (
-                    <span className="text-[10px] font-bold leading-none">?</span>
-                  ) : null}
-                </button>
-                {ownedOpen ? (
-                  <span className="max-w-[12rem] rounded bg-purple-600/95 px-1.5 py-0.5 text-right text-[10px] leading-tight text-white shadow">
-                    Já tenho — {detail}
-                  </span>
-                ) : null}
-              </div>
-            );
-          })()
-        : null}
+      {/* Relação com a Coleção: ícone no canto DIREITO, logo ABAIXO da nota da IA. Aparece em
+          TODO card — CINZA quando não há relação; ROXO quando confirmada; ROXO + "?" quando
+          incerta/sugerida. Clicar abre o painel para ver o disco, desfazer ou criar a relação. */}
+      {(() => {
+        const confident = owned != null && owned.score >= OWNED_CONFIDENT_MIN;
+        const tip = !owned
+          ? "Relação com a Coleção — toque para ver/definir"
+          : confident
+            ? `Já tenho na Coleção${owned.label ? `: ${owned.label}` : ""}`
+            : `Provável: já tenho na Coleção${owned.label ? `: ${owned.label}` : ""} — toque para confirmar`;
+        const tone = !owned ? "bg-zinc-500/80" : "bg-purple-600";
+        return (
+          <div className="absolute right-2 top-9 z-10">
+            <button
+              type="button"
+              onClick={onOpenOwned}
+              className={`flex items-center gap-0.5 rounded-full px-1.5 py-1 text-white shadow ${tone}`}
+              title={tip}
+              aria-label={tip}
+            >
+              <Disc3 className="h-3.5 w-3.5" />
+              {owned && !confident ? (
+                <span className="text-[10px] font-bold leading-none">?</span>
+              ) : null}
+            </button>
+          </div>
+        );
+      })()}
       {/* Nº do lote no canto superior ESQUERDO, espelhando a nota da IA (canto direito).
           Visão padrão de todos os cards. */}
       {lot.lote ? (
