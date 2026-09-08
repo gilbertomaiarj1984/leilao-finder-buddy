@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { PendingWonLot } from "@/lib/collection.server";
+import { isAiProvider } from "./ai-provider";
 
 /** Normaliza um candidato duplicado vindo da UI (round-trip do resultado da varredura). */
 function normalizePending(input: Record<string, unknown> | undefined): PendingWonLot {
@@ -107,18 +108,26 @@ export const scanCollection = createServerFn({ method: "POST" })
 export const identifyCollection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
-    (input: { offset?: number; max?: number; onlyUnidentified?: boolean } | undefined) => ({
+    (
+      input:
+        | { offset?: number; max?: number; onlyUnidentified?: boolean; provider?: string }
+        | undefined,
+    ) => ({
       offset: Math.max(Number(input?.offset) || 0, 0),
       max: Math.min(Math.max(Number(input?.max) || 12, 1), 25),
       // Padrão seguro/barato: só os não identificados. `false` só quando o cliente pede.
       onlyUnidentified: input?.onlyUnidentified !== false,
+      // Provedor escolhido na hora (opcional): senão usa o padrão do `app_state`.
+      provider: isAiProvider(input?.provider) ? input.provider : null,
     }),
   )
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getAiProvider } = await import("./app-state.server");
+    const provider = data.provider ?? (await getAiProvider());
     const { reidentifyCollection } = await import("./collection.server");
-    return await reidentifyCollection(data.offset, data.max, data.onlyUnidentified);
+    return await reidentifyCollection(provider, data.offset, data.max, data.onlyUnidentified);
   });
 
 /**
@@ -127,15 +136,17 @@ export const identifyCollection = createServerFn({ method: "POST" })
  */
 export const reprocessCollectionItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { id?: string } | undefined) => {
+  .inputValidator((input: { id?: string; provider?: string } | undefined) => {
     if (!input?.id || typeof input.id !== "string") throw new Error("id obrigatório");
-    return { id: input.id };
+    return { id: input.id, provider: isAiProvider(input?.provider) ? input.provider : null };
   })
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getAiProvider } = await import("./app-state.server");
+    const provider = data.provider ?? (await getAiProvider());
     const { reidentifyCollectionItem } = await import("./collection.server");
-    return await reidentifyCollectionItem(data.id);
+    return await reidentifyCollectionItem(data.id, provider);
   });
 
 /** Diagnóstico da varredura (não grava): quantas peças/páginas/logado por aba. */

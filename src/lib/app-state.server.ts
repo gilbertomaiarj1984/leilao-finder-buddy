@@ -16,6 +16,7 @@ const USER_INTERESTS_KEY = "user_interests";
 const AI_BATCH_KEY = "ai_batch";
 const AI_IDENT_BATCH_KEY = "ai_ident_batch";
 const AI_MODE_KEY = "ai_mode";
+const AI_PROVIDER_KEY = "ai_provider";
 const COLLECTION_LINKS_KEY = "collection_links";
 const COLLECTION_FEEDBACK_KEY = "collection_feedback";
 
@@ -261,6 +262,57 @@ export async function setAiMode(mode: AiMode): Promise<{ savedAt: string }> {
   if (error) {
     console.error("[app-state] não foi possível gravar o modo da IA", error);
     throw new Error(`Não foi possível gravar o modo da IA: ${error.message}`);
+  }
+  return { savedAt };
+}
+
+/**
+ * Provedor de IA PADRÃO (qual modelo usar quando o usuário não escolhe explicitamente):
+ * `"anthropic"` (Claude) ou `"gemini"` (Google). Global, um registro em `app_state`.
+ * Declarado localmente para o módulo do SERVIDOR não depender do client-safe `ai-provider.ts`
+ * (mesma lição do `OwnedFeedback`). Precedência: `app_state` → env `AI_PROVIDER` → `anthropic`.
+ */
+export type AiProvider = "anthropic" | "gemini";
+
+const AI_PROVIDERS: readonly AiProvider[] = ["anthropic", "gemini"] as const;
+
+function envDefaultProvider(): AiProvider {
+  const env = process.env["AI_PROVIDER"];
+  return typeof env === "string" && (AI_PROVIDERS as readonly string[]).includes(env)
+    ? (env as AiProvider)
+    : "anthropic";
+}
+
+export async function getAiProvider(): Promise<AiProvider> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("app_state")
+      .select("value")
+      .eq("key", AI_PROVIDER_KEY)
+      .maybeSingle();
+    if (error) throw error;
+    const value = data?.value;
+    if (typeof value === "string" && (AI_PROVIDERS as readonly string[]).includes(value)) {
+      return value as AiProvider;
+    }
+    return envDefaultProvider();
+  } catch (error) {
+    console.error("[app-state] não foi possível ler o provedor de IA (usando padrão)", error);
+    return envDefaultProvider();
+  }
+}
+
+export async function setAiProvider(provider: AiProvider): Promise<{ savedAt: string }> {
+  if (!(AI_PROVIDERS as readonly string[]).includes(provider)) {
+    throw new Error(`Provedor de IA inválido: ${provider}`);
+  }
+  const savedAt = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from("app_state")
+    .upsert({ key: AI_PROVIDER_KEY, value: provider, updated_at: savedAt }, { onConflict: "key" });
+  if (error) {
+    console.error("[app-state] não foi possível gravar o provedor de IA", error);
+    throw new Error(`Não foi possível gravar o provedor de IA: ${error.message}`);
   }
   return { savedAt };
 }

@@ -115,7 +115,7 @@ React 19 (SSR) + Supabase**, deploy na **Vercel** (Nitro). Migrado do Lovable em
   compositor) e palavras **genéricas** (`GENERIC_ALBUM_TOKENS`: "ao vivo"/"sucessos"/…). Score
   0..1 dirigido pela **cobertura do álbum**, com o **artista** claramente presente
   (`OWNED_ARTIST_MIN` 0.75); o **ano** só reforça / desempata reedição. Faixas: `>=
-  OWNED_CONFIDENT_MIN` (80%) = ícone confiante; `>= OWNED_MATCH_MIN` (60%) = ícone **com "?"**;
+OWNED_CONFIDENT_MIN` (80%) = ícone confiante; `>= OWNED_MATCH_MIN` (60%) = ícone **com "?"**;
   abaixo não marca. **Sem álbum distintivo → não marca** (só a peça exata por `lot_id`, score
   1, no chamador). `ownedCands` ignora buckets Lote/Coletâneas/Não classificados; mapa
   `ownedById` memoizado; prop `owned: OwnedHit` no `LotCard`.
@@ -135,7 +135,7 @@ React 19 (SSR) + Supabase**, deploy na **Vercel** (Nitro). Migrado do Lovable em
     `getCollectionFeedback`/`applyCollectionDecision`). Cliente: queries `["collection-links"]`/
     `["collection-feedback"]`, gravação otimista.
   - **Aprendizado (modo "sugere, você confirma"):** `resolveOwned(lotId, links, autoHit,
-    feedback, id)` → `none|rejected|linked|auto|suggested`. Confirmar grava feedback **pos**;
+feedback, id)` → `none|rejected|linked|auto|suggested`. Confirmar grava feedback **pos**;
     "Não tenho" grava **neg**. Em OUTROS lotes: **pos** sem auto → sugere **"?"**; **neg** que
     casa a assinatura rebaixa um auto-confiante para **"?"** (nunca marca confiante sozinho nem
     esconde). Reativar remove o feedback do lote (`ownedSignatureFromLot`/`OwnedFeedback` em
@@ -222,8 +222,28 @@ por dia/casa não é mais exibida; a home, a Análise e o Ao vivo cobrem o uso. 
 
 ## IA (avaliação, identificação, modo)
 
-Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_API_KEY`**
-(`process.env`). **Opcional:** sem a chave tudo faz **no-op** e o app segue normal.
+**Multi-provedor (v0.27.0):** o app usa **Claude (Anthropic)** OU **Gemini (Google)** — camada
+plugável em **`ai-provider.server.ts`** (+ metadados client-safe em `ai-provider.ts`). Modelos
+baratos por padrão: **`claude-haiku-4-5`** (`ANTHROPIC_API_KEY`, override `ANTHROPIC_MODEL`) e
+**`gemini-flash-latest`** (`GEMINI_API_KEY`, override `GEMINI_MODEL`). **Opcional:** sem NENHUMA
+chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer provedor").
+
+- **`runText(req, provider)`** é o ponto único: recebe uma requisição NEUTRA (`AiRequest`:
+  system + texto + imagem opcional) e devolve `{text, provider, model, switched}`. Adaptadores:
+  Anthropic via `@anthropic-ai/sdk` (`messages.create`); Gemini via **REST**
+  (`generativelanguage.googleapis.com/v1beta`, header `x-goog-api-key`, sem dep nova) — como o
+  Gemini **não** busca URL de imagem, a capa é baixada e enviada **inline (base64)**; usa
+  `generationConfig.thinkingConfig.thinkingBudget:0` (sem "thinking") + `responseMimeType:json`.
+- **Failover automático por quota/sem créditos** (`isQuotaError`: 429/402/"credit balance"/…):
+  o provedor pedido falha → tenta o outro configurado; `switched`/`served` sobem à UI (toast
+  "X sem créditos — usei Y"). Erros que não são de quota propagam (tratados por-item).
+- **Provedor PADRÃO** persistido em `app_state.ai_provider` (`getAiProvider`/`setAiProvider`;
+  precedência: `app_state` → env `AI_PROVIDER` → `anthropic`). **Seletor no header** (home e
+  Coleção, `AiProviderSelect`). Cada gatilho de processamento sob demanda **pergunta qual usar
+  antes** (`AiProviderDialog` + hook `useAiProviderPicker`), pré-selecionando o padrão.
+- **Cron:** Claude usa **Batches** (assíncrono, ~50% mais barato); Gemini roda **síncrono** em
+  bloco (`GEMINI_SYNC_CAP`, o laço do cron chama de novo até esgotar). Se o Claude estiver sem
+  créditos no `submit`, o cron cai para o Gemini síncrono.
 
 - **Avaliação completa — `lot_ai`** (`ai-eval.server.ts` + `lot-ai.server.ts`): via **Batches
   API** (~50% do preço, assíncrona), **1 request por lote** (`custom_id = lots.id`). Cache por
@@ -243,11 +263,12 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
   **padrão `"watched"`** (econômico). No `step=aieval`: `off` não coleta/submete; `all` = todos
   os lotes; `watched` = só lotes vigiados ∪ com lance (ids de `listWatchedFromSite` +
   `listMyBidsFromSite`).
-- **Análise sob demanda** (síncrona): `evalLotsSync` usa a **Messages API** (`messages.create`,
-  concorrência 4) — não a Batches. Server fn `analyzeOnDemand({day, house?, max})` avalia só os
-  não avaliados (até `max`=25) e devolve `{evaluated, remaining}` para o cliente repetir em
-  laço. Roda **em qualquer modo**, inclusive com a IA desligada. UI: botões "Analisar dia" /
-  "Analisar" (casa) + `Select` de modo no header.
+- **Análise sob demanda** (síncrona): `evalLotsSync(lots, provider)` usa `runText`
+  (concorrência 4, com failover) — não a Batches. Server fn
+  `analyzeOnDemand({day, house?, max, provider?})` avalia só os não avaliados (até `max`=25) e
+  devolve `{evaluated, remaining, served, switched}` para o cliente repetir em laço. Roda **em
+  qualquer modo**, inclusive com a IA desligada. UI: botões "Analisar dia" / "Analisar" (casa)
+  perguntam o provedor antes; `Select` de modo + `Select` de provedor no header.
 - **`matchesInterests` é da UI, NÃO da IA:** `buildInterestMatcher` (`ai-score-utils.ts`) casa
   a lista `app_state.user_interests` com o título via `normalizeForMatch` (determinístico,
   não gasta tokens); destaca com ⭐.
@@ -374,7 +395,7 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
   `sources = {stored, title, none}` (diagnóstico de onde veio cada artista — some no toast).
 - **IA por TEXTO (opt-in, gasta créditos):** dois caminhos, ambos via **`identCollectionSync`**.
   - **Em massa — botão "Identificar novos (IA)"** no header → `identifyCollection({offset, max,
-    onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda sem
+onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda sem
     identificação** (`needsIdentification`: artista vazio ou `UNCLASSIFIED_LABEL`), pulando os já
     identificados **sem custo** — uso ROTINEIRO e barato (a varredura de compras acrescenta poucos
     discos por vez). O `onlyUnidentified` é sempre `true` a partir da UI; o modo completo
@@ -389,22 +410,22 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
     descritivo com o que a IA devolver (nunca zera com vazio). É o "refazer" manual para corrigir
     um disco específico sem reprocessar a base toda. Estado de "girando" por-id no card.
   - Em ambos, conjuntos/coletâneas seguem classificados pelo título SEM gastar IA. A IA em si
-  (`identCollectionSync`, `ai-eval.server.ts`, SÓ TEXTO), além de artista/álbum/ano, gera o
-  **descritivo** (`description`) do disco. **Nunca usa a capa** — a imagem do leilão engana o
-  modelo (mistura artistas parecidos); o prompt (`buildCollectionIdentPrompt`) recebe título +
-  artista/álbum/ano atuais como pista e instrui a usar "Vários Artistas" em coletâneas. Devolve
-  `{identified, processed, nextOffset, total, done}` (massa; o cliente repete em laço até `done`)
-  ou `{updated}` (por card). O resto vai à IA e passa por `canonicalArtist` (coletâneas viram
-  "Coletâneas"). **Diferença de sobrescrita:** a passada em massa só preenche/melhora (descritivo
-  só quando vazio, não sobrescreve edição do usuário); o reprocesso por card **sobrescreve** cada
-  campo que a IA devolver. Nenhum dos dois zera com resultado vazio. Sem `ANTHROPIC_API_KEY`, erro
-  claro. (`identLotsSync` segue existindo para o fluxo antigo de leilões.)
+    (`identCollectionSync`, `ai-eval.server.ts`, SÓ TEXTO), além de artista/álbum/ano, gera o
+    **descritivo** (`description`) do disco. **Nunca usa a capa** — a imagem do leilão engana o
+    modelo (mistura artistas parecidos); o prompt (`buildCollectionIdentPrompt`) recebe título +
+    artista/álbum/ano atuais como pista e instrui a usar "Vários Artistas" em coletâneas. Devolve
+    `{identified, processed, nextOffset, total, done}` (massa; o cliente repete em laço até `done`)
+    ou `{updated}` (por card). O resto vai à IA e passa por `canonicalArtist` (coletâneas viram
+    "Coletâneas"). **Diferença de sobrescrita:** a passada em massa só preenche/melhora (descritivo
+    só quando vazio, não sobrescreve edição do usuário); o reprocesso por card **sobrescreve** cada
+    campo que a IA devolver. Nenhum dos dois zera com resultado vazio. Sem `ANTHROPIC_API_KEY`, erro
+    claro. (`identLotsSync` segue existindo para o fluxo antigo de leilões.)
 - **Uso pretendido:** a base de `lots` já acompanha o que o usuário arremata, então a varredura
   de `l=6` é **carga inicial / emergência**, não o fluxo contínuo.
 - **Duplicados questionados:** mesmo `lot_id` (mesma peça) é ignorado no re-scan; um vinil com
   **mesmo artista+álbum** de um já existente NÃO entra sozinho — volta em `duplicates`
-  (`PendingWonLot`) para a UI confirmar (diálogo "Possíveis duplicados": *Adicionar* →
-  `addWonLot`/`addPendingWonLot`, ou *Ignorar*). Pode haver 2 cópias propositais. Chave de
+  (`PendingWonLot`) para a UI confirmar (diálogo "Possíveis duplicados": _Adicionar_ →
+  `addWonLot`/`addPendingWonLot`, ou _Ignorar_). Pode haver 2 cópias propositais. Chave de
   duplicidade só quando há álbum (`normalizeForMatch(artista+álbum)`).
 - **Parser (`parsePurchaseChunk`):** o HTML CRU do ASP mistura aspas simples/duplas (o "Copy
   outerHTML" do navegador normaliza p/ duplas), então os regexes aceitam `['"]`. O **título**
@@ -480,7 +501,7 @@ ESLint/Prettier.)
 ## Infra (migração Lovable → Supabase próprio + Vercel, 2026-08)
 
 - **Deploy Vercel** (não mais Cloudflare). Nitro é plugin Vite (`import { nitro } from
-  'nitro/vite'`), **auto-detecta a Vercel** por `process.env.VERCEL`; build gera
+'nitro/vite'`), **auto-detecta a Vercel** por `process.env.VERCEL`; build gera
   `.vercel/output` (Build Output API v3). `vercel.json`: `bun run build` / `bun install` /
   `framework: null`. `bunfig.toml` → npm público; `bun.lock` regenerado.
 - **Auth Supabase nativo** (Google, **PKCE**). Fluxo em `src/routes/auth.tsx`:
@@ -549,6 +570,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.24.2 | Notas: relação lote↔Coleção + aprendizado **validada em produção**; registrada a lição do 404 (server não importa módulo client-safe) | #93 |
 | v0.25.0 | **Descontinuado o "Painel de mudanças"** (`/dashboard`): removida a rota, o link "Painel" no header, as server functions `getDashboardBaseline`/`markDashboardSeen` e os helpers `getBaseline`/`markSeen`/`Baseline` — limpeza de código | — |
 | v0.26.0 | Coleção: **importação em massa por texto** (`BulkImportDialog`, `parseCollectionBulkText` em `collection-bulk.ts`, server `importCollectionText`) — JSON gerado por IA (prompt copiável `GEMINI_IMPORT_PROMPT`) ou `Artista - Álbum (Ano)` por linha; pula duplicados por artista+álbum; **câmera do celular** no upload de foto por disco (`capture="environment"`) — foto em massa segue pendente | — |
+| v0.27.0 | **IA multi-provedor**: Gemini (Google) como alternativa ao Claude. Camada plugável `ai-provider(.server)` (adaptador Anthropic via SDK, Gemini via REST), **failover** automático por quota/sem créditos; provedor **padrão** persistido (`app_state.ai_provider`, seletor no header); **diálogo "qual IA usar?"** antes de cada análise/identificação; cron roda Gemini **síncrono** (Claude segue com Batches) | — |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
@@ -580,27 +602,39 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
    aplicadas; garantir `ANTHROPIC_API_KEY` e `DISCOGS_TOKEN` configurados (GitHub secret + env
    Vercel). **Upload de foto** da Coleção exige o bucket `collection` criado (re-rodar o
    `setup.sql` cria/torna público).
-7. **Coleção:** aplicar `collection_items` no banco; conferir o botão **"Atualizar coleção"**
+5. **Coleção:** aplicar `collection_items` no banco; conferir o botão **"Atualizar coleção"**
    (varredura de `conta_site.asp?l=6`) — se algum campo vier vazio, capturar 1 card do HTML de
    "Minhas compras" (F12) e ajustar os regexes de `leiloesbr-purchases.server.ts`. Confirmar que
    re-varrer **não** duplica nem apaga edições, e que artista/álbum/ano são semeados da
    identificação já existente.
-5. **Rodar o `refresh.yml`** (Actions → Run workflow) e conferir cada passo: `enrich`
+6. **Rodar o `refresh.yml`** (Actions → Run workflow) e conferir cada passo: `enrich`
    (`updated>0`, nº de lote preenchendo), `aiident`/`aieval` (`submitted`/`collected>0`),
    `market` (`updated>0`, inclusive lotes só identificados). Rodar mais vezes melhora o
    casamento da sondagem (mais `album`/ano → mais sinais no `lotIdentity`).
-**Concluído recentemente:** `wantlist_items` aplicada em produção (2026-09-03; importar/editar/
-marcar adquirido gravam sem erro). Secrets do cron (`APP_URL`, `CRON_TOKEN`) e 1ª execução do
-`refresh.yml` no ar. Revisão/refatoração pós-Lovable (lint/format, remoção de morto, DRY).
-**Relação lote↔Coleção + aprendizado (v0.24.x) validada em produção** (2026-09-08): ícone em
-todos os cards (cinza/roxo/roxo+?), painel com o card da Coleção, vincular/"não tenho"/reativar
-persistidos (`collection_links`) e aprendizado (`collection_feedback`) — decisão persiste após
-recarregar. As chaves `collection_links`/`collection_feedback` do `app_state` nascem sozinhas
-(upsert na 1ª decisão), sem `setup.sql`.
+7. **Gemini (v0.27.0):** cadastrar **`GEMINI_API_KEY`** na Vercel (Production) e como **secret
+   no GitHub** (para o `refresh.yml`, caso o provedor padrão seja Gemini). Testar o seletor de
+   provedor no header e o diálogo "qual IA usar?" na home e na Coleção; validar o **failover**
+   (deixar um provedor sem crédito e conferir o toast + a troca). Opcional: `GEMINI_MODEL` /
+   `AI_PROVIDER` (padrão via env). Confirmar que a **visão** (capa) funciona no Gemini (a imagem
+   vai inline/base64) na avaliação de lotes.
+   **Concluído recentemente:** `wantlist_items` aplicada em produção (2026-09-03; importar/editar/
+   marcar adquirido gravam sem erro). Secrets do cron (`APP_URL`, `CRON_TOKEN`) e 1ª execução do
+   `refresh.yml` no ar. Revisão/refatoração pós-Lovable (lint/format, remoção de morto, DRY).
+   **Relação lote↔Coleção + aprendizado (v0.24.x) validada em produção** (2026-09-08): ícone em
+   todos os cards (cinza/roxo/roxo+?), painel com o card da Coleção, vincular/"não tenho"/reativar
+   persistidos (`collection_links`) e aprendizado (`collection_feedback`) — decisão persiste após
+   recarregar. As chaves `collection_links`/`collection_feedback` do `app_state` nascem sozinhas
+   (upsert na 1ª decisão), sem `setup.sql`.
 
 > ⚠️ **Lição (evitar regressão):** módulo **`*.server.ts` NÃO deve importar de módulo
 > client-safe** (nem `import type`). No v0.24.0, `app-state.server.ts` importava um tipo de
-> `wantlist-match` → o *code-splitting* deixou o chunk `wantlist-match-*.js` fora do `/assets/`
+> `wantlist-match` → o _code-splitting_ deixou o chunk `wantlist-match-*.js` fora do `/assets/`
 > do cliente → **404** ("Failed to fetch dynamically imported module") só na home logada em
 > produção (preview deslogado e `/colecao` abriam). Corrigido no v0.24.1 definindo o tipo
 > localmente. Tipos compartilhados entre client e server: manter no lado **client-safe**.
+
+> 📌 **Observação (2026-09-08):** o usuário mesclou **duas PRs na `main`** durante esta sessão —
+> **#94** (v0.25.0, descontinuação do "Painel de mudanças" `/dashboard`) e **#95** (v0.26.0,
+> importação em massa da Coleção + câmera no upload). A branch da IA multi-provedor (v0.27.0) foi
+> **rebaseada sobre `origin/main`** já com as duas antes de finalizar (conflitos triviais em
+> `app-state.server.ts`, `colecao.tsx` e neste documento resolvidos mantendo ambos os lados).
