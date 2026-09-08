@@ -461,17 +461,32 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   });
   // Relações manuais (override por lote) e aprendizado (feedback por assinatura). Mesmas
   // chaves de app_state; compartilham cache entre telas.
+  // Best-effort: um erro aqui NUNCA pode derrubar a home (a relação/aprendizado é acessório).
   const collectionLinksQuery = useQuery<CollectionLinks>({
     queryKey: ["collection-links"] as const,
-    queryFn: () => fetchCollectionLinks() as Promise<CollectionLinks>,
+    queryFn: async () => {
+      try {
+        return ((await fetchCollectionLinks()) as CollectionLinks) ?? {};
+      } catch {
+        return {};
+      }
+    },
     staleTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
+    retry: false,
   });
   const collectionFeedbackQuery = useQuery<OwnedFeedback[]>({
     queryKey: ["collection-feedback"] as const,
-    queryFn: () => fetchCollectionFeedback() as Promise<OwnedFeedback[]>,
+    queryFn: async () => {
+      try {
+        return ((await fetchCollectionFeedback()) as OwnedFeedback[]) ?? [];
+      } catch {
+        return [];
+      }
+    },
     staleTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
+    retry: false,
   });
   const collById = useMemo(() => {
     const map = new Map<string, CollectionItem>();
@@ -511,24 +526,28 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const identityById = useMemo(() => {
     const map = new Map<string, LotIdentity>();
     for (const lot of lots.data?.lots ?? []) {
-      const parsedArtist = parseAiAlbum(albumById.get(lot.id) ?? null).artist;
-      const artist =
-        isDiscBundle(lot.title ?? "") || lot.artist === LOTE_LABEL
-          ? LOTE_LABEL
-          : parsedArtist
-            ? titleCase(parsedArtist)
-            : lot.artist;
-      const market = marketById.get(lot.id);
-      map.set(
-        lot.id,
-        lotIdentity({
-          title: lot.title,
-          artist,
-          album: albumById.get(lot.id) ?? null,
-          marketTitle: market?.releaseTitle ?? null,
-          marketYear: market?.year ?? null,
-        }),
-      );
+      try {
+        const parsedArtist = parseAiAlbum(albumById.get(lot.id) ?? null).artist;
+        const artist =
+          isDiscBundle(lot.title ?? "") || lot.artist === LOTE_LABEL
+            ? LOTE_LABEL
+            : parsedArtist
+              ? titleCase(parsedArtist)
+              : lot.artist;
+        const market = marketById.get(lot.id);
+        map.set(
+          lot.id,
+          lotIdentity({
+            title: lot.title,
+            artist,
+            album: albumById.get(lot.id) ?? null,
+            marketTitle: market?.releaseTitle ?? null,
+            marketYear: market?.year ?? null,
+          }),
+        );
+      } catch {
+        /* um lote problemático não pode derrubar a home */
+      }
     }
     return map;
   }, [lots.data, albumById, marketById]);
@@ -536,16 +555,20 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const ownedAutoById = useMemo(() => {
     const map = new Map<string, OwnedHit>();
     for (const lot of lots.data?.lots ?? []) {
-      const exactId = ownedByLotId.get(lot.id);
-      if (exactId) {
-        map.set(lot.id, { id: exactId, label: collLabel(exactId), score: 1 });
-        continue;
+      try {
+        const exactId = ownedByLotId.get(lot.id);
+        if (exactId) {
+          map.set(lot.id, { id: exactId, label: collLabel(exactId), score: 1 });
+          continue;
+        }
+        if (!ownedCands.length) continue;
+        const identity = identityById.get(lot.id);
+        if (!identity) continue;
+        const best = ownedMatchForLot(ownedCands, identity);
+        if (best) map.set(lot.id, best);
+      } catch {
+        /* idem: falha de casamento de um lote é ignorada */
       }
-      if (!ownedCands.length) continue;
-      const identity = identityById.get(lot.id);
-      if (!identity) continue;
-      const best = ownedMatchForLot(ownedCands, identity);
-      if (best) map.set(lot.id, best);
     }
     return map;
     // collLabel depende de collById (memo estável); ownedByLotId/identityById cobrem os dados.
@@ -558,14 +581,21 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   );
   const links: CollectionLinks = collectionLinksQuery.data ?? {};
   const feedback: OwnedFeedback[] = collectionFeedbackQuery.data ?? [];
-  const ownedResolutionFor = (lot: { id: string }): OwnedResolution =>
-    resolveOwned(
-      lot.id,
-      links,
-      ownedAutoById.get(lot.id) ?? null,
-      feedback,
-      identityById.get(lot.id) ?? EMPTY_IDENTITY,
-    );
+  // Resolução tolerante: qualquer erro no casamento/aprendizado vira "sem relação" (cinza),
+  // nunca uma exceção que derrube a home.
+  const ownedResolutionFor = (lot: { id: string }): OwnedResolution => {
+    try {
+      return resolveOwned(
+        lot.id,
+        links,
+        ownedAutoById.get(lot.id) ?? null,
+        feedback,
+        identityById.get(lot.id) ?? EMPTY_IDENTITY,
+      );
+    } catch {
+      return { kind: "none" };
+    }
+  };
   // `OwnedHit` efetivo para o ícone do card (cinza quando null).
   const ownedFor = (lot: { id: string }): OwnedHit | null => {
     const res = ownedResolutionFor(lot);
