@@ -483,26 +483,3 @@ export const getLotMarket = createServerFn({ method: "GET" })
       return [];
     }
   });
-
-/** Baseline de preços do último acesso ao painel. */
-export const getDashboardBaseline = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { getBaseline } = await import("./app-state.server");
-    return await getBaseline();
-  });
-
-/** Marca o painel como visto: grava o mapa {lotId: price} atual como novo baseline. */
-export const markDashboardSeen = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { prices?: Record<string, string> } | undefined) => ({
-    prices: input?.prices ?? {},
-  }))
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { markSeen } = await import("./app-state.server");
-    return await markSeen(data.prices);
-  });

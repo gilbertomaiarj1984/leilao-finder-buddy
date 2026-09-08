@@ -9,7 +9,6 @@ import {
   Eye,
   ExternalLink,
   Gavel,
-  LayoutDashboard,
   Library,
   Loader2,
   LogOut,
@@ -975,12 +974,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               <Link to="/analise">
                 <Sparkles className="mr-2 h-4 w-4" />
                 Análise
-              </Link>
-            </Button>
-            <Button variant="outline" size="sm" asChild title="Painel de mudanças">
-              <Link to="/dashboard">
-                <LayoutDashboard className="mr-2 h-4 w-4" />
-                Painel
               </Link>
             </Button>
             <Button variant="outline" size="sm" asChild title="Minha coleção de vinil">

@@ -56,8 +56,8 @@ React 19 (SSR) + Supabase**, deploy na **Vercel** (Nitro). Migrado do Lovable em
     `offset`** sobre a lista estável/ordenada dos leilões da janela; retorna
     `{updated, total, nextOffset, done}`.
 - Camadas: `memCache` (módulo, garante a lista sem banco) + tabela **`lots`** (durável, upsert
-  por `id`, **merge** — nunca apaga o que não veio) + `app_state` (chaves globais: baseline,
-  casas verificadas, interesses, modo de IA, batches pendentes).
+  por `id`, **merge** — nunca apaga o que não veio) + `app_state` (chaves globais: casas
+  verificadas, interesses, modo de IA, batches pendentes, vínculos/aprendizado da Coleção).
 - `id` do lote = `"${idLeilao}-${idPeca}"`. Janela = **5 dias** (`WINDOW_DAYS`).
 - **Última atualização:** `getVinylLots` retorna `updatedAt` = maior `updated_at` de `lots` na
   janela (trigger `update_lots_updated_at` toca a coluna no upsert); exibido sob "Atualizar
@@ -189,18 +189,15 @@ Três valores de **fontes diferentes** — não confundir:
   o leilão todo), útil para casas cujo catálogo HTML é JS-rendered.
 - **`data[0].navinfo[]`** = `{PREVID, NEXTID}`.
 
-## Painel de mudanças (`dashboard.tsx`)
+## Painel de mudanças — DESCONTINUADO (v0.25.0)
 
-- **Baseline = snapshot global** `{lotId: price}` em `app_state` (chave `dashboard_baseline`,
-  um registro para o app). `getBaseline`/`markSeen` usam **service role** (`supabaseAdmin`,
-  ignora RLS). "Variação" = `computeDelta(atual, baseline[lot.id])` → `novo` quando a chave
-  **não existe** no baseline.
-- **Semente automática na 1ª visita** (`baselineSeeded` + `markSeen({silent:true})`): sem isso
-  tudo nasce "novo"/sem "último acesso". Na visita que semeia ainda sai "novo"; a variação real
-  aparece **a partir da visita seguinte**. Botão "Marcar como visto" reancora.
-- **Enrich no painel** (`enrichRan`): ao abrir roda `enrichLotes` uma vez se há lote sem
-  número, em background, e faz `setQueryData(["vinyl-lots"], fresh)`.
-- `markSeen` (server, `app-state.server.ts`) **propaga** erro de gravação (antes mascarava).
+A página **`/dashboard`** ("Painel de mudanças") foi **removida** (rota `dashboard.tsx`, o
+link "Painel" no header da home, as server functions `getDashboardBaseline`/`markDashboardSeen`
+e os helpers `getBaseline`/`markSeen`/`Baseline` de `app-state.server.ts`). A variação de preço
+por dia/casa não é mais exibida; a home, a Análise e o Ao vivo cobrem o uso. A chave
+`dashboard_baseline` em `app_state` (se existir em produção) fica órfã e pode ser apagada à mão
+(`DELETE FROM app_state WHERE key='dashboard_baseline'`) — nenhum código a lê ou grava. O
+`enrichLotes` (preenchimento de nº de lote) segue existindo, usado pela home ("Atualizar tudo").
 
 ## Casas verificadas
 
@@ -532,6 +529,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.24.0 | Coleção: **relação manual lote↔Coleção** — ícone em TODO card (cinza/roxo/roxo+?), painel com o card da Coleção (`OwnedPanel`), **vincular/trocar/"não tenho"/reativar** persistidos (`collection_links`), e **aprendizado** por assinatura (`collection_feedback`, `resolveOwned`) que **sugere "?"** em outros lotes (positivo) e rebaixa falsos casamentos (negativo) — modo "sugere, você confirma" | #91 |
 | v0.24.1 | Coleção: **blindagem** da home — queries `["collection-links"]`/`["collection-feedback"]` best-effort (try/catch + `retry:false`), casamento/resolução (`identityById`/`ownedAutoById`/`ownedResolutionFor`) em try/catch por lote, e `app-state.server` sem depender de módulo client-safe (tipo `OwnedFeedback` local). A relação/aprendizado nunca derruba a página (fica só sem o ícone) | #92 |
 | v0.24.2 | Notas: relação lote↔Coleção + aprendizado **validada em produção**; registrada a lição do 404 (server não importa módulo client-safe) | #93 |
+| v0.25.0 | **Descontinuado o "Painel de mudanças"** (`/dashboard`): removida a rota, o link "Painel" no header, as server functions `getDashboardBaseline`/`markDashboardSeen` e os helpers `getBaseline`/`markSeen`/`Baseline` — limpeza de código | — |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
@@ -568,10 +566,6 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
    (`updated>0`, nº de lote preenchendo), `aiident`/`aieval` (`submitted`/`collected>0`),
    `market` (`updated>0`, inclusive lotes só identificados). Rodar mais vezes melhora o
    casamento da sondagem (mais `album`/ano → mais sinais no `lotIdentity`).
-6. **Baseline do painel:** 1ª visita semeia (tudo "novo"), 2ª já mostra variação/"último
-   acesso". Se persistir tudo "novo", o `markSeen` agora **lança** o erro real (toast) —
-   investigar a gravação em `app_state`.
-
 **Concluído recentemente:** `wantlist_items` aplicada em produção (2026-09-03; importar/editar/
 marcar adquirido gravam sem erro). Secrets do cron (`APP_URL`, `CRON_TOKEN`) e 1ª execução do
 `refresh.yml` no ar. Revisão/refatoração pós-Lovable (lint/format, remoção de morto, DRY).
