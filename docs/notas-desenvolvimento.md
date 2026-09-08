@@ -531,6 +531,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.23.2 | Coleção: casamento "já tenho" mais **preciso** — tolera grafia do artista ("Ellis"≈"Elis", fuzzy 4+ só no artista); separa tokens **distintivos × genéricos** do álbum; **coletânea/ao vivo** (título genérico) casa pelo **nome + ano EXATO** ("Ao Vivo (1989)"/"Seus Sucessos (1978)"); título distintivo dirigido pela cobertura do álbum; **ícone tocável** mostra o disco casado + score | #90 |
 | v0.24.0 | Coleção: **relação manual lote↔Coleção** — ícone em TODO card (cinza/roxo/roxo+?), painel com o card da Coleção (`OwnedPanel`), **vincular/trocar/"não tenho"/reativar** persistidos (`collection_links`), e **aprendizado** por assinatura (`collection_feedback`, `resolveOwned`) que **sugere "?"** em outros lotes (positivo) e rebaixa falsos casamentos (negativo) — modo "sugere, você confirma" | #91 |
 | v0.24.1 | Coleção: **blindagem** da home — queries `["collection-links"]`/`["collection-feedback"]` best-effort (try/catch + `retry:false`), casamento/resolução (`identityById`/`ownedAutoById`/`ownedResolutionFor`) em try/catch por lote, e `app-state.server` sem depender de módulo client-safe (tipo `OwnedFeedback` local). A relação/aprendizado nunca derruba a página (fica só sem o ícone) | #92 |
+| v0.24.2 | Notas: relação lote↔Coleção + aprendizado **validada em produção**; registrada a lição do 404 (server não importa módulo client-safe) | #93 |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
@@ -574,3 +575,15 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 **Concluído recentemente:** `wantlist_items` aplicada em produção (2026-09-03; importar/editar/
 marcar adquirido gravam sem erro). Secrets do cron (`APP_URL`, `CRON_TOKEN`) e 1ª execução do
 `refresh.yml` no ar. Revisão/refatoração pós-Lovable (lint/format, remoção de morto, DRY).
+**Relação lote↔Coleção + aprendizado (v0.24.x) validada em produção** (2026-09-08): ícone em
+todos os cards (cinza/roxo/roxo+?), painel com o card da Coleção, vincular/"não tenho"/reativar
+persistidos (`collection_links`) e aprendizado (`collection_feedback`) — decisão persiste após
+recarregar. As chaves `collection_links`/`collection_feedback` do `app_state` nascem sozinhas
+(upsert na 1ª decisão), sem `setup.sql`.
+
+> ⚠️ **Lição (evitar regressão):** módulo **`*.server.ts` NÃO deve importar de módulo
+> client-safe** (nem `import type`). No v0.24.0, `app-state.server.ts` importava um tipo de
+> `wantlist-match` → o *code-splitting* deixou o chunk `wantlist-match-*.js` fora do `/assets/`
+> do cliente → **404** ("Failed to fetch dynamically imported module") só na home logada em
+> produção (preview deslogado e `/colecao` abriam). Corrigido no v0.24.1 definindo o tipo
+> localmente. Tipos compartilhados entre client e server: manter no lado **client-safe**.
