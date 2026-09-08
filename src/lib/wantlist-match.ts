@@ -29,17 +29,22 @@ export type LotIdentity = {
   years: Set<number>;
 };
 
+/**
+ * Tokens significativos de um texto: palavras com 3+ letras e também números curtos (ex.: o
+ * "1"/"2" de "Vol. 1"), que costumam distinguir volumes/edições do mesmo disco.
+ */
+function significantTokens(text: string): string[] {
+  return normalizeForMatch(text)
+    .split(" ")
+    .filter((t) => t.length >= 3 || /^\d+$/.test(t));
+}
+
 export function wantCandidate(item: {
   id: string;
   work: string;
   year: number | null;
 }): WantCandidate {
-  // Tokens significativos: palavras com 3+ letras e também números curtos (ex.: o "1"/"2"
-  // de "Vol. 1"), que costumam distinguir volumes/edições do mesmo disco.
-  const tokens = normalizeForMatch(item.work)
-    .split(" ")
-    .filter((t) => t.length >= 3 || /^\d+$/.test(t));
-  return { id: item.id, work: item.work, year: item.year, tokens };
+  return { id: item.id, work: item.work, year: item.year, tokens: significantTokens(item.work) };
 }
 
 export function lotIdentity(parts: {
@@ -135,4 +140,89 @@ export function bestWantForLot(
     if (!best || s > best.score) best = { cand: c, score: s };
   }
   return best && best.score >= WANT_MATCH_THRESHOLD ? best : null;
+}
+
+/**
+ * Casamento "já tenho na Coleção": compara um lote com os discos que o usuário JÁ possui.
+ *
+ * Diferente da sondagem, aqui separamos os tokens de ARTISTA e de ÁLBUM para dosar a
+ * confiança em duas faixas:
+ *  - **artista + álbum** casam → score alto (o ano é só reforço; uma reedição em ano
+ *    diferente ainda é o MESMO álbum que ele tem);
+ *  - **artista + ano**, com o álbum NÃO confirmado (a coleção não tem o álbum, ou o lote não
+ *    expõe o nome) → score na faixa intermediária (a UI marca com "?").
+ *
+ * A UI aplica dois limiares: `>= OWNED_CONFIDENT_MIN` (80%) = casamento confiante; entre
+ * `OWNED_MATCH_MIN` (50%) e 80% = incerto ("?"); abaixo de 50% não marca.
+ */
+export const OWNED_MATCH_MIN = 0.5;
+export const OWNED_CONFIDENT_MIN = 0.8;
+
+/** Disco da coleção preparado para o casamento (tokens de artista e de álbum separados). */
+export type OwnedCandidate = {
+  id: string;
+  label: string; // "Artista Álbum" para o tooltip
+  artistTokens: string[];
+  albumTokens: string[];
+  year: number | null;
+};
+
+/** Melhor acerto na coleção para um lote: `score` 0..1 (a UI decide confiante × "?"). */
+export type OwnedHit = { id: string; label: string; score: number };
+
+export function ownedCandidate(item: {
+  id: string;
+  artist: string;
+  album?: string | null;
+  year: number | null;
+}): OwnedCandidate {
+  return {
+    id: item.id,
+    label: [item.artist, item.album].filter((s): s is string => Boolean(s && s.trim())).join(" "),
+    artistTokens: significantTokens(item.artist),
+    albumTokens: item.album ? significantTokens(item.album) : [],
+    year: item.year,
+  };
+}
+
+/** Fração dos tokens presentes na identidade do lote (0..1). */
+function coverage(tokens: string[], id: LotIdentity): number {
+  if (!tokens.length) return 0;
+  let hit = 0;
+  for (const t of tokens) if (tokenPresent(t, id)) hit++;
+  return hit / tokens.length;
+}
+
+/** Score 0..1 de o disco `c` da coleção ser o mesmo do lote `id`. */
+function ownedScore(c: OwnedCandidate, id: LotIdentity): number {
+  const artistCov = coverage(c.artistTokens, id);
+  if (artistCov <= 0) return 0; // sem o artista, não é ele
+
+  const yearKnown = c.year != null && id.years.size > 0;
+  const yearMatch =
+    c.year != null &&
+    (id.years.has(c.year) || id.years.has(c.year - 1) || id.years.has(c.year + 1));
+  const yearConflict = yearKnown && !yearMatch;
+
+  if (c.albumTokens.length) {
+    // Artista + álbum já casa (o ano só reforça; conflito de ano penaliza um pouco). Com os
+    // dois cheios → 1.0 (confiante). Álbum parcial/ausente cai para a faixa do "?".
+    const albumCov = coverage(c.albumTokens, id);
+    const s = 0.4 * artistCov + 0.6 * albumCov + (yearMatch ? 0.1 : yearConflict ? -0.2 : 0);
+    return Math.max(0, Math.min(1, s));
+  }
+  // Sem álbum na coleção: no MÁXIMO incerto ("?"), e só quando o ANO confirma o artista.
+  if (yearMatch) return Math.min(0.75, 0.5 + 0.25 * artistCov);
+  return Math.min(0.4, 0.4 * artistCov); // sem álbum e sem ano batendo: fraco → não marca
+}
+
+/** Melhor disco da coleção para o lote (score ≥ 50%), ou null. */
+export function ownedMatchForLot(cands: OwnedCandidate[], id: LotIdentity): OwnedHit | null {
+  let best: OwnedHit | null = null;
+  for (const c of cands) {
+    const score = ownedScore(c, id);
+    if (score < OWNED_MATCH_MIN) continue;
+    if (!best || score > best.score) best = { id: c.id, label: c.label, score };
+  }
+  return best;
 }

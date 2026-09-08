@@ -92,7 +92,7 @@ import {
   UNCLASSIFIED_LABEL,
   type VinylLot,
 } from "@/lib/vinyl-parse";
-import { bestWantForLot, lotIdentity, wantCandidate } from "@/lib/wantlist-match";
+import { lotIdentity, ownedCandidate, ownedMatchForLot, type OwnedHit } from "@/lib/wantlist-match";
 
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({
@@ -441,9 +441,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     staleTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
-  // Candidatos de casamento a partir da coleção (mesmo motor da Sondagem, `wantlist-match`).
-  // Ignora buckets ruidosos (Lote/Coletâneas/Não classificados) e artista vazio, que gerariam
-  // tokens fracos e falsos positivos. `work` = artista + álbum (cai para o título sem álbum).
+  // Candidatos de casamento a partir da coleção (`ownedCandidate` separa tokens de artista e
+  // álbum para dosar a confiança). Ignora buckets ruidosos (Lote/Coletâneas/Não classificados)
+  // e artista vazio, que gerariam tokens fracos e falsos positivos.
   const ownedCands = useMemo(
     () =>
       (collectionQuery.data ?? [])
@@ -455,11 +455,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             it.artist !== UNCLASSIFIED_LABEL,
         )
         .map((it) =>
-          wantCandidate({
-            id: it.id,
-            work: [it.artist, it.album || it.title].filter(Boolean).join(" "),
-            year: it.year,
-          }),
+          ownedCandidate({ id: it.id, artist: it.artist, album: it.album, year: it.year }),
         ),
     [collectionQuery.data],
   );
@@ -469,14 +465,13 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     for (const it of collectionQuery.data ?? []) if (it.lotId) set.add(it.lotId);
     return set;
   }, [collectionQuery.data]);
-  // Um match por lote: a peça exata (ownedLotIds) OU casamento probabilístico ≥ 80% contra a
-  // coleção (mesma construção de identidade do `wantByLot` da Análise). Memoizado — O(lotes ×
-  // coleção), mesma ordem do casamento da Sondagem que já roda.
+  // Um match por lote: a peça exata (ownedLotIds, score 1) OU o melhor casamento ≥ 50% contra
+  // a coleção. `score` decide o visual: ≥ 80% = ícone confiante; 50–80% = ícone com "?".
   const ownedById = useMemo(() => {
-    const map = new Map<string, { work: string; score: number }>();
+    const map = new Map<string, OwnedHit>();
     for (const lot of lots.data?.lots ?? []) {
       if (ownedLotIds.has(lot.id)) {
-        map.set(lot.id, { work: "", score: 1 });
+        map.set(lot.id, { id: "", label: "", score: 1 });
         continue;
       }
       if (!ownedCands.length) continue;
@@ -496,13 +491,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         marketTitle: market?.releaseTitle ?? null,
         marketYear: market?.year ?? null,
       });
-      const best = bestWantForLot(ownedCands, identity);
-      if (best) map.set(lot.id, { work: best.cand.work, score: best.score });
+      const best = ownedMatchForLot(ownedCands, identity);
+      if (best) map.set(lot.id, best);
     }
     return map;
   }, [ownedCands, ownedLotIds, lots.data, albumById, marketById]);
-  const ownedFor = (lot: { id: string }): { work: string; score: number } | null =>
-    ownedById.get(lot.id) ?? null;
+  const ownedFor = (lot: { id: string }): OwnedHit | null => ownedById.get(lot.id) ?? null;
 
   // Casas verificadas: fonte da verdade é o servidor (app_state). O localStorage é só
   // um cache para pintar a tela na hora, sem esperar a rede.
