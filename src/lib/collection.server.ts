@@ -15,6 +15,7 @@ import {
 
 import type { WonLot } from "./leiloesbr-purchases.server";
 import type { LotMarketRow } from "./lot-market.server";
+import type { AiProvider } from "./ai-provider";
 
 /**
  * Um disco da coleção do usuário, como a UI consome (camelCase; espelha as colunas
@@ -494,6 +495,9 @@ export type ReidentifyResult = {
   nextOffset: number;
   total: number;
   done: boolean;
+  // Provedor de IA que atendeu esta passada e se houve failover (troca por falta de créditos).
+  served: AiProvider | null;
+  switched: boolean;
 };
 
 /** Um disco "ainda não identificado": sem artista, ou caído no balde de não classificados. */
@@ -541,13 +545,14 @@ function mergeTags(existing: string[], incoming: string[] | null | undefined): s
  * Conjuntos/coletâneas continuam classificados pelo título SEM gastar IA.
  */
 export async function reidentifyCollection(
+  provider: AiProvider,
   offset = 0,
   max = 12,
   onlyUnidentified = true,
 ): Promise<ReidentifyResult> {
   const { aiConfigured, identCollectionSync } = await import("./ai-eval.server");
   if (!aiConfigured()) {
-    throw new Error("A IA não está configurada (ANTHROPIC_API_KEY ausente no servidor).");
+    throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
   }
   const all = await getAllCollection();
   const work = all
@@ -566,7 +571,15 @@ export async function reidentifyCollection(
     batch.push(item);
   }
   if (!batch.length) {
-    return { identified: 0, processed: 0, nextOffset: total, total, done: true };
+    return {
+      identified: 0,
+      processed: 0,
+      nextOffset: total,
+      total,
+      done: true,
+      served: null,
+      switched: false,
+    };
   }
 
   // Classificação GRÁTIS pelo título: conjuntos → "Lote". O resto (inclusive coletâneas, que
@@ -582,7 +595,11 @@ export async function reidentifyCollection(
   }
 
   // IA por TEXTO: identifica (artista/álbum/ano) e gera o descritivo do disco.
-  const results = await identCollectionSync(
+  const {
+    rows: results,
+    served,
+    switched,
+  } = await identCollectionSync(
     aiNeeded.map((i) => ({
       id: i.id,
       title: i.title.trim() || [i.artist, i.album].filter(Boolean).join(" - "),
@@ -590,6 +607,7 @@ export async function reidentifyCollection(
       album: i.album,
       year: i.year,
     })),
+    provider,
   );
   const resById = new Map(results.map((r) => [r.id, r]));
 
@@ -626,7 +644,15 @@ export async function reidentifyCollection(
     identified += 1;
   }
 
-  return { identified, processed: batch.length, nextOffset: scan, total, done: scan >= total };
+  return {
+    identified,
+    processed: batch.length,
+    nextOffset: scan,
+    total,
+    done: scan >= total,
+    served,
+    switched,
+  };
 }
 
 /**
@@ -636,34 +662,44 @@ export async function reidentifyCollection(
  * devolver um campo, o valor atual é mantido). Conjuntos → "Lote" pelo título sem gastar IA.
  * Requer `ANTHROPIC_API_KEY`. Retorna `{updated}` (false quando não havia nada a mudar).
  */
-export async function reidentifyCollectionItem(id: string): Promise<{ updated: boolean }> {
+export async function reidentifyCollectionItem(
+  id: string,
+  provider: AiProvider,
+): Promise<{ updated: boolean; served: AiProvider | null; switched: boolean }> {
   const { aiConfigured, identCollectionSync } = await import("./ai-eval.server");
   if (!aiConfigured()) {
-    throw new Error("A IA não está configurada (ANTHROPIC_API_KEY ausente no servidor).");
+    throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
   }
   const item = (await getAllCollection()).find((i) => i.id === id);
   if (!item) throw new Error("Disco não encontrado na coleção.");
 
   // Conjuntos ("lote com N discos") → categoria "Lote" pelo título, sem gastar IA.
   if (isDiscBundle(item.title)) {
-    if (item.artist === LOTE_LABEL) return { updated: false };
+    if (item.artist === LOTE_LABEL) return { updated: false, served: null, switched: false };
     const { error } = await supabaseAdmin
       .from("collection_items")
       .update({ artist: LOTE_LABEL })
       .eq("id", id);
     if (error) throw new Error(`Não foi possível gravar: ${error.message}`);
-    return { updated: true };
+    return { updated: true, served: null, switched: false };
   }
 
-  const [r] = await identCollectionSync([
-    {
-      id: item.id,
-      title: item.title.trim() || [item.artist, item.album].filter(Boolean).join(" - "),
-      artist: item.artist,
-      album: item.album,
-      year: item.year,
-    },
-  ]);
+  const {
+    rows: [r],
+    served,
+    switched,
+  } = await identCollectionSync(
+    [
+      {
+        id: item.id,
+        title: item.title.trim() || [item.artist, item.album].filter(Boolean).join(" - "),
+        artist: item.artist,
+        album: item.album,
+        year: item.year,
+      },
+    ],
+    provider,
+  );
   const parsed = r ? parseAiAlbum(r.album) : { artist: "", album: null, year: null };
   const artist = canonicalArtist(parsed.artist ? titleCase(parsed.artist) : "", item.title);
   const album = parsed.album ?? "";
@@ -679,10 +715,10 @@ export async function reidentifyCollectionItem(id: string): Promise<{ updated: b
   const mergedTags = mergeTags(item.tags, r?.tags);
   if (mergedTags) patch.tags = mergedTags;
 
-  if (!Object.keys(patch).length) return { updated: false };
+  if (!Object.keys(patch).length) return { updated: false, served, switched };
   const { error } = await supabaseAdmin.from("collection_items").update(patch).eq("id", id);
   if (error) throw new Error(`Não foi possível gravar: ${error.message}`);
-  return { updated: true };
+  return { updated: true, served, switched };
 }
 
 /** Campos editáveis de um disco (usado por add e update). */

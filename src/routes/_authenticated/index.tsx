@@ -66,6 +66,7 @@ import {
   enrichLotes,
   getAccessStatus,
   getAiMode,
+  getAiProvider,
   getCollectionFeedback,
   getCollectionLinks,
   getLotAi,
@@ -78,9 +79,13 @@ import {
   listMyBids,
   scrapeVinylChunk,
   setAiMode,
+  setAiProvider,
   setLotTags,
   setVerifiedHouses,
 } from "@/lib/leiloesbr.functions";
+import { AiProviderSelect, AiProviderDialog } from "@/components/vinyl/ai-provider-controls";
+import { useAiProviderPicker } from "@/lib/use-ai-provider-picker";
+import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { getCollection } from "@/lib/collection.functions";
 import type { CollectionItem } from "@/lib/collection.server";
@@ -286,6 +291,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const fetchInterests = useServerFn(getUserInterests);
   const fetchAiMode = useServerFn(getAiMode);
   const runSetAiMode = useServerFn(setAiMode);
+  const fetchAiProvider = useServerFn(getAiProvider);
+  const runSetAiProvider = useServerFn(setAiProvider);
   const runAnalyze = useServerFn(analyzeOnDemand);
   const fetchCollection = useServerFn(getCollection);
   const fetchCollectionLinks = useServerFn(getCollectionLinks);
@@ -362,6 +369,27 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       });
   };
 
+  // Provedor de IA PADRÃO (Claude/Gemini). Fonte da verdade é o servidor (`app_state`).
+  const aiProviderQuery = useQuery({
+    queryKey: ["ai-provider"] as const,
+    queryFn: () => fetchAiProvider(),
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const aiProvider: AiProvider = aiProviderQuery.data ?? "anthropic";
+  const changeAiProvider = (provider: AiProvider) => {
+    const prev = aiProviderQuery.data;
+    queryClient.setQueryData(["ai-provider"], provider); // otimista
+    void runSetAiProvider({ data: { provider } })
+      .then(() => toast.success(`Provedor padrão: ${AI_PROVIDER_SHORT[provider]}`))
+      .catch((error: unknown) => {
+        queryClient.setQueryData(["ai-provider"], prev);
+        toast.error((error as Error)?.message || "Não foi possível salvar o provedor de IA");
+      });
+  };
+  // Diálogo "qual IA usar?" antes de cada análise sob demanda (padrão pré-selecionado).
+  const providerPicker = useAiProviderPicker(aiProvider);
+
   // Análise SOB DEMANDA (botões por dia/casa). `analyzing` guarda a chave em execução:
   // o dia (`day`) ou a casa (`${day}|${casa}`). Roda em laço até esgotar os não avaliados
   // (ou parar de progredir), depois revalida o cache ["lot-ai"] para as notas aparecerem.
@@ -370,19 +398,30 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     if (analyzing) return; // uma análise por vez (evita disparar vários batches síncronos)
     const key = opts.house ? `${opts.day}|${opts.house}` : opts.day;
     void (async () => {
+      // Pergunta qual provedor usar antes de começar (cancelar aborta).
+      const provider = await providerPicker.pickProvider();
+      if (!provider) return;
       setAnalyzing(key);
       let evaluated = 0;
+      let switchedTo: AiProvider | null = null;
       try {
         for (let guard = 0; guard < 60; guard += 1) {
           const res = await runAnalyze({
-            data: { day: opts.day, house: opts.house, max: 25 },
+            data: { day: opts.day, house: opts.house, max: 25, provider },
           });
           evaluated += res.evaluated;
+          if (res.switched && res.served) switchedTo = res.served;
           // Para quando não sobra nada OU quando a rodada não avaliou nada (lotes que
           // falham sempre voltariam ao "pendente" e causariam laço infinito).
           if (res.remaining === 0 || res.evaluated === 0) break;
         }
         await queryClient.invalidateQueries({ queryKey: ["lot-ai"] });
+        // Avisa se houve failover (o provedor pedido ficou sem créditos).
+        if (switchedTo && switchedTo !== provider) {
+          toast.warning(
+            `${AI_PROVIDER_SHORT[provider]} sem créditos — usei ${AI_PROVIDER_SHORT[switchedTo]}`,
+          );
+        }
         toast.success(
           evaluated
             ? `IA avaliou ${evaluated} lote(s) ${opts.house ? "desta casa" : "deste dia"}`
@@ -1001,6 +1040,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 </SelectContent>
               </Select>
             </div>
+            <AiProviderSelect value={aiProvider} onChange={changeAiProvider} />
             <div className="flex flex-col items-start gap-0.5 sm:items-end">
               <Button
                 variant="outline"
@@ -1916,6 +1956,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             );
           })()
         : null}
+      <AiProviderDialog {...providerPicker.dialogProps} />
     </main>
   );
 }

@@ -115,7 +115,7 @@ React 19 (SSR) + Supabase**, deploy na **Vercel** (Nitro). Migrado do Lovable em
   compositor) e palavras **genéricas** (`GENERIC_ALBUM_TOKENS`: "ao vivo"/"sucessos"/…). Score
   0..1 dirigido pela **cobertura do álbum**, com o **artista** claramente presente
   (`OWNED_ARTIST_MIN` 0.75); o **ano** só reforça / desempata reedição. Faixas: `>=
-  OWNED_CONFIDENT_MIN` (80%) = ícone confiante; `>= OWNED_MATCH_MIN` (60%) = ícone **com "?"**;
+OWNED_CONFIDENT_MIN` (80%) = ícone confiante; `>= OWNED_MATCH_MIN` (60%) = ícone **com "?"**;
   abaixo não marca. **Sem álbum distintivo → não marca** (só a peça exata por `lot_id`, score
   1, no chamador). `ownedCands` ignora buckets Lote/Coletâneas/Não classificados; mapa
   `ownedById` memoizado; prop `owned: OwnedHit` no `LotCard`.
@@ -135,7 +135,7 @@ React 19 (SSR) + Supabase**, deploy na **Vercel** (Nitro). Migrado do Lovable em
     `getCollectionFeedback`/`applyCollectionDecision`). Cliente: queries `["collection-links"]`/
     `["collection-feedback"]`, gravação otimista.
   - **Aprendizado (modo "sugere, você confirma"):** `resolveOwned(lotId, links, autoHit,
-    feedback, id)` → `none|rejected|linked|auto|suggested`. Confirmar grava feedback **pos**;
+feedback, id)` → `none|rejected|linked|auto|suggested`. Confirmar grava feedback **pos**;
     "Não tenho" grava **neg**. Em OUTROS lotes: **pos** sem auto → sugere **"?"**; **neg** que
     casa a assinatura rebaixa um auto-confiante para **"?"** (nunca marca confiante sozinho nem
     esconde). Reativar remove o feedback do lote (`ownedSignatureFromLot`/`OwnedFeedback` em
@@ -222,8 +222,28 @@ por dia/casa não é mais exibida; a home, a Análise e o Ao vivo cobrem o uso. 
 
 ## IA (avaliação, identificação, modo)
 
-Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_API_KEY`**
-(`process.env`). **Opcional:** sem a chave tudo faz **no-op** e o app segue normal.
+**Multi-provedor (v0.27.0):** o app usa **Claude (Anthropic)** OU **Gemini (Google)** — camada
+plugável em **`ai-provider.server.ts`** (+ metadados client-safe em `ai-provider.ts`). Modelos
+baratos por padrão: **`claude-haiku-4-5`** (`ANTHROPIC_API_KEY`, override `ANTHROPIC_MODEL`) e
+**`gemini-flash-latest`** (`GEMINI_API_KEY`, override `GEMINI_MODEL`). **Opcional:** sem NENHUMA
+chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer provedor").
+
+- **`runText(req, provider)`** é o ponto único: recebe uma requisição NEUTRA (`AiRequest`:
+  system + texto + imagem opcional) e devolve `{text, provider, model, switched}`. Adaptadores:
+  Anthropic via `@anthropic-ai/sdk` (`messages.create`); Gemini via **REST**
+  (`generativelanguage.googleapis.com/v1beta`, header `x-goog-api-key`, sem dep nova) — como o
+  Gemini **não** busca URL de imagem, a capa é baixada e enviada **inline (base64)**; usa
+  `generationConfig.thinkingConfig.thinkingBudget:0` (sem "thinking") + `responseMimeType:json`.
+- **Failover automático por quota/sem créditos** (`isQuotaError`: 429/402/"credit balance"/…):
+  o provedor pedido falha → tenta o outro configurado; `switched`/`served` sobem à UI (toast
+  "X sem créditos — usei Y"). Erros que não são de quota propagam (tratados por-item).
+- **Provedor PADRÃO** persistido em `app_state.ai_provider` (`getAiProvider`/`setAiProvider`;
+  precedência: `app_state` → env `AI_PROVIDER` → `anthropic`). **Seletor no header** (home e
+  Coleção, `AiProviderSelect`). Cada gatilho de processamento sob demanda **pergunta qual usar
+  antes** (`AiProviderDialog` + hook `useAiProviderPicker`), pré-selecionando o padrão.
+- **Cron:** Claude usa **Batches** (assíncrono, ~50% mais barato); Gemini roda **síncrono** em
+  bloco (`GEMINI_SYNC_CAP`, o laço do cron chama de novo até esgotar). Se o Claude estiver sem
+  créditos no `submit`, o cron cai para o Gemini síncrono.
 
 - **Avaliação completa — `lot_ai`** (`ai-eval.server.ts` + `lot-ai.server.ts`): via **Batches
   API** (~50% do preço, assíncrona), **1 request por lote** (`custom_id = lots.id`). Cache por
@@ -243,11 +263,12 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
   **padrão `"watched"`** (econômico). No `step=aieval`: `off` não coleta/submete; `all` = todos
   os lotes; `watched` = só lotes vigiados ∪ com lance (ids de `listWatchedFromSite` +
   `listMyBidsFromSite`).
-- **Análise sob demanda** (síncrona): `evalLotsSync` usa a **Messages API** (`messages.create`,
-  concorrência 4) — não a Batches. Server fn `analyzeOnDemand({day, house?, max})` avalia só os
-  não avaliados (até `max`=25) e devolve `{evaluated, remaining}` para o cliente repetir em
-  laço. Roda **em qualquer modo**, inclusive com a IA desligada. UI: botões "Analisar dia" /
-  "Analisar" (casa) + `Select` de modo no header.
+- **Análise sob demanda** (síncrona): `evalLotsSync(lots, provider)` usa `runText`
+  (concorrência 4, com failover) — não a Batches. Server fn
+  `analyzeOnDemand({day, house?, max, provider?})` avalia só os não avaliados (até `max`=25) e
+  devolve `{evaluated, remaining, served, switched}` para o cliente repetir em laço. Roda **em
+  qualquer modo**, inclusive com a IA desligada. UI: botões "Analisar dia" / "Analisar" (casa)
+  perguntam o provedor antes; `Select` de modo + `Select` de provedor no header.
 - **`matchesInterests` é da UI, NÃO da IA:** `buildInterestMatcher` (`ai-score-utils.ts`) casa
   a lista `app_state.user_interests` com o título via `normalizeForMatch` (determinístico,
   não gasta tokens); destaca com ⭐.
@@ -342,8 +363,8 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
   diálogo (`BulkImportDialog` em `colecao.tsx`) para colar texto e cadastrar vários discos de uma
   vez. Formato principal **JSON** gerado por IA — o diálogo traz um **prompt pronto para copiar**
   (`GEMINI_IMPORT_PROMPT`) que instrui o Gemini a devolver só um array JSON `{artista, album, ano,
-  midia, capa, valor, tags, notas}`. Parser puro/**client-safe** `parseCollectionBulkText`
-  (`collection-bulk.ts`, reusa `normalizeForMatch`): tolerante a cercas ```` ```json ```` e prosa
+midia, capa, valor, tags, notas}`. Parser puro/**client-safe** `parseCollectionBulkText`
+  (`collection-bulk.ts`, reusa `normalizeForMatch`): tolerante a cercas ` ```json ` e prosa
   (1º `[`…último `]`), aceita **array JSON ou JSONL**, chaves com aliases PT (sem acento/caixa),
   graus normalizados p/ a escala NM/EX/VG+/VG-/G+/G-, `data` dd/mm/aaaa→ISO; **fallback humano**
   `Artista - Álbum (Ano)` uma linha por disco. Server `importCollectionText` (`collection.server.ts`
@@ -374,7 +395,7 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
   `sources = {stored, title, none}` (diagnóstico de onde veio cada artista — some no toast).
 - **IA por TEXTO (opt-in, gasta créditos):** dois caminhos, ambos via **`identCollectionSync`**.
   - **Em massa — botão "Identificar novos (IA)"** no header → `identifyCollection({offset, max,
-    onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda sem
+onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda sem
     identificação** (`needsIdentification`: artista vazio ou `UNCLASSIFIED_LABEL`), pulando os já
     identificados **sem custo** — uso ROTINEIRO e barato (a varredura de compras acrescenta poucos
     discos por vez). O `onlyUnidentified` é sempre `true` a partir da UI; o modo completo
@@ -389,22 +410,22 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
     descritivo com o que a IA devolver (nunca zera com vazio). É o "refazer" manual para corrigir
     um disco específico sem reprocessar a base toda. Estado de "girando" por-id no card.
   - Em ambos, conjuntos/coletâneas seguem classificados pelo título SEM gastar IA. A IA em si
-  (`identCollectionSync`, `ai-eval.server.ts`, SÓ TEXTO), além de artista/álbum/ano, gera o
-  **descritivo** (`description`) do disco. **Nunca usa a capa** — a imagem do leilão engana o
-  modelo (mistura artistas parecidos); o prompt (`buildCollectionIdentPrompt`) recebe título +
-  artista/álbum/ano atuais como pista e instrui a usar "Vários Artistas" em coletâneas. Devolve
-  `{identified, processed, nextOffset, total, done}` (massa; o cliente repete em laço até `done`)
-  ou `{updated}` (por card). O resto vai à IA e passa por `canonicalArtist` (coletâneas viram
-  "Coletâneas"). **Diferença de sobrescrita:** a passada em massa só preenche/melhora (descritivo
-  só quando vazio, não sobrescreve edição do usuário); o reprocesso por card **sobrescreve** cada
-  campo que a IA devolver. Nenhum dos dois zera com resultado vazio. Sem `ANTHROPIC_API_KEY`, erro
-  claro. (`identLotsSync` segue existindo para o fluxo antigo de leilões.)
+    (`identCollectionSync`, `ai-eval.server.ts`, SÓ TEXTO), além de artista/álbum/ano, gera o
+    **descritivo** (`description`) do disco. **Nunca usa a capa** — a imagem do leilão engana o
+    modelo (mistura artistas parecidos); o prompt (`buildCollectionIdentPrompt`) recebe título +
+    artista/álbum/ano atuais como pista e instrui a usar "Vários Artistas" em coletâneas. Devolve
+    `{identified, processed, nextOffset, total, done}` (massa; o cliente repete em laço até `done`)
+    ou `{updated}` (por card). O resto vai à IA e passa por `canonicalArtist` (coletâneas viram
+    "Coletâneas"). **Diferença de sobrescrita:** a passada em massa só preenche/melhora (descritivo
+    só quando vazio, não sobrescreve edição do usuário); o reprocesso por card **sobrescreve** cada
+    campo que a IA devolver. Nenhum dos dois zera com resultado vazio. Sem `ANTHROPIC_API_KEY`, erro
+    claro. (`identLotsSync` segue existindo para o fluxo antigo de leilões.)
 - **Uso pretendido:** a base de `lots` já acompanha o que o usuário arremata, então a varredura
   de `l=6` é **carga inicial / emergência**, não o fluxo contínuo.
 - **Duplicados questionados:** mesmo `lot_id` (mesma peça) é ignorado no re-scan; um vinil com
   **mesmo artista+álbum** de um já existente NÃO entra sozinho — volta em `duplicates`
-  (`PendingWonLot`) para a UI confirmar (diálogo "Possíveis duplicados": *Adicionar* →
-  `addWonLot`/`addPendingWonLot`, ou *Ignorar*). Pode haver 2 cópias propositais. Chave de
+  (`PendingWonLot`) para a UI confirmar (diálogo "Possíveis duplicados": _Adicionar_ →
+  `addWonLot`/`addPendingWonLot`, ou _Ignorar_). Pode haver 2 cópias propositais. Chave de
   duplicidade só quando há álbum (`normalizeForMatch(artista+álbum)`).
 - **Parser (`parsePurchaseChunk`):** o HTML CRU do ASP mistura aspas simples/duplas (o "Copy
   outerHTML" do navegador normaliza p/ duplas), então os regexes aceitam `['"]`. O **título**
@@ -480,7 +501,7 @@ ESLint/Prettier.)
 ## Infra (migração Lovable → Supabase próprio + Vercel, 2026-08)
 
 - **Deploy Vercel** (não mais Cloudflare). Nitro é plugin Vite (`import { nitro } from
-  'nitro/vite'`), **auto-detecta a Vercel** por `process.env.VERCEL`; build gera
+'nitro/vite'`), **auto-detecta a Vercel** por `process.env.VERCEL`; build gera
   `.vercel/output` (Build Output API v3). `vercel.json`: `bun run build` / `bun install` /
   `framework: null`. `bunfig.toml` → npm público; `bun.lock` regenerado.
 - **Auth Supabase nativo** (Google, **PKCE**). Fluxo em `src/routes/auth.tsx`:
@@ -507,48 +528,49 @@ ESLint/Prettier.)
 
 Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`. Bump em todo PR.
 
-| Versão | Entrega | PR |
-| --- | --- | --- |
-| v0.1.0 | Rodapé global + versionamento (`Footer.tsx`, `version.ts`) | #35 |
-| v0.2.0 | Regra de bump obrigatório + features acumuladas (valor atual, última atualização, casas verificadas) | — |
-| v0.4.0 | IA de avaliação (`lot_ai`, Batches) + página **Análise** | #51 |
-| v0.5.0 | Âncora de mercado Discogs (`lot_market`) | — |
-| v0.6.0 | **Sondagem** (`wantlist_items`) + filtros da Análise | #52 |
-| v0.6.1 | Casamento probabilístico da sondagem (`wantlist-match.ts`, ≥80%) | #53 |
-| v0.7.0 | Refino Análise: `color-scheme:dark`, Top 100 + tabela por casa, hover via portal | #54 |
-| v0.8.0 | Faixa Discogs BR (scraping), "Lances do dia" por dia do leilão, tags editáveis | — |
-| v0.8.1 | Raridade colorida pela escala (`RarityLabel`) | — |
-| v0.9.0 | Filtro por raridade + feedback/validação na edição de tags | — |
-| v0.9.1 | Jank ao editar tag (`albumById` estável) + resiliência do `lot_market` + hover no toque | — |
-| v0.10.0 | Casamento Discogs por artista+álbum+ano (busca estruturada, `pickBestRelease`) | — |
-| v0.10.1–0.10.2 | Endurecimento do cron (header-only, timing-safe), sem retry em 4xx, DRY em `grouping.ts` | #60 |
-| v0.11.0 | Controle da IA: modo `ai_mode` (off/all/watched) + análise sob demanda | #61 |
-| v0.12.0 | Cards (casa verificada fecha, nº no canto esquerdo, álbum acima do título) + `lot_ident` | — |
-| v0.13.0 | Fix classificação IA (separador `/`) + categoria "Lote" + busca por relevância | #63/#64 |
-| v0.14.0 | Página **Ao vivo** (pregão presencial por casa) | #66 |
-| v0.15.0 | Pregão ao vivo **abre já logado** (proxy autenticado `/api/live`, sessão por origem, token HMAC) | #73 |
-| v0.15.1 | Login da casa: GET de aquecimento (semeia `ASPSESSIONID`) + erro real no proxy p/ diagnóstico | #74 |
-| v0.15.2 | Auto-login best-effort: casa fora da plataforma abre deslogada p/ login manual (persistido) | — |
-| v0.16.0 | Menu **Coleção** (`collection_items`): catálogo por artista, cards/títulos, edição, varredura de "Minhas compras" (`l=6`) | #76 |
-| v0.16.1 | Fix da varredura da Coleção: data vazia "00/00/0000" do `l=6` virava `0000-00-00` e recusava o insert | #77 |
-| v0.17.0 | Coleção: parser real do `l=6` (`t=1`, aspas mistas, título do `.product-title`, preço/casa), revisão de duplicados (`PendingWonLot`) | #78 |
-| v0.17.1 | Coleção: varredura mescla abas `t=1`+`t=0` (servidor popula `t=0`) + botão **Diagnóstico** (`debugPurchases`) | #79 |
-| v0.17.2 | Coleção: `parsePurchaseTitle` — artista/álbum dos formatos "LP: X - Y" e "LP: Artista: X / Album: Y" (tira ":"/"Artista:") | #80 |
-| v0.17.3 | Coleção: título rotulado (`Álbum: X \| Artista(s): [Z] \| Ano: N \| Estilo(s):`) → artista/álbum/ano/notas/tags; prioridade banco→título→IA; botão IA por capa opt-in (`identLotsSync`); diagnóstico de fontes | — |
-| v0.18.0 | Coleção: IA **só por texto** (nunca a capa) re-identifica toda a base (`reidentifyCollection`, cursor); agrupamento normalizado por artista (`Alceu Valença`=`Alceu Valenca`); categoria **"Coletâneas"** (`isCompilation`/`canonicalArtist`) | #82 |
-| v0.19.0 | Coleção: card por artista/álbum+ano (remove mercado+casa) + **descritivo do disco pela IA** (`identCollectionSync`, coluna `description`); combo de artista (datalist); **upload de foto** (Storage bucket `collection`, `uploadCollectionImage`) | — |
-| v0.20.0 | Coleção: re-identificação da IA com alcance **`onlyUnidentified`** — botão "Identificar novos (IA)" (padrão, só os discos sem identificação, cursor sobre a lista completa) + "Re-normalizar tudo (IA)"; reduz o gasto de créditos no uso rotineiro | — |
-| v0.21.0 | Coleção: botão em massa passa a reprocessar **só os não-prontos** (remove "Re-normalizar tudo") + **ícone de reprocessar por card** (`RotateCw` → `reprocessCollectionItem`/`reidentifyCollectionItem`) que refaz um disco pela IA e **sobrescreve** | — |
-| v0.22.0 | Coleção: descritivo da IA rico/longo (momento histórico + faixa a faixa, baseado no nome do álbum) e **rolável** no card; grading (mídia/capa) como `Select` (NM/EX/VG+/VG-/G+/G-); **tags editáveis no card** + geradas pela IA (`mergeTags`); remove "Título original" do formulário | #86 |
-| v0.22.1 | Coleção: tags da IA restritas a **estilo/gênero musical** (sem época/artista/país/formato) | — |
-| v0.23.0 | Home: **ícone roxo "já tenho na Coleção"** no card (abaixo da nota, à direita) quando o lote casa com `collection_items` — casamento por artista/álbum/ano (`ownedMatchForLot`) em **duas faixas**: ≥80% confiante, 50–80% com **"?"** (incerto); peça exata por `lot_id` | #88 |
-| v0.23.1 | Coleção: **precisão** do casamento "já tenho" — EXIGE o nome do álbum com tokens distintivos (desconta o nome do artista e genéricos "ao vivo"/"sucessos"), corrigindo falsos positivos (ex.: lote que só cita o artista como compositor casava "A Arte de Jorge Ben") | #89 |
-| v0.23.2 | Coleção: casamento "já tenho" mais **preciso** — tolera grafia do artista ("Ellis"≈"Elis", fuzzy 4+ só no artista); separa tokens **distintivos × genéricos** do álbum; **coletânea/ao vivo** (título genérico) casa pelo **nome + ano EXATO** ("Ao Vivo (1989)"/"Seus Sucessos (1978)"); título distintivo dirigido pela cobertura do álbum; **ícone tocável** mostra o disco casado + score | #90 |
-| v0.24.0 | Coleção: **relação manual lote↔Coleção** — ícone em TODO card (cinza/roxo/roxo+?), painel com o card da Coleção (`OwnedPanel`), **vincular/trocar/"não tenho"/reativar** persistidos (`collection_links`), e **aprendizado** por assinatura (`collection_feedback`, `resolveOwned`) que **sugere "?"** em outros lotes (positivo) e rebaixa falsos casamentos (negativo) — modo "sugere, você confirma" | #91 |
-| v0.24.1 | Coleção: **blindagem** da home — queries `["collection-links"]`/`["collection-feedback"]` best-effort (try/catch + `retry:false`), casamento/resolução (`identityById`/`ownedAutoById`/`ownedResolutionFor`) em try/catch por lote, e `app-state.server` sem depender de módulo client-safe (tipo `OwnedFeedback` local). A relação/aprendizado nunca derruba a página (fica só sem o ícone) | #92 |
-| v0.24.2 | Notas: relação lote↔Coleção + aprendizado **validada em produção**; registrada a lição do 404 (server não importa módulo client-safe) | #93 |
-| v0.25.0 | **Descontinuado o "Painel de mudanças"** (`/dashboard`): removida a rota, o link "Painel" no header, as server functions `getDashboardBaseline`/`markDashboardSeen` e os helpers `getBaseline`/`markSeen`/`Baseline` — limpeza de código | — |
-| v0.26.0 | Coleção: **importação em massa por texto** (`BulkImportDialog`, `parseCollectionBulkText` em `collection-bulk.ts`, server `importCollectionText`) — JSON gerado por IA (prompt copiável `GEMINI_IMPORT_PROMPT`) ou `Artista - Álbum (Ano)` por linha; pula duplicados por artista+álbum; **câmera do celular** no upload de foto por disco (`capture="environment"`) — foto em massa segue pendente | — |
+| Versão         | Entrega                                                                                                                                                                                                                                                                                                                                                                                                          | PR      |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| v0.1.0         | Rodapé global + versionamento (`Footer.tsx`, `version.ts`)                                                                                                                                                                                                                                                                                                                                                       | #35     |
+| v0.2.0         | Regra de bump obrigatório + features acumuladas (valor atual, última atualização, casas verificadas)                                                                                                                                                                                                                                                                                                             | —       |
+| v0.4.0         | IA de avaliação (`lot_ai`, Batches) + página **Análise**                                                                                                                                                                                                                                                                                                                                                         | #51     |
+| v0.5.0         | Âncora de mercado Discogs (`lot_market`)                                                                                                                                                                                                                                                                                                                                                                         | —       |
+| v0.6.0         | **Sondagem** (`wantlist_items`) + filtros da Análise                                                                                                                                                                                                                                                                                                                                                             | #52     |
+| v0.6.1         | Casamento probabilístico da sondagem (`wantlist-match.ts`, ≥80%)                                                                                                                                                                                                                                                                                                                                                 | #53     |
+| v0.7.0         | Refino Análise: `color-scheme:dark`, Top 100 + tabela por casa, hover via portal                                                                                                                                                                                                                                                                                                                                 | #54     |
+| v0.8.0         | Faixa Discogs BR (scraping), "Lances do dia" por dia do leilão, tags editáveis                                                                                                                                                                                                                                                                                                                                   | —       |
+| v0.8.1         | Raridade colorida pela escala (`RarityLabel`)                                                                                                                                                                                                                                                                                                                                                                    | —       |
+| v0.9.0         | Filtro por raridade + feedback/validação na edição de tags                                                                                                                                                                                                                                                                                                                                                       | —       |
+| v0.9.1         | Jank ao editar tag (`albumById` estável) + resiliência do `lot_market` + hover no toque                                                                                                                                                                                                                                                                                                                          | —       |
+| v0.10.0        | Casamento Discogs por artista+álbum+ano (busca estruturada, `pickBestRelease`)                                                                                                                                                                                                                                                                                                                                   | —       |
+| v0.10.1–0.10.2 | Endurecimento do cron (header-only, timing-safe), sem retry em 4xx, DRY em `grouping.ts`                                                                                                                                                                                                                                                                                                                         | #60     |
+| v0.11.0        | Controle da IA: modo `ai_mode` (off/all/watched) + análise sob demanda                                                                                                                                                                                                                                                                                                                                           | #61     |
+| v0.12.0        | Cards (casa verificada fecha, nº no canto esquerdo, álbum acima do título) + `lot_ident`                                                                                                                                                                                                                                                                                                                         | —       |
+| v0.13.0        | Fix classificação IA (separador `/`) + categoria "Lote" + busca por relevância                                                                                                                                                                                                                                                                                                                                   | #63/#64 |
+| v0.14.0        | Página **Ao vivo** (pregão presencial por casa)                                                                                                                                                                                                                                                                                                                                                                  | #66     |
+| v0.15.0        | Pregão ao vivo **abre já logado** (proxy autenticado `/api/live`, sessão por origem, token HMAC)                                                                                                                                                                                                                                                                                                                 | #73     |
+| v0.15.1        | Login da casa: GET de aquecimento (semeia `ASPSESSIONID`) + erro real no proxy p/ diagnóstico                                                                                                                                                                                                                                                                                                                    | #74     |
+| v0.15.2        | Auto-login best-effort: casa fora da plataforma abre deslogada p/ login manual (persistido)                                                                                                                                                                                                                                                                                                                      | —       |
+| v0.16.0        | Menu **Coleção** (`collection_items`): catálogo por artista, cards/títulos, edição, varredura de "Minhas compras" (`l=6`)                                                                                                                                                                                                                                                                                        | #76     |
+| v0.16.1        | Fix da varredura da Coleção: data vazia "00/00/0000" do `l=6` virava `0000-00-00` e recusava o insert                                                                                                                                                                                                                                                                                                            | #77     |
+| v0.17.0        | Coleção: parser real do `l=6` (`t=1`, aspas mistas, título do `.product-title`, preço/casa), revisão de duplicados (`PendingWonLot`)                                                                                                                                                                                                                                                                             | #78     |
+| v0.17.1        | Coleção: varredura mescla abas `t=1`+`t=0` (servidor popula `t=0`) + botão **Diagnóstico** (`debugPurchases`)                                                                                                                                                                                                                                                                                                    | #79     |
+| v0.17.2        | Coleção: `parsePurchaseTitle` — artista/álbum dos formatos "LP: X - Y" e "LP: Artista: X / Album: Y" (tira ":"/"Artista:")                                                                                                                                                                                                                                                                                       | #80     |
+| v0.17.3        | Coleção: título rotulado (`Álbum: X \| Artista(s): [Z] \| Ano: N \| Estilo(s):`) → artista/álbum/ano/notas/tags; prioridade banco→título→IA; botão IA por capa opt-in (`identLotsSync`); diagnóstico de fontes                                                                                                                                                                                                   | —       |
+| v0.18.0        | Coleção: IA **só por texto** (nunca a capa) re-identifica toda a base (`reidentifyCollection`, cursor); agrupamento normalizado por artista (`Alceu Valença`=`Alceu Valenca`); categoria **"Coletâneas"** (`isCompilation`/`canonicalArtist`)                                                                                                                                                                    | #82     |
+| v0.19.0        | Coleção: card por artista/álbum+ano (remove mercado+casa) + **descritivo do disco pela IA** (`identCollectionSync`, coluna `description`); combo de artista (datalist); **upload de foto** (Storage bucket `collection`, `uploadCollectionImage`)                                                                                                                                                                | —       |
+| v0.20.0        | Coleção: re-identificação da IA com alcance **`onlyUnidentified`** — botão "Identificar novos (IA)" (padrão, só os discos sem identificação, cursor sobre a lista completa) + "Re-normalizar tudo (IA)"; reduz o gasto de créditos no uso rotineiro                                                                                                                                                              | —       |
+| v0.21.0        | Coleção: botão em massa passa a reprocessar **só os não-prontos** (remove "Re-normalizar tudo") + **ícone de reprocessar por card** (`RotateCw` → `reprocessCollectionItem`/`reidentifyCollectionItem`) que refaz um disco pela IA e **sobrescreve**                                                                                                                                                             | —       |
+| v0.22.0        | Coleção: descritivo da IA rico/longo (momento histórico + faixa a faixa, baseado no nome do álbum) e **rolável** no card; grading (mídia/capa) como `Select` (NM/EX/VG+/VG-/G+/G-); **tags editáveis no card** + geradas pela IA (`mergeTags`); remove "Título original" do formulário                                                                                                                           | #86     |
+| v0.22.1        | Coleção: tags da IA restritas a **estilo/gênero musical** (sem época/artista/país/formato)                                                                                                                                                                                                                                                                                                                       | —       |
+| v0.23.0        | Home: **ícone roxo "já tenho na Coleção"** no card (abaixo da nota, à direita) quando o lote casa com `collection_items` — casamento por artista/álbum/ano (`ownedMatchForLot`) em **duas faixas**: ≥80% confiante, 50–80% com **"?"** (incerto); peça exata por `lot_id`                                                                                                                                        | #88     |
+| v0.23.1        | Coleção: **precisão** do casamento "já tenho" — EXIGE o nome do álbum com tokens distintivos (desconta o nome do artista e genéricos "ao vivo"/"sucessos"), corrigindo falsos positivos (ex.: lote que só cita o artista como compositor casava "A Arte de Jorge Ben")                                                                                                                                           | #89     |
+| v0.23.2        | Coleção: casamento "já tenho" mais **preciso** — tolera grafia do artista ("Ellis"≈"Elis", fuzzy 4+ só no artista); separa tokens **distintivos × genéricos** do álbum; **coletânea/ao vivo** (título genérico) casa pelo **nome + ano EXATO** ("Ao Vivo (1989)"/"Seus Sucessos (1978)"); título distintivo dirigido pela cobertura do álbum; **ícone tocável** mostra o disco casado + score                    | #90     |
+| v0.24.0        | Coleção: **relação manual lote↔Coleção** — ícone em TODO card (cinza/roxo/roxo+?), painel com o card da Coleção (`OwnedPanel`), **vincular/trocar/"não tenho"/reativar** persistidos (`collection_links`), e **aprendizado** por assinatura (`collection_feedback`, `resolveOwned`) que **sugere "?"** em outros lotes (positivo) e rebaixa falsos casamentos (negativo) — modo "sugere, você confirma"          | #91     |
+| v0.24.1        | Coleção: **blindagem** da home — queries `["collection-links"]`/`["collection-feedback"]` best-effort (try/catch + `retry:false`), casamento/resolução (`identityById`/`ownedAutoById`/`ownedResolutionFor`) em try/catch por lote, e `app-state.server` sem depender de módulo client-safe (tipo `OwnedFeedback` local). A relação/aprendizado nunca derruba a página (fica só sem o ícone)                     | #92     |
+| v0.24.2        | Notas: relação lote↔Coleção + aprendizado **validada em produção**; registrada a lição do 404 (server não importa módulo client-safe)                                                                                                                                                                                                                                                                            | #93     |
+| v0.25.0        | **Descontinuado o "Painel de mudanças"** (`/dashboard`): removida a rota, o link "Painel" no header, as server functions `getDashboardBaseline`/`markDashboardSeen` e os helpers `getBaseline`/`markSeen`/`Baseline` — limpeza de código                                                                                                                                                                         | —       |
+| v0.26.0        | Coleção: **importação em massa por texto** (`BulkImportDialog`, `parseCollectionBulkText` em `collection-bulk.ts`, server `importCollectionText`) — JSON gerado por IA (prompt copiável `GEMINI_IMPORT_PROMPT`) ou `Artista - Álbum (Ano)` por linha; pula duplicados por artista+álbum; **câmera do celular** no upload de foto por disco (`capture="environment"`) — foto em massa segue pendente              | —       |
+| v0.27.0        | **IA multi-provedor**: Gemini (Google) como alternativa ao Claude. Camada plugável `ai-provider(.server)` (adaptador Anthropic via SDK, Gemini via REST), **failover** automático por quota/sem créditos; provedor **padrão** persistido (`app_state.ai_provider`, seletor no header); **diálogo "qual IA usar?"** antes de cada análise/identificação; cron roda Gemini **síncrono** (Claude segue com Batches) | —       |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
@@ -569,7 +591,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
    discos recém-importados) segue em aberto.
 3. **Sondagem não pesa na nota** — hoje é só destaque + filtro. Dar peso real (bônus
    determinístico no ranking, ou mandar a lista ao prompt) segue em aberto, se desejado.
-3. **Importar o rascunho real da sondagem** pela UI e conferir o 🎯/tooltip e o filtro "Só
+4. **Importar o rascunho real da sondagem** pela UI e conferir o 🎯/tooltip e o filtro "Só
    sondagem"; ajustar `WANT_MATCH_THRESHOLD`/pesos em `wantlist-match.ts` se pegar demais/de menos.
 
 **Validar em produção (não dá para testar daqui)**
@@ -580,27 +602,39 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
    aplicadas; garantir `ANTHROPIC_API_KEY` e `DISCOGS_TOKEN` configurados (GitHub secret + env
    Vercel). **Upload de foto** da Coleção exige o bucket `collection` criado (re-rodar o
    `setup.sql` cria/torna público).
-7. **Coleção:** aplicar `collection_items` no banco; conferir o botão **"Atualizar coleção"**
+5. **Coleção:** aplicar `collection_items` no banco; conferir o botão **"Atualizar coleção"**
    (varredura de `conta_site.asp?l=6`) — se algum campo vier vazio, capturar 1 card do HTML de
    "Minhas compras" (F12) e ajustar os regexes de `leiloesbr-purchases.server.ts`. Confirmar que
    re-varrer **não** duplica nem apaga edições, e que artista/álbum/ano são semeados da
    identificação já existente.
-5. **Rodar o `refresh.yml`** (Actions → Run workflow) e conferir cada passo: `enrich`
+6. **Rodar o `refresh.yml`** (Actions → Run workflow) e conferir cada passo: `enrich`
    (`updated>0`, nº de lote preenchendo), `aiident`/`aieval` (`submitted`/`collected>0`),
    `market` (`updated>0`, inclusive lotes só identificados). Rodar mais vezes melhora o
    casamento da sondagem (mais `album`/ano → mais sinais no `lotIdentity`).
-**Concluído recentemente:** `wantlist_items` aplicada em produção (2026-09-03; importar/editar/
-marcar adquirido gravam sem erro). Secrets do cron (`APP_URL`, `CRON_TOKEN`) e 1ª execução do
-`refresh.yml` no ar. Revisão/refatoração pós-Lovable (lint/format, remoção de morto, DRY).
-**Relação lote↔Coleção + aprendizado (v0.24.x) validada em produção** (2026-09-08): ícone em
-todos os cards (cinza/roxo/roxo+?), painel com o card da Coleção, vincular/"não tenho"/reativar
-persistidos (`collection_links`) e aprendizado (`collection_feedback`) — decisão persiste após
-recarregar. As chaves `collection_links`/`collection_feedback` do `app_state` nascem sozinhas
-(upsert na 1ª decisão), sem `setup.sql`.
+7. **Gemini (v0.27.0):** cadastrar **`GEMINI_API_KEY`** na Vercel (Production) e como **secret
+   no GitHub** (para o `refresh.yml`, caso o provedor padrão seja Gemini). Testar o seletor de
+   provedor no header e o diálogo "qual IA usar?" na home e na Coleção; validar o **failover**
+   (deixar um provedor sem crédito e conferir o toast + a troca). Opcional: `GEMINI_MODEL` /
+   `AI_PROVIDER` (padrão via env). Confirmar que a **visão** (capa) funciona no Gemini (a imagem
+   vai inline/base64) na avaliação de lotes.
+   **Concluído recentemente:** `wantlist_items` aplicada em produção (2026-09-03; importar/editar/
+   marcar adquirido gravam sem erro). Secrets do cron (`APP_URL`, `CRON_TOKEN`) e 1ª execução do
+   `refresh.yml` no ar. Revisão/refatoração pós-Lovable (lint/format, remoção de morto, DRY).
+   **Relação lote↔Coleção + aprendizado (v0.24.x) validada em produção** (2026-09-08): ícone em
+   todos os cards (cinza/roxo/roxo+?), painel com o card da Coleção, vincular/"não tenho"/reativar
+   persistidos (`collection_links`) e aprendizado (`collection_feedback`) — decisão persiste após
+   recarregar. As chaves `collection_links`/`collection_feedback` do `app_state` nascem sozinhas
+   (upsert na 1ª decisão), sem `setup.sql`.
 
 > ⚠️ **Lição (evitar regressão):** módulo **`*.server.ts` NÃO deve importar de módulo
 > client-safe** (nem `import type`). No v0.24.0, `app-state.server.ts` importava um tipo de
-> `wantlist-match` → o *code-splitting* deixou o chunk `wantlist-match-*.js` fora do `/assets/`
+> `wantlist-match` → o _code-splitting_ deixou o chunk `wantlist-match-*.js` fora do `/assets/`
 > do cliente → **404** ("Failed to fetch dynamically imported module") só na home logada em
 > produção (preview deslogado e `/colecao` abriam). Corrigido no v0.24.1 definindo o tipo
 > localmente. Tipos compartilhados entre client e server: manter no lado **client-safe**.
+
+> 📌 **Observação (2026-09-08):** o usuário mesclou **duas PRs na `main`** durante esta sessão —
+> **#94** (v0.25.0, descontinuação do "Painel de mudanças" `/dashboard`) e **#95** (v0.26.0,
+> importação em massa da Coleção + câmera no upload). A branch da IA multi-provedor (v0.27.0) foi
+> **rebaseada sobre `origin/main`** já com as duas antes de finalizar (conflitos triviais em
+> `app-state.server.ts`, `colecao.tsx` e neste documento resolvidos mantendo ambos os lados).

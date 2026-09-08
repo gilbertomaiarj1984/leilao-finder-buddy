@@ -1,20 +1,34 @@
 /**
- * Camada de IA (isolada; ponto plugável). Avalia lotes de vinil com um modelo barato
- * via **Batches API** da Anthropic (assíncrona, ~50% do preço). Só as funções de rede
- * importam o SDK (dinamicamente); as funções puras (hash, seleção, prompt, parsing) são
- * testáveis com `bun -e` sem chave de API.
+ * Camada de IA (isolada; ponto plugável). Avalia/identifica lotes de vinil com um modelo
+ * barato. O PROVEDOR é plugável (`ai-provider.server.ts`): **Claude (Anthropic)** ou
+ * **Gemini (Google)**. Só as funções de rede tocam o provedor; as funções puras (hash,
+ * seleção, prompt, parsing) são testáveis com `bun -e` sem chave de API.
  *
- * Uma requisição de batch POR LOTE (custom_id = lots.id): o mapeamento resultado→lote
- * fica trivial e robusto entre a submissão e a coleta (que ocorrem em execuções
- * diferentes do cron). O custo continua em centavos (single-user, poucas centenas de
- * lotes, cache por título → só lotes novos entram).
+ * Dois caminhos:
+ * - **Batches API** da Anthropic (assíncrona, ~50% do preço) — só Claude, usada pelo cron.
+ *   Uma requisição de batch POR LOTE (custom_id = lots.id): o mapeamento resultado→lote
+ *   fica trivial entre a submissão e a coleta (execuções diferentes do cron).
+ * - **Síncrono** (`runText`) — usado sob demanda (botões) e pela Coleção, e pelo cron quando
+ *   o provedor é Gemini (que não tem Batches aqui). Tem **failover** por quota/sem créditos.
+ *
+ * O custo continua em centavos (single-user, poucas centenas de lotes, cache por título →
+ * só lotes novos entram).
  */
 import { parsePrice, type VinylLot } from "./vinyl-parse";
 import type { LotAiRow } from "./lot-ai.server";
 import type { LotIdentRow } from "./lot-ident.server";
+import {
+  runText,
+  providerModel,
+  toAnthropicMessageParams,
+  anyProviderConfigured,
+  getAnthropicClient,
+  type AiProvider,
+  type AiRequest,
+} from "./ai-provider.server";
 
-/** Modelo mais barato do Claude (US$1/US$5 por 1M in/out; metade disso no batch). */
-export const AI_MODEL = "claude-haiku-4-5";
+/** Modelo do Claude usado nos BATCHES (Anthropic-only). O síncrono usa o modelo do provedor. */
+const ANTHROPIC_MODEL = providerModel("anthropic");
 
 /** Teto de lotes avaliados por rodada de cron (evita batches gigantes). */
 export const MAX_PER_ROUND = 800;
@@ -102,22 +116,20 @@ export function buildUserPrompt(lot: EvalLot): string {
   );
 }
 
-type ContentBlock =
-  { type: "text"; text: string } | { type: "image"; source: { type: "url"; url: string } };
-
-/** Parâmetros de mensagem para um lote (usado no request de batch). Inclui a capa (visão). */
-export function buildLotParams(lot: EvalLot) {
-  const img = usableImage(lot.image);
-  const content: ContentBlock[] = [];
-  // A imagem vem ANTES do texto (recomendação da API de visão).
-  if (img) content.push({ type: "image", source: { type: "url", url: img } });
-  content.push({ type: "text", text: buildUserPrompt(lot) });
+/** Requisição NEUTRA (provedor-agnóstica) para avaliar UM lote. Inclui a capa (visão). */
+export function buildEvalRequest(lot: EvalLot): AiRequest {
   return {
-    model: AI_MODEL,
-    max_tokens: 400,
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user" as const, content }],
+    maxTokens: 400,
+    text: buildUserPrompt(lot),
+    image: usableImage(lot.image),
+    json: true,
   };
+}
+
+/** Parâmetros de mensagem (Anthropic) para um lote — usado no request de BATCH. */
+export function buildLotParams(lot: EvalLot) {
+  return toAnthropicMessageParams(buildEvalRequest(lot), ANTHROPIC_MODEL);
 }
 
 /**
@@ -172,21 +184,16 @@ export function messageText(message: { content?: Array<{ type: string; text?: st
     .join("");
 }
 
-/** true quando há chave configurada (senão o cron faz no-op explícito). */
+/** true quando ALGUM provedor de IA está configurado (senão o cron faz no-op explícito). */
 export function aiConfigured(): boolean {
-  return Boolean(process.env["ANTHROPIC_API_KEY"]);
-}
-
-async function getClient() {
-  const { default: Anthropic } = await import("@anthropic-ai/sdk");
-  return new Anthropic();
+  return anyProviderConfigured();
 }
 
 export type SubmitResult = { batchId: string; hashes: Record<string, string>; count: number };
 
 /** Cria um batch com 1 request por lote (custom_id = id). Retorna id + hashes por lote. */
 export async function submitEvalBatch(lots: EvalLot[]): Promise<SubmitResult> {
-  const client = await getClient();
+  const client = await getAnthropicClient();
   const hashes: Record<string, string> = {};
   const requests = lots.map((lot) => {
     hashes[lot.id] = titleHash(lot.title);
@@ -209,7 +216,7 @@ export async function collectEvalBatch(
   batchId: string,
   hashes: Record<string, string>,
 ): Promise<CollectResult> {
-  const client = await getClient();
+  const client = await getAnthropicClient();
   const batch = await client.messages.batches.retrieve(batchId);
   if (batch.processing_status !== "ended") return { done: false, rows: [] };
 
@@ -228,7 +235,7 @@ export async function collectEvalBatch(
       album: parsed.album,
       reason: parsed.reason,
       tags: parsed.tags,
-      model: AI_MODEL,
+      model: ANTHROPIC_MODEL,
     });
   }
   return { done: true, rows };
@@ -270,18 +277,20 @@ export function buildIdentUserPrompt(lot: EvalLot, opts?: { withImage?: boolean 
   );
 }
 
-/** Parâmetros de mensagem para identificar UM lote. Inclui a capa só quando `withImage`. */
-export function buildIdentParams(lot: EvalLot, withImage: boolean) {
-  const content: ContentBlock[] = [];
-  const img = withImage ? usableImage(lot.image) : null;
-  if (img) content.push({ type: "image", source: { type: "url", url: img } });
-  content.push({ type: "text", text: buildIdentUserPrompt(lot, { withImage }) });
+/** Requisição NEUTRA para identificar UM lote. Inclui a capa só quando `withImage`. */
+export function buildIdentRequest(lot: EvalLot, withImage: boolean): AiRequest {
   return {
-    model: AI_MODEL,
-    max_tokens: 120,
     system: IDENT_SYSTEM_PROMPT,
-    messages: [{ role: "user" as const, content }],
+    maxTokens: 120,
+    text: buildIdentUserPrompt(lot, { withImage }),
+    image: withImage ? usableImage(lot.image) : null,
+    json: true,
   };
+}
+
+/** Parâmetros de mensagem (Anthropic) para identificar UM lote — usado no request de BATCH. */
+export function buildIdentParams(lot: EvalLot, withImage: boolean) {
+  return toAnthropicMessageParams(buildIdentRequest(lot, withImage), ANTHROPIC_MODEL);
 }
 
 /** Extrai {album, year, confidence} do texto devolvido. Null quando não dá para aproveitar. */
@@ -354,7 +363,7 @@ export function selectLotsToReident(
 
 /** Cria um batch de identificação (1 request por lote). `withImage` decide o uso da capa. */
 export async function submitIdentBatch(lots: EvalLot[], withImage: boolean): Promise<SubmitResult> {
-  const client = await getClient();
+  const client = await getAnthropicClient();
   const hashes: Record<string, string> = {};
   const requests = lots.map((lot) => {
     hashes[lot.id] = titleHash(lot.title);
@@ -376,7 +385,7 @@ export async function collectIdentBatch(
   hashes: Record<string, string>,
   source: "title" | "image",
 ): Promise<CollectIdentResult> {
-  const client = await getClient();
+  const client = await getAnthropicClient();
   const batch = await client.messages.batches.retrieve(batchId);
   if (batch.processing_status !== "ended") return { done: false, rows: [] };
 
@@ -393,45 +402,51 @@ export async function collectIdentBatch(
       year: parsed.year,
       confidence: parsed.confidence,
       source,
-      model: AI_MODEL,
+      model: ANTHROPIC_MODEL,
     });
   }
   return { done: true, rows };
-}
-
-/** Monta a linha de cache a partir do texto devolvido pelo modelo (null se não aproveitável). */
-function rowFromMessage(
-  lot: EvalLot,
-  message: { content?: Array<{ type: string; text?: string }> },
-): LotAiRow | null {
-  const parsed = parseEvalObject(messageText(message));
-  if (!parsed) return null;
-  return {
-    id: lot.id,
-    title_hash: titleHash(lot.title),
-    score: parsed.score,
-    rarity: parsed.rarity,
-    deal: parsed.deal,
-    album: parsed.album,
-    reason: parsed.reason,
-    tags: parsed.tags,
-    model: AI_MODEL,
-  };
 }
 
 /** Concorrência das chamadas síncronas sob demanda (mantém o servidor dentro do tempo). */
 const SYNC_CONCURRENCY = 4;
 
 /**
- * Avaliação SÍNCRONA (Messages API) de um conjunto pequeno de lotes — usada pela análise
- * SOB DEMANDA (botões por dia/casa), onde o usuário espera o resultado NA HORA (a Batches
- * API é assíncrona e serve à rodada automática). Best-effort POR LOTE: um lote que falhe
- * (rede/parsing) é ignorado e não derruba os demais. Concorrência limitada.
+ * Resultado de uma passada SÍNCRONA: as linhas + qual provedor de fato atendeu e se houve
+ * **failover** (troca por falta de créditos). A UI usa `served`/`switched` para avisar.
  */
-export async function evalLotsSync(lots: EvalLot[]): Promise<LotAiRow[]> {
-  if (!lots.length) return [];
-  const client = await getClient();
+export type SyncOutcome<T> = { rows: T[]; served: AiProvider | null; switched: boolean };
+
+/** Acumula, entre os workers concorrentes, o provedor que atendeu e se houve troca. */
+class ProviderTracker {
+  private used = new Set<AiProvider>();
+  switched = false;
+  note(provider: AiProvider, switched: boolean) {
+    this.used.add(provider);
+    if (switched) this.switched = true;
+  }
+  served(requested: AiProvider): AiProvider | null {
+    if (!this.used.size) return null;
+    if (this.used.has(requested)) return requested;
+    // Failover: devolve o provedor alternativo que efetivamente atendeu.
+    return [...this.used][0] ?? null;
+  }
+}
+
+/**
+ * Avaliação SÍNCRONA de um conjunto pequeno de lotes — usada pela análise SOB DEMANDA
+ * (botões por dia/casa), onde o usuário espera o resultado NA HORA (a Batches API é
+ * assíncrona e serve à rodada automática). Roda no `provider` pedido, com **failover**
+ * por quota. Best-effort POR LOTE: um lote que falhe (rede/parsing) é ignorado e não
+ * derruba os demais. Concorrência limitada.
+ */
+export async function evalLotsSync(
+  lots: EvalLot[],
+  provider: AiProvider,
+): Promise<SyncOutcome<LotAiRow>> {
+  if (!lots.length) return { rows: [], served: null, switched: false };
   const rows: LotAiRow[] = [];
+  const tracker = new ProviderTracker();
   let cursor = 0;
 
   const worker = async () => {
@@ -441,9 +456,22 @@ export async function evalLotsSync(lots: EvalLot[]): Promise<LotAiRow[]> {
       const lot = lots[index];
       if (!lot) return;
       try {
-        const message = await client.messages.create(buildLotParams(lot));
-        const row = rowFromMessage(lot, message);
-        if (row) rows.push(row);
+        const r = await runText(buildEvalRequest(lot), provider);
+        tracker.note(r.provider, r.switched);
+        const parsed = parseEvalObject(r.text);
+        if (parsed) {
+          rows.push({
+            id: lot.id,
+            title_hash: titleHash(lot.title),
+            score: parsed.score,
+            rarity: parsed.rarity,
+            deal: parsed.deal,
+            album: parsed.album,
+            reason: parsed.reason,
+            tags: parsed.tags,
+            model: r.model,
+          });
+        }
       } catch (error) {
         console.error(`[ai-eval] falha ao avaliar o lote ${lot.id}`, error);
       }
@@ -453,7 +481,7 @@ export async function evalLotsSync(lots: EvalLot[]): Promise<LotAiRow[]> {
   await Promise.all(
     Array.from({ length: Math.min(SYNC_CONCURRENCY, lots.length) }, () => worker()),
   );
-  return rows;
+  return { rows, served: tracker.served(provider), switched: tracker.switched };
 }
 
 /** Resultado da identificação síncrona por lote. */
@@ -466,15 +494,18 @@ export type IdentResult = {
 
 /**
  * Identificação SÍNCRONA de um conjunto pequeno de lotes — MESMA lógica da identificação
- * automática (`buildIdentParams` + `parseIdentObject`, modelo `AI_MODEL`), mas sob demanda
- * (a rodada normal é assíncrona via Batches). `withImage` decide o uso da capa: a Coleção
- * roda **só por texto** (`withImage=false`) porque a capa de leilão engana o modelo (mistura
- * artistas parecidos). Best-effort POR LOTE. **Não** persiste — o chamador grava onde quiser.
- * Retorna só os lotes que a IA de fato identificou (com `album`).
+ * automática (`buildIdentRequest` + `parseIdentObject`), mas sob demanda (a rodada normal é
+ * assíncrona via Batches). `withImage` decide o uso da capa: a Coleção roda **só por texto**
+ * (`withImage=false`) porque a capa de leilão engana o modelo (mistura artistas parecidos).
+ * Best-effort POR LOTE, com failover por quota. **Não** persiste — o chamador grava onde
+ * quiser. Retorna só os lotes que a IA de fato identificou (com `album`).
  */
-export async function identLotsSync(lots: EvalLot[], withImage = false): Promise<IdentResult[]> {
+export async function identLotsSync(
+  lots: EvalLot[],
+  withImage = false,
+  provider: AiProvider = "anthropic",
+): Promise<IdentResult[]> {
   if (!lots.length) return [];
-  const client = await getClient();
   const rows: IdentResult[] = [];
   let cursor = 0;
 
@@ -485,8 +516,8 @@ export async function identLotsSync(lots: EvalLot[], withImage = false): Promise
       const lot = lots[index];
       if (!lot) return;
       try {
-        const message = await client.messages.create(buildIdentParams(lot, withImage));
-        const parsed = parseIdentObject(messageText(message));
+        const r = await runText(buildIdentRequest(lot, withImage), provider);
+        const parsed = parseIdentObject(r.text);
         if (parsed?.album) rows.push({ id: lot.id, ...parsed });
       } catch (error) {
         console.error(`[ai-eval] falha ao identificar o lote ${lot.id}`, error);
@@ -498,6 +529,55 @@ export async function identLotsSync(lots: EvalLot[], withImage = false): Promise
     Array.from({ length: Math.min(SYNC_CONCURRENCY, lots.length) }, () => worker()),
   );
   return rows;
+}
+
+/**
+ * Como `identLotsSync`, mas devolve LINHAS prontas para `lot_ident` (com `source`/`model`),
+ * mesmo shape que a coleta de batch. Usada pelo cron `aiident` quando o provedor é o Gemini
+ * (que não tem Batches aqui) — roda síncrono, em bloco, com failover por quota.
+ */
+export async function identLotsSyncRows(
+  lots: EvalLot[],
+  withImage: boolean,
+  provider: AiProvider,
+): Promise<SyncOutcome<LotIdentRow>> {
+  if (!lots.length) return { rows: [], served: null, switched: false };
+  const rows: LotIdentRow[] = [];
+  const tracker = new ProviderTracker();
+  const source: "title" | "image" = withImage ? "image" : "title";
+  let cursor = 0;
+
+  const worker = async () => {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      const lot = lots[index];
+      if (!lot) return;
+      try {
+        const r = await runText(buildIdentRequest(lot, withImage), provider);
+        tracker.note(r.provider, r.switched);
+        const parsed = parseIdentObject(r.text);
+        if (parsed) {
+          rows.push({
+            id: lot.id,
+            title_hash: titleHash(lot.title),
+            album: parsed.album,
+            year: parsed.year,
+            confidence: parsed.confidence,
+            source,
+            model: r.model,
+          });
+        }
+      } catch (error) {
+        console.error(`[ai-eval] falha ao identificar (rows) o lote ${lot.id}`, error);
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(SYNC_CONCURRENCY, lots.length) }, () => worker()),
+  );
+  return { rows, served: tracker.served(provider), switched: tracker.switched };
 }
 
 // ---------------------------------------------------------------------------
@@ -564,20 +644,21 @@ export function buildCollectionIdentPrompt(input: CollectionIdentInput): string 
   );
 }
 
-/** Parâmetros de mensagem (só texto) para identificar+descrever UM disco da coleção. */
-export function buildCollectionIdentParams(input: CollectionIdentInput) {
+/** Requisição NEUTRA (só texto) para identificar+descrever UM disco da coleção. */
+export function buildCollectionRequest(input: CollectionIdentInput): AiRequest {
   return {
-    model: AI_MODEL,
-    // Descritivo longo (momento histórico + panorama + faixa a faixa) precisa de folga.
-    max_tokens: 2000,
     system: COLLECTION_IDENT_SYSTEM_PROMPT,
-    messages: [
-      {
-        role: "user" as const,
-        content: [{ type: "text" as const, text: buildCollectionIdentPrompt(input) }],
-      },
-    ],
+    // Descritivo longo (momento histórico + panorama + faixa a faixa) precisa de folga.
+    maxTokens: 2000,
+    text: buildCollectionIdentPrompt(input),
+    image: null,
+    json: true,
   };
+}
+
+/** Parâmetros de mensagem (Anthropic, só texto) para identificar+descrever UM disco. */
+export function buildCollectionIdentParams(input: CollectionIdentInput) {
+  return toAnthropicMessageParams(buildCollectionRequest(input), ANTHROPIC_MODEL);
 }
 
 /** Extrai {album, year, confidence, description} do texto devolvido. Null se nada aproveitável. */
@@ -629,15 +710,17 @@ export function parseCollectionIdentObject(text: string): Omit<CollectionIdentRe
 
 /**
  * Identificação + descrição SÍNCRONA (só texto) de um conjunto pequeno de discos da coleção.
- * Best-effort POR DISCO; **não** persiste (o chamador grava). Retorna só os discos que a IA
- * de fato aproveitou (com álbum OU descrição).
+ * Roda no `provider` pedido, com **failover** por quota. Best-effort POR DISCO; **não**
+ * persiste (o chamador grava). Retorna só os discos que a IA de fato aproveitou (com álbum
+ * OU descrição), além de `served`/`switched` (para a UI avisar sobre a troca de provedor).
  */
 export async function identCollectionSync(
   inputs: CollectionIdentInput[],
-): Promise<CollectionIdentResult[]> {
-  if (!inputs.length) return [];
-  const client = await getClient();
+  provider: AiProvider,
+): Promise<SyncOutcome<CollectionIdentResult>> {
+  if (!inputs.length) return { rows: [], served: null, switched: false };
   const rows: CollectionIdentResult[] = [];
+  const tracker = new ProviderTracker();
   let cursor = 0;
 
   const worker = async () => {
@@ -647,8 +730,9 @@ export async function identCollectionSync(
       const input = inputs[index];
       if (!input) return;
       try {
-        const message = await client.messages.create(buildCollectionIdentParams(input));
-        const parsed = parseCollectionIdentObject(messageText(message));
+        const r = await runText(buildCollectionRequest(input), provider);
+        tracker.note(r.provider, r.switched);
+        const parsed = parseCollectionIdentObject(r.text);
         if (parsed) rows.push({ id: input.id, ...parsed });
       } catch (error) {
         console.error(`[ai-eval] falha ao identificar/descrever o disco ${input.id}`, error);
@@ -659,5 +743,5 @@ export async function identCollectionSync(
   await Promise.all(
     Array.from({ length: Math.min(SYNC_CONCURRENCY, inputs.length) }, () => worker()),
   );
-  return rows;
+  return { rows, served: tracker.served(provider), switched: tracker.switched };
 }

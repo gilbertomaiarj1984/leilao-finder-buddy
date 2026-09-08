@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { isAiProvider, type AiProvider } from "./ai-provider";
 
 export const getAccessStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -424,6 +425,30 @@ export const setAiMode = createServerFn({ method: "POST" })
     return await setAiMode(data.mode);
   });
 
+/** Provedor de IA PADRÃO: "anthropic" (Claude) | "gemini" (Google). Global. */
+export const getAiProvider = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<AiProvider> => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getAiProvider } = await import("./app-state.server");
+    return await getAiProvider();
+  });
+
+/** Grava o provedor de IA padrão (valida contra os provedores conhecidos). */
+export const setAiProvider = createServerFn({ method: "POST" })
+  .inputValidator((input: { provider?: string } | undefined) => {
+    if (!isAiProvider(input?.provider)) throw new Error("Provedor de IA inválido.");
+    return { provider: input.provider };
+  })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setAiProvider } = await import("./app-state.server");
+    return await setAiProvider(data.provider);
+  });
+
 /**
  * Análise SOB DEMANDA de um dia (e opcionalmente de UMA casa desse dia): avalia NA HORA,
  * de forma síncrona, só os lotes AINDA NÃO avaliados (reaproveita o cache por título).
@@ -431,23 +456,29 @@ export const setAiMode = createServerFn({ method: "POST" })
  * `remaining` (não avaliados que ficaram de fora) para o cliente repetir em laço.
  */
 export const analyzeOnDemand = createServerFn({ method: "POST" })
-  .inputValidator((input: { day?: string; house?: string; max?: number } | undefined) => {
-    const day = typeof input?.day === "string" ? input.day.trim() : "";
-    if (!day) throw new Error("Dia obrigatório.");
-    return {
-      day,
-      house: typeof input?.house === "string" && input.house.trim() ? input.house.trim() : null,
-      max: Math.min(Math.max(Number(input?.max) || 25, 1), 50),
-    };
-  })
+  .inputValidator(
+    (input: { day?: string; house?: string; max?: number; provider?: string } | undefined) => {
+      const day = typeof input?.day === "string" ? input.day.trim() : "";
+      if (!day) throw new Error("Dia obrigatório.");
+      return {
+        day,
+        house: typeof input?.house === "string" && input.house.trim() ? input.house.trim() : null,
+        max: Math.min(Math.max(Number(input?.max) || 25, 1), 50),
+        // Provedor escolhido na hora (opcional): senão usa o padrão do `app_state`.
+        provider: isAiProvider(input?.provider) ? input.provider : null,
+      };
+    },
+  )
   .middleware([requireSupabaseAuth])
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { aiConfigured, selectLotsToEvaluate, evalLotsSync } = await import("./ai-eval.server");
     if (!aiConfigured()) {
-      throw new Error("A IA não está configurada (ANTHROPIC_API_KEY ausente no servidor).");
+      throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
     }
+    const { getAiProvider } = await import("./app-state.server");
+    const provider = data.provider ?? (await getAiProvider());
     const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
     const { getAllLotAi, upsertLotAi } = await import("./lot-ai.server");
     const [snapshot, aiRows] = await Promise.all([scrapeVinylLots(false), getAllLotAi()]);
@@ -458,14 +489,19 @@ export const analyzeOnDemand = createServerFn({ method: "POST" })
     );
     const pending = selectLotsToEvaluate(scope, aiRows, Number.MAX_SAFE_INTEGER);
     const toEval = pending.slice(0, data.max);
-    if (!toEval.length) return { evaluated: 0, remaining: 0, scope: scope.length };
+    if (!toEval.length) {
+      return { evaluated: 0, remaining: 0, scope: scope.length, served: null, switched: false };
+    }
 
-    const rows = await evalLotsSync(toEval);
+    const { rows, served, switched } = await evalLotsSync(toEval, provider);
     const evaluated = await upsertLotAi(rows);
     return {
       evaluated,
       remaining: Math.max(0, pending.length - toEval.length),
       scope: scope.length,
+      // Qual provedor de fato atendeu (para a UI) e se houve failover por falta de créditos.
+      served,
+      switched,
     };
   });
 

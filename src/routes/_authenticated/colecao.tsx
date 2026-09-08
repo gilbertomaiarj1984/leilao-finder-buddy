@@ -39,6 +39,10 @@ import { CollectionCard } from "@/components/vinyl/collection-card";
 import { collectionLabel } from "@/components/vinyl/collection-utils";
 import { ArtistFilter } from "@/components/vinyl/filters";
 import { GEMINI_IMPORT_PROMPT, parseCollectionBulkText } from "@/lib/collection-bulk";
+import { AiProviderSelect, AiProviderDialog } from "@/components/vinyl/ai-provider-controls";
+import { useAiProviderPicker } from "@/lib/use-ai-provider-picker";
+import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
+import { getAiProvider, setAiProvider } from "@/lib/leiloesbr.functions";
 import type { CollectionItem, PendingWonLot } from "@/lib/collection.server";
 import {
   addCollectionItem,
@@ -243,6 +247,8 @@ function ColecaoPage() {
   const debugScan = useServerFn(debugScanCollection);
   const identify = useServerFn(identifyCollection);
   const reprocess = useServerFn(reprocessCollectionItem);
+  const fetchAiProvider = useServerFn(getAiProvider);
+  const runSetAiProvider = useServerFn(setAiProvider);
   const updateItem = useServerFn(updateCollectionItem);
   const removeItem = useServerFn(deleteCollectionItem);
   const uploadImage = useServerFn(uploadCollectionImage);
@@ -264,6 +270,37 @@ function ColecaoPage() {
 
   const items = useMemo(() => query.data ?? [], [query.data]);
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["collection"] });
+
+  // Provedor de IA PADRÃO (Claude/Gemini) + diálogo "qual IA usar?" por ação.
+  const aiProviderQuery = useQuery({
+    queryKey: ["ai-provider"] as const,
+    queryFn: () => fetchAiProvider(),
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const aiProvider: AiProvider = aiProviderQuery.data ?? "anthropic";
+  const changeAiProvider = (provider: AiProvider) => {
+    const prev = aiProviderQuery.data;
+    queryClient.setQueryData(["ai-provider"], provider);
+    void runSetAiProvider({ data: { provider } })
+      .then(() => toast.success(`Provedor padrão: ${AI_PROVIDER_SHORT[provider]}`))
+      .catch((e: unknown) => {
+        queryClient.setQueryData(["ai-provider"], prev);
+        toast.error((e as Error)?.message || "Não foi possível salvar o provedor de IA");
+      });
+  };
+  const providerPicker = useAiProviderPicker(aiProvider);
+  // Avisa quando houve failover (o provedor pedido ficou sem créditos).
+  const notifySwitch = (
+    asked: AiProvider,
+    res: { switched?: boolean; served?: AiProvider | null },
+  ) => {
+    if (res.switched && res.served && res.served !== asked) {
+      toast.warning(
+        `${AI_PROVIDER_SHORT[asked]} sem créditos — usei ${AI_PROVIDER_SHORT[res.served]}`,
+      );
+    }
+  };
 
   const scanMut = useMutation({
     mutationFn: () => scan(),
@@ -297,23 +334,33 @@ function ColecaoPage() {
   // (padrão) gasta IA só nos discos ainda sem identificação — uso rotineiro e barato; `false`
   // re-normaliza TODA a coleção (corrige identificações antigas), bem mais caro.
   async function runIdentify(onlyUnidentified = true) {
+    // Pergunta qual provedor usar antes de começar (cancelar aborta).
+    const provider = await providerPicker.pickProvider();
+    if (!provider) return;
     setIdentifying(true);
     try {
       let total = 0;
       let offset = 0;
+      let switchedTo: AiProvider | null = null;
       for (let guard = 0; guard < 500; guard++) {
-        const res = (await identify({ data: { offset, max: 12, onlyUnidentified } })) as {
+        const res = (await identify({
+          data: { offset, max: 12, onlyUnidentified, provider },
+        })) as {
           identified: number;
           processed: number;
           nextOffset: number;
           total: number;
           done: boolean;
+          served: AiProvider | null;
+          switched: boolean;
         };
         total += res.identified;
         offset = res.nextOffset;
+        if (res.switched && res.served) switchedTo = res.served;
         void invalidate();
         if (res.done || res.processed === 0) break;
       }
+      notifySwitch(provider, { switched: !!switchedTo, served: switchedTo });
       toast.success(
         total > 0 ? `${total} disco(s) atualizado(s) pela IA.` : "Nada para atualizar.",
       );
@@ -396,13 +443,22 @@ function ColecaoPage() {
 
   // Reprocessar UM disco pela IA (só texto), sobrescrevendo o atual. Estado por-id p/ o card girar.
   const reprocessMut = useMutation({
-    mutationFn: (id: string) => reprocess({ data: { id } }),
-    onSuccess: (res: { updated: boolean }) => {
+    mutationFn: (vars: { id: string; provider: AiProvider }) => reprocess({ data: vars }),
+    onSuccess: (res: { updated: boolean; served: AiProvider | null; switched: boolean }, vars) => {
       void invalidate();
+      notifySwitch(vars.provider, res);
       toast.success(res.updated ? "Disco reprocessado pela IA." : "IA não encontrou nada a mudar.");
     },
     onError: (e: Error) => toast.error(e.message || "Não foi possível reprocessar"),
   });
+  // Reprocessa UM disco: pergunta o provedor antes (cancelar aborta).
+  const startReprocess = (id: string) => {
+    void (async () => {
+      const provider = await providerPicker.pickProvider();
+      if (!provider) return;
+      reprocessMut.mutate({ id, provider });
+    })();
+  };
 
   // Edição de tags direto no card (mesmo padrão dos lotes): otimista, com rollback em erro.
   const tagsMut = useMutation({
@@ -524,6 +580,11 @@ function ColecaoPage() {
               <RefreshCw className={`mr-2 h-4 w-4 ${scanMut.isPending ? "animate-spin" : ""}`} />
               {scanMut.isPending ? "Atualizando…" : "Atualizar coleção"}
             </Button>
+            <AiProviderSelect
+              value={aiProvider}
+              onChange={changeAiProvider}
+              disabled={identifying}
+            />
           </div>
         </div>
       </header>
@@ -594,11 +655,11 @@ function ColecaoPage() {
                           item={item}
                           busy={busy}
                           reprocessing={
-                            reprocessMut.isPending && reprocessMut.variables === item.id
+                            reprocessMut.isPending && reprocessMut.variables?.id === item.id
                           }
                           onEdit={() => setDraft(toDraft(item))}
                           onRemove={() => removeMut.mutate(item.id)}
-                          onReprocess={() => reprocessMut.mutate(item.id)}
+                          onReprocess={() => startReprocess(item.id)}
                           onTagsChange={(next) => tagsMut.mutate({ id: item.id, tags: next })}
                         />
                       ))}
@@ -661,6 +722,12 @@ function ColecaoPage() {
         onAdd={(p) => addWonMut.mutate(p)}
         onIgnore={ignoreDuplicate}
         onClose={() => setReview([])}
+      />
+
+      <AiProviderDialog
+        {...providerPicker.dialogProps}
+        title="Identificar com qual IA?"
+        description="Escolha o provedor para esta identificação. Se ele ficar sem créditos, o outro assume automaticamente."
       />
     </main>
   );

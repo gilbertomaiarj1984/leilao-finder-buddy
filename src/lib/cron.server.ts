@@ -18,6 +18,13 @@ function json(body: unknown, status = 200): Response {
 }
 
 /**
+ * Teto de lotes processados por rodada quando a IA roda de forma SÍNCRONA (Gemini, que não
+ * tem Batches aqui, ou failover do Claude). Mantém a chamada dentro do tempo do servidor; o
+ * laço do cron chama de novo até esgotar (os já processados saem pela chave de cache).
+ */
+const GEMINI_SYNC_CAP = 25;
+
+/**
  * Compara dois tokens em tempo constante (não vaza o tamanho do prefixo comum por
  * timing). Só o header `x-cron-token` é aceito — nunca a querystring, que costuma
  * ir parar em logs de acesso.
@@ -57,15 +64,25 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await enrichMissingLotes(max, offset));
     }
 
-    // Avaliação da IA (assíncrona, via Batches API). Idempotente por chamada: coleta o
-    // batch anterior e/ou submete o próximo. Sem ANTHROPIC_API_KEY → no-op explícito
-    // (nunca quebra o cron de scraping).
+    // Avaliação da IA. O PROVEDOR é o padrão em `app_state` (Claude/Gemini):
+    // - Claude → **Batches API** (assíncrona, ~50% mais barata): coleta o batch anterior
+    //   e/ou submete o próximo (idempotente por chamada).
+    // - Gemini → **síncrono** em bloco (não há Batches aqui): avalia e grava na hora.
+    // Failover: se o Claude estiver sem créditos, cai para o Gemini síncrono. Sem NENHUM
+    // provedor configurado → no-op explícito (nunca quebra o cron de scraping).
     if (step === "aieval") {
-      const { aiConfigured, selectLotsToEvaluate, submitEvalBatch, collectEvalBatch } =
-        await import("./ai-eval.server");
-      if (!aiConfigured()) return json({ skipped: "ANTHROPIC_API_KEY não configurado" });
-      const { getPendingAiBatch, setPendingAiBatch, getAiMode } =
+      const {
+        aiConfigured,
+        selectLotsToEvaluate,
+        submitEvalBatch,
+        collectEvalBatch,
+        evalLotsSync,
+      } = await import("./ai-eval.server");
+      if (!aiConfigured()) return json({ skipped: "nenhum provedor de IA configurado" });
+      const { getPendingAiBatch, setPendingAiBatch, getAiMode, getAiProvider } =
         await import("./app-state.server");
+      const { providerSupportsBatch, providerConfigured, isQuotaError } =
+        await import("./ai-provider.server");
       const { getAllLotAi, upsertLotAi } = await import("./lot-ai.server");
 
       // Modo escolhido pelo usuário (controla o gasto de créditos da rodada automática).
@@ -73,7 +90,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
       const mode = await getAiMode();
       if (mode === "off") return json({ skipped: "IA desligada", mode });
 
-      // 1) Há batch em andamento? Tenta coletar.
+      // 1) Há batch (Claude) em andamento? Tenta coletar — independe do provedor atual.
       const pending = await getPendingAiBatch();
       if (pending) {
         const { done, rows } = await collectEvalBatch(pending.batchId, pending.hashes);
@@ -83,7 +100,15 @@ export async function handleCron(request: Request): Promise<Response | null> {
         return json({ collected, batchId: pending.batchId });
       }
 
-      // 2) Sem pendente: seleciona os lotes sem avaliação (ou com título mudado) e submete.
+      // Provedor efetivo: o padrão, ou o primeiro configurado se o padrão não tiver chave.
+      const preferred = await getAiProvider();
+      const provider = providerConfigured(preferred)
+        ? preferred
+        : providerConfigured("anthropic")
+          ? "anthropic"
+          : "gemini";
+
+      // 2) Sem pendente: seleciona os lotes sem avaliação (ou com título mudado).
       const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
       const [snapshot, aiRows] = await Promise.all([scrapeVinylLots(false), getAllLotAi()]);
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 800, 1), 2000);
@@ -110,16 +135,40 @@ export async function handleCron(request: Request): Promise<Response | null> {
       }
 
       const toEval = selectLotsToEvaluate(candidates, aiRows, max);
-      if (!toEval.length) return json({ done: true, submitted: 0, mode });
-      const { batchId, hashes, count } = await submitEvalBatch(toEval);
-      await setPendingAiBatch({ batchId, submittedAt: new Date().toISOString(), hashes });
-      return json({ submitted: count, batchId, mode });
+      if (!toEval.length) return json({ done: true, submitted: 0, mode, provider });
+
+      // 3a) Claude → Batches API. Se estiver sem créditos e houver Gemini, cai p/ o síncrono.
+      if (providerSupportsBatch(provider)) {
+        try {
+          const { batchId, hashes, count } = await submitEvalBatch(toEval);
+          await setPendingAiBatch({ batchId, submittedAt: new Date().toISOString(), hashes });
+          return json({ submitted: count, batchId, mode, provider });
+        } catch (error) {
+          if (!isQuotaError(error) || !providerConfigured("gemini")) throw error;
+          console.error("[cron] aieval: Claude sem créditos — failover síncrono p/ Gemini", error);
+        }
+      }
+
+      // 3b) Gemini (ou failover do Claude): síncrono em bloco (cap por rodada p/ caber no
+      // tempo do servidor; o laço do cron chama de novo até esgotar).
+      const toEvalSync = toEval.slice(0, GEMINI_SYNC_CAP);
+      const { rows, served, switched } = await evalLotsSync(toEvalSync, "gemini");
+      const collected = await upsertLotAi(rows);
+      return json({
+        collected,
+        mode,
+        provider: served ?? "gemini",
+        switched,
+        sync: true,
+        done: toEval.length <= GEMINI_SYNC_CAP,
+      });
     }
 
     // Identificação SIMPLIFICADA (camada `lot_ident`): roda para TODOS os lotes, SEM gate
-    // de modo. Idempotente por chamada (estado próprio `ai_ident_batch`). Sem
-    // ANTHROPIC_API_KEY → no-op. 1ª passada só por título; escala para a capa nos de
-    // baixa confiança. Alimenta exibição/busca/filtro por artista e o Discogs.
+    // de modo. Idempotente por chamada (estado próprio `ai_ident_batch`). Provedor = padrão
+    // em `app_state`: Claude via Batches, Gemini síncrono em bloco (failover por quota).
+    // Sem NENHUM provedor configurado → no-op. 1ª passada só por título; escala para a capa
+    // nos de baixa confiança. Alimenta exibição/busca/filtro por artista e o Discogs.
     if (step === "aiident") {
       const {
         aiConfigured,
@@ -127,12 +176,16 @@ export async function handleCron(request: Request): Promise<Response | null> {
         selectLotsToReident,
         submitIdentBatch,
         collectIdentBatch,
+        identLotsSyncRows,
       } = await import("./ai-eval.server");
-      if (!aiConfigured()) return json({ skipped: "ANTHROPIC_API_KEY não configurado" });
-      const { getPendingAiIdentBatch, setPendingAiIdentBatch } = await import("./app-state.server");
+      if (!aiConfigured()) return json({ skipped: "nenhum provedor de IA configurado" });
+      const { getPendingAiIdentBatch, setPendingAiIdentBatch, getAiProvider } =
+        await import("./app-state.server");
+      const { providerSupportsBatch, providerConfigured, isQuotaError } =
+        await import("./ai-provider.server");
       const { getAllLotIdent, upsertLotIdent } = await import("./lot-ident.server");
 
-      // 1) Batch de identificação em andamento? Coleta.
+      // 1) Batch (Claude) de identificação em andamento? Coleta — independe do provedor atual.
       const pending = await getPendingAiIdentBatch();
       if (pending) {
         const { done, rows } = await collectIdentBatch(
@@ -146,37 +199,81 @@ export async function handleCron(request: Request): Promise<Response | null> {
         return json({ collected, batchId: pending.batchId, source: pending.source });
       }
 
+      // Provedor efetivo (padrão, ou o primeiro configurado se o padrão não tiver chave).
+      const preferred = await getAiProvider();
+      const provider = providerConfigured(preferred)
+        ? preferred
+        : providerConfigured("anthropic")
+          ? "anthropic"
+          : "gemini";
+      const useBatch = providerSupportsBatch(provider);
+
       const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
       const [snapshot, identRows] = await Promise.all([scrapeVinylLots(false), getAllLotIdent()]);
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 800, 1), 2000);
 
+      // Caminho SÍNCRONO (Gemini/failover): grava direto até o teto por rodada.
+      const runSync = async (
+        lots: Parameters<typeof identLotsSyncRows>[0],
+        withImage: boolean,
+        source: string,
+      ) => {
+        const toSync = lots.slice(0, GEMINI_SYNC_CAP);
+        const { rows, served, switched } = await identLotsSyncRows(toSync, withImage, "gemini");
+        const collected = await upsertLotIdent(rows);
+        return json({
+          collected,
+          source,
+          provider: served ?? "gemini",
+          switched,
+          sync: true,
+          done: lots.length <= GEMINI_SYNC_CAP,
+        });
+      };
+
       // 2) Identifica por TÍTULO os ainda não identificados (ou com título mudado).
       const toIdent = selectLotsToIdentify(snapshot.lots, identRows, max);
       if (toIdent.length) {
-        const { batchId, hashes, count } = await submitIdentBatch(toIdent, false);
-        await setPendingAiIdentBatch({
-          batchId,
-          submittedAt: new Date().toISOString(),
-          hashes,
-          source: "title",
-        });
-        return json({ submitted: count, batchId, source: "title" });
+        if (useBatch) {
+          try {
+            const { batchId, hashes, count } = await submitIdentBatch(toIdent, false);
+            await setPendingAiIdentBatch({
+              batchId,
+              submittedAt: new Date().toISOString(),
+              hashes,
+              source: "title",
+            });
+            return json({ submitted: count, batchId, source: "title", provider });
+          } catch (error) {
+            if (!isQuotaError(error) || !providerConfigured("gemini")) throw error;
+            console.error("[cron] aiident: Claude sem créditos — failover Gemini (título)", error);
+          }
+        }
+        return await runSync(toIdent, false, "title");
       }
 
       // 3) Nada por título: reidentifica com a CAPA os de baixa confiança.
       const toReident = selectLotsToReident(snapshot.lots, identRows, max);
       if (toReident.length) {
-        const { batchId, hashes, count } = await submitIdentBatch(toReident, true);
-        await setPendingAiIdentBatch({
-          batchId,
-          submittedAt: new Date().toISOString(),
-          hashes,
-          source: "image",
-        });
-        return json({ submitted: count, batchId, source: "image" });
+        if (useBatch) {
+          try {
+            const { batchId, hashes, count } = await submitIdentBatch(toReident, true);
+            await setPendingAiIdentBatch({
+              batchId,
+              submittedAt: new Date().toISOString(),
+              hashes,
+              source: "image",
+            });
+            return json({ submitted: count, batchId, source: "image", provider });
+          } catch (error) {
+            if (!isQuotaError(error) || !providerConfigured("gemini")) throw error;
+            console.error("[cron] aiident: Claude sem créditos — failover Gemini (capa)", error);
+          }
+        }
+        return await runSync(toReident, true, "image");
       }
 
-      return json({ done: true, submitted: 0 });
+      return json({ done: true, submitted: 0, provider });
     }
 
     // Âncora de mercado (Discogs). Chunked como o enrich: cada chamada consulta até
