@@ -127,13 +127,14 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="flex min-h-screen flex-col">
+      {/* pb-12 reserva espaço para o rodapé fixo (Footer é `position: fixed`). */}
+      <div className="flex min-h-screen flex-col pb-12">
         <div className="flex-1">
           {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
           <Outlet />
         </div>
-        <Footer />
       </div>
+      <Footer />
       <Toaster richColors />
     </QueryClientProvider>
   );
