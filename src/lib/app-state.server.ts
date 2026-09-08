@@ -1,4 +1,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { OwnedFeedback } from "./wantlist-match";
+
+export type { OwnedFeedback };
 
 const BASELINE_KEY = "dashboard_baseline";
 const VERIFIED_HOUSES_KEY = "verified_houses";
@@ -6,6 +9,8 @@ const USER_INTERESTS_KEY = "user_interests";
 const AI_BATCH_KEY = "ai_batch";
 const AI_IDENT_BATCH_KEY = "ai_ident_batch";
 const AI_MODE_KEY = "ai_mode";
+const COLLECTION_LINKS_KEY = "collection_links";
+const COLLECTION_FEEDBACK_KEY = "collection_feedback";
 
 export type Baseline = { prices: Record<string, string>; seenAt: string | null };
 
@@ -121,6 +126,126 @@ export async function setUserInterests(items: string[]): Promise<{ savedAt: stri
     throw new Error(`Não foi possível gravar os interesses: ${error.message}`);
   }
   return { savedAt };
+}
+
+/**
+ * Relação manual lote → disco da Coleção ("já tenho"). Override EXPLÍCITO por lote:
+ * - `"<collectionItemId>"` → vínculo confirmado pelo usuário;
+ * - `false`               → "não tenho este disco" (sobrepõe o casamento automático);
+ * - chave ausente         → vale o casamento automático (+ aprendizado).
+ * `lotId = ${idLeilao}-${idPeca}`. Global, um único registro em `app_state`.
+ */
+export type CollectionLinks = Record<string, string | false>;
+
+export async function getCollectionLinks(): Promise<CollectionLinks> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("app_state")
+      .select("value")
+      .eq("key", COLLECTION_LINKS_KEY)
+      .maybeSingle();
+    if (error) throw error;
+    const value = data?.value;
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    const out: CollectionLinks = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v === false || typeof v === "string") out[k] = v;
+    }
+    return out;
+  } catch (error) {
+    console.error("[app-state] não foi possível ler os vínculos da coleção (usando vazio)", error);
+    return {};
+  }
+}
+
+async function saveCollectionLinks(links: CollectionLinks): Promise<{ savedAt: string }> {
+  const savedAt = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from("app_state")
+    .upsert(
+      { key: COLLECTION_LINKS_KEY, value: links, updated_at: savedAt },
+      { onConflict: "key" },
+    );
+  if (error) {
+    console.error("[app-state] não foi possível gravar os vínculos da coleção", error);
+    throw new Error(`Não foi possível gravar os vínculos da coleção: ${error.message}`);
+  }
+  return { savedAt };
+}
+
+/**
+ * Aplica UMA mudança no mapa de vínculos (read-modify-write): `null` apaga a chave
+ * (volta ao automático); string/false gravam o vínculo/rejeição.
+ */
+export async function setCollectionLink(
+  lotId: string,
+  value: string | false | null,
+): Promise<{ savedAt: string }> {
+  const links = await getCollectionLinks();
+  if (value === null) delete links[lotId];
+  else links[lotId] = value;
+  return saveCollectionLinks(links);
+}
+
+/**
+ * Aprendizado por assinatura: cada decisão (confirmar/negar) guarda como o disco
+ * apareceu no lote, para SUGERIR (nunca marcar sozinho) em outros lotes parecidos.
+ * O tipo `OwnedFeedback` vive em `wantlist-match` (client-safe) e é reexportado acima.
+ */
+export async function getCollectionFeedback(): Promise<OwnedFeedback[]> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("app_state")
+      .select("value")
+      .eq("key", COLLECTION_FEEDBACK_KEY)
+      .maybeSingle();
+    if (error) throw error;
+    const value = data?.value;
+    if (!Array.isArray(value)) return [];
+    return (value as unknown[]).filter(
+      (e): e is OwnedFeedback =>
+        !!e &&
+        typeof e === "object" &&
+        typeof (e as OwnedFeedback).lotId === "string" &&
+        typeof (e as OwnedFeedback).itemId === "string" &&
+        ((e as OwnedFeedback).verdict === "pos" || (e as OwnedFeedback).verdict === "neg") &&
+        Array.isArray((e as OwnedFeedback).artist) &&
+        Array.isArray((e as OwnedFeedback).album),
+    );
+  } catch (error) {
+    console.error("[app-state] não foi possível ler o feedback da coleção (usando vazio)", error);
+    return [];
+  }
+}
+
+async function saveCollectionFeedback(entries: OwnedFeedback[]): Promise<void> {
+  const savedAt = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from("app_state")
+    .upsert(
+      { key: COLLECTION_FEEDBACK_KEY, value: entries, updated_at: savedAt },
+      { onConflict: "key" },
+    );
+  if (error) {
+    console.error("[app-state] não foi possível gravar o feedback da coleção", error);
+    throw new Error(`Não foi possível gravar o feedback da coleção: ${error.message}`);
+  }
+}
+
+/** Acrescenta uma entrada de aprendizado, deduplicando por `lotId`+`verdict`. */
+export async function addCollectionFeedback(entry: OwnedFeedback): Promise<void> {
+  const entries = (await getCollectionFeedback()).filter(
+    (e) => !(e.lotId === entry.lotId && e.verdict === entry.verdict),
+  );
+  entries.push(entry);
+  await saveCollectionFeedback(entries);
+}
+
+/** Remove todo o aprendizado originado de um lote (usado no "reativar automático"). */
+export async function removeCollectionFeedbackByLot(lotId: string): Promise<void> {
+  const entries = await getCollectionFeedback();
+  const kept = entries.filter((e) => e.lotId !== lotId);
+  if (kept.length !== entries.length) await saveCollectionFeedback(kept);
 }
 
 /**

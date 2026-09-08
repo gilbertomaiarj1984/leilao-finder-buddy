@@ -184,6 +184,82 @@ export const setUserInterests = createServerFn({ method: "POST" })
     return await setUserInterests(data.items);
   });
 
+/** Vínculos manuais lote → disco da Coleção ("já tenho"). Global. */
+export const getCollectionLinks = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getCollectionLinks } = await import("./app-state.server");
+    return await getCollectionLinks();
+  });
+
+/** Aprendizado por assinatura (feedback das decisões). Global. */
+export const getCollectionFeedback = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getCollectionFeedback } = await import("./app-state.server");
+    return await getCollectionFeedback();
+  });
+
+/**
+ * Aplica UMA decisão de relação lote↔Coleção e alimenta o aprendizado numa tacada:
+ * - `value` = itemId (vincular) | false ("não tenho") | null (reativar automático);
+ * - `sig` = como o disco apareceu no lote (para o aprendizado por assinatura).
+ * Vincular → feedback `pos`; "não tenho" → feedback `neg`; reativar → remove o
+ * feedback originado deste lote.
+ */
+export const applyCollectionDecision = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      lotId?: string;
+      value?: string | false | null;
+      itemId?: string | null;
+      sig?: { artist?: string[]; album?: string[]; year?: number | null };
+    }) => {
+      if (!input?.lotId || typeof input.lotId !== "string") throw new Error("lotId obrigatório");
+      const value =
+        input.value === false || input.value === null || typeof input.value === "string"
+          ? input.value
+          : null;
+      const toStr = (a: unknown): string[] =>
+        Array.isArray(a) ? a.filter((s): s is string => typeof s === "string") : [];
+      return {
+        lotId: input.lotId,
+        value: value as string | false | null,
+        itemId: typeof input.itemId === "string" ? input.itemId : null,
+        sig: {
+          artist: toStr(input.sig?.artist),
+          album: toStr(input.sig?.album),
+          year: typeof input.sig?.year === "number" ? input.sig!.year : null,
+        },
+      };
+    },
+  )
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setCollectionLink, addCollectionFeedback, removeCollectionFeedbackByLot } =
+      await import("./app-state.server");
+    const res = await setCollectionLink(data.lotId, data.value);
+    if (data.value === null) {
+      await removeCollectionFeedbackByLot(data.lotId);
+    } else if (data.itemId) {
+      await addCollectionFeedback({
+        lotId: data.lotId,
+        itemId: data.itemId,
+        verdict: data.value === false ? "neg" : "pos",
+        artist: data.sig.artist,
+        album: data.sig.album,
+        year: data.sig.year,
+      });
+    }
+    return res;
+  });
+
 /** Sondagem: rascunho de obras que o usuário caça (wantlist_items). Best-effort: [] em erro. */
 export const getWantlist = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

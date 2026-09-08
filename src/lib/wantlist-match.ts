@@ -374,3 +374,95 @@ export function ownedMatchForLot(cands: OwnedCandidate[], id: LotIdentity): Owne
   }
   return best;
 }
+
+// ---------------------------------------------------------------------------
+// Relação manual + APRENDIZADO ("já tenho na Coleção")
+// ---------------------------------------------------------------------------
+
+/** Como um disco apareceu num lote (gravado no feedback para SUGERIR em outros lotes). */
+export type OwnedSignature = { artist: string[]; album: string[]; year: number | null };
+
+/** Extrai a assinatura de um lote: tokens de artista + tokens do nome do disco + ano. */
+export function ownedSignatureFromLot(parts: {
+  artist?: string | null;
+  album?: string | null; // nome do disco (álbum da IA já resolvido, ou o da coleção)
+  title?: string | null;
+  year?: number | null;
+}): OwnedSignature {
+  const artist = significantTokens(parts.artist ?? "");
+  const artistSet = new Set(artist);
+  const album = significantTokens(parts.album || parts.title || "").filter(
+    (t) => !artistSet.has(t),
+  );
+  return { artist, album, year: parts.year ?? null };
+}
+
+/** Uma decisão aprendida: como o disco `itemId` apareceu num lote, e o veredito. */
+export type OwnedFeedback = {
+  lotId: string;
+  itemId: string;
+  verdict: "pos" | "neg";
+  artist: string[];
+  album: string[];
+  year: number | null;
+};
+
+/** Vínculos explícitos por lote: itemId (vincular) | false ("não tenho"). */
+export type CollectionLinks = Record<string, string | false>;
+
+/** Estado efetivo de um lote quanto à Coleção (a UI decide cor/painel a partir daqui). */
+export type OwnedResolution =
+  | { kind: "none" } // cinza
+  | { kind: "rejected" } // cinza ("não tenho")
+  | { kind: "linked"; itemId: string } // roxo (manual)
+  | { kind: "auto"; hit: OwnedHit } // roxo (≥80%) / roxo+? (60–80%)
+  | { kind: "suggested"; itemId: string; score: number }; // roxo+? (aprendizado)
+
+/** O lote `id` "parece" o disco descrito na assinatura do feedback? (tolerante, p/ sugerir). */
+function feedbackMatches(fb: OwnedFeedback, id: LotIdentity): boolean {
+  if (!fb.artist.length || !fb.album.length) return false;
+  if (coverage(fb.artist, id, 4) < OWNED_ARTIST_MIN) return false; // artista (tolera grafia)
+  if (coverage(fb.album, id) < 0.5) return false; // nome do disco
+  // Ano (quando ambos conhecidos): coletâneas do mesmo tipo em anos diferentes NÃO casam.
+  if (
+    fb.year != null &&
+    id.years.size > 0 &&
+    !(id.years.has(fb.year) || id.years.has(fb.year - 1) || id.years.has(fb.year + 1))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Resolve o estado de um lote combinando: override explícito (vence), casamento
+ * automático e aprendizado (só SUGERE — "?"; nunca confirma sozinho nem esconde).
+ */
+export function resolveOwned(
+  lotId: string,
+  links: CollectionLinks,
+  autoHit: OwnedHit | null,
+  feedback: OwnedFeedback[],
+  id: LotIdentity,
+): OwnedResolution {
+  const ov = links[lotId];
+  if (ov === false) return { kind: "rejected" };
+  if (typeof ov === "string") return { kind: "linked", itemId: ov };
+
+  if (autoHit) {
+    // Aprendizado NEGATIVO: já disseram que este disco não é deste tipo de lote → rebaixa p/ "?".
+    const negated = feedback.some(
+      (f) => f.verdict === "neg" && f.itemId === autoHit.id && feedbackMatches(f, id),
+    );
+    if (negated) {
+      return { kind: "suggested", itemId: autoHit.id, score: Math.min(autoHit.score, 0.7) };
+    }
+    return { kind: "auto", hit: autoHit };
+  }
+
+  // Aprendizado POSITIVO: o automático não pegou, mas já confirmaram algo parecido → sugere "?".
+  const pos = feedback.find((f) => f.verdict === "pos" && feedbackMatches(f, id));
+  if (pos) return { kind: "suggested", itemId: pos.itemId, score: 0.7 };
+
+  return { kind: "none" };
+}
