@@ -1,7 +1,15 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { OwnedFeedback } from "./wantlist-match";
 
-export type { OwnedFeedback };
+// Definido localmente (mesma forma do `OwnedFeedback` de `wantlist-match`) para o módulo do
+// SERVIDOR não depender de um módulo client-safe — evita surpresas de bundling no servidor.
+export type OwnedFeedback = {
+  lotId: string;
+  itemId: string;
+  verdict: "pos" | "neg";
+  artist: string[];
+  album: string[];
+  year: number | null;
+};
 
 const BASELINE_KEY = "dashboard_baseline";
 const VERIFIED_HOUSES_KEY = "verified_houses";
@@ -190,7 +198,6 @@ export async function setCollectionLink(
 /**
  * Aprendizado por assinatura: cada decisão (confirmar/negar) guarda como o disco
  * apareceu no lote, para SUGERIR (nunca marcar sozinho) em outros lotes parecidos.
- * O tipo `OwnedFeedback` vive em `wantlist-match` (client-safe) e é reexportado acima.
  */
 export async function getCollectionFeedback(): Promise<OwnedFeedback[]> {
   try {
