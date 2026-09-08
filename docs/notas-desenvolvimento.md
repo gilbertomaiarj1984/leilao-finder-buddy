@@ -501,7 +501,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.21.0 | Coleção: botão em massa passa a reprocessar **só os não-prontos** (remove "Re-normalizar tudo") + **ícone de reprocessar por card** (`RotateCw` → `reprocessCollectionItem`/`reidentifyCollectionItem`) que refaz um disco pela IA e **sobrescreve** | — |
 | v0.22.0 | Coleção: descritivo da IA rico/longo (momento histórico + faixa a faixa, baseado no nome do álbum) e **rolável** no card; grading (mídia/capa) como `Select` (NM/EX/VG+/VG-/G+/G-); **tags editáveis no card** + geradas pela IA (`mergeTags`); remove "Título original" do formulário | #86 |
 | v0.22.1 | Coleção: tags da IA restritas a **estilo/gênero musical** (sem época/artista/país/formato) | — |
-| v0.23.0 | Home: **ícone roxo "já tenho na Coleção"** no card (abaixo da nota, à direita) quando o lote casa com `collection_items` — casamento por artista/álbum/ano (`ownedMatchForLot`) em **duas faixas**: ≥80% confiante, 50–80% com **"?"** (incerto); peça exata por `lot_id` | — |
+| v0.23.0 | Home: **ícone roxo "já tenho na Coleção"** no card (abaixo da nota, à direita) quando o lote casa com `collection_items` — casamento por artista/álbum/ano (`ownedMatchForLot`) em **duas faixas**: ≥80% confiante, 50–80% com **"?"** (incerto); peça exata por `lot_id` | #88 |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
