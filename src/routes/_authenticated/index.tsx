@@ -79,8 +79,11 @@ import {
   setVerifiedHouses,
 } from "@/lib/leiloesbr.functions";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
+import { getCollection } from "@/lib/collection.functions";
+import type { CollectionItem } from "@/lib/collection.server";
 import {
   auctionFinished,
+  COMPILATION_LABEL,
   isDiscBundle,
   LOTE_LABEL,
   normalizeForMatch,
@@ -89,6 +92,7 @@ import {
   UNCLASSIFIED_LABEL,
   type VinylLot,
 } from "@/lib/vinyl-parse";
+import { bestWantForLot, lotIdentity, wantCandidate } from "@/lib/wantlist-match";
 
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({
@@ -269,6 +273,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const fetchAiMode = useServerFn(getAiMode);
   const runSetAiMode = useServerFn(setAiMode);
   const runAnalyze = useServerFn(analyzeOnDemand);
+  const fetchCollection = useServerFn(getCollection);
 
   const lots = useQuery({
     ...lotsQuery,
@@ -426,6 +431,78 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     return { ...base, matchesInterests: matchesInterest(lot.title ?? "") };
   };
   const marketFor = (lot: { id: string }): LotMarket | undefined => marketById.get(lot.id);
+
+  // Coleção do usuário: discos que ele JÁ possui (`collection_items`). Usada só para marcar
+  // no card, com um ícone roxo, os lotes que ele já tem — evitando arrematar duplicado. Mesma
+  // query key da página Coleção → compartilha o cache (1 GET leve, base pequena, single-user).
+  const collectionQuery = useQuery<CollectionItem[]>({
+    queryKey: ["collection"] as const,
+    queryFn: () => fetchCollection() as Promise<CollectionItem[]>,
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  // Candidatos de casamento a partir da coleção (mesmo motor da Sondagem, `wantlist-match`).
+  // Ignora buckets ruidosos (Lote/Coletâneas/Não classificados) e artista vazio, que gerariam
+  // tokens fracos e falsos positivos. `work` = artista + álbum (cai para o título sem álbum).
+  const ownedCands = useMemo(
+    () =>
+      (collectionQuery.data ?? [])
+        .filter(
+          (it) =>
+            it.artist &&
+            it.artist !== LOTE_LABEL &&
+            it.artist !== COMPILATION_LABEL &&
+            it.artist !== UNCLASSIFIED_LABEL,
+        )
+        .map((it) =>
+          wantCandidate({
+            id: it.id,
+            work: [it.artist, it.album || it.title].filter(Boolean).join(" "),
+            year: it.year,
+          }),
+        ),
+    [collectionQuery.data],
+  );
+  // `lot_id` das peças EXATAS já arrematadas (casamento 100% preciso, sem passar pelo score).
+  const ownedLotIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const it of collectionQuery.data ?? []) if (it.lotId) set.add(it.lotId);
+    return set;
+  }, [collectionQuery.data]);
+  // Um match por lote: a peça exata (ownedLotIds) OU casamento probabilístico ≥ 80% contra a
+  // coleção (mesma construção de identidade do `wantByLot` da Análise). Memoizado — O(lotes ×
+  // coleção), mesma ordem do casamento da Sondagem que já roda.
+  const ownedById = useMemo(() => {
+    const map = new Map<string, { work: string; score: number }>();
+    for (const lot of lots.data?.lots ?? []) {
+      if (ownedLotIds.has(lot.id)) {
+        map.set(lot.id, { work: "", score: 1 });
+        continue;
+      }
+      if (!ownedCands.length) continue;
+      // Artista efetivo (mesma regra de `effectiveArtist`), inline para manter as deps limpas.
+      const parsedArtist = parseAiAlbum(albumById.get(lot.id) ?? null).artist;
+      const artist =
+        isDiscBundle(lot.title ?? "") || lot.artist === LOTE_LABEL
+          ? LOTE_LABEL
+          : parsedArtist
+            ? titleCase(parsedArtist)
+            : lot.artist;
+      const market = marketById.get(lot.id);
+      const identity = lotIdentity({
+        title: lot.title,
+        artist,
+        album: albumById.get(lot.id) ?? null,
+        marketTitle: market?.releaseTitle ?? null,
+        marketYear: market?.year ?? null,
+      });
+      const best = bestWantForLot(ownedCands, identity);
+      if (best) map.set(lot.id, { work: best.cand.work, score: best.score });
+    }
+    return map;
+  }, [ownedCands, ownedLotIds, lots.data, albumById, marketById]);
+  const ownedFor = (lot: { id: string }): { work: string; score: number } | null =>
+    ownedById.get(lot.id) ?? null;
 
   // Casas verificadas: fonte da verdade é o servidor (app_state). O localStorage é só
   // um cache para pintar a tela na hora, sem esperar a rede.
@@ -1129,6 +1206,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   ai={aiFor(lot)}
                                   market={marketFor(lot)}
                                   album={albumFor(lot)}
+                                  owned={ownedFor(lot)}
                                   onEditTags={editTags(lot.id)}
                                   bidStatus={bidStatusById.get(lot.idPeca)}
                                   onToggle={() =>
@@ -1207,6 +1285,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                 ai={aiFor(lot)}
                                 market={marketFor(lot)}
                                 album={albumFor(lot)}
+                                owned={ownedFor(lot)}
                                 onEditTags={editTags(lot.id)}
                                 bidStatus={bidStatusById.get(lot.idPeca)}
                                 onToggle={() =>
@@ -1376,6 +1455,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                             ai={aiFor(lot)}
                                             market={marketFor(lot)}
                                             album={albumFor(lot)}
+                                            owned={ownedFor(lot)}
                                             onEditTags={editTags(lot.id)}
                                             bidStatus={bidStatusById.get(lot.idPeca)}
                                             onToggle={() =>
@@ -1536,6 +1616,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                       ai={aiFor(lot)}
                                       market={marketFor(lot)}
                                       album={albumFor(lot)}
+                                      owned={ownedFor(lot)}
                                       onEditTags={editTags(lot.id)}
                                       bidStatus={bidStatusById.get(lot.idPeca)}
                                       onToggle={() =>
