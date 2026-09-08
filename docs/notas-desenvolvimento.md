@@ -570,7 +570,8 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.24.2        | Notas: relação lote↔Coleção + aprendizado **validada em produção**; registrada a lição do 404 (server não importa módulo client-safe)                                                                                                                                                                                                                                                                            | #93     |
 | v0.25.0        | **Descontinuado o "Painel de mudanças"** (`/dashboard`): removida a rota, o link "Painel" no header, as server functions `getDashboardBaseline`/`markDashboardSeen` e os helpers `getBaseline`/`markSeen`/`Baseline` — limpeza de código                                                                                                                                                                         | —       |
 | v0.26.0        | Coleção: **importação em massa por texto** (`BulkImportDialog`, `parseCollectionBulkText` em `collection-bulk.ts`, server `importCollectionText`) — JSON gerado por IA (prompt copiável `GEMINI_IMPORT_PROMPT`) ou `Artista - Álbum (Ano)` por linha; pula duplicados por artista+álbum; **câmera do celular** no upload de foto por disco (`capture="environment"`) — foto em massa segue pendente              | —       |
-| v0.27.0        | **IA multi-provedor**: Gemini (Google) como alternativa ao Claude. Camada plugável `ai-provider(.server)` (adaptador Anthropic via SDK, Gemini via REST), **failover** automático por quota/sem créditos; provedor **padrão** persistido (`app_state.ai_provider`, seletor no header); **diálogo "qual IA usar?"** antes de cada análise/identificação; cron roda Gemini **síncrono** (Claude segue com Batches) | —       |
+| v0.27.0        | **IA multi-provedor**: Gemini (Google) como alternativa ao Claude. Camada plugável `ai-provider(.server)` (adaptador Anthropic via SDK, Gemini via REST), **failover** automático por quota/sem créditos; provedor **padrão** persistido (`app_state.ai_provider`, seletor no header); **diálogo "qual IA usar?"** antes de cada análise/identificação; cron roda Gemini **síncrono** (Claude segue com Batches) | #96     |
+| v0.27.1        | Docs: corrige onde cadastrar as chaves de IA — **só nas env da Vercel** (o `refresh.yml` usa apenas `APP_URL`+`CRON_TOKEN`, sem secrets de IA no GitHub); registra o custo do `gemini-flash-latest` (~US$0,75/US$3,75 por 1M tok, mais barato que o Haiku)                                                                                                                                                       | —       |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
@@ -599,9 +600,10 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 4. **Aplicar o `setup.sql`** para as tabelas/colunas mais recentes (`lot_ident`, colunas BR de
    `lot_market`, **`collection_items`** — inclui a coluna nova **`description`** e o **bucket de
    Storage `collection`**, ambos idempotentes no `setup.sql`) caso ainda não tenham sido
-   aplicadas; garantir `ANTHROPIC_API_KEY` e `DISCOGS_TOKEN` configurados (GitHub secret + env
-   Vercel). **Upload de foto** da Coleção exige o bucket `collection` criado (re-rodar o
-   `setup.sql` cria/torna público).
+   aplicadas; garantir `ANTHROPIC_API_KEY` e `DISCOGS_TOKEN` configurados **nas env da Vercel**
+   (Production) — são lidos pelo servidor, inclusive no cron; **não** são secrets do GitHub (o
+   `refresh.yml` só usa `APP_URL` + `CRON_TOKEN`). **Upload de foto** da Coleção exige o bucket
+   `collection` criado (re-rodar o `setup.sql` cria/torna público).
 5. **Coleção:** aplicar `collection_items` no banco; conferir o botão **"Atualizar coleção"**
    (varredura de `conta_site.asp?l=6`) — se algum campo vier vazio, capturar 1 card do HTML de
    "Minhas compras" (F12) e ajustar os regexes de `leiloesbr-purchases.server.ts`. Confirmar que
@@ -611,12 +613,15 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
    (`updated>0`, nº de lote preenchendo), `aiident`/`aieval` (`submitted`/`collected>0`),
    `market` (`updated>0`, inclusive lotes só identificados). Rodar mais vezes melhora o
    casamento da sondagem (mais `album`/ano → mais sinais no `lotIdentity`).
-7. **Gemini (v0.27.0):** cadastrar **`GEMINI_API_KEY`** na Vercel (Production) e como **secret
-   no GitHub** (para o `refresh.yml`, caso o provedor padrão seja Gemini). Testar o seletor de
-   provedor no header e o diálogo "qual IA usar?" na home e na Coleção; validar o **failover**
-   (deixar um provedor sem crédito e conferir o toast + a troca). Opcional: `GEMINI_MODEL` /
-   `AI_PROVIDER` (padrão via env). Confirmar que a **visão** (capa) funciona no Gemini (a imagem
-   vai inline/base64) na avaliação de lotes.
+7. **Gemini (v0.27.0):** cadastrar **`GEMINI_API_KEY`** **só nas env da Vercel** (Production) e
+   **Redeploy** — o cron lê a chave do servidor da Vercel, então **NÃO** precisa de secret no
+   GitHub (o `refresh.yml` só usa `APP_URL` + `CRON_TOKEN`). Testar o seletor de provedor no
+   header e o diálogo "qual IA usar?" na home e na Coleção; validar o **failover** (deixar um
+   provedor sem crédito e conferir o toast + a troca). Opcional: `GEMINI_MODEL` / `AI_PROVIDER`
+   (padrão via env). Confirmar que a **visão** (capa) funciona no Gemini (imagem inline/base64).
+   **Custo:** `gemini-flash-latest` ≈ US$0,75/US$3,75 por 1M tok in/out (mais barato que o Haiku
+   4.5, ~US$1/US$5); o alias `-latest` acompanha o Flash mais novo (pode mudar) — para fixar,
+   usar `GEMINI_MODEL`.
    **Concluído recentemente:** `wantlist_items` aplicada em produção (2026-09-03; importar/editar/
    marcar adquirido gravam sem erro). Secrets do cron (`APP_URL`, `CRON_TOKEN`) e 1ª execução do
    `refresh.yml` no ar. Revisão/refatoração pós-Lovable (lint/format, remoção de morto, DRY).
