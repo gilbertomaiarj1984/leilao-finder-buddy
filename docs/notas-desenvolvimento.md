@@ -233,7 +233,15 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   Anthropic via `@anthropic-ai/sdk` (`messages.create`); Gemini via **REST**
   (`generativelanguage.googleapis.com/v1beta`, header `x-goog-api-key`, sem dep nova) — como o
   Gemini **não** busca URL de imagem, a capa é baixada e enviada **inline (base64)**; usa
-  `generationConfig.thinkingConfig.thinkingBudget:0` (sem "thinking") + `responseMimeType:json`.
+  `responseMimeType:json` e `thinkingConfig.thinkingBudget:0` (tenta desligar o "thinking").
+  - ⚠️ **Gemini "não retorna nada" (corrigido v0.28.1):** o `thinkingBudget:0` NÃO é confiável
+    no alias `gemini-flash-latest` (hoje um flash mais novo) — o modelo gasta o orçamento de
+    saída "pensando" e estoura o teto **antes de emitir a resposta** (`finishReason:MAX_TOKENS`
+    com `parts` vazio), o que virava `""` → parse `null` → app tratava como "nada a fazer"
+    (falso "já avaliado" / "nada a mudar"). Correções em `runGemini`: (1) **folga de orçamento**
+    `maxOutputTokens = max(req.maxTokens + 4096, 8192)`; (2) **não devolver `""` em silêncio** —
+    inspeciona `candidates[0].finishReason` / `promptFeedback.blockReason` e **lança erro** com o
+    motivo real. O descritivo da coleção subiu para `maxTokens:4096` (`buildCollectionRequest`).
 - **Failover automático por quota/sem créditos** (`isQuotaError`: 429/402/"credit balance"/…):
   o provedor pedido falha → tenta o outro configurado; `switched`/`served` sobem à UI (toast
   "X sem créditos — usei Y"). Erros que não são de quota propagam (tratados por-item).
@@ -573,6 +581,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.27.0        | **IA multi-provedor**: Gemini (Google) como alternativa ao Claude. Camada plugável `ai-provider(.server)` (adaptador Anthropic via SDK, Gemini via REST), **failover** automático por quota/sem créditos; provedor **padrão** persistido (`app_state.ai_provider`, seletor no header); **diálogo "qual IA usar?"** antes de cada análise/identificação; cron roda Gemini **síncrono** (Claude segue com Batches) | #96     |
 | v0.27.1        | Docs: corrige onde cadastrar as chaves de IA — **só nas env da Vercel** (o `refresh.yml` usa apenas `APP_URL`+`CRON_TOKEN`, sem secrets de IA no GitHub); registra o custo do `gemini-flash-latest` (~US$0,75/US$3,75 por 1M tok, mais barato que o Haiku)                                                                                                                                                       | —       |
 | v0.28.0        | **Rodapé fixo/persistente** (`Footer.tsx`): a versão fica sempre visível na base da janela (`position: fixed`, `z-40`, fundo translúcido com `backdrop-blur`), sem precisar rolar até o fim; `__root.tsx` reserva o espaço com `pb-12` e move o `<Footer/>` para fora do fluxo do conteúdo                                                                                                                        | —       |
+| v0.28.1        | **Correção Gemini "não retorna nada"** na Coleção e na avaliação de leilão: `runGemini` ganha folga de `maxOutputTokens` (o `thinkingBudget:0` não era honrado → `MAX_TOKENS` com resposta vazia) e passa a **lançar erro** com `finishReason`/`blockReason` em vez de devolver `""` em silêncio; descritivo da coleção sobe p/ `maxTokens:4096`. `SyncOutcome` ganha `failed`/`error`, propagados até os toasts — "a IA falhou" deixa de virar o falso "já avaliado" / "nada a mudar"                                                    | —       |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.

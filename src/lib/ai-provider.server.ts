@@ -180,14 +180,21 @@ async function runGemini(req: AiRequest, model: string): Promise<string> {
   }
   parts.push({ text: req.text });
 
+  // Folga de orçamento: o `thinkingBudget:0` abaixo TENTA desligar o raciocínio, mas o alias
+  // `gemini-flash-latest` (hoje um flash mais novo) nem sempre o honra e gasta o orçamento de
+  // saída "pensando" — estourando o teto ANTES de emitir a resposta (`finishReason:MAX_TOKENS`
+  // com parts vazio). Por isso damos uma margem generosa acima do que o chamador pediu; o
+  // conteúdo real ainda é cortado a jusante (ex.: descritivo da coleção a 6000 chars).
+  const maxOutputTokens = Math.max(req.maxTokens + 4096, 8192);
+
   const body: Record<string, unknown> = {
     systemInstruction: { parts: [{ text: req.system }] },
     contents: [{ role: "user", parts }],
     generationConfig: {
-      maxOutputTokens: req.maxTokens,
+      maxOutputTokens,
       temperature: 0.2,
-      // Desliga o "thinking" (modelos 2.5): a resposta não é consumida por tokens de
-      // raciocínio (evita saída vazia quando maxOutputTokens é pequeno) e sai mais barata.
+      // Tenta desligar o "thinking" (modelos 2.5) — best-effort; não confiamos só nisso, daí a
+      // folga de `maxOutputTokens` acima.
       thinkingConfig: { thinkingBudget: 0 },
       ...(req.json ? { responseMimeType: "application/json" } : {}),
     },
@@ -210,11 +217,24 @@ async function runGemini(req: AiRequest, model: string): Promise<string> {
   }
 
   const data = (await resp.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>;
+    promptFeedback?: { blockReason?: string };
   };
-  const out = (data.candidates?.[0]?.content?.parts ?? [])
+  const candidate = data.candidates?.[0];
+  const out = (candidate?.content?.parts ?? [])
     .map((p) => (typeof p.text === "string" ? p.text : ""))
     .join("");
+
+  // NÃO devolver "" em silêncio: um texto vazio vira `null` no parse e o app o trata como
+  // "nada a fazer" (falso "já avaliado"/"nada a mudar"). Se o Gemini cortou a geração
+  // (`MAX_TOKENS`, `SAFETY`, …) ou bloqueou o prompt, lançamos um erro com o motivo real —
+  // que sobe aos logs e ao toast do usuário.
+  if (!out.trim()) {
+    const finish = candidate?.finishReason;
+    const block = data.promptFeedback?.blockReason;
+    const why = block ? `blockReason=${block}` : `finishReason=${finish ?? "desconhecido"}`;
+    throw new Error(`Gemini não retornou texto (${why})`);
+  }
   return out;
 }
 

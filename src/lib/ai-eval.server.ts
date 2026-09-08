@@ -414,8 +414,16 @@ const SYNC_CONCURRENCY = 4;
 /**
  * Resultado de uma passada SÍNCRONA: as linhas + qual provedor de fato atendeu e se houve
  * **failover** (troca por falta de créditos). A UI usa `served`/`switched` para avisar.
+ * `failed` = quantos itens a IA NÃO conseguiu processar (erro/vazio); `error` = a 1ª mensagem
+ * de erro, para o chamador distinguir "a IA falhou" de "não havia nada a fazer" e mostrá-la.
  */
-export type SyncOutcome<T> = { rows: T[]; served: AiProvider | null; switched: boolean };
+export type SyncOutcome<T> = {
+  rows: T[];
+  served: AiProvider | null;
+  switched: boolean;
+  failed: number;
+  error: string | null;
+};
 
 /** Acumula, entre os workers concorrentes, o provedor que atendeu e se houve troca. */
 class ProviderTracker {
@@ -444,9 +452,11 @@ export async function evalLotsSync(
   lots: EvalLot[],
   provider: AiProvider,
 ): Promise<SyncOutcome<LotAiRow>> {
-  if (!lots.length) return { rows: [], served: null, switched: false };
+  if (!lots.length) return { rows: [], served: null, switched: false, failed: 0, error: null };
   const rows: LotAiRow[] = [];
   const tracker = new ProviderTracker();
+  let failed = 0;
+  let firstError: string | null = null;
   let cursor = 0;
 
   const worker = async () => {
@@ -473,6 +483,8 @@ export async function evalLotsSync(
           });
         }
       } catch (error) {
+        failed += 1;
+        if (!firstError) firstError = (error as Error)?.message || String(error);
         console.error(`[ai-eval] falha ao avaliar o lote ${lot.id}`, error);
       }
     }
@@ -481,7 +493,13 @@ export async function evalLotsSync(
   await Promise.all(
     Array.from({ length: Math.min(SYNC_CONCURRENCY, lots.length) }, () => worker()),
   );
-  return { rows, served: tracker.served(provider), switched: tracker.switched };
+  return {
+    rows,
+    served: tracker.served(provider),
+    switched: tracker.switched,
+    failed,
+    error: firstError,
+  };
 }
 
 /** Resultado da identificação síncrona por lote. */
@@ -541,10 +559,12 @@ export async function identLotsSyncRows(
   withImage: boolean,
   provider: AiProvider,
 ): Promise<SyncOutcome<LotIdentRow>> {
-  if (!lots.length) return { rows: [], served: null, switched: false };
+  if (!lots.length) return { rows: [], served: null, switched: false, failed: 0, error: null };
   const rows: LotIdentRow[] = [];
   const tracker = new ProviderTracker();
   const source: "title" | "image" = withImage ? "image" : "title";
+  let failed = 0;
+  let firstError: string | null = null;
   let cursor = 0;
 
   const worker = async () => {
@@ -569,6 +589,8 @@ export async function identLotsSyncRows(
           });
         }
       } catch (error) {
+        failed += 1;
+        if (!firstError) firstError = (error as Error)?.message || String(error);
         console.error(`[ai-eval] falha ao identificar (rows) o lote ${lot.id}`, error);
       }
     }
@@ -577,7 +599,13 @@ export async function identLotsSyncRows(
   await Promise.all(
     Array.from({ length: Math.min(SYNC_CONCURRENCY, lots.length) }, () => worker()),
   );
-  return { rows, served: tracker.served(provider), switched: tracker.switched };
+  return {
+    rows,
+    served: tracker.served(provider),
+    switched: tracker.switched,
+    failed,
+    error: firstError,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -648,8 +676,9 @@ export function buildCollectionIdentPrompt(input: CollectionIdentInput): string 
 export function buildCollectionRequest(input: CollectionIdentInput): AiRequest {
   return {
     system: COLLECTION_IDENT_SYSTEM_PROMPT,
-    // Descritivo longo (momento histórico + panorama + faixa a faixa) precisa de folga.
-    maxTokens: 2000,
+    // Descritivo longo (momento histórico + panorama + faixa a faixa) precisa de folga para o
+    // JSON COMPLETAR — 2000 truncava e o Gemini (modo JSON) devolvia vazio no `MAX_TOKENS`.
+    maxTokens: 4096,
     text: buildCollectionIdentPrompt(input),
     image: null,
     json: true,
@@ -718,9 +747,11 @@ export async function identCollectionSync(
   inputs: CollectionIdentInput[],
   provider: AiProvider,
 ): Promise<SyncOutcome<CollectionIdentResult>> {
-  if (!inputs.length) return { rows: [], served: null, switched: false };
+  if (!inputs.length) return { rows: [], served: null, switched: false, failed: 0, error: null };
   const rows: CollectionIdentResult[] = [];
   const tracker = new ProviderTracker();
+  let failed = 0;
+  let firstError: string | null = null;
   let cursor = 0;
 
   const worker = async () => {
@@ -735,6 +766,8 @@ export async function identCollectionSync(
         const parsed = parseCollectionIdentObject(r.text);
         if (parsed) rows.push({ id: input.id, ...parsed });
       } catch (error) {
+        failed += 1;
+        if (!firstError) firstError = (error as Error)?.message || String(error);
         console.error(`[ai-eval] falha ao identificar/descrever o disco ${input.id}`, error);
       }
     }
@@ -743,5 +776,11 @@ export async function identCollectionSync(
   await Promise.all(
     Array.from({ length: Math.min(SYNC_CONCURRENCY, inputs.length) }, () => worker()),
   );
-  return { rows, served: tracker.served(provider), switched: tracker.switched };
+  return {
+    rows,
+    served: tracker.served(provider),
+    switched: tracker.switched,
+    failed,
+    error: firstError,
+  };
 }

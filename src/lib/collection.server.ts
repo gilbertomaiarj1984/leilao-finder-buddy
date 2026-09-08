@@ -498,6 +498,10 @@ export type ReidentifyResult = {
   // Provedor de IA que atendeu esta passada e se houve failover (troca por falta de créditos).
   served: AiProvider | null;
   switched: boolean;
+  // Quantos discos a IA NÃO conseguiu processar (vazio/erro) e o motivo — a UI distingue
+  // "a IA falhou" de "nada para atualizar".
+  failed: number;
+  error: string | null;
 };
 
 /** Um disco "ainda não identificado": sem artista, ou caído no balde de não classificados. */
@@ -579,6 +583,8 @@ export async function reidentifyCollection(
       done: true,
       served: null,
       switched: false,
+      failed: 0,
+      error: null,
     };
   }
 
@@ -599,6 +605,8 @@ export async function reidentifyCollection(
     rows: results,
     served,
     switched,
+    failed,
+    error: aiError,
   } = await identCollectionSync(
     aiNeeded.map((i) => ({
       id: i.id,
@@ -652,6 +660,8 @@ export async function reidentifyCollection(
     done: scan >= total,
     served,
     switched,
+    failed,
+    error: aiError,
   };
 }
 
@@ -665,7 +675,13 @@ export async function reidentifyCollection(
 export async function reidentifyCollectionItem(
   id: string,
   provider: AiProvider,
-): Promise<{ updated: boolean; served: AiProvider | null; switched: boolean }> {
+): Promise<{
+  updated: boolean;
+  served: AiProvider | null;
+  switched: boolean;
+  // Motivo quando a IA NÃO retornou nada (vazio/erro) — a UI distingue de "nada a mudar".
+  error: string | null;
+}> {
   const { aiConfigured, identCollectionSync } = await import("./ai-eval.server");
   if (!aiConfigured()) {
     throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
@@ -675,19 +691,21 @@ export async function reidentifyCollectionItem(
 
   // Conjuntos ("lote com N discos") → categoria "Lote" pelo título, sem gastar IA.
   if (isDiscBundle(item.title)) {
-    if (item.artist === LOTE_LABEL) return { updated: false, served: null, switched: false };
+    if (item.artist === LOTE_LABEL)
+      return { updated: false, served: null, switched: false, error: null };
     const { error } = await supabaseAdmin
       .from("collection_items")
       .update({ artist: LOTE_LABEL })
       .eq("id", id);
     if (error) throw new Error(`Não foi possível gravar: ${error.message}`);
-    return { updated: true, served: null, switched: false };
+    return { updated: true, served: null, switched: false, error: null };
   }
 
   const {
     rows: [r],
     served,
     switched,
+    error: aiError,
   } = await identCollectionSync(
     [
       {
@@ -715,10 +733,10 @@ export async function reidentifyCollectionItem(
   const mergedTags = mergeTags(item.tags, r?.tags);
   if (mergedTags) patch.tags = mergedTags;
 
-  if (!Object.keys(patch).length) return { updated: false, served, switched };
+  if (!Object.keys(patch).length) return { updated: false, served, switched, error: aiError };
   const { error } = await supabaseAdmin.from("collection_items").update(patch).eq("id", id);
   if (error) throw new Error(`Não foi possível gravar: ${error.message}`);
-  return { updated: true, served, switched };
+  return { updated: true, served, switched, error: null };
 }
 
 /** Campos editáveis de um disco (usado por add e update). */

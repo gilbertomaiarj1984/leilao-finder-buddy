@@ -403,6 +403,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       if (!provider) return;
       setAnalyzing(key);
       let evaluated = 0;
+      let failed = 0;
+      let lastError: string | null = null;
       let switchedTo: AiProvider | null = null;
       try {
         for (let guard = 0; guard < 60; guard += 1) {
@@ -410,6 +412,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             data: { day: opts.day, house: opts.house, max: 25, provider },
           });
           evaluated += res.evaluated;
+          failed += res.failed ?? 0;
+          if (res.error) lastError = res.error;
           if (res.switched && res.served) switchedTo = res.served;
           // Para quando não sobra nada OU quando a rodada não avaliou nada (lotes que
           // falham sempre voltariam ao "pendente" e causariam laço infinito).
@@ -422,11 +426,18 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             `${AI_PROVIDER_SHORT[provider]} sem créditos — usei ${AI_PROVIDER_SHORT[switchedTo]}`,
           );
         }
-        toast.success(
-          evaluated
-            ? `IA avaliou ${evaluated} lote(s) ${opts.house ? "desta casa" : "deste dia"}`
-            : "Nada novo para avaliar aqui (já avaliado)",
-        );
+        if (evaluated) {
+          toast.success(
+            `IA avaliou ${evaluated} lote(s) ${opts.house ? "desta casa" : "deste dia"}`,
+          );
+        } else if (failed) {
+          // Havia lotes pendentes, mas a IA não devolveu nada (vazio/erro) — não é "já avaliado".
+          toast.error(
+            `A IA não retornou avaliação${lastError ? ` (${lastError})` : ""} — verifique a chave/limite do provedor`,
+          );
+        } else {
+          toast.success("Nada novo para avaliar aqui (já avaliado)");
+        }
       } catch (error) {
         toast.error((error as Error)?.message || "Não foi possível analisar agora");
       } finally {
