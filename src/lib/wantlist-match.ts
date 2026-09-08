@@ -92,11 +92,16 @@ function withinOneEdit(a: string, b: string): boolean {
   return edits <= 1;
 }
 
-/** Um token da obra "está presente" no lote (igual, como substring, ou ~1 typo de distância). */
-function tokenPresent(token: string, id: LotIdentity): boolean {
+/**
+ * Um token da obra "está presente" no lote (igual, como substring, ou ~1 typo de distância).
+ * `fuzzyMinLen` = tamanho mínimo para aceitar a correção de 1 letra (padrão 5, conservador). O
+ * casamento de ARTISTA usa 4 para tolerar grafias como "Elis"↔"Ellis"; o de álbum mantém 5
+ * (evita "arte"↔"parte" e afins inflarem o score).
+ */
+function tokenPresent(token: string, id: LotIdentity, fuzzyMinLen = 5): boolean {
   if (id.tokens.has(token)) return true;
   if (token.length >= 4 && id.text.includes(token)) return true;
-  if (token.length >= 5) {
+  if (token.length >= fuzzyMinLen) {
     for (const t of id.tokens) {
       if (Math.abs(t.length - token.length) <= 1 && withinOneEdit(t, token)) return true;
     }
@@ -222,10 +227,10 @@ export function ownedCandidate(item: {
 }
 
 /** Fração dos tokens presentes na identidade do lote (0..1). */
-function coverage(tokens: string[], id: LotIdentity): number {
+function coverage(tokens: string[], id: LotIdentity, fuzzyMinLen = 5): number {
   if (!tokens.length) return 0;
   let hit = 0;
-  for (const t of tokens) if (tokenPresent(t, id)) hit++;
+  for (const t of tokens) if (tokenPresent(t, id, fuzzyMinLen)) hit++;
   return hit / tokens.length;
 }
 
@@ -234,7 +239,8 @@ function ownedScore(c: OwnedCandidate, id: LotIdentity): number {
   // Sem tokens distintivos de álbum não dá para confirmar QUAL disco é → não marca.
   if (!c.albumTokens.length) return 0;
 
-  const artistCov = coverage(c.artistTokens, id);
+  // Artista com fuzzy mais tolerante (4+) → aceita "Ellis Regina" para "Elis Regina".
+  const artistCov = coverage(c.artistTokens, id, 4);
   if (artistCov < OWNED_ARTIST_MIN) return 0; // o artista precisa estar claramente presente
 
   const albumCov = coverage(c.albumTokens, id);

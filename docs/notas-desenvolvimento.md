@@ -506,6 +506,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.22.1 | Coleção: tags da IA restritas a **estilo/gênero musical** (sem época/artista/país/formato) | — |
 | v0.23.0 | Home: **ícone roxo "já tenho na Coleção"** no card (abaixo da nota, à direita) quando o lote casa com `collection_items` — casamento por artista/álbum/ano (`ownedMatchForLot`) em **duas faixas**: ≥80% confiante, 50–80% com **"?"** (incerto); peça exata por `lot_id` | #88 |
 | v0.23.1 | Coleção: **precisão** do casamento "já tenho" — EXIGE o nome do álbum com tokens distintivos (desconta o nome do artista e genéricos "ao vivo"/"sucessos"), corrigindo falsos positivos (ex.: lote que só cita o artista como compositor casava "A Arte de Jorge Ben") | #89 |
+| v0.23.2 | Coleção: casamento "já tenho" tolera **grafia do artista** (fuzzy de 1 letra em tokens de 4+, só no artista) — "Ellis Regina" casa "Elis Regina"; álbum segue estrito | — |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
