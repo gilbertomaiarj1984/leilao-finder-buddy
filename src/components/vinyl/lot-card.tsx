@@ -1,4 +1,5 @@
 import { Disc3, ExternalLink, Eye, EyeOff, Loader2 } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
@@ -50,6 +51,9 @@ export function LotCard({
   owned?: OwnedHit | null;
   onEditTags?: (next: string[]) => void;
 }) {
+  // Diagnóstico "já tenho": no toque (celular não tem hover) revela qual disco da Coleção
+  // casou e o score — para rastrear falso positivo/negativo.
+  const [ownedOpen, setOwnedOpen] = useState(false);
   // Linha padrão de identificação da IA (Artista — Álbum (Ano)), quando houver.
   const aiLabel = album ? formatAiAlbum(album, market?.year) : "";
   // Cores (mesma regra do painel): meu lance ganhando = verde; meu lance coberto = vermelho;
@@ -84,9 +88,13 @@ export function LotCard({
             const tip = confident
               ? `Já tenho na Coleção${what}`
               : `Provável: já tenho na Coleção${what} (não confirmado — confira o disco)`;
+            // Detalhe do casamento (aparece ao tocar): qual disco da Coleção e o score.
+            const detail = `${owned.label || "peça exata (lot_id)"} · ${Math.round(owned.score * 100)}%`;
             return (
-              <div className="absolute right-2 top-9 z-10">
-                <span
+              <div className="absolute right-2 top-9 z-10 flex flex-col items-end gap-1">
+                <button
+                  type="button"
+                  onClick={() => setOwnedOpen((v) => !v)}
                   className="flex items-center gap-0.5 rounded-full bg-purple-600 px-1.5 py-1 text-white shadow"
                   title={tip}
                   aria-label={tip}
@@ -95,7 +103,12 @@ export function LotCard({
                   {!confident ? (
                     <span className="text-[10px] font-bold leading-none">?</span>
                   ) : null}
-                </span>
+                </button>
+                {ownedOpen ? (
+                  <span className="max-w-[12rem] rounded bg-purple-600/95 px-1.5 py-0.5 text-right text-[10px] leading-tight text-white shadow">
+                    Já tenho — {detail}
+                  </span>
+                ) : null}
               </div>
             );
           })()

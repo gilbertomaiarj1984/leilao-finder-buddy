@@ -92,11 +92,16 @@ function withinOneEdit(a: string, b: string): boolean {
   return edits <= 1;
 }
 
-/** Um token da obra "está presente" no lote (igual, como substring, ou ~1 typo de distância). */
-function tokenPresent(token: string, id: LotIdentity): boolean {
+/**
+ * Um token da obra "está presente" no lote (igual, como substring, ou ~1 typo de distância).
+ * `fuzzyMinLen` = tamanho mínimo para aceitar a correção de 1 letra (padrão 5, conservador). O
+ * casamento de ARTISTA usa 4 para tolerar grafias como "Elis"↔"Ellis"; o de álbum mantém 5
+ * (evita "arte"↔"parte" e afins inflarem o score).
+ */
+function tokenPresent(token: string, id: LotIdentity, fuzzyMinLen = 5): boolean {
   if (id.tokens.has(token)) return true;
   if (token.length >= 4 && id.text.includes(token)) return true;
-  if (token.length >= 5) {
+  if (token.length >= fuzzyMinLen) {
     for (const t of id.tokens) {
       if (Math.abs(t.length - token.length) <= 1 && withinOneEdit(t, token)) return true;
     }
@@ -145,17 +150,21 @@ export function bestWantForLot(
 /**
  * Casamento "já tenho na Coleção": compara um lote com os discos que o usuário JÁ possui.
  *
- * Precisão em PRIMEIRO lugar (evitar falso positivo é mais importante que pegar tudo). Por
- * isso o casamento EXIGE o **nome do álbum**, e usa só os tokens **distintivos** dele:
- *  - descontamos os tokens que também são do ARTISTA (ex.: "A Arte de Jorge Ben" → distintivo
- *    só "arte"; senão "jorge"/"ben" casariam sempre que o artista aparece, inclusive quando o
- *    lote só CITA o artista como compositor — "Músicas de Jorge Ben");
- *  - descontamos palavras genéricas de álbum ("ao vivo", "sucessos", "coletânea"…), que casam
- *    discos diferentes do mesmo artista.
+ * Precisão em PRIMEIRO lugar (evitar falso positivo é mais importante que pegar tudo). O
+ * casamento EXIGE o nome do álbum e separa os tokens do álbum (fora os do artista) em:
+ *  - **distintivos** (nome real do disco) — descontando os que também são do ARTISTA (ex.:
+ *    "A Arte de Jorge Ben" → distintivo só "arte"; senão "jorge"/"ben" casariam sempre que o
+ *    lote cita o artista, inclusive como compositor — "Músicas de Jorge Ben");
+ *  - **genéricos** de coletânea/ao vivo/estado/stopword ("Ao Vivo", "Seus Sucessos"…).
  *
- * Regra do score (0..1): o **artista** precisa estar claramente presente (`OWNED_ARTIST_MIN`)
- * e o **álbum distintivo** precisa aparecer; o score é dirigido pela cobertura do álbum (o ano
- * só reforça / desempata reedições). Sem álbum distintivo → NÃO marca (só a peça exata por
+ * Dois caminhos no score (0..1), sempre com o **artista** claramente presente (`OWNED_ARTIST_MIN`):
+ *  1. **título distintivo** → dirigido pela cobertura do álbum (o ano só reforça / desempata
+ *     reedições);
+ *  2. **título 100% genérico** (coletânea/ao vivo) → o nome não distingue disco, então usamos
+ *     o **nome da coletânea como nome do disco** e o **ano** como desambiguador: exige o título
+ *     inteiro presente + **ano EXATO** ("Ao Vivo (1989)", "Seus Sucessos (1978)").
+ *
+ * Sem álbum confirmável → NÃO marca (só a peça exata por
  * `lot_id`, tratada no chamador). A UI aplica dois limiares: `>= OWNED_CONFIDENT_MIN` (80%) =
  * confiante; entre `OWNED_MATCH_MIN` (60%) e 80% = incerto ("?"); abaixo não marca.
  */
@@ -165,13 +174,19 @@ export const OWNED_CONFIDENT_MIN = 0.8;
 const OWNED_ARTIST_MIN = 0.75;
 
 /**
- * Palavras genéricas de título de álbum: sozinhas NÃO distinguem um disco (quase todo artista
- * tem "ao vivo"/"sucessos"). Removidas dos tokens distintivos do álbum.
+ * Tokens que NÃO distinguem um disco e por isso são removidos dos tokens distintivos do álbum
+ * (senão casam discos diferentes do mesmo artista — ex.: "Ao Vivo", "Seus Sucessos"):
+ *  - gênero/coletânea/formato ("vivo", "sucessos", "coletânea", "duplo"…);
+ *  - estado/condição, que aparecem na descrição do lote ("excelente", "bom", "estado"…);
+ *  - stopwords do português que sobrevivem ao corte de 3+ letras ("seus", "com", "para", "que"…).
  */
 const GENERIC_ALBUM_TOKENS = new Set([
+  // gênero / coletânea / formato
   "vivo",
   "disco",
+  "discos",
   "album",
+  "albuns",
   "vol",
   "volume",
   "hits",
@@ -186,14 +201,101 @@ const GENERIC_ALBUM_TOKENS = new Set([
   "classicos",
   "classico",
   "grandes",
+  "raridades",
+  "raridade",
+  "duplo",
+  "simples",
+  "nacional",
+  "internacional",
+  "original",
+  "originais",
+  "estudio",
+  "estereo",
+  "mono",
+  "remaster",
+  "compacto",
+  "coletania",
+  "antologia",
+  // estado / condição (vêm da descrição do lote, não do nome do disco)
+  "excelente",
+  "excelentes",
+  "otimo",
+  "otima",
+  "bom",
+  "boa",
+  "estado",
+  "conservado",
+  "conservada",
+  "raro",
+  "rara",
+  "novo",
+  "nova",
+  "usado",
+  "usada",
+  "capa",
+  "encarte",
+  // stopwords PT (≥ 3 letras) — não são "nome" de disco
+  "dos",
+  "das",
+  "uma",
+  "uns",
+  "umas",
+  "com",
+  "sem",
+  "por",
+  "para",
+  "pra",
+  "que",
+  "seu",
+  "sua",
+  "seus",
+  "suas",
+  "meu",
+  "meus",
+  "minha",
+  "minhas",
+  "nosso",
+  "nossa",
+  "teu",
+  "tua",
+  "este",
+  "esta",
+  "esse",
+  "essa",
+  "isso",
+  "aquele",
+  "aquela",
+  "mais",
+  "menos",
+  "muito",
+  "muita",
+  "todo",
+  "toda",
+  "todos",
+  "todas",
+  "pois",
+  "como",
+  "onde",
+  "quando",
+  "the",
+  "and",
+  "of",
 ]);
 
-/** Disco da coleção preparado para o casamento (tokens de artista + tokens DISTINTIVOS do álbum). */
+/**
+ * Disco da coleção preparado para o casamento. Os tokens do álbum (fora os do artista) são
+ * separados em:
+ *  - `albumTokens` — **distintivos** (nome real do disco: "Cavalo", "Pau", "Arte", "Bugre"…);
+ *  - `genericTokens` — **genéricos** de coletânea/ao vivo/estado/stopword ("Vivo", "Seus",
+ *    "Sucessos"…). Sozinhos não distinguem disco, mas com o **ano** viram o nome da coletânea
+ *    ("Ao Vivo (1989)", "Seus Sucessos (1978)").
+ */
 export type OwnedCandidate = {
   id: string;
   label: string; // "Artista Álbum" para o tooltip
   artistTokens: string[];
-  albumTokens: string[]; // já sem sobreposição com o artista nem palavras genéricas
+  albumTokens: string[]; // distintivos (sem artista nem genéricos)
+  genericTokens: string[]; // genéricos do título (sem artista)
   year: number | null;
 };
 
@@ -208,51 +310,58 @@ export function ownedCandidate(item: {
 }): OwnedCandidate {
   const artistTokens = significantTokens(item.artist);
   const artistSet = new Set(artistTokens);
-  // Álbum distintivo: tira o que é do artista e o que é genérico.
-  const albumTokens = item.album
-    ? significantTokens(item.album).filter((t) => !artistSet.has(t) && !GENERIC_ALBUM_TOKENS.has(t))
-    : [];
+  // Tokens do álbum que não são do artista, divididos em distintivos × genéricos.
+  const albumAll = item.album ? significantTokens(item.album).filter((t) => !artistSet.has(t)) : [];
   return {
     id: item.id,
     label: [item.artist, item.album].filter((s): s is string => Boolean(s && s.trim())).join(" "),
     artistTokens,
-    albumTokens,
+    albumTokens: albumAll.filter((t) => !GENERIC_ALBUM_TOKENS.has(t)),
+    genericTokens: albumAll.filter((t) => GENERIC_ALBUM_TOKENS.has(t)),
     year: item.year,
   };
 }
 
 /** Fração dos tokens presentes na identidade do lote (0..1). */
-function coverage(tokens: string[], id: LotIdentity): number {
+function coverage(tokens: string[], id: LotIdentity, fuzzyMinLen = 5): number {
   if (!tokens.length) return 0;
   let hit = 0;
-  for (const t of tokens) if (tokenPresent(t, id)) hit++;
+  for (const t of tokens) if (tokenPresent(t, id, fuzzyMinLen)) hit++;
   return hit / tokens.length;
 }
 
 /** Score 0..1 de o disco `c` da coleção ser o mesmo do lote `id`. */
 function ownedScore(c: OwnedCandidate, id: LotIdentity): number {
-  // Sem tokens distintivos de álbum não dá para confirmar QUAL disco é → não marca.
-  if (!c.albumTokens.length) return 0;
-
-  const artistCov = coverage(c.artistTokens, id);
+  // Artista com fuzzy mais tolerante (4+) → aceita "Ellis Regina" para "Elis Regina".
+  const artistCov = coverage(c.artistTokens, id, 4);
   if (artistCov < OWNED_ARTIST_MIN) return 0; // o artista precisa estar claramente presente
 
-  const albumCov = coverage(c.albumTokens, id);
-  if (albumCov <= 0) return 0; // o álbum não aparece no lote → não é este disco
-
-  const yearKnown = c.year != null && id.years.size > 0;
+  const yearExact = c.year != null && id.years.has(c.year);
   const yearMatch =
-    c.year != null &&
-    (id.years.has(c.year) || id.years.has(c.year - 1) || id.years.has(c.year + 1));
+    c.year != null && (yearExact || id.years.has(c.year - 1) || id.years.has(c.year + 1));
+  const yearKnown = c.year != null && id.years.size > 0;
   const yearConflict = yearKnown && !yearMatch;
 
-  // Score dirigido pela cobertura do ÁLBUM (o discriminador real). Ano só reforça; num
-  // conflito, uma cobertura de álbum alta ainda é reedição do mesmo disco (penaliza pouco),
-  // mas uma cobertura parcial com ano diferente cai fora.
-  let s = albumCov;
-  if (yearMatch) s += 0.1;
-  else if (yearConflict) s -= albumCov >= 0.8 ? 0.05 : 0.3;
-  return Math.max(0, Math.min(1, s));
+  // (1) Título DISTINTIVO (nome real do disco): score dirigido pela cobertura do álbum. O ano
+  // só reforça; num conflito, cobertura alta ainda é reedição do mesmo disco (penaliza pouco),
+  // cobertura parcial com ano diferente cai fora.
+  if (c.albumTokens.length) {
+    const albumCov = coverage(c.albumTokens, id);
+    if (albumCov <= 0) return 0; // o álbum não aparece no lote → não é este disco
+    let s = albumCov;
+    if (yearMatch) s += 0.1;
+    else if (yearConflict) s -= albumCov >= 0.8 ? 0.05 : 0.3;
+    return Math.max(0, Math.min(1, s));
+  }
+
+  // (2) Título 100% GENÉRICO (coletânea/ao vivo: "Ao Vivo", "Seus Sucessos"). Como o nome não
+  // distingue disco, o ANO vira o desambiguador: exige artista + TODAS as palavras do título +
+  // ano EXATO. Assim "Ao Vivo (1989)"/"Seus Sucessos (1978)" casam o disco certo, e um outro
+  // ano do mesmo tipo não casa. Sem ano exato → não marca.
+  if (c.genericTokens.length && yearExact && coverage(c.genericTokens, id) >= 1) {
+    return 0.85;
+  }
+  return 0; // sem álbum confirmável → não marca (só a peça exata por lot_id, no chamador)
 }
 
 /** Melhor disco da coleção para o lote (score ≥ 50%), ou null. */
