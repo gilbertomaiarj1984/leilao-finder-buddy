@@ -740,6 +740,71 @@ export async function addCollectionItem(input: CollectionInput): Promise<Collect
   return toItem(data as DbRow);
 }
 
+/**
+ * Importa vários discos de uma vez a partir do texto colado (JSON gerado por IA, ou o fallback
+ * `Artista - Álbum (Ano)` por linha — ver `parseCollectionBulkText`). ACRESCENTA como `manual`,
+ * **pulando** os que já existem na coleção por artista+álbum normalizado (`albumKey`) — mesmo
+ * critério da varredura de compras. De-dup também dentro do próprio lote. Não usa IA/rede.
+ * Retorna `{recognized, added, skipped}`.
+ */
+export async function importCollectionText(
+  text: string,
+): Promise<{ recognized: number; added: number; skipped: number }> {
+  const { parseCollectionBulkText } = await import("./collection-bulk");
+  const { items, error } = parseCollectionBulkText(text);
+  if (error) throw new Error(error);
+  if (!items.length) return { recognized: 0, added: 0, skipped: 0 };
+
+  const existing = await getAllCollection();
+  const seen = new Set<string>();
+  for (const i of existing) {
+    const k = albumKey(i.artist, i.album);
+    if (k) seen.add(k);
+  }
+  let pos = existing.reduce((max, i) => Math.max(max, i.position), 0);
+
+  const payload: TablesInsert<"collection_items">[] = [];
+  let skipped = 0;
+  for (const d of items) {
+    const artist = canonicalArtist(d.artist ? titleCase(d.artist) : "", d.title);
+    const album = d.album.trim();
+    const k = albumKey(artist, album);
+    if (k && seen.has(k)) {
+      skipped += 1;
+      continue;
+    }
+    if (k) seen.add(k);
+    pos += 1;
+    payload.push({
+      lot_id: null,
+      source: "manual",
+      artist,
+      album,
+      title: d.title,
+      year: d.year,
+      image: null,
+      house: d.house,
+      uf: d.uf,
+      won_price: d.wonPrice,
+      won_date: d.wonDate,
+      condition_media: d.conditionMedia,
+      condition_sleeve: d.conditionSleeve,
+      notes: d.notes,
+      tags: d.tags,
+      position: pos,
+    });
+  }
+
+  if (payload.length) {
+    const { error: insertError } = await supabaseAdmin.from("collection_items").insert(payload);
+    if (insertError) {
+      console.error("[collection] falha ao importar em massa", insertError);
+      throw new Error(`Não foi possível importar os discos: ${insertError.message}`);
+    }
+  }
+  return { recognized: items.length, added: payload.length, skipped };
+}
+
 /** Atualiza campos de um disco (patch parcial dos campos editáveis). */
 export async function updateCollectionItem(
   input: CollectionInput & { id: string },
