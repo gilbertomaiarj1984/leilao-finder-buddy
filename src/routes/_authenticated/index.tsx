@@ -420,10 +420,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           if (res.remaining === 0 || res.evaluated === 0) break;
         }
         await queryClient.invalidateQueries({ queryKey: ["lot-ai"] });
-        // Avisa se houve failover (o provedor pedido ficou sem créditos).
+        // Avisa se houve failover (o provedor pedido ficou sem créditos ou indisponível).
         if (switchedTo && switchedTo !== provider) {
           toast.warning(
-            `${AI_PROVIDER_SHORT[provider]} sem créditos — usei ${AI_PROVIDER_SHORT[switchedTo]}`,
+            `${AI_PROVIDER_SHORT[provider]} indisponível — usei ${AI_PROVIDER_SHORT[switchedTo]}`,
           );
         }
         if (evaluated) {
