@@ -1,6 +1,7 @@
 import { ExternalLink, Pencil, RotateCw, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { LotTags } from "@/components/vinyl/ai-score";
 import type { CollectionItem } from "@/lib/collection.server";
 
 export function CollectionCard({
@@ -10,6 +11,7 @@ export function CollectionCard({
   onEdit,
   onRemove,
   onReprocess,
+  onTagsChange,
 }: {
   item: CollectionItem;
   busy: boolean;
@@ -17,6 +19,7 @@ export function CollectionCard({
   onEdit: () => void;
   onRemove: () => void;
   onReprocess?: () => void;
+  onTagsChange?: (next: string[]) => void;
 }) {
   const artistLine = item.artist || "(sem artista)";
   const albumLine =
@@ -48,17 +51,11 @@ export function CollectionCard({
           </p>
         </div>
 
-        {item.tags.length ? (
-          <div className="flex flex-wrap gap-1">
-            {item.tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
+        {/* Tags: preenchidas pela IA, mas editáveis (mesmo padrão dos lotes: × remove, + tag adiciona). */}
+        {onTagsChange ? (
+          <LotTags tags={item.tags} onEdit={onTagsChange} />
+        ) : item.tags.length ? (
+          <LotTags tags={item.tags} />
         ) : null}
 
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
@@ -85,9 +82,9 @@ export function CollectionCard({
           ) : null}
         </div>
 
-        {/* Descritivo do disco (buscado pela IA) */}
+        {/* Descritivo do disco (buscado pela IA) — rolável para ler o texto todo. */}
         {item.description ? (
-          <p className="line-clamp-4 text-xs leading-snug text-muted-foreground">
+          <p className="max-h-40 overflow-y-auto whitespace-pre-wrap pr-1 text-xs leading-snug text-muted-foreground">
             {item.description}
           </p>
         ) : null}

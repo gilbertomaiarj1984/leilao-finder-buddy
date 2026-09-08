@@ -14,6 +14,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CollectionCard } from "@/components/vinyl/collection-card";
@@ -162,6 +169,37 @@ const EMPTY_DRAFT: Draft = {
   description: "",
   tags: "",
 };
+
+// Escala de conservação (grading) usada para mídia e capa.
+const GRADES = ["NM", "EX", "VG+", "VG-", "G+", "G-"] as const;
+// Radix Select não aceita item com value "" → sentinela para "não definido".
+const GRADE_NONE = "__none__";
+
+function GradeSelect({
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <Select value={value || GRADE_NONE} onValueChange={(v) => onChange(v === GRADE_NONE ? "" : v)}>
+      <SelectTrigger aria-label={ariaLabel}>
+        <SelectValue placeholder="Não definido" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={GRADE_NONE}>Não definido</SelectItem>
+        {GRADES.map((g) => (
+          <SelectItem key={g} value={g}>
+            {g}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 function toDraft(item: CollectionItem): Draft {
   return {
@@ -337,6 +375,24 @@ function ColecaoPage() {
     onError: (e: Error) => toast.error(e.message || "Não foi possível reprocessar"),
   });
 
+  // Edição de tags direto no card (mesmo padrão dos lotes): otimista, com rollback em erro.
+  const tagsMut = useMutation({
+    mutationFn: (p: { id: string; tags: string[] }) => updateItem({ data: p }),
+    onMutate: async (p) => {
+      await queryClient.cancelQueries({ queryKey: ["collection"] });
+      const prev = queryClient.getQueryData<CollectionItem[]>(["collection"]);
+      queryClient.setQueryData<CollectionItem[]>(["collection"], (old) =>
+        (old ?? []).map((i) => (i.id === p.id ? { ...i, tags: p.tags } : i)),
+      );
+      return { prev };
+    },
+    onError: (e: Error, _p, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(["collection"], ctx.prev);
+      toast.error(e.message || "Não foi possível salvar as tags");
+    },
+    onSettled: () => void invalidate(),
+  });
+
   const artists = useMemo(() => artistOptions(items), [items]);
   // Nomes para o combo do formulário (artistas reais + "Coletâneas"/"Lote"; sem o rótulo genérico).
   const artistNames = useMemo(
@@ -505,6 +561,7 @@ function ColecaoPage() {
                           onEdit={() => setDraft(toDraft(item))}
                           onRemove={() => removeMut.mutate(item.id)}
                           onReprocess={() => reprocessMut.mutate(item.id)}
+                          onTagsChange={(next) => tagsMut.mutate({ id: item.id, tags: next })}
                         />
                       ))}
                     </div>
@@ -806,9 +863,6 @@ function EditDialog({
             <Field label="Álbum">
               <Input value={draft.album} onChange={(e) => set({ album: e.target.value })} />
             </Field>
-            <Field label="Título original (do lote)">
-              <Input value={draft.title} onChange={(e) => set({ title: e.target.value })} />
-            </Field>
             <Field label="Ano">
               <Input
                 value={draft.year}
@@ -817,17 +871,17 @@ function EditDialog({
               />
             </Field>
             <Field label="Estado da mídia">
-              <Input
+              <GradeSelect
                 value={draft.conditionMedia}
-                placeholder="ex.: VG+, NM"
-                onChange={(e) => set({ conditionMedia: e.target.value })}
+                onChange={(v) => set({ conditionMedia: v })}
+                ariaLabel="Estado da mídia"
               />
             </Field>
             <Field label="Estado da capa">
-              <Input
+              <GradeSelect
                 value={draft.conditionSleeve}
-                placeholder="ex.: VG, NM"
-                onChange={(e) => set({ conditionSleeve: e.target.value })}
+                onChange={(v) => set({ conditionSleeve: v })}
+                ariaLabel="Estado da capa"
               />
             </Field>
             <Field label="Valor pago">
