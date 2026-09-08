@@ -104,6 +104,28 @@ export function isQuotaError(error: unknown): boolean {
   );
 }
 
+/**
+ * Erro TRANSITÓRIO do provedor (sobrecarga / indisponibilidade momentânea), que costuma
+ * resolver ao **tentar de novo** ou no **outro provedor**:
+ * - HTTP 500/502/503/504;
+ * - mensagens "unavailable", "overloaded", "high demand", "try again", "timeout".
+ * Ex. real do Gemini: `503 UNAVAILABLE "This model is currently experiencing high demand"`.
+ */
+export function isTransientError(error: unknown): boolean {
+  const e = error as { status?: number; code?: number; message?: string } | null;
+  const status = Number(e?.status ?? e?.code);
+  if (status === 500 || status === 502 || status === 503 || status === 504) return true;
+  const msg = String(e?.message ?? error ?? "").toLowerCase();
+  return (
+    msg.includes("unavailable") ||
+    msg.includes("overloaded") ||
+    msg.includes("high demand") ||
+    msg.includes("try again") ||
+    msg.includes("timeout") ||
+    msg.includes("503")
+  );
+}
+
 // --- Adaptador Anthropic (Claude) ----------------------------------------------------------
 
 /** Cliente Anthropic (também usado pelo fluxo de Batches em `ai-eval.server.ts`). */
@@ -200,20 +222,29 @@ async function runGemini(req: AiRequest, model: string): Promise<string> {
     },
   };
 
-  const resp = await fetch(`${GEMINI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
+  // Retry com backoff para erros TRANSITÓRIOS (ex.: 503 "high demand" do Gemini): 3 tentativas
+  // com espera crescente. Se ainda falhar, o erro sobe e o `runText` faz failover ao outro
+  // provedor. Erros não-transitórios (400/401/403/quota) propagam de imediato (sem retry).
+  const url = `${GEMINI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`;
+  const init = {
     method: "POST",
     headers: { "content-type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify(body),
-  });
+  } as const;
 
-  if (!resp.ok) {
+  let resp: Response;
+  for (let attempt = 0; ; attempt += 1) {
+    resp = await fetch(url, init);
+    if (resp.ok) break;
     const detail = await resp.text().catch(() => "");
-    // Propaga com status para o `isQuotaError` reconhecer 429/402 e disparar o failover.
+    // Propaga com status para o `isQuotaError`/`isTransientError` reconhecerem e agirem.
     const err = new Error(`Gemini HTTP ${resp.status}: ${detail.slice(0, 300)}`) as Error & {
       status?: number;
     };
     err.status = resp.status;
-    throw err;
+    // Só re-tenta o que é transitório e enquanto houver tentativas restantes (máx. 3 no total).
+    if (attempt >= 2 || !isTransientError(err)) throw err;
+    await new Promise((r) => setTimeout(r, 800 * 2 ** attempt)); // 800ms, 1600ms
   }
 
   const data = (await resp.json()) as {
@@ -246,9 +277,10 @@ async function runOne(req: AiRequest, provider: AiProvider): Promise<string> {
 }
 
 /**
- * Gera texto no provedor pedido; se ele falhar por **quota/sem créditos** e houver outro
- * provedor configurado, **troca automaticamente** e tenta nele. Erros que não são de quota
- * propagam (o chamador trata por-item). Lança se nenhum provedor configurado atender.
+ * Gera texto no provedor pedido; se ele falhar por **quota/sem créditos** OU por
+ * **indisponibilidade transitória** (ex.: 503 "high demand" do Gemini) e houver outro provedor
+ * configurado, **troca automaticamente** e tenta nele. Outros erros (400/401/403, prompt
+ * bloqueado, parsing) propagam (o chamador trata por-item). Lança se nenhum provedor atender.
  */
 export async function runText(req: AiRequest, provider: AiProvider): Promise<RunTextResult> {
   // Ordem de tentativa: o pedido primeiro, depois os demais configurados (failover).
@@ -263,9 +295,12 @@ export async function runText(req: AiRequest, provider: AiProvider): Promise<Run
       return { text, provider: p, model: providerModel(p), switched: p !== provider };
     } catch (error) {
       lastError = error;
-      // Só troca de provedor quando o motivo é quota/sem créditos; senão propaga já.
-      if (!isQuotaError(error)) throw error;
-      console.error(`[ai-provider] ${p} sem créditos/quota — tentando failover`, error);
+      // Troca de provedor por quota/sem créditos OU indisponibilidade transitória; senão propaga.
+      if (!isQuotaError(error) && !isTransientError(error)) throw error;
+      console.error(
+        `[ai-provider] ${p} indisponível (quota/transitório) — tentando failover`,
+        error,
+      );
     }
   }
   throw lastError ?? new Error("Nenhum provedor de IA configurado");

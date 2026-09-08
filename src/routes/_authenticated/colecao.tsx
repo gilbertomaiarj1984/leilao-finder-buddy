@@ -290,14 +290,14 @@ function ColecaoPage() {
       });
   };
   const providerPicker = useAiProviderPicker(aiProvider);
-  // Avisa quando houve failover (o provedor pedido ficou sem créditos).
+  // Avisa quando houve failover (o provedor pedido ficou sem créditos ou indisponível).
   const notifySwitch = (
     asked: AiProvider,
     res: { switched?: boolean; served?: AiProvider | null },
   ) => {
     if (res.switched && res.served && res.served !== asked) {
       toast.warning(
-        `${AI_PROVIDER_SHORT[asked]} sem créditos — usei ${AI_PROVIDER_SHORT[res.served]}`,
+        `${AI_PROVIDER_SHORT[asked]} indisponível — usei ${AI_PROVIDER_SHORT[res.served]}`,
       );
     }
   };
