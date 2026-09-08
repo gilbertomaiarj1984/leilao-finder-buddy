@@ -548,8 +548,9 @@ export function buildCollectionIdentPrompt(input: CollectionIdentInput): string 
     '"Vários Artistas" como artista.\n' +
     '- "year": ano de lançamento (inteiro) ou null se não souber\n' +
     '- "confidence": "alta" | "media" | "baixa" (sua confiança na identificação)\n' +
-    '- "tags": array de 3 a 6 tags curtas de gênero/estilo/época em português ' +
-    '(ex.: "MPB", "Samba", "Bossa Nova", "Rock", "anos 70"); [] se não souber.\n' +
+    '- "tags": array de 2 a 5 tags curtas APENAS de ESTILO/GÊNERO MUSICAL em português ' +
+    '(ex.: "MPB", "Samba", "Bossa Nova", "Rock", "Jazz", "Forró"). NÃO inclua época/ano, ' +
+    "artista, país, formato nem qualquer outra coisa que não seja estilo musical; [] se não souber.\n" +
     '- "description": um descritivo RICO e DETALHADO em português (vários parágrafos, ' +
     "quanto mais completo melhor). Baseie-se PRINCIPALMENTE no NOME DO ÁLBUM (além do artista) e " +
     "traga: (1) o momento histórico do álbum — contexto e ano de lançamento, gravadora, " +
