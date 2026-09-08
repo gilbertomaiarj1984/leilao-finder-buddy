@@ -338,6 +338,24 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
   6000 chars. Passa a gerar **`tags`** — **apenas de estilo/gênero musical** (o prompt proíbe
   época/artista/país/formato) — mescladas às do usuário (`mergeTags`, só acrescenta, nunca remove)
   tanto na passada em massa quanto no reprocesso por card.
+- **Importação em massa por texto (v0.26.0):** botão **"Adicionar em massa"** no header abre um
+  diálogo (`BulkImportDialog` em `colecao.tsx`) para colar texto e cadastrar vários discos de uma
+  vez. Formato principal **JSON** gerado por IA — o diálogo traz um **prompt pronto para copiar**
+  (`GEMINI_IMPORT_PROMPT`) que instrui o Gemini a devolver só um array JSON `{artista, album, ano,
+  midia, capa, valor, tags, notas}`. Parser puro/**client-safe** `parseCollectionBulkText`
+  (`collection-bulk.ts`, reusa `normalizeForMatch`): tolerante a cercas ```` ```json ```` e prosa
+  (1º `[`…último `]`), aceita **array JSON ou JSONL**, chaves com aliases PT (sem acento/caixa),
+  graus normalizados p/ a escala NM/EX/VG+/VG-/G+/G-, `data` dd/mm/aaaa→ISO; **fallback humano**
+  `Artista - Álbum (Ano)` uma linha por disco. Server `importCollectionText` (`collection.server.ts`
+  → server fn homônima em `collection.functions.ts`) ACRESCENTA como `manual`, **pula** os que já
+  existem por **artista+álbum** (`albumKey`, mesmo critério da varredura) e de-dup no próprio lote;
+  retorna `{recognized, added, skipped}`. **Sem IA/rede** e **sem schema novo** (colunas de
+  `collection_items` já cobrem). O preview mostra a contagem/erro e a lista antes de importar.
+- **Foto por disco compatível com celular (v0.26.0):** o diálogo de edição (`EditDialog`) ganhou um
+  botão **"Tirar foto"** (`<input capture="environment">` oculto disparado por `ref`) ao lado de
+  "Escolher arquivo" — no celular abre a câmera direto; no desktop o `capture` é ignorado e cai no
+  seletor. Mesmo fluxo `handleFile`/`uploadCollectionImage`. **Upload de foto EM MASSA segue
+  pendente** (o import em massa cria discos sem foto; a foto é adicionada depois por disco).
 - **Botão "Atualizar coleção"** → `importWonLots()`: varre **"Minhas compras"**
   (`conta_site.asp?l=6&t=1&...&pag=N`, **`t=1`** confirmado com o site; lê página a página até
   uma sem lotes novos) via `leiloesbr-purchases.server.ts` (`listVinylPurchases`; filtra
@@ -530,6 +548,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.24.1 | Coleção: **blindagem** da home — queries `["collection-links"]`/`["collection-feedback"]` best-effort (try/catch + `retry:false`), casamento/resolução (`identityById`/`ownedAutoById`/`ownedResolutionFor`) em try/catch por lote, e `app-state.server` sem depender de módulo client-safe (tipo `OwnedFeedback` local). A relação/aprendizado nunca derruba a página (fica só sem o ícone) | #92 |
 | v0.24.2 | Notas: relação lote↔Coleção + aprendizado **validada em produção**; registrada a lição do 404 (server não importa módulo client-safe) | #93 |
 | v0.25.0 | **Descontinuado o "Painel de mudanças"** (`/dashboard`): removida a rota, o link "Painel" no header, as server functions `getDashboardBaseline`/`markDashboardSeen` e os helpers `getBaseline`/`markSeen`/`Baseline` — limpeza de código | — |
+| v0.26.0 | Coleção: **importação em massa por texto** (`BulkImportDialog`, `parseCollectionBulkText` em `collection-bulk.ts`, server `importCollectionText`) — JSON gerado por IA (prompt copiável `GEMINI_IMPORT_PROMPT`) ou `Artista - Álbum (Ano)` por linha; pula duplicados por artista+álbum; **câmera do celular** no upload de foto por disco (`capture="environment"`) — foto em massa segue pendente | — |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
@@ -544,7 +563,11 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
    usuário precisa **capturar** (F12 → Network, lote barato) a requisição de lance. Considerar
    que o site talvez já tenha "lance automático" nativo; ToS/edital costumam proibir automação
    (risco/decisão do usuário).
-2. **Sondagem não pesa na nota** — hoje é só destaque + filtro. Dar peso real (bônus
+2. **Upload de foto EM MASSA (pendente):** a importação em massa (v0.26.0) cria discos **sem
+   foto** — a foto é adicionada depois, por disco, no `EditDialog` (já com o botão **"Tirar foto"**
+   / câmera do celular). Fazer um fluxo de foto em lote (ex.: tirar/anexar fotos e casar com os
+   discos recém-importados) segue em aberto.
+3. **Sondagem não pesa na nota** — hoje é só destaque + filtro. Dar peso real (bônus
    determinístico no ranking, ou mandar a lista ao prompt) segue em aberto, se desejado.
 3. **Importar o rascunho real da sondagem** pela UI e conferir o 🎯/tooltip e o filtro "Só
    sondagem"; ajustar `WANT_MATCH_THRESHOLD`/pesos em `wantlist-match.ts` se pegar demais/de menos.

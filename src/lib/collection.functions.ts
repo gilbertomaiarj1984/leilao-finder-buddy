@@ -170,6 +170,21 @@ export const addCollectionItem = createServerFn({ method: "POST" })
     return await add(data);
   });
 
+/** Importa vários discos de uma vez a partir do texto colado (JSON gerado por IA ou linhas). */
+export const importCollectionText = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { text?: string } | undefined) => {
+    const text = typeof input?.text === "string" ? input.text : "";
+    if (!text.trim()) throw new Error("Cole o texto dos discos.");
+    return { text };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { importCollectionText: importText } = await import("./collection.server");
+    return await importText(data.text);
+  });
+
 /** Atualiza um disco da coleção (patch parcial). */
 export const updateCollectionItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

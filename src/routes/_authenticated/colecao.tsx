@@ -1,8 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Disc3, Library, Pencil, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
-import { useMemo, useState, type ChangeEvent, type ReactNode } from "react";
+import {
+  ArrowLeft,
+  Camera,
+  ClipboardPaste,
+  Copy,
+  Disc3,
+  Library,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
+import { useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -26,6 +38,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CollectionCard } from "@/components/vinyl/collection-card";
 import { collectionLabel } from "@/components/vinyl/collection-utils";
 import { ArtistFilter } from "@/components/vinyl/filters";
+import { GEMINI_IMPORT_PROMPT, parseCollectionBulkText } from "@/lib/collection-bulk";
 import type { CollectionItem, PendingWonLot } from "@/lib/collection.server";
 import {
   addCollectionItem,
@@ -34,6 +47,7 @@ import {
   deleteCollectionItem,
   getCollection,
   identifyCollection,
+  importCollectionText,
   reprocessCollectionItem,
   scanCollection,
   updateCollectionItem,
@@ -224,6 +238,7 @@ function ColecaoPage() {
   const fetchCollection = useServerFn(getCollection);
   const scan = useServerFn(scanCollection);
   const addItem = useServerFn(addCollectionItem);
+  const importBulk = useServerFn(importCollectionText);
   const addWon = useServerFn(addWonLot);
   const debugScan = useServerFn(debugScanCollection);
   const identify = useServerFn(identifyCollection);
@@ -235,6 +250,7 @@ function ColecaoPage() {
   const [artist, setArtist] = useState("");
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [review, setReview] = useState<PendingWonLot[]>([]);
   const [debug, setDebug] = useState<string | null>(null);
   const [identifying, setIdentifying] = useState(false);
@@ -307,6 +323,19 @@ function ColecaoPage() {
       setIdentifying(false);
     }
   }
+
+  const bulkMut = useMutation({
+    mutationFn: (text: string) => importBulk({ data: { text } }),
+    onSuccess: (res: { recognized: number; added: number; skipped: number }) => {
+      void invalidate();
+      setBulkOpen(false);
+      const skip = res.skipped ? ` ${res.skipped} pulado(s) (já na coleção).` : "";
+      toast.success(
+        res.added > 0 ? `${res.added} disco(s) adicionado(s).${skip}` : `Nenhum disco novo.${skip}`,
+      );
+    },
+    onError: (e: Error) => toast.error(e.message || "Não foi possível importar"),
+  });
 
   const addWonMut = useMutation({
     mutationFn: (p: PendingWonLot) => addWon({ data: p }),
@@ -455,6 +484,15 @@ function ColecaoPage() {
             >
               <Plus className="mr-2 h-4 w-4" />
               Adicionar disco
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkOpen(true)}
+              title="Importar vários discos de uma vez colando texto (JSON gerado por IA)"
+            >
+              <ClipboardPaste className="mr-2 h-4 w-4" />
+              Adicionar em massa
             </Button>
             {items.length > 0 ? (
               <Button
@@ -610,6 +648,13 @@ function ColecaoPage() {
         onUpload={handleUpload}
       />
 
+      <BulkImportDialog
+        open={bulkOpen}
+        importing={bulkMut.isPending}
+        onImport={(text) => bulkMut.mutate(text)}
+        onClose={() => setBulkOpen(false)}
+      />
+
       <ReviewDialog
         items={review}
         busy={addWonMut.isPending}
@@ -618,6 +663,125 @@ function ColecaoPage() {
         onClose={() => setReview([])}
       />
     </main>
+  );
+}
+
+function BulkImportDialog({
+  open,
+  importing,
+  onImport,
+  onClose,
+}: {
+  open: boolean;
+  importing: boolean;
+  onImport: (text: string) => void;
+  onClose: () => void;
+}) {
+  const [text, setText] = useState("");
+  const parsed = useMemo(() => parseCollectionBulkText(text), [text]);
+  const preview = parsed.items.slice(0, 12);
+
+  async function copyPrompt() {
+    try {
+      await navigator.clipboard.writeText(GEMINI_IMPORT_PROMPT);
+      toast.success("Prompt copiado. Cole na IA junto com sua lista de discos.");
+    } catch {
+      toast.error("Não foi possível copiar automaticamente — selecione e copie o texto.");
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) {
+          setText("");
+          onClose();
+        }
+      }}
+    >
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Adicionar em massa</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Peça a uma IA (ex.: Gemini) para gerar a lista dos seus discos e cole o resultado abaixo.
+          Copie o prompt pronto, cole na IA com sua lista/fotos, e traga o JSON de volta para cá.
+        </p>
+
+        <details className="rounded-md border border-border">
+          <summary className="flex cursor-pointer select-none items-center justify-between gap-2 px-3 py-2 text-sm font-medium text-foreground">
+            <span>Prompt para a IA (Gemini)</span>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={(e) => {
+                e.preventDefault();
+                void copyPrompt();
+              }}
+            >
+              <Copy className="mr-2 h-4 w-4" />
+              Copiar prompt
+            </Button>
+          </summary>
+          <pre className="max-h-56 overflow-auto whitespace-pre-wrap border-t border-border p-3 text-xs text-muted-foreground">
+            {GEMINI_IMPORT_PROMPT}
+          </pre>
+        </details>
+
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={8}
+          placeholder={
+            '[\n  {"artista":"Tim Maia","album":"Racional","ano":1975,"midia":"VG+","capa":"VG"},\n  {"artista":"Elis Regina","album":"Elis & Tom","ano":1974}\n]\n\nou, uma linha por disco:\nTim Maia - Racional (1975)'
+          }
+          className="w-full resize-y rounded-md border border-border bg-background p-3 font-mono text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+
+        <div className="text-xs text-muted-foreground">
+          {parsed.error ? (
+            <span className="text-destructive">{parsed.error}</span>
+          ) : parsed.items.length ? (
+            `${parsed.items.length} disco(s) reconhecido(s)`
+          ) : (
+            "Cole o JSON (ou uma linha por disco) acima."
+          )}
+        </div>
+
+        {preview.length ? (
+          <ul className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-border bg-card/40 p-2 text-xs">
+            {preview.map((d, i) => (
+              <li key={i} className="truncate text-foreground">
+                {[d.artist, d.album].filter(Boolean).join(" — ") || d.title || "(sem nome)"}
+                {d.year ? <span className="text-muted-foreground"> ({d.year})</span> : null}
+              </li>
+            ))}
+            {parsed.items.length > preview.length ? (
+              <li className="text-muted-foreground">
+                …e mais {parsed.items.length - preview.length}.
+              </li>
+            ) : null}
+          </ul>
+        ) : null}
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose} disabled={importing}>
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            onClick={() => onImport(text)}
+            disabled={importing || parsed.items.length === 0}
+          >
+            {importing
+              ? "Importando…"
+              : `Importar${parsed.items.length ? ` (${parsed.items.length})` : ""}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -776,6 +940,7 @@ function EditDialog({
   onUpload: (file: File) => Promise<string>;
 }) {
   const [uploading, setUploading] = useState(false);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const set = (patch: Partial<Draft>) => draft && onChange({ ...draft, ...patch });
 
   async function handleFile(e: ChangeEvent<HTMLInputElement>) {
@@ -830,6 +995,27 @@ function EditDialog({
                       onChange={handleFile}
                       className="text-xs file:mr-2 file:rounded file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-xs file:text-foreground"
                     />
+                    {/* Câmera do celular: abre direto para bater a foto do disco. No desktop o
+                        `capture` é ignorado e cai no seletor de arquivo — inofensivo. */}
+                    <input
+                      ref={cameraRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      disabled={uploading || saving}
+                      onChange={handleFile}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => cameraRef.current?.click()}
+                      disabled={uploading || saving}
+                    >
+                      <Camera className="mr-2 h-4 w-4" />
+                      Tirar foto
+                    </Button>
                     {uploading ? (
                       <span className="text-xs text-muted-foreground">Enviando…</span>
                     ) : draft.image ? (
