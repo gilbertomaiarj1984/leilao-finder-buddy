@@ -302,8 +302,9 @@ Modelo **`claude-haiku-4-5`** (o mais barato) via Anthropic. Chave **`ANTHROPIC_
 - **Descritivo da IA (`buildCollectionIdentPrompt`, `ai-eval.server.ts`):** prompt pede um texto
   RICO/LONGO baseado **principalmente no nome do álbum** (+ artista): momento histórico do álbum,
   panorama do artista e **faixa a faixa** quando souber; `max_tokens=2000`, slice do descritivo até
-  6000 chars. Passa a gerar **`tags`** (gênero/estilo/época) — mescladas às do usuário
-  (`mergeTags`, só acrescenta, nunca remove) tanto na passada em massa quanto no reprocesso por card.
+  6000 chars. Passa a gerar **`tags`** — **apenas de estilo/gênero musical** (o prompt proíbe
+  época/artista/país/formato) — mescladas às do usuário (`mergeTags`, só acrescenta, nunca remove)
+  tanto na passada em massa quanto no reprocesso por card.
 - **Botão "Atualizar coleção"** → `importWonLots()`: varre **"Minhas compras"**
   (`conta_site.asp?l=6&t=1&...&pag=N`, **`t=1`** confirmado com o site; lê página a página até
   uma sem lotes novos) via `leiloesbr-purchases.server.ts` (`listVinylPurchases`; filtra
@@ -487,7 +488,8 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.19.0 | Coleção: card por artista/álbum+ano (remove mercado+casa) + **descritivo do disco pela IA** (`identCollectionSync`, coluna `description`); combo de artista (datalist); **upload de foto** (Storage bucket `collection`, `uploadCollectionImage`) | — |
 | v0.20.0 | Coleção: re-identificação da IA com alcance **`onlyUnidentified`** — botão "Identificar novos (IA)" (padrão, só os discos sem identificação, cursor sobre a lista completa) + "Re-normalizar tudo (IA)"; reduz o gasto de créditos no uso rotineiro | — |
 | v0.21.0 | Coleção: botão em massa passa a reprocessar **só os não-prontos** (remove "Re-normalizar tudo") + **ícone de reprocessar por card** (`RotateCw` → `reprocessCollectionItem`/`reidentifyCollectionItem`) que refaz um disco pela IA e **sobrescreve** | — |
-| v0.22.0 | Coleção: descritivo da IA rico/longo (momento histórico + faixa a faixa, baseado no nome do álbum) e **rolável** no card; grading (mídia/capa) como `Select` (NM/EX/VG+/VG-/G+/G-); **tags editáveis no card** + geradas pela IA (`mergeTags`); remove "Título original" do formulário | — |
+| v0.22.0 | Coleção: descritivo da IA rico/longo (momento histórico + faixa a faixa, baseado no nome do álbum) e **rolável** no card; grading (mídia/capa) como `Select` (NM/EX/VG+/VG-/G+/G-); **tags editáveis no card** + geradas pela IA (`mergeTags`); remove "Título original" do formulário | #86 |
+| v0.22.1 | Coleção: tags da IA restritas a **estilo/gênero musical** (sem época/artista/país/formato) | — |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
