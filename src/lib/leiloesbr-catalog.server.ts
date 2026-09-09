@@ -138,11 +138,41 @@ export function parseCatalogData(html: string): Map<string, CatalogLot> {
 }
 
 /**
+ * Extrai o array `PECAS` do JSON do endpoint, tolerando as variações de embrulho entre casas:
+ *   `[{ "PECAS":[…] }]`                (Discos Esquecidos)
+ *   `{ "Catalogo":[{ "PECAS":[…] }] }` (Catavento Discos)
+ *   `{ "PECAS":[…] }`
+ */
+export function extractPecas(parsed: unknown): Record<string, unknown>[] {
+  const fromNode = (n: unknown): Record<string, unknown>[] | null => {
+    if (!n || typeof n !== "object") return null;
+    const o = n as Record<string, unknown>;
+    if (Array.isArray(o["PECAS"])) return o["PECAS"] as Record<string, unknown>[];
+    for (const v of Object.values(o)) {
+      if (Array.isArray(v) && v[0] && typeof v[0] === "object") {
+        const inner = (v[0] as Record<string, unknown>)["PECAS"];
+        if (Array.isArray(inner)) return inner as Record<string, unknown>[];
+      }
+    }
+    return null;
+  };
+  if (Array.isArray(parsed)) {
+    for (const el of parsed) {
+      const r = fromNode(el);
+      if (r) return r;
+    }
+    return [];
+  }
+  return fromNode(parsed) ?? [];
+}
+
+/**
  * Endpoint de DADOS do catálogo (JSON), usado pelo template novo da LeilõesBR. O `catalogo.asp`
  * dessas casas é renderizado por JavaScript (o HTML server-side vem sem os lotes), mas o JS
- * busca os lotes deste endpoint — que o nosso servidor pode chamar direto. Retorna
- * `[{ "PECAS": [ {ID, LOTE, VALOR_VENDA, DESCRICAO, MOSTRABTN_CLASS ('is-vendido'|'is-naovendido'), …} ] }]`.
- * Paginado (`limit=30`). Fonte PREFERIDA: JSON limpo, com valor de venda e status inequívocos.
+ * busca os lotes deste endpoint — que o nosso servidor pode chamar direto. Cada peça tem
+ * `ID, LOTE, VALOR_VENDA, DESCRICAO, MOSTRABTN_CLASS ('is-vendido'|'is-naovendido')`.
+ * ⚠️ `VALOR_VENDA` é o valor REAL (mesmo quando `VALOR_VALUE` vem "--"/escondido nos leilões
+ * antigos) — por isso os antigos ainda dão para capturar. Paginado (`limit=30`).
  */
 async function fetchCatalogJson(
   domain: string,
@@ -167,9 +197,8 @@ async function fetchCatalogJson(
     } catch {
       break; // não é JSON → casa não usa este endpoint (template antigo)
     }
-    const container = Array.isArray(parsed) ? parsed[0] : parsed;
-    const pecas = (container as { PECAS?: unknown[] } | null)?.PECAS;
-    if (!Array.isArray(pecas) || pecas.length === 0) break;
+    const pecas = extractPecas(parsed);
+    if (pecas.length === 0) break;
     for (const p of pecas as Record<string, unknown>[]) {
       const id = String(p["ID"] ?? "").trim();
       if (!id || map.has(id)) continue;
