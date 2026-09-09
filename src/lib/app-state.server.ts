@@ -20,6 +20,8 @@ const AI_PROVIDER_KEY = "ai_provider";
 const COLLECTION_LINKS_KEY = "collection_links";
 const COLLECTION_FEEDBACK_KEY = "collection_feedback";
 const SALES_CAPTURED_KEY = "sales_captured";
+const ANALYTICS_ARTIST_ALIASES_KEY = "analytics_artist_aliases";
+const ANALYTICS_ALBUM_ALIASES_KEY = "analytics_album_aliases";
 
 /**
  * Casas de leilão marcadas como "verificadas" (chaves `${dia}|${casa}`). Global, um
@@ -267,6 +269,120 @@ export async function markSalesCaptured(idLeiloes: string[]): Promise<void> {
     console.error("[app-state] não foi possível gravar os leilões capturados", error);
     throw new Error(`Não foi possível gravar os leilões capturados: ${error.message}`);
   }
+}
+
+/**
+ * Apelidos (aprendizado manual) do Vinil Analytics: curadoria do usuário sobre o agrupamento
+ * artista → álbum, aplicada em `buildAnalytics` (ver `analytics.ts`). Mesmo modelo de override
+ * durável da Coleção (`collection_links`) — um registro por chave em `app_state`:
+ * - **`analytics_artist_aliases`** (`Record<artistKey, nomeCanônico>`): renomear/fundir artistas.
+ *   `artistKey` = `normalizeForMatch(artista)`. Renomear = 1 chave → novo nome; fundir = as
+ *   chaves de origem → o MESMO nome (caem no mesmo grupo). Vale nos dados atuais E futuros.
+ * - **`analytics_album_aliases`** (`Record<"${artistKey}|${albumKey}", nomeCanônico>`):
+ *   renomear/fundir álbuns no escopo do artista (chave já com o `artistKey` FINAL, pós-alias).
+ */
+export type AnalyticsAliases = {
+  artists: Record<string, string>;
+  albums: Record<string, string>;
+};
+
+function toStringMap(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "string" && v.trim()) out[k] = v;
+  }
+  return out;
+}
+
+async function readStringMap(key: string): Promise<Record<string, string>> {
+  const { data, error } = await supabaseAdmin
+    .from("app_state")
+    .select("value")
+    .eq("key", key)
+    .maybeSingle();
+  if (error) throw error;
+  return toStringMap(data?.value);
+}
+
+/** Lê os apelidos de artista e álbum do Analytics. Best-effort ({} em erro). */
+export async function getAnalyticsAliases(): Promise<AnalyticsAliases> {
+  try {
+    const [artists, albums] = await Promise.all([
+      readStringMap(ANALYTICS_ARTIST_ALIASES_KEY),
+      readStringMap(ANALYTICS_ALBUM_ALIASES_KEY),
+    ]);
+    return { artists, albums };
+  } catch (error) {
+    console.error(
+      "[app-state] não foi possível ler os apelidos do Analytics (usando vazio)",
+      error,
+    );
+    return { artists: {}, albums: {} };
+  }
+}
+
+async function saveStringMap(
+  key: string,
+  map: Record<string, string>,
+): Promise<{ savedAt: string }> {
+  const savedAt = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from("app_state")
+    .upsert({ key, value: map, updated_at: savedAt }, { onConflict: "key" });
+  if (error) {
+    console.error(`[app-state] não foi possível gravar ${key}`, error);
+    throw new Error(`Não foi possível gravar os apelidos: ${error.message}`);
+  }
+  return { savedAt };
+}
+
+/**
+ * Grava um apelido de ARTISTA (renomear/fundir): cada chave em `sourceKeys` passa a apontar para
+ * `name`. Chaves normalizadas ausentes/vazias e a `name` vazia são ignoradas (read-modify-write).
+ */
+export async function setAnalyticsArtistAlias(
+  sourceKeys: string[],
+  name: string,
+): Promise<{ savedAt: string }> {
+  const clean = name.trim();
+  const keys = sourceKeys.filter((k) => typeof k === "string" && k);
+  if (!clean || !keys.length) return { savedAt: new Date().toISOString() };
+  const map = await readStringMap(ANALYTICS_ARTIST_ALIASES_KEY).catch(
+    (): Record<string, string> => ({}),
+  );
+  for (const k of keys) map[k] = clean;
+  return saveStringMap(ANALYTICS_ARTIST_ALIASES_KEY, map);
+}
+
+/**
+ * Grava um apelido de ÁLBUM (renomear/fundir) no escopo do artista: cada chave em `keys`
+ * (`"${artistKey}|${albumKey}"`) passa a apontar para `name`. Read-modify-write.
+ */
+export async function setAnalyticsAlbumAlias(
+  keys: string[],
+  name: string,
+): Promise<{ savedAt: string }> {
+  const clean = name.trim();
+  const list = keys.filter((k) => typeof k === "string" && k);
+  if (!clean || !list.length) return { savedAt: new Date().toISOString() };
+  const map = await readStringMap(ANALYTICS_ALBUM_ALIASES_KEY).catch(
+    (): Record<string, string> => ({}),
+  );
+  for (const k of list) map[k] = clean;
+  return saveStringMap(ANALYTICS_ALBUM_ALIASES_KEY, map);
+}
+
+/** Remove um apelido (desfazer): `kind` escolhe o mapa; `key` é a chave a apagar. */
+export async function clearAnalyticsAlias(
+  kind: "artist" | "album",
+  key: string,
+): Promise<{ savedAt: string }> {
+  const mapKey = kind === "artist" ? ANALYTICS_ARTIST_ALIASES_KEY : ANALYTICS_ALBUM_ALIASES_KEY;
+  const map = await readStringMap(mapKey).catch((): Record<string, string> => ({}));
+  if (!(key in map)) return { savedAt: new Date().toISOString() };
+  delete map[key];
+  return saveStringMap(mapKey, map);
 }
 
 /**

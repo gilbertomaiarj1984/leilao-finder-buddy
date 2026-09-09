@@ -581,6 +581,70 @@ export const reidentifySales = createServerFn({ method: "POST" })
     return await reidentifyAllSales(data.max);
   });
 
+/**
+ * Apelidos do Vinil Analytics (curadoria manual do agrupamento artista → álbum, com
+ * "aprendizado" durável). Ver `app-state.server.ts` / `buildAnalytics`.
+ */
+export const getAnalyticsAliases = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    try {
+      const { getAnalyticsAliases: read } = await import("./app-state.server");
+      return await read();
+    } catch (error) {
+      console.error("[analytics] não foi possível ler os apelidos", error);
+      return { artists: {}, albums: {} };
+    }
+  });
+
+/** Renomear/fundir ARTISTA: cada chave normalizada em `sourceKeys` passa a apontar para `name`. */
+export const setAnalyticsArtistAlias = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { sourceKeys?: unknown; name?: unknown }) => ({
+    sourceKeys: Array.isArray(input?.sourceKeys)
+      ? input.sourceKeys.filter((k): k is string => typeof k === "string" && !!k)
+      : [],
+    name: typeof input?.name === "string" ? input.name.trim() : "",
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setAnalyticsArtistAlias: save } = await import("./app-state.server");
+    return await save(data.sourceKeys, data.name);
+  });
+
+/** Renomear/fundir ÁLBUM: cada chave `"${artistKey}|${albumKey}"` em `keys` aponta para `name`. */
+export const setAnalyticsAlbumAlias = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { keys?: unknown; name?: unknown }) => ({
+    keys: Array.isArray(input?.keys)
+      ? input.keys.filter((k): k is string => typeof k === "string" && !!k)
+      : [],
+    name: typeof input?.name === "string" ? input.name.trim() : "",
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setAnalyticsAlbumAlias: save } = await import("./app-state.server");
+    return await save(data.keys, data.name);
+  });
+
+/** Desfaz um apelido (remove a chave do mapa de artista ou de álbum). */
+export const clearAnalyticsAlias = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { kind?: unknown; key?: unknown }) => ({
+    kind: input?.kind === "album" ? ("album" as const) : ("artist" as const),
+    key: typeof input?.key === "string" ? input.key : "",
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { clearAnalyticsAlias: clear } = await import("./app-state.server");
+    return await clear(data.kind, data.key);
+  });
+
 /** Âncora de mercado do Discogs por lote (preço/demanda). Best-effort: [] em erro. */
 export const getLotMarket = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

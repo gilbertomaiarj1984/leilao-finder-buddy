@@ -1,15 +1,18 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   ArrowLeft,
+  ArrowUpDown,
   BarChart3,
+  Check,
   ChevronDown,
   ChevronRight,
   Disc3,
   ExternalLink,
+  Pencil,
   RefreshCw,
   Sparkles,
 } from "lucide-react";
@@ -18,16 +21,23 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AiProviderSelect } from "@/components/vinyl/ai-provider-controls";
 import { scoreTone } from "@/components/vinyl/ai-score-utils";
 import { fmtMoney } from "@/components/vinyl/ai-score-utils";
+import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
 import { type AlbumAgg, type ArtistAgg, buildAnalytics, type SaleRow } from "@/lib/analytics";
+import { type Condition, EMPTY_CONDITION, normalizeGrade, scoreCondition } from "@/lib/grading";
 import {
+  clearAnalyticsAlias,
   getAiProvider,
+  getAnalyticsAliases,
   getVinylSales,
   reidentifySales,
   setAiProvider,
+  setAnalyticsAlbumAlias,
+  setAnalyticsArtistAlias,
 } from "@/lib/leiloesbr.functions";
 import { normalizeForMatch } from "@/lib/vinyl-parse";
 
@@ -62,16 +72,46 @@ function demandLabel(s: SaleRow): string {
   return parts.length ? parts.join(" · ") : "—";
 }
 
+/** Reconstrói o estado (Disco/Capa/Score/Faixa/encarte) de uma venda para os badges (mesma
+ *  regra de espelhamento do resto do app, via `scoreCondition`). */
+function conditionFromSale(s: SaleRow): Condition {
+  const g = scoreCondition(normalizeGrade(s.media), normalizeGrade(s.sleeve));
+  return {
+    ...EMPTY_CONDITION,
+    media: g.media,
+    sleeve: g.sleeve,
+    score: g.score,
+    faixa: g.faixa,
+    insert: s.insert_state === "sim" ? "sim" : s.insert_state === "nao" ? "nao" : null,
+  };
+}
+
+type ArtistSort = "count" | "alpha";
+type AlbumSort = "count" | "alpha";
+
 function VinilAnalyticsPage() {
   const queryClient = useQueryClient();
   const fetchSales = useServerFn(getVinylSales);
   const runReident = useServerFn(reidentifySales);
   const fetchAiProvider = useServerFn(getAiProvider);
   const runSetAiProvider = useServerFn(setAiProvider);
+  const fetchAliases = useServerFn(getAnalyticsAliases);
+  const runSetArtistAlias = useServerFn(setAnalyticsArtistAlias);
+  const runSetAlbumAlias = useServerFn(setAnalyticsAlbumAlias);
+  const runClearAlias = useServerFn(clearAnalyticsAlias);
   const sales = useQuery({
     queryKey: ["vinyl-sales"] as const,
     queryFn: () => fetchSales(),
     staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  // Apelidos (curadoria manual do agrupamento — renomear/fundir artistas e álbuns). Fonte da
+  // verdade no servidor (`app_state`); aplicados em `buildAnalytics`. Escrita otimista.
+  const aliasesQuery = useQuery({
+    queryKey: ["analytics-aliases"] as const,
+    queryFn: () => fetchAliases(),
+    staleTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
 
@@ -91,6 +131,60 @@ function VinilAnalyticsPage() {
       .catch((error: unknown) => {
         queryClient.setQueryData(["ai-provider"], prev);
         toast.error((error as Error)?.message || "Não foi possível salvar o provedor de IA");
+      });
+  };
+
+  // Grava um apelido de ARTISTA (renomear/fundir). Update otimista no cache dos apelidos → o
+  // `useMemo` de `buildAnalytics` recomputa na hora; em erro, reverte.
+  const applyArtistAlias = (sourceKeys: string[], name: string) => {
+    const prev = aliasesQuery.data;
+    const next = {
+      artists: { ...(prev?.artists ?? {}) },
+      albums: { ...(prev?.albums ?? {}) },
+    };
+    for (const k of sourceKeys) next.artists[k] = name;
+    queryClient.setQueryData(["analytics-aliases"], next);
+    void runSetArtistAlias({ data: { sourceKeys, name } })
+      .then(() => toast.success(`Artista atualizado: ${name}`))
+      .catch((error: unknown) => {
+        queryClient.setQueryData(["analytics-aliases"], prev);
+        toast.error((error as Error)?.message || "Não foi possível salvar o artista");
+      });
+  };
+
+  // Grava um apelido de ÁLBUM (renomear/fundir no escopo do artista).
+  const applyAlbumAlias = (keys: string[], name: string) => {
+    const prev = aliasesQuery.data;
+    const next = {
+      artists: { ...(prev?.artists ?? {}) },
+      albums: { ...(prev?.albums ?? {}) },
+    };
+    for (const k of keys) next.albums[k] = name;
+    queryClient.setQueryData(["analytics-aliases"], next);
+    void runSetAlbumAlias({ data: { keys, name } })
+      .then(() => toast.success(`Álbum atualizado: ${name}`))
+      .catch((error: unknown) => {
+        queryClient.setQueryData(["analytics-aliases"], prev);
+        toast.error((error as Error)?.message || "Não foi possível salvar o álbum");
+      });
+  };
+
+  // Desfaz os apelidos de um artista (remove suas chaves dos dois mapas). Volta ao automático.
+  const clearArtistAlias = (artist: ArtistAgg) => {
+    const prev = aliasesQuery.data;
+    const next = {
+      artists: { ...(prev?.artists ?? {}) },
+      albums: { ...(prev?.albums ?? {}) },
+    };
+    for (const k of artist.sourceKeys) delete next.artists[k];
+    queryClient.setQueryData(["analytics-aliases"], next);
+    void Promise.all(
+      artist.sourceKeys.map((key) => runClearAlias({ data: { kind: "artist", key } })),
+    )
+      .then(() => toast.success("Curadoria do artista desfeita"))
+      .catch((error: unknown) => {
+        queryClient.setQueryData(["analytics-aliases"], prev);
+        toast.error((error as Error)?.message || "Não foi possível desfazer");
       });
   };
 
@@ -124,31 +218,38 @@ function VinilAnalyticsPage() {
   };
 
   const rows = useMemo(() => (sales.data ?? []) as SaleRow[], [sales.data]);
-  const analytics = useMemo(() => buildAnalytics(rows), [rows]);
-
-  const [search, setSearch] = useState("");
-  const searchNorm = normalizeForMatch(search);
-  const artists = useMemo(
-    () =>
-      !searchNorm
-        ? analytics
-        : analytics.filter(
-            (a) =>
-              normalizeForMatch(a.artist).includes(searchNorm) ||
-              a.albums.some((al) => normalizeForMatch(al.album).includes(searchNorm)),
-          ),
-    [analytics, searchNorm],
+  const analytics = useMemo(
+    () => buildAnalytics(rows, aliasesQuery.data),
+    [rows, aliasesQuery.data],
   );
 
-  const totals = useMemo(() => {
-    const priced = rows.map((r) => r.sold_price).filter((v): v is number => typeof v === "number");
-    const sum = priced.reduce((a, b) => a + b, 0);
-    return {
-      sales: rows.length,
-      artists: analytics.length,
-      avg: priced.length ? Math.round(sum / priced.length) : null,
-    };
-  }, [rows, analytics]);
+  const [search, setSearch] = useState("");
+  const [artistSort, setArtistSort] = useState<ArtistSort>("count");
+  const searchNorm = normalizeForMatch(search);
+  const artists = useMemo(() => {
+    const filtered = !searchNorm
+      ? analytics
+      : analytics.filter(
+          (a) =>
+            normalizeForMatch(a.artist).includes(searchNorm) ||
+            a.albums.some((al) => normalizeForMatch(al.album).includes(searchNorm)),
+        );
+    const sorted = [...filtered];
+    if (artistSort === "alpha") {
+      sorted.sort((a, b) => a.artist.localeCompare(b.artist, "pt-BR"));
+    } else {
+      // Nº de álbuns (desc), desempate alfabético.
+      sorted.sort(
+        (a, b) => b.albums.length - a.albums.length || a.artist.localeCompare(b.artist, "pt-BR"),
+      );
+    }
+    return sorted;
+  }, [analytics, searchNorm, artistSort]);
+
+  const totals = useMemo(
+    () => ({ sales: rows.length, artists: analytics.length }),
+    [rows, analytics],
+  );
 
   return (
     <main className="min-h-screen bg-background">
@@ -205,7 +306,16 @@ function VinilAnalyticsPage() {
         <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <StatChip label="Vendas" value={String(totals.sales)} />
           <StatChip label="Artistas" value={String(totals.artists)} />
-          <StatChip label="Preço médio" value={money(totals.avg)} />
+          {/* Ordenação da lista de artistas: alfabética ou por nº de álbuns. */}
+          <SortToggle
+            label="Artistas"
+            options={[
+              { value: "count", label: "Nº álbuns" },
+              { value: "alpha", label: "A→Z" },
+            ]}
+            value={artistSort}
+            onChange={(v) => setArtistSort(v as ArtistSort)}
+          />
           <div className="ml-auto w-full sm:w-64">
             <Input
               value={search}
@@ -226,7 +336,14 @@ function VinilAnalyticsPage() {
         ) : (
           <div className="flex flex-col gap-2">
             {artists.map((a) => (
-              <ArtistRow key={a.artist} artist={a} />
+              <ArtistRow
+                key={a.key}
+                artist={a}
+                allArtists={analytics}
+                onApplyArtist={applyArtistAlias}
+                onClearArtist={() => clearArtistAlias(a)}
+                onApplyAlbum={applyAlbumAlias}
+              />
             ))}
           </div>
         )}
@@ -244,6 +361,40 @@ function StatChip({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Alternador compacto de ordenação (segmentado). */
+function SortToggle({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded bg-secondary px-2 py-1">
+      <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+      <span className="text-muted-foreground">{label}:</span>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+            value === o.value
+              ? "bg-primary text-primary-foreground"
+              : "text-foreground hover:bg-background"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </span>
+  );
+}
+
 function EmptyState() {
   return (
     <div className="rounded-md border border-border bg-card p-8 text-center">
@@ -257,69 +408,157 @@ function EmptyState() {
   );
 }
 
-function ArtistRow({ artist }: { artist: ArtistAgg }) {
+function ArtistRow({
+  artist,
+  allArtists,
+  onApplyArtist,
+  onClearArtist,
+  onApplyAlbum,
+}: {
+  artist: ArtistAgg;
+  allArtists: ArtistAgg[];
+  onApplyArtist: (sourceKeys: string[], name: string) => void;
+  onClearArtist: () => void;
+  onApplyAlbum: (keys: string[], name: string) => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [edit, setEdit] = useState(false);
+  const [albumSort, setAlbumSort] = useState<AlbumSort>("count");
+
+  const sortedAlbums = useMemo(() => {
+    const list = [...artist.albums];
+    if (albumSort === "alpha") list.sort((a, b) => a.album.localeCompare(b.album, "pt-BR"));
+    else list.sort((a, b) => b.count - a.count || (b.avgPrice ?? 0) - (a.avgPrice ?? 0));
+    return list;
+  }, [artist.albums, albumSort]);
+
   return (
     <section className="overflow-hidden rounded-md border border-border bg-card">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-secondary/40"
-      >
-        {open ? (
-          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-        )}
-        <span className="flex-1 font-semibold text-foreground">{artist.artist}</span>
-        <span className="text-xs text-muted-foreground">
-          {artist.count} {artist.count === 1 ? "venda" : "vendas"} · {artist.albums.length}{" "}
-          {artist.albums.length === 1 ? "álbum" : "álbuns"}
-        </span>
-        <span className="ml-2 rounded bg-secondary px-2 py-0.5 text-sm font-semibold text-primary">
-          {money(artist.avgPrice)}
-        </span>
-      </button>
+      <div className="flex items-center gap-2 px-4 py-3">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex flex-1 items-center gap-2 text-left hover:opacity-80"
+        >
+          {open ? (
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          )}
+          <span className="flex-1 font-semibold text-foreground">{artist.artist}</span>
+          <span className="text-xs text-muted-foreground">
+            {artist.count} {artist.count === 1 ? "venda" : "vendas"} · {artist.albums.length}{" "}
+            {artist.albums.length === 1 ? "álbum" : "álbuns"}
+          </span>
+          <span className="ml-2 rounded bg-secondary px-2 py-0.5 text-sm font-semibold text-primary">
+            {money(artist.avgPrice)}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setEdit(true)}
+          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+          title="Editar nome ou juntar com outro artista"
+          aria-label="Editar artista"
+        >
+          <Pencil className="h-4 w-4" />
+        </button>
+      </div>
       {open ? (
-        <div className="flex flex-col gap-2 border-t border-border p-3">
-          {artist.albums.map((al) => (
-            <AlbumRow key={al.album} album={al} />
-          ))}
+        <div className="border-t border-border p-3">
+          <div className="mb-2 flex justify-end">
+            <SortToggle
+              label="Álbuns"
+              options={[
+                { value: "count", label: "Nº na base" },
+                { value: "alpha", label: "A→Z" },
+              ]}
+              value={albumSort}
+              onChange={(v) => setAlbumSort(v as AlbumSort)}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            {sortedAlbums.map((al) => (
+              <AlbumRow
+                key={al.key}
+                album={al}
+                artistKey={artist.key}
+                siblings={artist.albums}
+                onApplyAlbum={onApplyAlbum}
+              />
+            ))}
+          </div>
         </div>
       ) : null}
+      <ArtistEditDialog
+        artist={artist}
+        allArtists={allArtists}
+        open={edit}
+        onClose={() => setEdit(false)}
+        onApply={onApplyArtist}
+        onClear={onClearArtist}
+      />
     </section>
   );
 }
 
-function AlbumRow({ album }: { album: AlbumAgg }) {
+function AlbumRow({
+  album,
+  artistKey,
+  siblings,
+  onApplyAlbum,
+}: {
+  album: AlbumAgg;
+  artistKey: string;
+  siblings: AlbumAgg[];
+  onApplyAlbum: (keys: string[], name: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState(false);
+  const [edit, setEdit] = useState(false);
+  // Faixas do agregador vêm melhor→pior (ordem de FAIXAS). O eixo dos cards abaixo é
+  // pior→melhor (esquerda = pior), então mostramos os chips no MESMO racional (pior→melhor).
+  const faixasAsc = useMemo(() => [...album.faixas].reverse(), [album.faixas]);
+
   return (
     <div className="rounded-md border border-border bg-background">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-secondary/40"
-      >
-        {open ? (
-          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-        )}
-        <span className="flex-1 text-sm font-medium text-foreground">{album.album}</span>
-        <span className="text-xs text-muted-foreground">
-          {album.count} na base · {money(album.minPrice)}–{money(album.maxPrice)}
-        </span>
-        <span className="ml-2 rounded bg-secondary px-2 py-0.5 text-sm font-semibold text-primary">
-          {money(album.avgPrice)}
-        </span>
-      </button>
+      <div className="flex items-center gap-2 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="shrink-0 text-muted-foreground hover:text-foreground"
+          aria-label={open ? "Recolher" : "Expandir"}
+        >
+          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </button>
+        {/* O NOME do álbum abre a curadoria (renomear / juntar com outro álbum). */}
+        <button
+          type="button"
+          onClick={() => setEdit(true)}
+          className="flex-1 truncate text-left text-sm font-medium text-foreground hover:underline"
+          title="Editar nome ou juntar com outro álbum"
+        >
+          {album.album}
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-2 text-left"
+        >
+          <span className="text-xs text-muted-foreground">
+            {album.count} na base · {money(album.minPrice)}–{money(album.maxPrice)}
+          </span>
+          <span className="ml-2 rounded bg-secondary px-2 py-0.5 text-sm font-semibold text-primary">
+            {money(album.avgPrice)}
+          </span>
+        </button>
+      </div>
       {open ? (
         <div className="border-t border-border p-3">
-          {/* Médias por Faixa de Classificação. */}
-          {album.faixas.length ? (
+          {/* Médias por Faixa de Classificação (pior → melhor, casando com o eixo abaixo). */}
+          {faixasAsc.length ? (
             <div className="mb-3 flex flex-wrap items-center gap-1.5">
-              {album.faixas.map((f) => (
+              {faixasAsc.map((f) => (
                 <span
                   key={f.label}
                   className="rounded bg-secondary px-1.5 py-0.5 text-xs text-foreground"
@@ -339,7 +578,7 @@ function AlbumRow({ album }: { album: AlbumAgg }) {
           </div>
           <div className="flex gap-2 overflow-x-auto pb-2">
             {album.sales.map((s) => (
-              <SaleMarker key={s.lot_id} sale={s} />
+              <SaleMarker key={s.lot_id} sale={s} albumName={album.album} />
             ))}
           </div>
 
@@ -354,31 +593,446 @@ function AlbumRow({ album }: { album: AlbumAgg }) {
         </div>
       ) : null}
       <DetailDialog album={album} open={detail} onClose={() => setDetail(false)} />
+      <AlbumEditDialog
+        album={album}
+        artistKey={artistKey}
+        siblings={siblings}
+        open={edit}
+        onClose={() => setEdit(false)}
+        onApply={onApplyAlbum}
+      />
     </div>
   );
 }
 
-function SaleMarker({ sale }: { sale: SaleRow }) {
+/** Mini card horizontal: VALOR em cima, estado no meio, NOTA (score) embaixo. Ao passar o
+ *  mouse, mostra um preview compacto (Popover portalizado → não é cortado pelo scroll). */
+function SaleMarker({ sale, albumName }: { sale: SaleRow; albumName: string }) {
+  const [open, setOpen] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cond = useMemo(() => conditionFromSale(sale), [sale]);
   const grade =
     sale.media || sale.sleeve
       ? `${sale.media || "?"}/${sale.sleeve || "?"}`
       : sale.faixa || "estado —";
+
+  const cancelClose = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setOpen(false), 120);
+  };
+
   return (
-    <div className="flex w-24 shrink-0 flex-col items-center gap-1 rounded border border-border bg-card p-2 text-center">
-      <span
-        className={`w-full truncate rounded px-1 py-0.5 text-[11px] font-semibold ${scoreTone(sale.score)}`}
-        title={`Disco ${sale.media || "—"} · Capa ${sale.sleeve || "—"}${
-          sale.score !== null ? ` · Score ${sale.score}` : ""
-        }`}
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <div
+          onMouseEnter={() => {
+            cancelClose();
+            setOpen(true);
+          }}
+          onMouseLeave={scheduleClose}
+          className="flex w-24 shrink-0 cursor-default flex-col items-center gap-1 rounded border border-border bg-card p-2 text-center"
+        >
+          {/* VALOR (antes era a nota que ficava aqui em cima) */}
+          <span className="w-full truncate text-xs font-semibold text-foreground">
+            {money(sale.sold_price)}
+          </span>
+          <span className="w-full truncate text-[10px] text-muted-foreground" title={grade}>
+            {grade}
+          </span>
+          {/* NOTA/score (invertida com o valor) */}
+          <span
+            className={`w-full truncate rounded px-1 py-0.5 text-[11px] font-semibold ${scoreTone(sale.score)}`}
+            title={`Disco ${sale.media || "—"} · Capa ${sale.sleeve || "—"}${
+              sale.score !== null ? ` · Score ${sale.score}` : ""
+            }`}
+          >
+            {sale.score !== null ? sale.score : "—"}
+          </span>
+        </div>
+      </PopoverTrigger>
+      <PopoverContent
+        align="center"
+        side="top"
+        className="w-64 p-3"
+        onMouseEnter={cancelClose}
+        onMouseLeave={scheduleClose}
+        onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        {sale.score !== null ? sale.score : "—"}
-      </span>
-      <span className="w-full truncate text-[10px] text-muted-foreground" title={grade}>
-        {grade}
-      </span>
-      <span className="text-xs font-semibold text-foreground">{money(sale.sold_price)}</span>
+        <SalePreview sale={sale} albumName={albumName} condition={cond} />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Preview compacto do lote (sem imagem por ora — o histórico não guarda a URL da imagem). */
+function SalePreview({
+  sale,
+  albumName,
+  condition,
+}: {
+  sale: SaleRow;
+  albumName: string;
+  condition: Condition;
+}) {
+  const img = (sale as SaleRow & { image?: string | null }).image ?? null;
+  return (
+    <div className="flex flex-col gap-2">
+      {img ? (
+        <div className="h-32 w-full overflow-hidden rounded bg-secondary">
+          <img src={img} alt="" loading="lazy" className="h-full w-full object-contain p-1" />
+        </div>
+      ) : null}
+      <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">{albumName}</p>
+      {sale.title && normalizeForMatch(sale.title) !== normalizeForMatch(albumName) ? (
+        <p className="line-clamp-2 text-xs leading-snug text-muted-foreground">{sale.title}</p>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+        <ConditionBadges condition={condition} />
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="font-semibold text-primary" title="Valor de venda">
+          {money(sale.sold_price)}
+        </span>
+        {sale.initial_price != null ? (
+          <span className="text-muted-foreground" title={discountTip(sale)}>
+            inicial {money(sale.initial_price)}
+          </span>
+        ) : null}
+        {netCost(sale) != null ? (
+          <span className="text-muted-foreground" title={feeTip(sale)}>
+            c/ taxa {money(netCost(sale))}
+          </span>
+        ) : null}
+      </div>
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>
+          {sale.sold_date ?? "—"} · {demandLabel(sale)}
+        </span>
+        {sale.source_url ? (
+          <a
+            href={sale.source_url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-primary hover:underline"
+          >
+            Lote <ExternalLink className="h-3 w-3" />
+          </a>
+        ) : null}
+      </div>
     </div>
   );
+}
+
+/** Editar/renomear/fundir ARTISTA. Alvo = nome digitado; origem = este artista + selecionados. */
+function ArtistEditDialog({
+  artist,
+  allArtists,
+  open,
+  onClose,
+  onApply,
+  onClear,
+}: {
+  artist: ArtistAgg;
+  allArtists: ArtistAgg[];
+  open: boolean;
+  onClose: () => void;
+  onApply: (sourceKeys: string[], name: string) => void;
+  onClear: () => void;
+}) {
+  const [name, setName] = useState(artist.artist);
+  const [filter, setFilter] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // Reinicia o estado ao (re)abrir para este artista.
+  const openedFor = useRef<string | null>(null);
+  if (open && openedFor.current !== artist.key) {
+    openedFor.current = artist.key;
+    setName(artist.artist);
+    setFilter("");
+    setSelected(new Set());
+  }
+  if (!open && openedFor.current !== null) openedFor.current = null;
+
+  const filterNorm = normalizeForMatch(filter);
+  const candidates = useMemo(
+    () =>
+      allArtists
+        .filter((a) => a.key !== artist.key)
+        .filter((a) => !filterNorm || normalizeForMatch(a.artist).includes(filterNorm))
+        .slice(0, 60),
+    [allArtists, artist.key, filterNorm],
+  );
+
+  const toggle = (key: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const save = () => {
+    const target = name.trim() || artist.artist;
+    // Chaves de origem: as deste artista + as de cada artista selecionado (fusão).
+    const merged = allArtists.filter((a) => selected.has(a.key));
+    const sourceKeys = [...new Set([...artist.sourceKeys, ...merged.flatMap((a) => a.sourceKeys)])];
+    onApply(sourceKeys, target);
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Editar artista</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-muted-foreground">Nome do artista</span>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-sm text-muted-foreground">
+              Juntar com outro artista (os álbuns são agrupados; álbuns coincidentes se somam)
+            </span>
+            <Input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Buscar artista para juntar…"
+            />
+            <div className="max-h-56 overflow-y-auto rounded border border-border">
+              {candidates.length === 0 ? (
+                <p className="p-3 text-sm text-muted-foreground">Nenhum artista encontrado.</p>
+              ) : (
+                candidates.map((a) => {
+                  const on = selected.has(a.key);
+                  return (
+                    <button
+                      key={a.key}
+                      type="button"
+                      onClick={() => toggle(a.key)}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-secondary/60 ${
+                        on ? "bg-secondary" : ""
+                      }`}
+                    >
+                      <span
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                          on ? "border-primary bg-primary text-primary-foreground" : "border-border"
+                        }`}
+                      >
+                        {on ? <Check className="h-3 w-3" /> : null}
+                      </span>
+                      <span className="flex-1 truncate text-foreground">{a.artist}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {a.albums.length} álbuns · {a.count} vendas
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Isso vira um aprendizado do sistema: variações desses nomes passam a cair sempre neste
+              grupo, agora e no futuro.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClear}
+              title="Voltar ao agrupamento automático"
+            >
+              Desfazer curadoria
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={onClose}>
+                Cancelar
+              </Button>
+              <Button size="sm" onClick={save}>
+                Salvar
+              </Button>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Editar/renomear/fundir ÁLBUM no escopo do artista. Mantém o nome DESTE álbum (salvo se
+ *  renomeado); os selecionados se juntam a ele. */
+function AlbumEditDialog({
+  album,
+  artistKey,
+  siblings,
+  open,
+  onClose,
+  onApply,
+}: {
+  album: AlbumAgg;
+  artistKey: string;
+  siblings: AlbumAgg[];
+  open: boolean;
+  onClose: () => void;
+  onApply: (keys: string[], name: string) => void;
+}) {
+  const [name, setName] = useState(album.album);
+  const [filter, setFilter] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const openedFor = useRef<string | null>(null);
+  if (open && openedFor.current !== album.key) {
+    openedFor.current = album.key;
+    setName(album.album);
+    setFilter("");
+    setSelected(new Set());
+  }
+  if (!open && openedFor.current !== null) openedFor.current = null;
+
+  const filterNorm = normalizeForMatch(filter);
+  const candidates = useMemo(
+    () =>
+      siblings
+        .filter((a) => a.key !== album.key)
+        .filter((a) => !filterNorm || normalizeForMatch(a.album).includes(filterNorm)),
+    [siblings, album.key, filterNorm],
+  );
+
+  const toggle = (key: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const save = () => {
+    const target = name.trim() || album.album;
+    const merged = siblings.filter((a) => selected.has(a.key));
+    // Chaves de origem, no escopo do artista: `${artistKey}|${albumSourceKey}`.
+    const rawKeys = [...new Set([...album.sourceKeys, ...merged.flatMap((a) => a.sourceKeys)])];
+    const keys = rawKeys.map((k) => `${artistKey}|${k}`);
+    onApply(keys, target);
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Editar álbum</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-muted-foreground">Nome do álbum</span>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-sm text-muted-foreground">
+              Juntar com outro álbum deste artista (viram o mesmo, mantendo este nome)
+            </span>
+            <Input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Buscar álbum para juntar…"
+            />
+            <div className="max-h-56 overflow-y-auto rounded border border-border">
+              {candidates.length === 0 ? (
+                <p className="p-3 text-sm text-muted-foreground">
+                  Nenhum outro álbum deste artista.
+                </p>
+              ) : (
+                candidates.map((a) => {
+                  const on = selected.has(a.key);
+                  return (
+                    <button
+                      key={a.key}
+                      type="button"
+                      onClick={() => toggle(a.key)}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-secondary/60 ${
+                        on ? "bg-secondary" : ""
+                      }`}
+                    >
+                      <span
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                          on ? "border-primary bg-primary text-primary-foreground" : "border-border"
+                        }`}
+                      >
+                        {on ? <Check className="h-3 w-3" /> : null}
+                      </span>
+                      <span className="flex-1 truncate text-foreground">{a.album}</span>
+                      <span className="text-xs text-muted-foreground">{a.count} na base</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Isso vira um aprendizado do sistema: os discos desses álbuns passam a contar como este
+              álbum, agora e no futuro.
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button size="sm" onClick={save}>
+              Salvar
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Colunas ordenáveis da tabela de Detalhes.
+type SortCol =
+  "data" | "disco" | "capa" | "score" | "faixa" | "inicial" | "valor" | "custo" | "demanda";
+const GRADE_INDEX: Record<string, number> = {
+  M: 0,
+  NM: 1,
+  EX: 2,
+  "VG+": 3,
+  VG: 4,
+  "VG-": 5,
+  "G+": 6,
+  G: 7,
+  "G-": 8,
+  "F/P": 9,
+};
+/** Valor comparável de uma venda para cada coluna (null = sempre no fim). */
+function sortValue(s: SaleRow, col: SortCol): number | string | null {
+  switch (col) {
+    case "data":
+      return s.sold_date ?? null;
+    case "disco":
+      return s.media ? (GRADE_INDEX[s.media] ?? null) : null;
+    case "capa":
+      return s.sleeve ? (GRADE_INDEX[s.sleeve] ?? null) : null;
+    case "score":
+    case "faixa":
+      return s.score;
+    case "inicial":
+      return s.initial_price ?? null;
+    case "valor":
+      return s.sold_price;
+    case "custo":
+      return netCost(s);
+    case "demanda":
+      return s.views ?? s.bids ?? null;
+    default:
+      return null;
+  }
 }
 
 function DetailDialog({
@@ -390,6 +1044,42 @@ function DetailDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  // Padrão: score ascendente (pior → melhor), como o eixo dos mini cards.
+  const [sort, setSort] = useState<{ col: SortCol; dir: 1 | -1 }>({ col: "score", dir: 1 });
+  const sorted = useMemo(() => {
+    const list = [...album.sales];
+    const { col, dir } = sort;
+    list.sort((a, b) => {
+      const va = sortValue(a, col);
+      const vb = sortValue(b, col);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1; // nulos sempre ao fim
+      if (vb == null) return -1;
+      if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
+      return String(va).localeCompare(String(vb), "pt-BR") * dir;
+    });
+    return list;
+  }, [album.sales, sort]);
+
+  const onSort = (col: SortCol) =>
+    setSort((prev) => (prev.col === col ? { col, dir: prev.dir === 1 ? -1 : 1 } : { col, dir: 1 }));
+
+  const arrow = (col: SortCol) => (sort.col === col ? (sort.dir === 1 ? " ▲" : " ▼") : "");
+  const Th = ({ col, label, extra }: { col: SortCol; label: string; extra?: string }) => (
+    <th className="py-1 pr-3" title={extra}>
+      <button
+        type="button"
+        onClick={() => onSort(col)}
+        className={`inline-flex items-center hover:text-foreground ${
+          sort.col === col ? "font-semibold text-foreground" : ""
+        }`}
+      >
+        {label}
+        {arrow(col)}
+      </button>
+    </th>
+  );
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
@@ -400,24 +1090,24 @@ function DetailDialog({
           <table className="w-full text-left text-sm">
             <thead className="text-xs text-muted-foreground">
               <tr>
-                <th className="py-1 pr-3">Data</th>
-                <th className="py-1 pr-3">Disco</th>
-                <th className="py-1 pr-3">Capa</th>
-                <th className="py-1 pr-3">Score</th>
-                <th className="py-1 pr-3">Faixa</th>
-                <th className="py-1 pr-3">Inicial</th>
-                <th className="py-1 pr-3">Valor</th>
-                <th className="py-1 pr-3" title="Custo real = valor + taxa do leiloeiro">
-                  Custo c/ taxa
-                </th>
-                <th className="py-1 pr-3" title="Visualizações · lances">
-                  Demanda
-                </th>
+                <Th col="data" label="Data" />
+                <Th col="disco" label="Disco" />
+                <Th col="capa" label="Capa" />
+                <Th col="score" label="Score" />
+                <Th col="faixa" label="Faixa" />
+                <Th col="inicial" label="Inicial" />
+                <Th col="valor" label="Valor" />
+                <Th
+                  col="custo"
+                  label="Custo c/ taxa"
+                  extra="Custo real = valor + taxa do leiloeiro"
+                />
+                <Th col="demanda" label="Demanda" extra="Visualizações · lances" />
                 <th className="py-1">Lote</th>
               </tr>
             </thead>
             <tbody>
-              {album.sales.map((s) => (
+              {sorted.map((s) => (
                 <tr key={s.lot_id} className="border-t border-border">
                   <td className="py-1 pr-3 text-muted-foreground">{s.sold_date ?? "—"}</td>
                   <td className="py-1 pr-3">{s.media || "—"}</td>

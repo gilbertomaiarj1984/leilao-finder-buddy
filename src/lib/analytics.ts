@@ -38,6 +38,8 @@ export type FaixaAgg = { label: string; count: number; avgPrice: number | null }
 
 export type AlbumAgg = {
   album: string;
+  key: string; // chave normalizada FINAL do álbum (escopo do artista) — usada pela curadoria
+  sourceKeys: string[]; // chaves normalizadas ORIGINAIS que caíram neste álbum (p/ persistir fusões)
   count: number;
   avgPrice: number | null;
   minPrice: number | null;
@@ -48,9 +50,21 @@ export type AlbumAgg = {
 
 export type ArtistAgg = {
   artist: string;
+  key: string; // chave normalizada FINAL do artista (pós-alias) — usada pela curadoria
+  sourceKeys: string[]; // chaves normalizadas ORIGINAIS que caíram neste artista (p/ persistir fusões)
   count: number;
   avgPrice: number | null;
   albums: AlbumAgg[];
+};
+
+/**
+ * Apelidos (curadoria manual, "aprendizado") do usuário — ver `app-state.server.ts`. Mapeiam a
+ * CHAVE normalizada de origem para o nome canônico escolhido; renomear e fundir são o mesmo
+ * mecanismo (chaves diferentes apontando para o mesmo nome caem no mesmo grupo).
+ */
+export type AnalyticsAliases = {
+  artists?: Record<string, string>;
+  albums?: Record<string, string>;
 };
 
 /** Média (arredondada) de uma lista, ignorando nulos; null quando não há número. */
@@ -124,10 +138,21 @@ function byScoreAsc(a: SaleRow, b: SaleRow): number {
   return sa - sb;
 }
 
-// Bucket de álbum: guarda todas as grafias vistas (p/ escolher a canônica) + as vendas.
-type AlbumBucket = { variants: string[]; sales: SaleRow[] };
-// Bucket de artista: grafias vistas + os álbuns por CHAVE normalizada.
-type ArtistBucket = { variants: string[]; albums: Map<string, AlbumBucket> };
+// Bucket de álbum: grafias vistas (p/ canônica), chaves originais (p/ fusões) + as vendas.
+// `override` = nome forçado pela curadoria (vence a canônica).
+type AlbumBucket = {
+  variants: string[];
+  sourceKeys: Set<string>;
+  override: string | null;
+  sales: SaleRow[];
+};
+// Bucket de artista: grafias, chaves originais, override e os álbuns por CHAVE normalizada.
+type ArtistBucket = {
+  variants: string[];
+  sourceKeys: Set<string>;
+  override: string | null;
+  albums: Map<string, AlbumBucket>;
+};
 
 /**
  * Agrega o histórico de vendas em artista → álbum.
@@ -139,7 +164,9 @@ type ArtistBucket = { variants: string[]; albums: Map<string, AlbumBucket> };
  * (`pickCanonical` — mais acentuada, depois mais longa). Isso corrige os casos em que
  * variações mínimas geravam 2 linhas para o mesmo artista/álbum.
  */
-export function buildAnalytics(rows: SaleRow[]): ArtistAgg[] {
+export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): ArtistAgg[] {
+  const artistAliases = aliases?.artists ?? {};
+  const albumAliases = aliases?.albums ?? {};
   const byArtist = new Map<string, ArtistBucket>();
   for (const row of rows) {
     // Exclui do Analytics o que caiu por engano de OUTRO formato (DVD/HQ/revista/livro…),
@@ -147,30 +174,57 @@ export function buildAnalytics(rows: SaleRow[]): ArtistAgg[] {
     if (looksNonVinylSale(`${row.title} ${row.artist}`)) continue;
     const artist = row.artist?.trim() || UNCLASSIFIED_LABEL;
     const album = deriveAlbum(row.title, artist);
-    const artistKey = normalizeForMatch(artist) || normalizeForMatch(UNCLASSIFIED_LABEL);
-    const albumKey = normalizeForMatch(album) || album;
+    // Chave ORIGINAL do artista (antes de qualquer apelido) — guardada p/ persistir fusões.
+    const rawArtistKey = normalizeForMatch(artist) || normalizeForMatch(UNCLASSIFIED_LABEL);
+    // Apelido de artista (renomear/fundir): re-chaveia pelo nome canônico escolhido.
+    const artistOverride = artistAliases[rawArtistKey];
+    const artistKey = artistOverride
+      ? normalizeForMatch(artistOverride) || rawArtistKey
+      : rawArtistKey;
 
-    const aBucket: ArtistBucket = byArtist.get(artistKey) ?? { variants: [], albums: new Map() };
+    const rawAlbumKey = normalizeForMatch(album) || album;
+    // Apelido de álbum: chave no escopo do artista FINAL (pós-alias), acompanhando fusões.
+    const albumAliasKey = `${artistKey}|${rawAlbumKey}`;
+    const albumOverride = albumAliases[albumAliasKey];
+    const albumKey = albumOverride ? normalizeForMatch(albumOverride) || rawAlbumKey : rawAlbumKey;
+
+    const aBucket: ArtistBucket = byArtist.get(artistKey) ?? {
+      variants: [],
+      sourceKeys: new Set(),
+      override: null,
+      albums: new Map(),
+    };
     aBucket.variants.push(artist);
-    const alBucket: AlbumBucket = aBucket.albums.get(albumKey) ?? { variants: [], sales: [] };
+    aBucket.sourceKeys.add(rawArtistKey);
+    if (artistOverride) aBucket.override = artistOverride;
+    const alBucket: AlbumBucket = aBucket.albums.get(albumKey) ?? {
+      variants: [],
+      sourceKeys: new Set(),
+      override: null,
+      sales: [],
+    };
     alBucket.variants.push(album);
+    alBucket.sourceKeys.add(rawAlbumKey);
+    if (albumOverride) alBucket.override = albumOverride;
     alBucket.sales.push(row);
     aBucket.albums.set(albumKey, alBucket);
     byArtist.set(artistKey, aBucket);
   }
 
   const result: ArtistAgg[] = [];
-  for (const aBucket of byArtist.values()) {
-    const artist = pickCanonical(aBucket.variants) || UNCLASSIFIED_LABEL;
+  for (const [artistKey, aBucket] of byArtist) {
+    const artist = aBucket.override || pickCanonical(aBucket.variants) || UNCLASSIFIED_LABEL;
     const albumAggs: AlbumAgg[] = [];
     const allSales: SaleRow[] = [];
-    for (const alBucket of aBucket.albums.values()) {
+    for (const [albumKey, alBucket] of aBucket.albums) {
       const { sales } = alBucket;
       allSales.push(...sales);
       const prices = sales.map((s) => s.sold_price);
       const nums = prices.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
       albumAggs.push({
-        album: pickCanonical(alBucket.variants),
+        album: alBucket.override || pickCanonical(alBucket.variants),
+        key: albumKey,
+        sourceKeys: [...alBucket.sourceKeys],
         count: sales.length,
         avgPrice: avg(prices),
         minPrice: nums.length ? Math.min(...nums) : null,
@@ -182,6 +236,8 @@ export function buildAnalytics(rows: SaleRow[]): ArtistAgg[] {
     albumAggs.sort((a, b) => b.count - a.count || (b.avgPrice ?? 0) - (a.avgPrice ?? 0));
     result.push({
       artist,
+      key: artistKey,
+      sourceKeys: [...aBucket.sourceKeys],
       count: allSales.length,
       avgPrice: avg(allSales.map((s) => s.sold_price)),
       albums: albumAggs,
