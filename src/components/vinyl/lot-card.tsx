@@ -6,7 +6,7 @@ import { LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
 import { formatAiAlbum, type LotAi, type LotMarket } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import type { Condition } from "@/lib/grading";
-import { bidIsWinning } from "@/lib/vinyl-parse";
+import { bidIsWinning, decodeHtmlEntities } from "@/lib/vinyl-parse";
 import { OWNED_CONFIDENT_MIN, type OwnedHit } from "@/lib/wantlist-match";
 
 export type CardLot = {
@@ -73,8 +73,12 @@ export function LotCard({
     // listener. Checa no mount se ela já falhou (naturalWidth 0 num <img> "completo").
     if (imgRef.current?.complete && imgRef.current.naturalWidth === 0) setImgFailed(true);
   }, [lot.image]);
+  // Decodifica entidades HTML no MOMENTO DE RENDERIZAR: lotes já gravados no banco ANTES do
+  // fix de decode na varredura ainda trazem `&#34;`/`&amp;` literais no título — decodificar
+  // aqui conserta a exibição sem depender de re-scrape. Idempotente em texto já limpo.
+  const title = decodeHtmlEntities(lot.title);
   // Linha padrão de identificação da IA (Artista — Álbum (Ano)), quando houver.
-  const aiLabel = album ? formatAiAlbum(album, market?.year) : "";
+  const aiLabel = album ? formatAiAlbum(decodeHtmlEntities(album), market?.year) : "";
   // Cores (mesma regra do painel): meu lance ganhando = verde; meu lance coberto = vermelho;
   // apenas vigiado = amarelo; caso contrário, borda neutra.
   const hasBid = bidStatus !== undefined && bidStatus !== null && bidStatus !== "";
@@ -171,13 +175,11 @@ export function LotCard({
                 site guarda o texto completo no atributo de tooltip do card) — em vez de cortar
                 com reticências, damos 2 linhas de altura e deixamos rolar para ler o resto. */}
             <div className="h-8 overflow-y-auto text-xs leading-snug text-muted-foreground">
-              {lot.title}
+              {title}
             </div>
           </div>
         ) : (
-          <div className="h-10 overflow-y-auto text-sm leading-snug text-foreground">
-            {lot.title}
-          </div>
+          <div className="h-10 overflow-y-auto text-sm leading-snug text-foreground">{title}</div>
         )}
         {ai?.tags?.length ? <LotTags tags={ai.tags} onEdit={onEditTags} /> : null}
         <div className="mt-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
