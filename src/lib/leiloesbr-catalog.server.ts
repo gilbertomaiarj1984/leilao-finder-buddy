@@ -36,7 +36,20 @@ export type CatalogLot = {
   sold: boolean; // vendido/arrematado (há valor de venda e não é "não vendido")
   soldPrice: string | null; // valor de venda em texto BR ("R$ 1.234,56")
   text: string; // texto do card (título/descrição curta) — usado para o grading
+  // Campos ricos do endpoint JSON (opcionais — o fallback HTML não os traz). Vêm na MESMA
+  // varredura por leilão: sinais de demanda, taxa do leiloeiro e valor inicial/contratado.
+  views?: number | null; // VISITAS — nº de visualizações do lote (demanda)
+  bids?: number | null; // QTDLANCE — nº de lances (demanda)
+  feePct?: number | null; // TAXA_LEILOEIRO — comissão do leiloeiro em % (custo real)
+  initialPrice?: number | null; // VALOR_CONTRATADO/VALOR_VALUE — valor inicial (p/ desconto/ágio)
 };
+
+/** Converte um valor cru do JSON (string/number) em número, ou null quando não numérico ("--", ""). */
+function numOrNull(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(String(v).replace(/\./g, "").replace(",", ".").trim());
+  return Number.isFinite(n) ? n : null;
+}
 
 /** Remove tags HTML e normaliza espaços de um trecho de markup. */
 function stripTags(html: string): string {
@@ -218,7 +231,16 @@ async function fetchCatalogJson(
       const soldPrice = sold && valor && valor !== "0" ? `R$ ${valor},00` : null;
       const text = String(p["DESCRICAO"] ?? p["MINI_DESCRICAO"] ?? "").trim();
       const lote = String(p["LOTE"] ?? "").trim() || null;
-      map.set(id, { lote, sold: sold && soldPrice !== null, soldPrice, text });
+      map.set(id, {
+        lote,
+        sold: sold && soldPrice !== null,
+        soldPrice,
+        text,
+        views: numOrNull(p["VISITAS"]),
+        bids: numOrNull(p["QTDLANCE"]),
+        feePct: numOrNull(p["TAXA_LEILOEIRO"]),
+        initialPrice: numOrNull(p["VALOR_CONTRATADO"] ?? p["VALOR_VALUE"]),
+      });
     }
     if (pecas.length < LIMIT) break; // última página
   }

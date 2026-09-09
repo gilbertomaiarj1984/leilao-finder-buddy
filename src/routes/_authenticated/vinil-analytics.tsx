@@ -29,6 +29,30 @@ export const Route = createFileRoute("/_authenticated/vinil-analytics")({
 
 const money = (n: number | null) => fmtMoney(n, "BRL");
 
+/** Custo real = valor de venda + comissão do leiloeiro (quando a taxa é conhecida). */
+function netCost(s: SaleRow): number | null {
+  if (s.sold_price == null || s.fee_pct == null) return null;
+  return Math.round(s.sold_price * (1 + s.fee_pct / 100));
+}
+function feeTip(s: SaleRow): string {
+  return s.fee_pct != null ? `Taxa do leiloeiro: ${s.fee_pct}%` : "Taxa do leiloeiro desconhecida";
+}
+/** Ágio/desconto do valor de venda sobre o valor inicial. */
+function discountTip(s: SaleRow): string {
+  if (s.initial_price == null || !s.initial_price || s.sold_price == null) return "Valor inicial";
+  const pct = Math.round(((s.sold_price - s.initial_price) / s.initial_price) * 100);
+  return `Valor inicial ${money(s.initial_price)} → venda ${money(s.sold_price)} (${
+    pct >= 0 ? "+" : ""
+  }${pct}%)`;
+}
+/** Rótulo compacto de demanda: "👁 26 · 🔨 3" (só o que houver). */
+function demandLabel(s: SaleRow): string {
+  const parts: string[] = [];
+  if (s.views != null) parts.push(`👁 ${s.views}`);
+  if (s.bids != null) parts.push(`🔨 ${s.bids}`);
+  return parts.length ? parts.join(" · ") : "—";
+}
+
 function VinilAnalyticsPage() {
   const fetchSales = useServerFn(getVinylSales);
   const sales = useQuery({
@@ -303,7 +327,14 @@ function DetailDialog({
                 <th className="py-1 pr-3">Capa</th>
                 <th className="py-1 pr-3">Score</th>
                 <th className="py-1 pr-3">Faixa</th>
+                <th className="py-1 pr-3">Inicial</th>
                 <th className="py-1 pr-3">Valor</th>
+                <th className="py-1 pr-3" title="Custo real = valor + taxa do leiloeiro">
+                  Custo c/ taxa
+                </th>
+                <th className="py-1 pr-3" title="Visualizações · lances">
+                  Demanda
+                </th>
                 <th className="py-1">Lote</th>
               </tr>
             </thead>
@@ -315,7 +346,14 @@ function DetailDialog({
                   <td className="py-1 pr-3">{s.sleeve || "—"}</td>
                   <td className="py-1 pr-3">{s.score ?? "—"}</td>
                   <td className="py-1 pr-3">{s.faixa || "—"}</td>
+                  <td className="py-1 pr-3 text-muted-foreground" title={discountTip(s)}>
+                    {s.initial_price != null ? money(s.initial_price) : "—"}
+                  </td>
                   <td className="py-1 pr-3 font-semibold text-foreground">{money(s.sold_price)}</td>
+                  <td className="py-1 pr-3 text-muted-foreground" title={feeTip(s)}>
+                    {netCost(s) != null ? money(netCost(s)) : "—"}
+                  </td>
+                  <td className="py-1 pr-3 text-muted-foreground">{demandLabel(s)}</td>
                   <td className="py-1">
                     {s.source_url ? (
                       <a

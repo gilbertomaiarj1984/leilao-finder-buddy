@@ -28,11 +28,16 @@ export type LotSaleRow = {
   faixa: string; // rótulo da faixa ou ""
   insert_state: string; // "sim" | "nao" | ""
   source_url: string;
+  // Sinais ricos do catálogo (mesma varredura): demanda, taxa e valor inicial.
+  views: number | null; // nº de visualizações do lote (demanda)
+  bids: number | null; // nº de lances (demanda)
+  fee_pct: number | null; // comissão do leiloeiro em % (custo real = venda × (1 + taxa/100))
+  initial_price: number | null; // valor inicial/contratado (p/ desconto/ágio vs. venda)
 };
 
 const PAGE = 1000;
 const SALE_COLUMNS =
-  "lot_id, id_leilao, id_peca, artist, title, sold_price, sold_price_raw, sold_date, house, uf, media, sleeve, score, faixa, insert_state, source_url";
+  "lot_id, id_leilao, id_peca, artist, title, sold_price, sold_price_raw, sold_date, house, uf, media, sleeve, score, faixa, insert_state, source_url, views, bids, fee_pct, initial_price";
 
 /** Lê todo o histórico de vendas (single-user; paginado). Best-effort. */
 export async function getAllLotSales(): Promise<LotSaleRow[]> {
@@ -155,6 +160,10 @@ function salesRowsFromCatalog(
       faixa: cond.faixa?.label ?? "",
       insert_state: cond.insert ?? "",
       source_url: `${auction.domain}/peca.asp?ID=${idPeca}`,
+      views: data.views ?? null,
+      bids: data.bids ?? null,
+      fee_pct: data.feePct ?? null,
+      initial_price: data.initialPrice ?? null,
     });
   }
   return rows;

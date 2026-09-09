@@ -22,6 +22,10 @@ export type SaleRow = {
   faixa: string;
   insert_state: string;
   source_url: string;
+  views?: number | null; // demanda (visualizações)
+  bids?: number | null; // demanda (lances)
+  fee_pct?: number | null; // taxa do leiloeiro (%)
+  initial_price?: number | null; // valor inicial (p/ desconto/ágio)
 };
 
 export type FaixaAgg = { label: string; count: number; avgPrice: number | null };
