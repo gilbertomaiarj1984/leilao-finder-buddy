@@ -331,6 +331,16 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json({ updated, done: targets.length < max });
     }
 
+    // Captura de VENDAS pós-leilão (histórico `lot_sales`, base do Vinil Analytics).
+    // Varre o catálogo da casa (1 req/leilão) dos leilões JÁ CONHECIDOS que terminaram e
+    // ainda não foram capturados (cursor em `app_state.sales_captured`). Chunked: repete
+    // até `done=true`. Também faz o BACKFILL do que já está na base. Sem custo de IA.
+    if (step === "sales") {
+      const { captureFinishedSales } = await import("./lot-sales.server");
+      const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 8, 1), 20);
+      return json(await captureFinishedSales(max));
+    }
+
     // Diagnóstico: sonda os catálogos das casas dos primeiros leilões sem nº de lote.
     if (step === "catdebug") {
       const { listMissingAuctions } = await import("./leiloesbr-scrape.server");
@@ -371,7 +381,10 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json({ missingAuctions: auctions.length, probes });
     }
 
-    return json({ error: "step inválido (use chunk|enrich|aieval|aiident|market|catdebug)" }, 400);
+    return json(
+      { error: "step inválido (use chunk|enrich|aieval|aiident|market|sales|catdebug)" },
+      400,
+    );
   } catch (error) {
     console.error("[cron] falha", error);
     return json({ error: (error as Error)?.message ?? "cron failed" }, 500);

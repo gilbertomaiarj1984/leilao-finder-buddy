@@ -185,6 +185,66 @@ export type Database = {
         }
         Relationships: []
       }
+      lot_sales: {
+        Row: {
+          artist: string
+          captured_at: string
+          faixa: string
+          house: string
+          id_leilao: string
+          id_peca: string
+          insert_state: string
+          lot_id: string
+          media: string
+          score: number | null
+          sleeve: string
+          sold_date: string | null
+          sold_price: number | null
+          sold_price_raw: string
+          source_url: string
+          title: string
+          uf: string
+        }
+        Insert: {
+          artist?: string
+          captured_at?: string
+          faixa?: string
+          house?: string
+          id_leilao: string
+          id_peca: string
+          insert_state?: string
+          lot_id: string
+          media?: string
+          score?: number | null
+          sleeve?: string
+          sold_date?: string | null
+          sold_price?: number | null
+          sold_price_raw?: string
+          source_url?: string
+          title?: string
+          uf?: string
+        }
+        Update: {
+          artist?: string
+          captured_at?: string
+          faixa?: string
+          house?: string
+          id_leilao?: string
+          id_peca?: string
+          insert_state?: string
+          lot_id?: string
+          media?: string
+          score?: number | null
+          sleeve?: string
+          sold_date?: string | null
+          sold_price?: number | null
+          sold_price_raw?: string
+          source_url?: string
+          title?: string
+          uf?: string
+        }
+        Relationships: []
+      }
       collection_items: {
         Row: {
           album: string

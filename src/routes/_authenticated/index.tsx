@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
+  BarChart3,
   Check,
   ChevronDown,
   ChevronRight,
@@ -51,6 +52,7 @@ import {
 } from "@/components/vinyl/grouping";
 import { LiveAuctions } from "@/components/vinyl/live-auctions";
 import { LotCard } from "@/components/vinyl/lot-card";
+import { type Condition, parseConditionFromText } from "@/lib/grading";
 import { OwnedPanel } from "@/components/vinyl/owned-panel";
 import {
   buildInterestMatcher,
@@ -498,6 +500,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     return { ...base, matchesInterests: matchesInterest(lot.title ?? "") };
   };
   const marketFor = (lot: { id: string }): LotMarket | undefined => marketById.get(lot.id);
+  // Estado de conservação. Nesta fase é derivado do TÍTULO do lote (quando traz sigla/palavra);
+  // a fase seguinte adiciona o cache do servidor (catálogo/descrição), que terá prioridade.
+  const conditionFor = (lot: { title?: string }): Condition =>
+    parseConditionFromText(lot.title ?? "");
 
   // Coleção do usuário: discos que ele JÁ possui (`collection_items`). Usada só para marcar
   // no card, com um ícone roxo, os lotes que ele já tem — evitando arrematar duplicado. Mesma
@@ -1032,6 +1038,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 Coleção
               </Link>
             </Button>
+            <Button variant="outline" size="sm" asChild title="Preços de venda por artista e álbum">
+              <Link to="/vinil-analytics">
+                <BarChart3 className="mr-2 h-4 w-4" />
+                Analytics
+              </Link>
+            </Button>
             <div
               className="flex items-center gap-1.5"
               title="Modo da avaliação automática por IA (controla o gasto de créditos). A análise sob demanda, pelos botões nos dias/casas, funciona em qualquer modo."
@@ -1409,6 +1421,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   ai={aiFor(lot)}
                                   market={marketFor(lot)}
                                   album={albumFor(lot)}
+                                  condition={conditionFor(lot)}
                                   owned={ownedFor(lot)}
                                   onOpenOwned={() => setOwnedPanelLot(lot)}
                                   onEditTags={editTags(lot.id)}
@@ -1491,6 +1504,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                 ai={aiFor(lot)}
                                 market={marketFor(lot)}
                                 album={albumFor(lot)}
+                                condition={conditionFor(lot)}
                                 owned={ownedFor(lot)}
                                 onOpenOwned={() => setOwnedPanelLot(lot)}
                                 onEditTags={editTags(lot.id)}
@@ -1662,6 +1676,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                             ai={aiFor(lot)}
                                             market={marketFor(lot)}
                                             album={albumFor(lot)}
+                                            condition={conditionFor(lot)}
                                             owned={ownedFor(lot)}
                                             onOpenOwned={() => setOwnedPanelLot(lot)}
                                             onEditTags={editTags(lot.id)}
@@ -1824,6 +1839,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                       ai={aiFor(lot)}
                                       market={marketFor(lot)}
                                       album={albumFor(lot)}
+                                      condition={conditionFor(lot)}
                                       owned={ownedFor(lot)}
                                       onOpenOwned={() => setOwnedPanelLot(lot)}
                                       onEditTags={editTags(lot.id)}

@@ -176,6 +176,34 @@ CREATE TRIGGER update_wantlist_items_updated_at BEFORE UPDATE ON public.wantlist
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- ---------------------------------------------------------------------
+-- lot_sales — histórico de vendas dos lotes (base do Vinil Analytics).
+-- Capturado do catálogo da casa (`catalogo.asp`) DEPOIS do leilão: 1 requisição
+-- por leilão, não lote a lote. `sold_date` = data do LEILÃO (âncora temporal do
+-- histórico). Estado (Disco/Capa) é o melhor que o texto do card permite.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.lot_sales (
+  lot_id         text PRIMARY KEY,               -- "${idLeilao}-${idPeca}"
+  id_leilao      text NOT NULL,
+  id_peca        text NOT NULL,
+  artist         text NOT NULL DEFAULT '',
+  title          text NOT NULL DEFAULT '',
+  sold_price     numeric,
+  sold_price_raw text NOT NULL DEFAULT '',
+  sold_date      date,
+  house          text NOT NULL DEFAULT '',
+  uf             text NOT NULL DEFAULT '',
+  media          text NOT NULL DEFAULT '',
+  sleeve         text NOT NULL DEFAULT '',
+  score          integer,
+  faixa          text NOT NULL DEFAULT '',
+  insert_state   text NOT NULL DEFAULT '',
+  source_url     text NOT NULL DEFAULT '',
+  captured_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS lot_sales_artist_idx ON public.lot_sales (artist);
+CREATE INDEX IF NOT EXISTS lot_sales_sold_date_idx ON public.lot_sales (sold_date);
+
+-- ---------------------------------------------------------------------
 -- collection_items
 -- Catálogo da coleção de vinil do usuário. Populado manualmente e pela
 -- varredura de "Minhas compras" (conta_site.asp?l=6): cada lote de vinil
@@ -234,6 +262,7 @@ ALTER TABLE public.app_state      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_ai         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_ident      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_market     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lot_sales      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wantlist_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.collection_items ENABLE ROW LEVEL SECURITY;
 
@@ -244,6 +273,7 @@ REVOKE ALL ON public.app_state      FROM anon, authenticated;
 REVOKE ALL ON public.lot_ai         FROM anon, authenticated;
 REVOKE ALL ON public.lot_ident      FROM anon, authenticated;
 REVOKE ALL ON public.lot_market     FROM anon, authenticated;
+REVOKE ALL ON public.lot_sales      FROM anon, authenticated;
 REVOKE ALL ON public.wantlist_items FROM anon, authenticated;
 REVOKE ALL ON public.collection_items FROM anon, authenticated;
 
@@ -254,5 +284,6 @@ GRANT ALL ON public.app_state      TO service_role;
 GRANT ALL ON public.lot_ai         TO service_role;
 GRANT ALL ON public.lot_ident      TO service_role;
 GRANT ALL ON public.lot_market     TO service_role;
+GRANT ALL ON public.lot_sales      TO service_role;
 GRANT ALL ON public.wantlist_items TO service_role;
 GRANT ALL ON public.collection_items TO service_role;

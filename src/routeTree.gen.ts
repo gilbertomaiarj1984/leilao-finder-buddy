@@ -15,6 +15,7 @@ import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedAnaliseRouteImport } from './routes/_authenticated/analise'
 import { Route as AuthenticatedAoVivoRouteImport } from './routes/_authenticated/ao-vivo'
 import { Route as AuthenticatedColecaoRouteImport } from './routes/_authenticated/colecao'
+import { Route as AuthenticatedVinilAnalyticsRouteImport } from './routes/_authenticated/vinil-analytics'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
@@ -45,6 +46,12 @@ const AuthenticatedColecaoRoute = AuthenticatedColecaoRouteImport.update({
   path: '/colecao',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedVinilAnalyticsRoute =
+  AuthenticatedVinilAnalyticsRouteImport.update({
+    id: '/vinil-analytics',
+    path: '/vinil-analytics',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -52,12 +59,14 @@ export interface FileRoutesByFullPath {
   '/analise': typeof AuthenticatedAnaliseRoute
   '/ao-vivo': typeof AuthenticatedAoVivoRoute
   '/colecao': typeof AuthenticatedColecaoRoute
+  '/vinil-analytics': typeof AuthenticatedVinilAnalyticsRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/analise': typeof AuthenticatedAnaliseRoute
   '/ao-vivo': typeof AuthenticatedAoVivoRoute
   '/colecao': typeof AuthenticatedColecaoRoute
+  '/vinil-analytics': typeof AuthenticatedVinilAnalyticsRoute
   '/': typeof AuthenticatedIndexRoute
 }
 export interface FileRoutesById {
@@ -67,13 +76,15 @@ export interface FileRoutesById {
   '/_authenticated/analise': typeof AuthenticatedAnaliseRoute
   '/_authenticated/ao-vivo': typeof AuthenticatedAoVivoRoute
   '/_authenticated/colecao': typeof AuthenticatedColecaoRoute
+  '/_authenticated/vinil-analytics': typeof AuthenticatedVinilAnalyticsRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/analise' | '/ao-vivo' | '/colecao'
+  fullPaths:
+    '/' | '/auth' | '/analise' | '/ao-vivo' | '/colecao' | '/vinil-analytics'
   fileRoutesByTo: FileRoutesByTo
-  to: '/auth' | '/analise' | '/ao-vivo' | '/colecao' | '/'
+  to: '/auth' | '/analise' | '/ao-vivo' | '/colecao' | '/vinil-analytics' | '/'
   id:
     | '__root__'
     | '/_authenticated'
@@ -81,6 +92,7 @@ export interface FileRouteTypes {
     | '/_authenticated/analise'
     | '/_authenticated/ao-vivo'
     | '/_authenticated/colecao'
+    | '/_authenticated/vinil-analytics'
     | '/_authenticated/'
   fileRoutesById: FileRoutesById
 }
@@ -133,6 +145,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedColecaoRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/vinil-analytics': {
+      id: '/_authenticated/vinil-analytics'
+      path: '/vinil-analytics'
+      fullPath: '/vinil-analytics'
+      preLoaderRoute: typeof AuthenticatedVinilAnalyticsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -140,6 +159,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAnaliseRoute: typeof AuthenticatedAnaliseRoute
   AuthenticatedAoVivoRoute: typeof AuthenticatedAoVivoRoute
   AuthenticatedColecaoRoute: typeof AuthenticatedColecaoRoute
+  AuthenticatedVinilAnalyticsRoute: typeof AuthenticatedVinilAnalyticsRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
 
@@ -147,6 +167,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAnaliseRoute: AuthenticatedAnaliseRoute,
   AuthenticatedAoVivoRoute: AuthenticatedAoVivoRoute,
   AuthenticatedColecaoRoute: AuthenticatedColecaoRoute,
+  AuthenticatedVinilAnalyticsRoute: AuthenticatedVinilAnalyticsRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }
 

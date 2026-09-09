@@ -1,3 +1,4 @@
+import { normalizeGrade } from "@/lib/grading";
 import { normalizeForMatch } from "@/lib/vinyl-parse";
 
 /**
@@ -27,9 +28,6 @@ export type ParsedCollectionBulk = {
 };
 
 const YEAR_RE = /\b(?:19|20)\d{2}\b/;
-
-/** Escala de conservação aceita (mesma do formulário: NM/EX/VG+/VG-/G+/G-). */
-const GRADES = ["NM", "EX", "VG+", "VG-", "G+", "G-"] as const;
 
 /**
  * dd/mm/aaaa -> yyyy-mm-dd (coluna `date`), ou null quando não casa OU é inválida. Espelha
@@ -70,10 +68,12 @@ function toYear(v: unknown): number | null {
   return m ? Number(m[0]) : null;
 }
 
-/** Normaliza um grau de conservação para a escala aceita ("vg+" -> "VG+"); vazio se não casar. */
+/**
+ * Normaliza um grau de conservação para a escala canônica de 10 graus (M…F/P), aceitando
+ * siglas e sinônimos ("vg+" -> "VG+", "M-" -> "NM", "lacrado" -> "M"); vazio se não casar.
+ */
 function toGrade(v: unknown): string {
-  const s = asString(v).toUpperCase().replace(/\s+/g, "");
-  return (GRADES as readonly string[]).includes(s) ? s : "";
+  return normalizeGrade(asString(v)) ?? "";
 }
 
 /** tags: aceita array ou string "a, b; c" -> lista limpa e sem vazios. */
@@ -264,7 +264,7 @@ comentários, sem texto antes ou depois, sem cercas de código. Um objeto por di
 - "artista": nome do artista (string). Em coletâneas use "Vários Artistas".
 - "album": nome do álbum (string).
 - "ano": ano de lançamento (número de 4 dígitos) ou null se não souber.
-- "midia": conservação do vinil, um de: "NM", "EX", "VG+", "VG-", "G+", "G-" (ou "" se não souber).
+- "midia": conservação do vinil, um de: "M", "NM", "EX", "VG+", "VG", "VG-", "G+", "G", "G-", "F/P" (ou "" se não souber).
 - "capa": conservação da capa, mesma escala de "midia" (ou "").
 - "valor": valor pago como texto, ex.: "R$ 40,00" (ou "").
 - "tags": array de estilos/gêneros musicais, ex.: ["MPB","Samba"] (ou []).

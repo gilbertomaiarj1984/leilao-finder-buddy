@@ -19,6 +19,7 @@ const AI_MODE_KEY = "ai_mode";
 const AI_PROVIDER_KEY = "ai_provider";
 const COLLECTION_LINKS_KEY = "collection_links";
 const COLLECTION_FEEDBACK_KEY = "collection_feedback";
+const SALES_CAPTURED_KEY = "sales_captured";
 
 /**
  * Casas de leilão marcadas como "verificadas" (chaves `${dia}|${casa}`). Global, um
@@ -216,6 +217,50 @@ export async function removeCollectionFeedbackByLot(lotId: string): Promise<void
   const entries = await getCollectionFeedback();
   const kept = entries.filter((e) => e.lotId !== lotId);
   if (kept.length !== entries.length) await saveCollectionFeedback(kept);
+}
+
+/**
+ * Leilões cujo catálogo já foi varrido para capturar vendas (`lot_sales`). Uma vez que o
+ * leilão terminou, o catálogo é estável, então gravamos o `idLeilao` aqui e não voltamos a
+ * buscá-lo — é o checkpoint que torna a varredura/backfill idempotente e incremental
+ * (processa um bloco por rodada até esgotar o backlog). Global, um registro em `app_state`.
+ */
+export async function getSalesCaptured(): Promise<Set<string>> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("app_state")
+      .select("value")
+      .eq("key", SALES_CAPTURED_KEY)
+      .maybeSingle();
+    if (error) throw error;
+    const value = data?.value;
+    return new Set(
+      Array.isArray(value)
+        ? (value as unknown[]).filter((v): v is string => typeof v === "string")
+        : [],
+    );
+  } catch (error) {
+    console.error("[app-state] não foi possível ler os leilões capturados (usando vazio)", error);
+    return new Set();
+  }
+}
+
+/** Acrescenta `idLeilao`s ao conjunto de leilões já capturados (read-modify-write). */
+export async function markSalesCaptured(idLeiloes: string[]): Promise<void> {
+  const clean = idLeiloes.filter((s) => typeof s === "string" && s);
+  if (!clean.length) return;
+  const current = await getSalesCaptured();
+  for (const id of clean) current.add(id);
+  const { error } = await supabaseAdmin
+    .from("app_state")
+    .upsert(
+      { key: SALES_CAPTURED_KEY, value: [...current], updated_at: new Date().toISOString() },
+      { onConflict: "key" },
+    );
+  if (error) {
+    console.error("[app-state] não foi possível gravar os leilões capturados", error);
+    throw new Error(`Não foi possível gravar os leilões capturados: ${error.message}`);
+  }
 }
 
 /**

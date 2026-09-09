@@ -86,4 +86,15 @@ jobs:
             if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
           done
 
+          echo "== Captura de vendas pós-leilão (histórico lot_sales) =="
+          # Varre o catálogo da casa (1 req/leilão) dos leilões terminados ainda não
+          # capturados e grava o valor de venda + estado. Chunked (cursor no servidor):
+          # repetimos até done=true; o resto completa nas execuções seguintes. Também
+          # faz o backfill do que já está na base.
+          for i in $(seq 1 40); do
+            res="$(call "/api/cron?step=sales&max=8")"
+            echo "sales $i: $res"
+            if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
+          done
+
           echo "Concluído."

@@ -2,7 +2,9 @@ import { ExternalLink, Pencil, RotateCw, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { LotTags } from "@/components/vinyl/ai-score";
+import { scoreTone } from "@/components/vinyl/ai-score-utils";
 import type { CollectionItem } from "@/lib/collection.server";
+import { normalizeGrade, scoreCondition } from "@/lib/grading";
 
 export function CollectionCard({
   item,
@@ -82,6 +84,21 @@ export function CollectionCard({
               Capa {item.conditionSleeve}
             </span>
           ) : null}
+          {/* Faixa/Score Final derivados dos graus (Disco × Capa). */}
+          {(() => {
+            const { score, faixa } = scoreCondition(
+              normalizeGrade(item.conditionMedia),
+              normalizeGrade(item.conditionSleeve),
+            );
+            return score !== null && faixa ? (
+              <span
+                className={`rounded px-1.5 py-0.5 font-semibold ${scoreTone(score)}`}
+                title={`Score Final ${score} — ${faixa.full}`}
+              >
+                {faixa.label} · {score}
+              </span>
+            ) : null;
+          })()}
         </div>
 
         {/* Descritivo do disco (buscado pela IA) — rolável para ler o texto todo. */}
