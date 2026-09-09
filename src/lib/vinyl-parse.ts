@@ -42,20 +42,28 @@ const NON_VINYL_HINTS = ["cd ", " cd", "dvd", "blu-ray", "fita k7", "k7", "casse
  * Algumas casas colocam a descrição completa do lote no atributo `title` do card (o tooltip
  * do site), e o parser de HTML usado na varredura NÃO decodifica entidades de atributos — daí
  * títulos aparecerem com `&#34;` literal em vez de `"`. Cobre nomeadas comuns + numéricas
- * (decimais e hex), que é o que sobra depois das nomeadas.
+ * (decimais e hex).
+ *
+ * ⚠️ DUPLA codificação: várias casas gravam o texto já escapado DUAS vezes (`&amp;#34;` em vez
+ * de `&#34;`) — uma passada só decodifica o `&amp;` externo e deixa `&#34;` visível. Por isso
+ * decodificamos em LOOP até a string estabilizar (teto de 5 passadas para evitar patologias).
  */
 export function decodeHtmlEntities(s: string): string {
-  return s
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&quot;/gi, '"')
-    .replace(/&apos;/gi, "'")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(parseInt(dec, 10)))
-    .replace(/&amp;/gi, "&")
-    .replace(/\s+/g, " ")
-    .trim();
+  let prev = s;
+  for (let i = 0; i < 5; i++) {
+    const next = prev
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&quot;/gi, '"')
+      .replace(/&apos;/gi, "'")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+      .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(parseInt(dec, 10)))
+      .replace(/&amp;/gi, "&");
+    if (next === prev) break;
+    prev = next;
+  }
+  return prev.replace(/\s+/g, " ").trim();
 }
 
 export function normalize(value: string): string {
