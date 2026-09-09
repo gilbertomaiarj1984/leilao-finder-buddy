@@ -245,6 +245,12 @@ export async function getSalesCaptured(): Promise<Set<string>> {
   }
 }
 
+/** Limpa o checkpoint de vendas capturadas (para re-capturar tudo, ex.: após ajustar o parser). */
+export async function clearSalesCaptured(): Promise<void> {
+  const { error } = await supabaseAdmin.from("app_state").delete().eq("key", SALES_CAPTURED_KEY);
+  if (error) console.error("[app-state] não foi possível limpar o checkpoint de vendas", error);
+}
+
 /** Acrescenta `idLeilao`s ao conjunto de leilões já capturados (read-modify-write). */
 export async function markSalesCaptured(idLeiloes: string[]): Promise<void> {
   const clean = idLeiloes.filter((s) => typeof s === "string" && s);

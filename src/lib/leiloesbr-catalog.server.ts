@@ -80,9 +80,12 @@ function longestAttr(seg: string): string {
 
 /**
  * Extrai, por posição, os dados de cada lote do HTML do catálogo da casa. Casa por
- * `peca.asp?ID=<idPeca>` e olha o trecho até a PRÓXIMA `peca.asp` (o card daquele lote),
- * exatamente como o mapeamento do nº do lote sempre fez — a estrutura do container varia
- * entre casas, então NÃO dependemos de classes específicas.
+ * `peca.asp?ID=<idPeca>` e olha o trecho até o PRÓXIMO lote (id DIFERENTE) — a estrutura do
+ * container varia entre casas, então NÃO dependemos de classes específicas.
+ *
+ * ⚠️ Um mesmo lote costuma repetir o link `peca.asp?ID=` no card (imagem + título), então o
+ * "pedaço" do lote vai do 1º link dele até o 1º link do PRÓXIMO id — senão o trecho ficaria
+ * truncado entre a imagem e o título, ANTES do "Valor de venda"/"Lote vendido"/descritivo.
  *
  * Valor de venda: preferimos o rótulo "Valor de venda: R$ …"; na falta dele, um marcador de
  * "vendido"/"arrematado" + o 1º `R$` do card. **Fail-closed**: sem valor claro OU com
@@ -96,7 +99,10 @@ export function parseCatalogData(html: string): Map<string, CatalogLot> {
     const id = matches[i]![1]!;
     if (map.has(id)) continue;
     const start = (matches[i]!.index ?? 0) + matches[i]![0].length;
-    const end = i + 1 < matches.length ? (matches[i + 1]!.index ?? html.length) : html.length;
+    // Fim do card = 1º link de um id DIFERENTE (pula as repetições do mesmo lote).
+    let j = i + 1;
+    while (j < matches.length && matches[j]![1] === id) j++;
+    const end = j < matches.length ? (matches[j]!.index ?? html.length) : html.length;
     const seg = html.slice(start, end);
 
     const lote =

@@ -347,6 +347,11 @@ export async function handleCron(request: Request): Promise<Response | null> {
     if (step === "sales") {
       const { captureFinishedSales } = await import("./lot-sales.server");
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 8, 1), 20);
+      // `reset=1`: limpa o checkpoint e re-captura TUDO (ex.: após ajustar o parser). Use uma vez.
+      if (url.searchParams.get("reset") === "1") {
+        const { clearSalesCaptured } = await import("./app-state.server");
+        await clearSalesCaptured();
+      }
       return json(await captureFinishedSales(max));
     }
 
