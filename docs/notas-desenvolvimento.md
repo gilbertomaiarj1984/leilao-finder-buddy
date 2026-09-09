@@ -324,13 +324,9 @@ Três valores de **fontes diferentes** — não confundir:
 
 ## Painel de mudanças — DESCONTINUADO (v0.25.0)
 
-A página **`/dashboard`** ("Painel de mudanças") foi **removida** (rota `dashboard.tsx`, o
-link "Painel" no header da home, as server functions `getDashboardBaseline`/`markDashboardSeen`
-e os helpers `getBaseline`/`markSeen`/`Baseline` de `app-state.server.ts`). A variação de preço
-por dia/casa não é mais exibida; a home, a Análise e o Ao vivo cobrem o uso. A chave
-`dashboard_baseline` em `app_state` (se existir em produção) fica órfã e pode ser apagada à mão
-(`DELETE FROM app_state WHERE key='dashboard_baseline'`) — nenhum código a lê ou grava. O
-`enrichLotes` (preenchimento de nº de lote) segue existindo, usado pela home ("Atualizar tudo").
+A página **`/dashboard`** foi removida (home/Análise/Ao vivo cobrem o uso). Chave órfã
+`dashboard_baseline` em `app_state` pode ser apagada à mão. O `enrichLotes` (nº de lote)
+segue existindo, usado pela home ("Atualizar tudo").
 
 ## Casas verificadas
 
@@ -758,7 +754,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 
 ## Pendências
 
-**Produto / código**
+**Produto / código (em aberto)**
 
 1. **Lance pelo app (leiloesbr):** avaliar/implementar dar lance pelo app (regra do usuário:
    sempre o próximo menor valor; após lançar, verificar em segundos se foi coberto e relançar).
@@ -766,65 +762,37 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
    usuário precisa **capturar** (F12 → Network, lote barato) a requisição de lance. Considerar
    que o site talvez já tenha "lance automático" nativo; ToS/edital costumam proibir automação
    (risco/decisão do usuário).
-2. **Upload de foto EM MASSA (pendente):** a importação em massa (v0.26.0) cria discos **sem
-   foto** — a foto é adicionada depois, por disco, no `EditDialog` (já com o botão **"Tirar foto"**
-   / câmera do celular). Fazer um fluxo de foto em lote (ex.: tirar/anexar fotos e casar com os
-   discos recém-importados) segue em aberto.
-3. **Sondagem não pesa na nota** — hoje é só destaque + filtro. Dar peso real (bônus
-   determinístico no ranking, ou mandar a lista ao prompt) segue em aberto, se desejado.
-4. **Importar o rascunho real da sondagem** pela UI e conferir o 🎯/tooltip e o filtro "Só
-   sondagem"; ajustar `WANT_MATCH_THRESHOLD`/pesos em `wantlist-match.ts` se pegar demais/de menos.
-6. **Imagem pelo CDN do catálogo (amarelo #9, ADIADO):** o JSON traz a **base** do CDN
-   (`URLCOMMON`/`CLOUD_LINK`), mas o exemplo (santavelharia) **não** trouxe o campo com o
-   **nome do arquivo** da imagem por lote — sem ele não dá para montar a URL. Pegar (F12 →
-   Network → resposta do `catalogocontentload.asp`, ou o HTML do card) o campo/arquivo de
-   imagem de um lote; então adicionar `image` ao `CatalogLot`/`lot_sales` e miniatura no
-   Analytics.
+2. **Upload de foto EM MASSA:** a importação em massa cria discos **sem foto** — a foto é
+   adicionada depois, por disco, no `EditDialog` (com "Tirar foto"/câmera). Um fluxo de foto em
+   lote (tirar/anexar e casar com os recém-importados) segue em aberto.
+3. **Sondagem não pesa na nota** — hoje é só destaque + filtro. Dar peso real (bônus no ranking
+   ou mandar a lista ao prompt) segue em aberto; ao importar o rascunho real, conferir 🎯/tooltip
+   e o filtro "Só sondagem" e ajustar `WANT_MATCH_THRESHOLD`/pesos em `wantlist-match.ts`.
+4. **Imagem pelo CDN do catálogo (ADIADO):** o JSON traz a **base** do CDN
+   (`URLCOMMON`/`CLOUD_LINK`), mas o exemplo (santavelharia) **não** trouxe o **nome do arquivo**
+   da imagem por lote — sem ele não dá para montar a URL. Pegar (F12 → resposta do
+   `catalogocontentload.asp`) o campo/arquivo de imagem; então adicionar `image` ao
+   `CatalogLot`/`lot_sales` e miniatura no Analytics.
+
 **Validar em produção (não dá para testar daqui)**
 
-4. **Aplicar o `setup.sql`** para as tabelas/colunas mais recentes (`lot_ident`, colunas BR de
-   `lot_market`, **`collection_items`** — inclui a coluna nova **`description`** e o **bucket de
-   Storage `collection`**, ambos idempotentes no `setup.sql`) caso ainda não tenham sido
-   aplicadas; garantir `ANTHROPIC_API_KEY` e `DISCOGS_TOKEN` configurados **nas env da Vercel**
-   (Production) — são lidos pelo servidor, inclusive no cron; **não** são secrets do GitHub (o
-   `refresh.yml` só usa `APP_URL` + `CRON_TOKEN`). **Upload de foto** da Coleção exige o bucket
-   `collection` criado (re-rodar o `setup.sql` cria/torna público).
-5. **Coleção:** aplicar `collection_items` no banco; conferir o botão **"Atualizar coleção"**
-   (varredura de `conta_site.asp?l=6`) — se algum campo vier vazio, capturar 1 card do HTML de
-   "Minhas compras" (F12) e ajustar os regexes de `leiloesbr-purchases.server.ts`. Confirmar que
-   re-varrer **não** duplica nem apaga edições, e que artista/álbum/ano são semeados da
-   identificação já existente.
-6. **Rodar o `refresh.yml`** (Actions → Run workflow) e conferir cada passo: `enrich`
-   (`updated>0`, nº de lote preenchendo), `aiident`/`aieval` (`submitted`/`collected>0`),
-   `market` (`updated>0`, inclusive lotes só identificados). Rodar mais vezes melhora o
-   casamento da sondagem (mais `album`/ano → mais sinais no `lotIdentity`).
-7. **Gemini (v0.27.0):** cadastrar **`GEMINI_API_KEY`** **só nas env da Vercel** (Production) e
-   **Redeploy** — o cron lê a chave do servidor da Vercel, então **NÃO** precisa de secret no
-   GitHub (o `refresh.yml` só usa `APP_URL` + `CRON_TOKEN`). Testar o seletor de provedor no
-   header e o diálogo "qual IA usar?" na home e na Coleção; validar o **failover** (deixar um
-   provedor sem crédito e conferir o toast + a troca). Opcional: `GEMINI_MODEL` / `AI_PROVIDER`
-   (padrão via env). Confirmar que a **visão** (capa) funciona no Gemini (imagem inline/base64).
-   **Custo:** `gemini-flash-latest` ≈ US$0,75/US$3,75 por 1M tok in/out (mais barato que o Haiku
-   4.5, ~US$1/US$5); o alias `-latest` acompanha o Flash mais novo (pode mudar) — para fixar,
-   usar `GEMINI_MODEL`.
-   **Concluído recentemente:** `wantlist_items` aplicada em produção (2026-09-03; importar/editar/
-   marcar adquirido gravam sem erro). Secrets do cron (`APP_URL`, `CRON_TOKEN`) e 1ª execução do
-   `refresh.yml` no ar. Revisão/refatoração pós-Lovable (lint/format, remoção de morto, DRY).
-   **Relação lote↔Coleção + aprendizado (v0.24.x) validada em produção** (2026-09-08): ícone em
-   todos os cards (cinza/roxo/roxo+?), painel com o card da Coleção, vincular/"não tenho"/reativar
-   persistidos (`collection_links`) e aprendizado (`collection_feedback`) — decisão persiste após
-   recarregar. As chaves `collection_links`/`collection_feedback` do `app_state` nascem sozinhas
-   (upsert na 1ª decisão), sem `setup.sql`.
+- **`setup.sql` aplicado** para as tabelas/colunas mais recentes (idempotente) e
+  `ANTHROPIC_API_KEY`/`GEMINI_API_KEY`/`DISCOGS_TOKEN` **só nas env da Vercel** (Production) — são
+  lidos pelo servidor, inclusive no cron; **não** são secrets do GitHub (o `refresh.yml` só usa
+  `APP_URL` + `CRON_TOKEN`). Após mudar env, **Redeploy**.
+- **Cron `refresh.yml`** (Actions → Run workflow): conferir cada passo, incluindo os novos
+  `condition`, `sales` e **`reident`** (reidentifica/padroniza o histórico — `identified`/
+  `applied`), e o `market` (inclui lotes só identificados).
+- **v0.41.0:** confirmar que o **seletor do topo** comanda toda IA (síncrona e cron); rodar
+  **"Reidentificar (IA)"** no Analytics com o Gemini selecionado e ver artistas antes duplicados
+  se fundirem; conferir o header **sticky** (desktop e mobile). Validar o **failover** do Gemini
+  (deixar um provedor sem crédito e conferir o toast + a troca) e a **visão** (capa) no Gemini.
+- **Custo Gemini:** `gemini-flash-latest` ≈ US$0,75/US$3,75 por 1M tok in/out (mais barato que o
+  Haiku 4.5); o alias `-latest` acompanha o Flash mais novo — para fixar, usar `GEMINI_MODEL`.
 
 > ⚠️ **Lição (evitar regressão):** módulo **`*.server.ts` NÃO deve importar de módulo
 > client-safe** (nem `import type`). No v0.24.0, `app-state.server.ts` importava um tipo de
 > `wantlist-match` → o _code-splitting_ deixou o chunk `wantlist-match-*.js` fora do `/assets/`
 > do cliente → **404** ("Failed to fetch dynamically imported module") só na home logada em
-> produção (preview deslogado e `/colecao` abriam). Corrigido no v0.24.1 definindo o tipo
-> localmente. Tipos compartilhados entre client e server: manter no lado **client-safe**.
-
-> 📌 **Observação (2026-09-08):** o usuário mesclou **duas PRs na `main`** durante esta sessão —
-> **#94** (v0.25.0, descontinuação do "Painel de mudanças" `/dashboard`) e **#95** (v0.26.0,
-> importação em massa da Coleção + câmera no upload). A branch da IA multi-provedor (v0.27.0) foi
-> **rebaseada sobre `origin/main`** já com as duas antes de finalizar (conflitos triviais em
-> `app-state.server.ts`, `colecao.tsx` e neste documento resolvidos mantendo ambos os lados).
+> produção. Corrigido no v0.24.1 definindo o tipo localmente. Tipos compartilhados entre client e
+> server: manter no lado **client-safe**.
