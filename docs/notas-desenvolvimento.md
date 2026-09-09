@@ -198,20 +198,27 @@ Base do Vinil Analytics: cada venda de cada lote, capturada do **catálogo da ca
   (nunca inventa venda). Calibrado a partir do catálogo real do **Discos Esquecidos** (v0.31.1) —
   ver "Estrutura do card do catálogo" abaixo; outras casas podem exigir ajuste de
   `SALE_VALUE_RE`/`SOLD_MARKER_RE`/`UNSOLD_RE`.
-- **Varredura/backfill:** `captureFinishedSales` (`lot-sales.server.ts`) lê `seen_auctions`
-  (durável, **nunca podado** — ao contrário de `lots`, que é limitado à janela de 5 dias),
-  filtra os leilões **terminados** (`auctionFinished`) ainda não capturados (checkpoint
-  `app_state.sales_captured`), busca o catálogo por leilão e grava as vendas. Processa um
-  bloco por rodada (`max`), então **drena o backlog** em várias rodadas (backfill do que já
-  está na base + fluxo contínuo). Idempotente (leilão capturado não revisita).
+- **Varredura:** `captureFinishedSales` (`lot-sales.server.ts`) lê `seen_auctions` (durável,
+  **nunca podado**), filtra os leilões **terminados** (`auctionFinished`) ainda não capturados
+  (checkpoint `app_state.sales_captured`), busca o catálogo por leilão e grava as vendas. Processa
+  um bloco por rodada (`max`), idempotente (leilão capturado não revisita).
+  ⚠️ **Catálogo é efêmero:** o `catalogo.asp` da casa só fica de pé por um tempo após o leilão —
+  os **antigos** devolvem página genérica sem lotes (`pecaMatches:0`). Por isso a ordem é **mais
+  recente primeiro** e a captura acontece na prática no dia em que o leilão termina (cron 4×/dia).
+  Backfill histórico profundo é limitado por isso.
+- ⚠️ **Só VINIL, identidade nossa:** o catálogo lista TODAS as categorias (livros, DVDs, medalhas,
+  miudezas…). Gravamos venda **só** dos lotes cujo id está no nosso vinil (`scrapeVinylLots`), e o
+  **artista/título vêm do NOSSO lote já parseado** — não do texto ruidoso do catálogo (que só serve
+  para valor + estado). Sem isso, entrava lixo (ex.: "Porta-caixa de fósforos") com artista
+  `&ctd=…`. (v0.32.2) Diagnóstico `debugSales(num)` sonda um leilão específico.
 - **Estado inline:** cada venda guarda `media`/`sleeve`/`score`/`faixa`/`insert_state` via
   `parseConditionFromText` do **descritivo do card** — capturado do **tooltip** (`longestAttr`
   pega o atributo mais longo: `title`/`alt`/`data-*`), que traz o texto completo tipo
   "CAPA VG+ - DISCO VG+/NM …". `detectInsert` é conservador (o boilerplate "se o LP possuir
   encarte…" NÃO conta como encarte).
 - **`sold_date` = data do LEILÃO** (`seen_auctions.day_key`), não a da captura — âncora
-  temporal do histórico. `artist` via `extractArtist(title)` (o Analytics pode refinar com
-  `lot_ident`). Agendamento: cron `step=sales` (`cron.server.ts` + `refresh.yml`). Server fns
+  temporal do histórico. `artist`/`title` = do nosso lote de vinil (`lots`). Agendamento: cron
+  `step=sales` (`cron.server.ts` + `refresh.yml`; reset com `?step=sales&reset=1`). Server fns
   `getVinylSales` (ler) e `captureSales` (disparar sob demanda) em `leiloesbr.functions.ts`.
 
 ### Estrutura do card do catálogo (descobertas — Discos Esquecidos, leilões br)
@@ -703,6 +710,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.30.0        | **Captura de vendas pós-leilão** (`lot_sales`) — varredura do **catálogo da casa** (`catalogo.asp`, 1 req/leilão, NÃO lote a lote): `parseCatalogData`/`fetchCatalogData` estendem o parser do nº do lote p/ ler **valor de venda** + texto (estado inline via `parseConditionFromText`). `captureFinishedSales` varre `seen_auctions` (durável) dos leilões terminados ainda não capturados (cursor `app_state.sales_captured`), com **backfill** do que já está na base; cron `step=sales` + `refresh.yml`. `sold_date` = **data do leilão**. Fail-closed (sem valor claro não grava). Server fns `getVinylSales`/`captureSales`                                                    | —       |
 | v0.31.0        | **Página Vinil Analytics** (`/vinil-analytics`, link no header) — preços de venda por **artista → álbum** sobre `lot_sales` (casa irrelevante). Agregação pura `analytics.ts` (`buildAnalytics`/`deriveAlbum`): preço médio, min/max, **contagem na base**, **médias por Faixa** e vendas ordenadas **pior→melhor** conservação. UI: artistas/álbuns expansíveis (padrão manual), **eixo horizontal** de marcadores (score/estado/valor), chips de faixa e **Dialog de detalhe** (tabela data/estado/score/valor/lote)                                                                                                                                                | —       |
 | v0.31.1        | **Calibração do catálogo (Discos Esquecidos)** — o descritivo completo vem no **tooltip** do card (atributo `title`/`alt`/`data-*`): `longestAttr` pega o texto mais longo → **estado rico** (`CAPA VG+ - DISCO VG+/NM`) direto do catálogo, sem `peca.asp`. Valor lido do rótulo **"Valor de venda: R$ …"** + marcador "vendido"/"arrematado" (fail-closed). `detectInsert` **conservador** (ignora o boilerplate "se o LP possuir encarte…"). `deriveAlbum` corta em "- CAPA/DISCO `<grau>`". Nº do lote ganha fallback "LOTE N"                                                                                                                            | —       |
+| v0.32.2        | **Captura de vendas só de VINIL + identidade limpa** — o `catalogo.asp` da casa lista TODAS as categorias (livros, DVDs, medalhas…); `captureFinishedSales` agora só grava lotes cujo id está no nosso vinil (`scrapeVinylLots`), e usa o **nosso** título/artista (não o texto ruidoso do catálogo). Descritivo do card limpo de fragmentos de href (`&ctd=…`). Ordem **mais recente primeiro** (catálogo vivo). `debugSales(num)` sonda um leilão específico                                                                                                                                                                             | —       |
 | v0.32.1        | **Fix da segmentação do catálogo** — cada lote repete o link `peca.asp?ID=` no card (imagem + título), então o "pedaço" do lote passou a ir até o 1º link de um id **diferente** (o próximo card), não até o próximo link. Antes ficava truncado ANTES do "Valor de venda"/"Lote vendido"/descritivo → capturava 0 vendas e estado vazio. `?step=sales&reset=1` (`clearSalesCaptured`) re-captura após o ajuste                                                                                                                                                             | —       |
 | v0.32.0        | **Estado (Disco/Capa) nos cards PRÉ-leilão** (`lot_condition`) — `enrichConditions` busca o catálogo (1 req/leilão) e parseia o descritivo do tooltip, cacheando por lote (`source` catalog/title/indefinido; re-avalia por `title_hash`); cron `step=condition` + `refresh.yml`; `getLotCondition` e o resolver `conditionFor` no `index.tsx` passam a **priorizar o cache** (fallback ao título). Nova tabela `lot_condition` (migration+setup+types). **Diagnóstico** `step=salesdebug` (`debugSales`) para sinais crus do catálogo quando `sales` volta 0                                                                                          | —       |
 

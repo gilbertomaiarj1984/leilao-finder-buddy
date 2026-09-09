@@ -124,7 +124,13 @@ export function parseCatalogData(html: string): Map<string, CatalogLot> {
     }
     const sold = soldPrice !== null && !unsold;
 
-    const text = longestAttr(seg) || stripTags(seg).slice(0, 400);
+    // Descritivo do card, limpo de fragmentos de href/query (ex.: `&ctd=309&tot=&tipo=&artista="`)
+    // e de sobras de atributo malformado, que aparecem em alguns catálogos.
+    const text = (longestAttr(seg) || stripTags(seg).slice(0, 400))
+      .replace(/&\w+=[^\s"<>]*/g, " ")
+      .replace(/^[\s"'>]+/, "")
+      .replace(/\s+/g, " ")
+      .trim();
 
     map.set(id, { lote, sold, soldPrice, text });
   }

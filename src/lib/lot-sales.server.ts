@@ -88,21 +88,40 @@ async function readSeenAuctions(): Promise<SeenAuctionRow[]> {
   return out;
 }
 
-/** Monta as linhas de venda de um leilão a partir do catálogo (só os lotes vendidos). */
+/** Identidade dos nossos lotes de VINIL (por id), para filtrar o catálogo e nomear a venda. */
+export type VinylInfo = { title: string; artist: string };
+
+/**
+ * Monta as linhas de venda de um leilão a partir do catálogo — SÓ dos lotes de VINIL que
+ * conhecemos (`vinylById`). O `catalogo.asp` da casa lista TODAS as categorias (livros, DVDs,
+ * medalhas, miudezas…); sem esse filtro, entrava lixo no histórico. A **identidade**
+ * (artista/título) vem do NOSSO lote já parseado — não do texto ruidoso do catálogo. O catálogo
+ * entra só para o **valor de venda** e o **estado** (com fallback ao nosso título).
+ */
 function salesRowsFromCatalog(
   auction: { idLeilao: string; domain: string; dayKey: string; house: string; uf: string },
   catalog: Map<string, import("./leiloesbr-catalog.server").CatalogLot>,
+  vinylById: Map<string, VinylInfo>,
 ): LotSaleRow[] {
   const rows: LotSaleRow[] = [];
   for (const [idPeca, data] of catalog) {
     if (!data.sold || !data.soldPrice) continue; // fail-closed: sem venda clara, não grava
-    const title = data.text || "";
-    const cond = parseConditionFromText(title);
+    const lotId = `${auction.idLeilao}-${idPeca}`;
+    const vinyl = vinylById.get(lotId);
+    if (!vinyl) continue; // não é um lote de vinil nosso → ignora (jornal/DVD/medalha/…)
+
+    const title = vinyl.title;
+    // Estado: prefere o descritivo do catálogo (mais rico); cai no nosso título.
+    const fromCatalog = parseConditionFromText(data.text);
+    const cond =
+      fromCatalog.media || fromCatalog.sleeve || fromCatalog.insert
+        ? fromCatalog
+        : parseConditionFromText(title);
     rows.push({
-      lot_id: `${auction.idLeilao}-${idPeca}`,
+      lot_id: lotId,
       id_leilao: auction.idLeilao,
       id_peca: idPeca,
-      artist: extractArtist(title),
+      artist: vinyl.artist || extractArtist(title),
       title,
       sold_price: parsePrice(data.soldPrice),
       sold_price_raw: data.soldPrice,
@@ -127,18 +146,24 @@ function salesRowsFromCatalog(
  * e uma amostra. NÃO grava nada nem marca como capturado. Serve para confirmar se `sales:0` é
  * legítimo ou se o parser precisa de ajuste para o formato daquela casa.
  */
-export async function debugSales(limit = 3): Promise<{ probed: number; auctions: unknown[] }> {
+export async function debugSales(
+  limit = 3,
+  num?: string,
+): Promise<{ probed: number; auctions: unknown[] }> {
   const { parseAuctionRef, parseCatalogData } = await import("./leiloesbr-catalog.server");
   const { publicFetch } = await import("./leiloesbr-auth.server");
   const seen = await readSeenAuctions();
   const now = Date.now();
   const finished = seen
-    .filter((a) => auctionFinished(a.day_key, a.start_time, now))
+    // `num` sonda UM leilão específico (ignora o filtro de terminado); senão, os TERMINADOS.
+    .filter((a) => (num ? a.id_leilao === num : auctionFinished(a.day_key, a.start_time, now)))
     .map((a) => ({ row: a, ref: parseAuctionRef(a.entry_url ?? "") }))
     .filter(
       (x): x is { row: SeenAuctionRow; ref: { domain: string; idLeilao: string } } =>
         x.ref !== null,
     )
+    // Mais RECENTES primeiro (catálogo ainda vivo tem mais chance de trazer os lotes).
+    .sort((a, b) => b.row.day_key.localeCompare(a.row.day_key))
     .slice(0, limit);
 
   const auctions: unknown[] = [];
@@ -196,12 +221,24 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
 }> {
   const { parseAuctionRef, fetchCatalogData } = await import("./leiloesbr-catalog.server");
   const { getSalesCaptured, markSalesCaptured } = await import("./app-state.server");
+  const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
 
-  const [seen, captured] = await Promise.all([readSeenAuctions(), getSalesCaptured()]);
+  const [seen, captured, snapshot] = await Promise.all([
+    readSeenAuctions(),
+    getSalesCaptured(),
+    scrapeVinylLots(false),
+  ]);
   const now = Date.now();
 
-  // Leilões terminados, com link de catálogo válido, ainda não capturados. Mais antigos
-  // primeiro (data do leilão) para o backfill drenar o histórico em ordem.
+  // Identidade dos NOSSOS lotes de vinil (id → título/artista já parseados). Só capturamos
+  // vendas destes — o catálogo da casa traz todas as categorias (livros, DVDs, medalhas…).
+  const vinylById = new Map<string, VinylInfo>();
+  for (const lot of snapshot.lots) vinylById.set(lot.id, { title: lot.title, artist: lot.artist });
+
+  // Leilões terminados, com link de catálogo válido, ainda não capturados. Mais RECENTES
+  // primeiro: o catálogo da casa só fica de pé por um tempo após o leilão (os antigos já
+  // saíram do ar e devolvem página genérica sem lotes), então priorizamos os que ainda têm
+  // catálogo vivo. Os antigos ainda são processados (e marcados) nas rodadas seguintes.
   const pending = seen
     .filter((a) => !captured.has(a.id_leilao))
     .filter((a) => auctionFinished(a.day_key, a.start_time, now))
@@ -210,7 +247,7 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
       (x): x is { row: SeenAuctionRow; ref: { domain: string; idLeilao: string } } =>
         x.ref !== null,
     )
-    .sort((a, b) => a.row.day_key.localeCompare(b.row.day_key));
+    .sort((a, b) => b.row.day_key.localeCompare(a.row.day_key));
 
   const batch = pending.slice(0, maxAuctions);
   let sales = 0;
@@ -227,6 +264,7 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
           uf: row.uf ?? "",
         },
         catalog,
+        vinylById,
       );
       if (rows.length) sales += await upsertLotSales(rows);
       // Catálogo lido com sucesso → leilão capturado (não revisita), mesmo com 0 vendas
