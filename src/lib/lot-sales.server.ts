@@ -105,6 +105,41 @@ export function looksVinyl(text: string, cond: Condition): boolean {
   return Boolean(cond.media || cond.sleeve) || VINYL_FORMAT.test(text);
 }
 
+// Prefixo de formato no início do PECA ("Disco de vinil ...", "LP ...", "Disco ...").
+const PECA_FORMAT_PREFIX =
+  /^(?:disco de vinil|discos?|lps?|vinil|vinyl|compacto|bolach[aã]o)\b[\s:.\-–—]*/i;
+// Sufixo de estado no fim do PECA ("... - Novo", "- Usado", "- Regular").
+const PECA_STATE_SUFFIX =
+  /\s*[-–—]\s*(?:novo|usado|semi-?novo|regular|[óo]timo|bom|ruim|conforme fotos)\.?\s*$/i;
+
+/**
+ * Melhor título p/ identidade a partir do lote do catálogo (#8). Casas cujo DESCRICAO traz
+ * "Artista - Álbum" (Discos Esquecidos) → usa o descritivo. Casas em PROSA (Catavento,
+ * santavelharia: "Disco de vinil: Título. Gravadora…") → usa o campo **PECA** (título curado,
+ * ex.: "Disco Rock In ELMA CHIPS - Novo"), limpo de prefixo de formato e sufixo de estado.
+ */
+export function bestCatalogTitle(data: import("./leiloesbr-catalog.server").CatalogLot): string {
+  const desc = catalogTitle(data.text);
+  // Formato ESTRUTURADO (Discos Esquecidos): o DESCRICAO traz grau "CAPA/DISCO <sigla>" e vem
+  // como "Artista - Álbum - CAPA …" — o descritivo (cortado no grau) é a melhor identidade.
+  // Prosa (Catavento/santavelharia) NÃO tem grau → cai no PECA. (O separador " - " sozinho não
+  // serve: a prosa tem "Disco de Vinil - LP".)
+  const structured =
+    /(?:capa|disco|m[íi]dia|vinil)\s+(?:M-|VG\+\+|VG\+|VG-|G\+|G-|F\/P|NM|EX|VG|G|M)\b/i.test(
+      data.text,
+    );
+  if (structured) return desc;
+  if (data.peca) {
+    const p = data.peca
+      .replace(PECA_FORMAT_PREFIX, "")
+      .replace(PECA_STATE_SUFFIX, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (p) return p.slice(0, 160);
+  }
+  return desc;
+}
+
 /** Título conciso a partir do descritivo do catálogo (corta estado/venda/visitas e nº inicial). */
 export function catalogTitle(text: string): string {
   return text
@@ -139,7 +174,7 @@ function salesRowsFromCatalog(
     const catCond = parseConditionFromText(data.text);
     if (!known && !looksVinyl(data.text, catCond)) continue; // desconhecido e não parece vinil → pula
 
-    const title = known?.title || catalogTitle(data.text);
+    const title = known?.title || bestCatalogTitle(data);
     // Estado: prefere o grau do catálogo; cai no título.
     const cond =
       catCond.media || catCond.sleeve || catCond.insert ? catCond : parseConditionFromText(title);
