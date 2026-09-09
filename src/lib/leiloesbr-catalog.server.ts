@@ -1,4 +1,5 @@
 import { publicFetch } from "./leiloesbr-auth.server";
+import { decodeHtmlEntities } from "./vinyl-parse";
 
 /**
  * O nº do lote não existe na listagem geral do leiloesbr — só no catálogo do
@@ -91,17 +92,7 @@ const SOLD_MARKER_RE = /lote\s+vendido|arrematad|\bvendid[oa]\b/i;
 const UNSOLD_RE = /n[ãa]o\s+vendid|n[ãa]o\s+arrematad|sem\s+lances?|retirad[oa]|deserto/i;
 
 /** Decodifica as entidades HTML comuns de um texto de atributo. */
-function decodeEntities(s: string): string {
-  return s
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#0*39;|&apos;/gi, "'")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+const decodeEntities = decodeHtmlEntities;
 
 /**
  * Descritivo do lote = o texto MAIS LONGO entre os atributos que carregam o tooltip do
@@ -249,7 +240,9 @@ async function fetchCatalogJson(
       const sold = p["MOSTRABTN_CLASS"] === "is-vendido";
       const valor = String(p["VALOR_VENDA"] ?? p["VALOR_VALUE"] ?? "").trim();
       const soldPrice = sold && valor && valor !== "0" ? `R$ ${valor},00` : null;
-      const text = fixMojibake(String(p["DESCRICAO"] ?? p["MINI_DESCRICAO"] ?? "").trim());
+      const text = decodeEntities(
+        fixMojibake(String(p["DESCRICAO"] ?? p["MINI_DESCRICAO"] ?? "").trim()),
+      );
       const lote = String(p["LOTE"] ?? "").trim() || null;
       map.set(id, {
         lote,
@@ -260,7 +253,7 @@ async function fetchCatalogJson(
         bids: numOrNull(p["QTDLANCE"]),
         feePct: numOrNull(p["TAXA_LEILOEIRO"]),
         initialPrice: numOrNull(p["VALOR_CONTRATADO"] ?? p["VALOR_VALUE"]),
-        peca: fixMojibake(String(p["PECA"] ?? "").trim()) || null,
+        peca: decodeEntities(fixMojibake(String(p["PECA"] ?? "").trim())) || null,
       });
     }
     if (pecas.length < LIMIT) break; // última página

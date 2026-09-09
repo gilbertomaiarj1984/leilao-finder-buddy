@@ -2,6 +2,7 @@ import { parse, type HTMLElement } from "node-html-parser";
 
 import { publicFetch, BASE_URL } from "./leiloesbr-auth.server";
 import {
+  decodeHtmlEntities,
   extractArtist,
   looksNonVinyl,
   parseInfoLine,
@@ -48,7 +49,9 @@ function parseCard(card: HTMLElement): VinylLot | null {
   if (!href) return null;
 
   const titleAnchor = card.querySelector(".product-title a[title]");
-  const title = (titleAnchor?.getAttribute("title") ?? card.querySelector("h3")?.text ?? "").trim();
+  const title = decodeHtmlEntities(
+    titleAnchor?.getAttribute("title") ?? card.querySelector("h3")?.text ?? "",
+  );
   if (!title) return null;
 
   const infoNodes = card.querySelectorAll(".mostbidded__info");
