@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-import { parseConditionFromText } from "./grading";
+import { type Condition, parseConditionFromText } from "./grading";
 import { auctionFinished, extractArtist, parsePrice } from "./vinyl-parse";
 
 /**
@@ -91,12 +91,35 @@ async function readSeenAuctions(): Promise<SeenAuctionRow[]> {
 /** Identidade dos nossos lotes de VINIL (por id), para filtrar o catálogo e nomear a venda. */
 export type VinylInfo = { title: string; artist: string };
 
+// Sinal POSITIVO de vinil no texto do card (formato). NÃO usa "disco" solto (fraco: casa
+// "Catavento Discos", "disco voador"…). Grau de Disco/Capa também conta como vinil.
+const VINYL_FORMAT =
+  /\b(?:lps?|vinil|vinyl|compacto|bolach[aã]o|long\s*play|33\s*rpm)\b|disco\s+de\s+vinil/i;
+
+export function looksVinyl(text: string, cond: Condition): boolean {
+  return Boolean(cond.media || cond.sleeve) || VINYL_FORMAT.test(text);
+}
+
+/** Título conciso a partir do descritivo do catálogo (corta estado/venda/visitas e nº inicial). */
+export function catalogTitle(text: string): string {
+  return text
+    .split(
+      /\s(?:-\s*)?(?:capa|disco|m[íi]dia|vinil)\s+(?:M-|VG\+\+|VG\+|VG-|G\+|G-|F\/P|NM|EX|VG|G|M)\b/i,
+    )[0]!
+    .split(/valor\s+de\s+venda|\bvisita/i)[0]!
+    .replace(/^\s*\d{1,4}\s+/, "") // nº do lote no começo ("140 GILBERTO GIL…")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
+}
+
 /**
- * Monta as linhas de venda de um leilão a partir do catálogo — SÓ dos lotes de VINIL que
- * conhecemos (`vinylById`). O `catalogo.asp` da casa lista TODAS as categorias (livros, DVDs,
- * medalhas, miudezas…); sem esse filtro, entrava lixo no histórico. A **identidade**
- * (artista/título) vem do NOSSO lote já parseado — não do texto ruidoso do catálogo. O catálogo
- * entra só para o **valor de venda** e o **estado** (com fallback ao nosso título).
+ * Monta as linhas de venda de um leilão a partir do catálogo — só de lotes de VINIL. O
+ * `catalogo.asp` da casa lista TODAS as categorias (livros, DVDs, medalhas, miudezas…), então
+ * filtramos: (1) lotes que conhecemos (`vinylById`, id do nosso vinil) → identidade LIMPA do
+ * nosso lote; (2) lotes desconhecidos (leilões que já saíram da janela) que **parecem vinil**
+ * pelo texto (grau Disco/Capa ou LP/vinil/compacto) → identidade do descritivo do catálogo. O
+ * resto (jornal/medalha/fósforo/CD/DVD) é descartado. Catálogo entra só p/ valor + estado.
  */
 function salesRowsFromCatalog(
   auction: { idLeilao: string; domain: string; dayKey: string; house: string; uf: string },
@@ -107,21 +130,19 @@ function salesRowsFromCatalog(
   for (const [idPeca, data] of catalog) {
     if (!data.sold || !data.soldPrice) continue; // fail-closed: sem venda clara, não grava
     const lotId = `${auction.idLeilao}-${idPeca}`;
-    const vinyl = vinylById.get(lotId);
-    if (!vinyl) continue; // não é um lote de vinil nosso → ignora (jornal/DVD/medalha/…)
+    const known = vinylById.get(lotId);
+    const catCond = parseConditionFromText(data.text);
+    if (!known && !looksVinyl(data.text, catCond)) continue; // desconhecido e não parece vinil → pula
 
-    const title = vinyl.title;
-    // Estado: prefere o descritivo do catálogo (mais rico); cai no nosso título.
-    const fromCatalog = parseConditionFromText(data.text);
+    const title = known?.title || catalogTitle(data.text);
+    // Estado: prefere o grau do catálogo; cai no título.
     const cond =
-      fromCatalog.media || fromCatalog.sleeve || fromCatalog.insert
-        ? fromCatalog
-        : parseConditionFromText(title);
+      catCond.media || catCond.sleeve || catCond.insert ? catCond : parseConditionFromText(title);
     rows.push({
       lot_id: lotId,
       id_leilao: auction.idLeilao,
       id_peca: idPeca,
-      artist: vinyl.artist || extractArtist(title),
+      artist: known?.artist || extractArtist(title),
       title,
       sold_price: parsePrice(data.soldPrice),
       sold_price_raw: data.soldPrice,
