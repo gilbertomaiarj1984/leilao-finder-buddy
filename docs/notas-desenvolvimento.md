@@ -210,6 +210,22 @@ Base do Vinil Analytics: cada venda de cada lote, capturada do **catálogo da ca
   `lot_ident`). Agendamento: cron `step=sales` (`cron.server.ts` + `refresh.yml`). Server fns
   `getVinylSales` (ler) e `captureSales` (disparar sob demanda) em `leiloesbr.functions.ts`.
 
+## Vinil Analytics — página (`/vinil-analytics`, v0.31.0)
+
+Visão de mercado por obra, independente da casa de leilão, sobre o histórico `lot_sales`.
+
+- **Rota** `src/routes/_authenticated/vinil-analytics.tsx` (herda o auth gate; link **Analytics**
+  no header do `index.tsx`). Lê `getVinylSales` (query `["vinyl-sales"]`).
+- **Agregação pura** `src/lib/analytics.ts` (`buildAnalytics`): agrupa **artista → álbum**
+  (`deriveAlbum` deriva o álbum do título — heurístico, ruidoso; dá p/ refinar com `lot_ident`),
+  com preço **médio/min/max**, **contagem na base**, **médias por Faixa** (`faixasFor` via
+  `faixaFromScore`) e vendas ordenadas **pior→melhor** score.
+- **UI:** artistas e álbuns **expansíveis** (padrão manual `useState` + Chevron, como a home —
+  não há Accordion no `ui/`). Ao abrir o álbum: **eixo horizontal** (esquerda = pior, direita =
+  melhor) de marcadores (score colorido por `scoreTone`, estado Disco/Capa, valor), chips de
+  **médias por Faixa**, contagem, e botão **Detalhes** → `Dialog` com tabela
+  (data/Disco/Capa/score/faixa/valor/link do lote). Busca por artista/álbum.
+
 ## Valores do lote: atual / próximo / meu lance
 
 Três valores de **fontes diferentes** — não confundir:
@@ -645,6 +661,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.28.2        | **Resiliência a erro transitório do Gemini** (503 "high demand"): `isTransientError` (500/502/503/504 + "unavailable"/"overloaded"/…); `runGemini` faz **retry com backoff** (3×) e o `runText` passa a **fazer failover** também por indisponibilidade transitória (não só por quota). Toast de troca generalizado p/ "X indisponível — usei Y"                                                                                                                                                                                             | —       |
 | v0.29.0        | **Grading de estado (Disco × Capa)** — módulo puro `src/lib/grading.ts`: escala canônica de 10 graus (M…F/P), matriz de **Score Final** (0–100) e **Faixas de Classificação**; `parseConditionFromText` (regex/dicionário) extrai Disco/Capa/encarte do texto do lote; **badge de estado** no `LotCard` (derivado do título nesta fase) e no `CollectionCard` (Faixa/Score via `scoreCondition`). Escala da Coleção alinhada aos 10 graus (`normalizeGrade`, dropdown `GRADE_ORDER`, prompt de import). Base para captura de venda + Vinil Analytics                                                                                        | —       |
 | v0.30.0        | **Captura de vendas pós-leilão** (`lot_sales`) — varredura do **catálogo da casa** (`catalogo.asp`, 1 req/leilão, NÃO lote a lote): `parseCatalogData`/`fetchCatalogData` estendem o parser do nº do lote p/ ler **valor de venda** + texto (estado inline via `parseConditionFromText`). `captureFinishedSales` varre `seen_auctions` (durável) dos leilões terminados ainda não capturados (cursor `app_state.sales_captured`), com **backfill** do que já está na base; cron `step=sales` + `refresh.yml`. `sold_date` = **data do leilão**. Fail-closed (sem valor claro não grava). Server fns `getVinylSales`/`captureSales`                                                    | —       |
+| v0.31.0        | **Página Vinil Analytics** (`/vinil-analytics`, link no header) — preços de venda por **artista → álbum** sobre `lot_sales` (casa irrelevante). Agregação pura `analytics.ts` (`buildAnalytics`/`deriveAlbum`): preço médio, min/max, **contagem na base**, **médias por Faixa** e vendas ordenadas **pior→melhor** conservação. UI: artistas/álbuns expansíveis (padrão manual), **eixo horizontal** de marcadores (score/estado/valor), chips de faixa e **Dialog de detalhe** (tabela data/estado/score/valor/lote)                                                                                                                                                | —       |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.

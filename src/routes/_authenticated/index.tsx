@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
+  BarChart3,
   Check,
   ChevronDown,
   ChevronRight,
@@ -1035,6 +1036,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               <Link to="/colecao">
                 <Library className="mr-2 h-4 w-4" />
                 Coleção
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild title="Preços de venda por artista e álbum">
+              <Link to="/vinil-analytics">
+                <BarChart3 className="mr-2 h-4 w-4" />
+                Analytics
               </Link>
             </Button>
             <div
