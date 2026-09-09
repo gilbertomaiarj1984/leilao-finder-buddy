@@ -95,6 +95,12 @@ jobs:
             if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
           done
 
+          echo "== Diagnóstico de vendas (salesdebug — sinais crus do catálogo, não grava) =="
+          # Mostra, para os leilões terminados, quantos lotes o parser vê e reconhece como
+          # vendidos, e se o HTML traz "Valor de venda"/"vendido". Ajuda a distinguir um
+          # sales:0 legítimo (casa sem venda) de um parser que não casou o formato da casa.
+          call "/api/cron?step=salesdebug&limit=5" | jq . || true
+
           echo "== Captura de vendas pós-leilão (histórico lot_sales) =="
           # Varre o catálogo da casa (1 req/leilão) dos leilões terminados ainda não
           # capturados e grava o valor de venda + estado. Chunked (cursor no servidor):
