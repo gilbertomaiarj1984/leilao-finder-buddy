@@ -514,9 +514,11 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const conditionById = useMemo(() => {
     const map = new Map<string, Condition>();
     for (const r of lotConditionQuery.data ?? []) {
-      const media = (r.media || null) as Grade | null;
-      const sleeve = (r.sleeve || null) as Grade | null;
-      const { score, faixa } = scoreCondition(media, sleeve);
+      const rawMedia = (r.media || null) as Grade | null;
+      const rawSleeve = (r.sleeve || null) as Grade | null;
+      // scoreCondition ESPELHA quando só um lado é conhecido (padrão do app) — usa o retorno
+      // (não os campos crus) para o badge refletir isso mesmo em linhas antigas do cache.
+      const { media, sleeve, score, faixa } = scoreCondition(rawMedia, rawSleeve);
       const insert = r.insert_state === "sim" ? "sim" : r.insert_state === "nao" ? "nao" : null;
       if (!media && !sleeve && insert === null) continue; // indefinido → não guarda
       map.set(r.id, { media, sleeve, insert, score, faixa, source: "regex", raw: "" });
