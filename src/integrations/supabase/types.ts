@@ -185,6 +185,42 @@ export type Database = {
         }
         Relationships: []
       }
+      lot_condition: {
+        Row: {
+          evaluated_at: string
+          faixa: string
+          id: string
+          insert_state: string
+          media: string
+          score: number | null
+          sleeve: string
+          source: string
+          title_hash: string
+        }
+        Insert: {
+          evaluated_at?: string
+          faixa?: string
+          id: string
+          insert_state?: string
+          media?: string
+          score?: number | null
+          sleeve?: string
+          source?: string
+          title_hash: string
+        }
+        Update: {
+          evaluated_at?: string
+          faixa?: string
+          id?: string
+          insert_state?: string
+          media?: string
+          score?: number | null
+          sleeve?: string
+          source?: string
+          title_hash?: string
+        }
+        Relationships: []
+      }
       lot_sales: {
         Row: {
           artist: string

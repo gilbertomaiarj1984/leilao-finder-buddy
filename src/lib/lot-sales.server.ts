@@ -121,6 +121,67 @@ function salesRowsFromCatalog(
 }
 
 /**
+ * Diagnóstico da captura de vendas: sonda o catálogo dos primeiros `limit` leilões TERMINADOS
+ * (ignorando o checkpoint de capturados) e devolve sinais crus — quantos lotes o parser vê,
+ * quantos reconhece como vendidos, se o HTML contém "Valor de venda"/"vendido"/"não vendido",
+ * e uma amostra. NÃO grava nada nem marca como capturado. Serve para confirmar se `sales:0` é
+ * legítimo ou se o parser precisa de ajuste para o formato daquela casa.
+ */
+export async function debugSales(limit = 3): Promise<{ probed: number; auctions: unknown[] }> {
+  const { parseAuctionRef, parseCatalogData } = await import("./leiloesbr-catalog.server");
+  const { publicFetch } = await import("./leiloesbr-auth.server");
+  const seen = await readSeenAuctions();
+  const now = Date.now();
+  const finished = seen
+    .filter((a) => auctionFinished(a.day_key, a.start_time, now))
+    .map((a) => ({ row: a, ref: parseAuctionRef(a.entry_url ?? "") }))
+    .filter(
+      (x): x is { row: SeenAuctionRow; ref: { domain: string; idLeilao: string } } =>
+        x.ref !== null,
+    )
+    .slice(0, limit);
+
+  const auctions: unknown[] = [];
+  for (const { row, ref } of finished) {
+    const url = `${ref.domain}/catalogo.asp?Num=${ref.idLeilao}`;
+    try {
+      const html = await publicFetch(url, {});
+      const map = parseCatalogData(html);
+      let sold = 0;
+      let sample: unknown = null;
+      for (const [idPeca, d] of map) {
+        if (d.sold) {
+          sold++;
+          if (!sample)
+            sample = { idPeca, lote: d.lote, soldPrice: d.soldPrice, text: d.text.slice(0, 140) };
+        }
+      }
+      auctions.push({
+        idLeilao: ref.idLeilao,
+        house: row.house,
+        url,
+        htmlLen: html.length,
+        pecaMatches: (html.match(/peca\.asp\?ID=/gi) ?? []).length,
+        lotsParsed: map.size,
+        soldParsed: sold,
+        hasValorVenda: /valor\s+de\s+venda/i.test(html),
+        hasVendido: /vendid/i.test(html),
+        hasNaoVendido: /n[ãa]o\s+vendid/i.test(html),
+        sample,
+      });
+    } catch (error) {
+      auctions.push({
+        idLeilao: ref.idLeilao,
+        house: row.house,
+        url,
+        error: (error as Error)?.message,
+      });
+    }
+  }
+  return { probed: auctions.length, auctions };
+}
+
+/**
  * Varredura pós-leilão: para os leilões JÁ CONHECIDOS (`seen_auctions`) que terminaram e
  * ainda não foram capturados, busca o catálogo UMA vez por leilão e grava as vendas em
  * `lot_sales`. Processa até `maxAuctions` por rodada (cursor em `app_state.sales_captured`),

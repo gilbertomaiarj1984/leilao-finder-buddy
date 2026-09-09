@@ -331,6 +331,15 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json({ updated, done: targets.length < max });
     }
 
+    // Enriquecimento de ESTADO (Disco/Capa) dos lotes PRÉ-leilão (`lot_condition`).
+    // Busca o catálogo da casa (1 req/leilão) e parseia o descritivo do card (tooltip),
+    // gravando o estado por lote. Chunked: repete até `done=true`. Sem custo de IA.
+    if (step === "condition") {
+      const { enrichConditions } = await import("./lot-condition.server");
+      const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 8, 1), 20);
+      return json(await enrichConditions(max));
+    }
+
     // Captura de VENDAS pós-leilão (histórico `lot_sales`, base do Vinil Analytics).
     // Varre o catálogo da casa (1 req/leilão) dos leilões JÁ CONHECIDOS que terminaram e
     // ainda não foram capturados (cursor em `app_state.sales_captured`). Chunked: repete
@@ -339,6 +348,14 @@ export async function handleCron(request: Request): Promise<Response | null> {
       const { captureFinishedSales } = await import("./lot-sales.server");
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 8, 1), 20);
       return json(await captureFinishedSales(max));
+    }
+
+    // Diagnóstico da captura de vendas: sinais crus do catálogo dos leilões terminados
+    // (não grava, não marca). Útil quando `sales` volta 0 — confirma se é legítimo.
+    if (step === "salesdebug") {
+      const { debugSales } = await import("./lot-sales.server");
+      const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 3, 1), 10);
+      return json(await debugSales(limit));
     }
 
     // Diagnóstico: sonda os catálogos das casas dos primeiros leilões sem nº de lote.
@@ -382,7 +399,10 @@ export async function handleCron(request: Request): Promise<Response | null> {
     }
 
     return json(
-      { error: "step inválido (use chunk|enrich|aieval|aiident|market|sales|catdebug)" },
+      {
+        error:
+          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|salesdebug|catdebug)",
+      },
       400,
     );
   } catch (error) {

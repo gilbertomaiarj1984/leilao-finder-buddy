@@ -517,6 +517,21 @@ export const analyzeOnDemand = createServerFn({ method: "POST" })
     };
   });
 
+/** Estado de conservação (Disco/Capa) por lote p/ os cards (`lot_condition`). Best-effort: [] em erro. */
+export const getLotCondition = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    try {
+      const { getAllLotCondition } = await import("./lot-condition.server");
+      return await getAllLotCondition();
+    } catch (error) {
+      console.error("[lot-condition] não foi possível ler o estado dos lotes", error);
+      return [];
+    }
+  });
+
 /** Histórico de vendas (`lot_sales`, base do Vinil Analytics). Best-effort: [] em erro. */
 export const getVinylSales = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
