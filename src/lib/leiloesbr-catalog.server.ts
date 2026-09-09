@@ -42,6 +42,8 @@ export type CatalogLot = {
   bids?: number | null; // QTDLANCE — nº de lances (demanda)
   feePct?: number | null; // TAXA_LEILOEIRO — comissão do leiloeiro em % (custo real)
   initialPrice?: number | null; // VALOR_CONTRATADO/VALOR_VALUE — valor inicial (p/ desconto/ágio)
+  peca?: string | null; // PECA — título curto/curado do lote ("Disco X - Novo"); melhor p/
+  // identidade em casas cujo DESCRICAO é prosa (sem "Artista - Álbum").
 };
 
 /** Converte um valor cru do JSON (string/number) em número, ou null quando não numérico ("--", ""). */
@@ -240,6 +242,7 @@ async function fetchCatalogJson(
         bids: numOrNull(p["QTDLANCE"]),
         feePct: numOrNull(p["TAXA_LEILOEIRO"]),
         initialPrice: numOrNull(p["VALOR_CONTRATADO"] ?? p["VALOR_VALUE"]),
+        peca: String(p["PECA"] ?? "").trim() || null,
       });
     }
     if (pecas.length < LIMIT) break; // última página
