@@ -6,6 +6,7 @@ import {
   LOTE_LABEL,
   looksNonVinylSale,
   normalizeForMatch,
+  pickCanonical,
   UNCLASSIFIED_LABEL,
 } from "@/lib/vinyl-parse";
 
@@ -123,32 +124,53 @@ function byScoreAsc(a: SaleRow, b: SaleRow): number {
   return sa - sb;
 }
 
-/** Agrega o histórico de vendas em artista → álbum. */
+// Bucket de álbum: guarda todas as grafias vistas (p/ escolher a canônica) + as vendas.
+type AlbumBucket = { variants: string[]; sales: SaleRow[] };
+// Bucket de artista: grafias vistas + os álbuns por CHAVE normalizada.
+type ArtistBucket = { variants: string[]; albums: Map<string, AlbumBucket> };
+
+/**
+ * Agrega o histórico de vendas em artista → álbum.
+ *
+ * ⚠️ **Padronização de nomes (evita registros duplicados):** o agrupamento é por CHAVE
+ * `normalizeForMatch` (sem acento/caixa/pontuação), tanto de artista quanto de álbum, então
+ * pequenas diferenças de grafia ("Jorge Ben" vs "Jorge ben ", "Alceu Valença" vs "Alceu
+ * Valenca") caem no MESMO grupo. O nome exibido é a melhor grafia entre as variações
+ * (`pickCanonical` — mais acentuada, depois mais longa). Isso corrige os casos em que
+ * variações mínimas geravam 2 linhas para o mesmo artista/álbum.
+ */
 export function buildAnalytics(rows: SaleRow[]): ArtistAgg[] {
-  const byArtist = new Map<string, Map<string, SaleRow[]>>();
+  const byArtist = new Map<string, ArtistBucket>();
   for (const row of rows) {
     // Exclui do Analytics o que caiu por engano de OUTRO formato (DVD/HQ/revista/livro…),
     // limpando também as linhas já gravadas antes deste filtro — sem precisar re-capturar.
     if (looksNonVinylSale(`${row.title} ${row.artist}`)) continue;
     const artist = row.artist?.trim() || UNCLASSIFIED_LABEL;
     const album = deriveAlbum(row.title, artist);
-    const albums = byArtist.get(artist) ?? new Map<string, SaleRow[]>();
-    const list = albums.get(album) ?? [];
-    list.push(row);
-    albums.set(album, list);
-    byArtist.set(artist, albums);
+    const artistKey = normalizeForMatch(artist) || normalizeForMatch(UNCLASSIFIED_LABEL);
+    const albumKey = normalizeForMatch(album) || album;
+
+    const aBucket: ArtistBucket = byArtist.get(artistKey) ?? { variants: [], albums: new Map() };
+    aBucket.variants.push(artist);
+    const alBucket: AlbumBucket = aBucket.albums.get(albumKey) ?? { variants: [], sales: [] };
+    alBucket.variants.push(album);
+    alBucket.sales.push(row);
+    aBucket.albums.set(albumKey, alBucket);
+    byArtist.set(artistKey, aBucket);
   }
 
   const result: ArtistAgg[] = [];
-  for (const [artist, albums] of byArtist) {
+  for (const aBucket of byArtist.values()) {
+    const artist = pickCanonical(aBucket.variants) || UNCLASSIFIED_LABEL;
     const albumAggs: AlbumAgg[] = [];
     const allSales: SaleRow[] = [];
-    for (const [album, sales] of albums) {
+    for (const alBucket of aBucket.albums.values()) {
+      const { sales } = alBucket;
       allSales.push(...sales);
       const prices = sales.map((s) => s.sold_price);
       const nums = prices.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
       albumAggs.push({
-        album,
+        album: pickCanonical(alBucket.variants),
         count: sales.length,
         avgPrice: avg(prices),
         minPrice: nums.length ? Math.min(...nums) : null,

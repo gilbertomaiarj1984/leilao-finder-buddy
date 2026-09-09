@@ -564,6 +564,23 @@ export const captureSales = createServerFn({ method: "POST" })
     return await captureFinishedSales(data.max);
   });
 
+/**
+ * Reidentificação por IA de TODO o histórico de vendas (mesma rotina do cron `step=reident`):
+ * ajusta artista/álbum (título+descrição → IA) e padroniza a grafia dos nomes. Usa o provedor
+ * de IA PADRÃO (o selecionado no topo do site). O cliente pode chamar em laço até `done`.
+ */
+export const reidentifySales = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { max?: number } | undefined) => ({
+    max: Math.min(Math.max(Number(input?.max) || 25, 1), 50),
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { reidentifyAllSales } = await import("./lot-sales.server");
+    return await reidentifyAllSales(data.max);
+  });
+
 /** Âncora de mercado do Discogs por lote (preço/demanda). Best-effort: [] em erro. */
 export const getLotMarket = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

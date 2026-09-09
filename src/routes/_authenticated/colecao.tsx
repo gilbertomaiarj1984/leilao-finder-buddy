@@ -40,8 +40,7 @@ import { collectionLabel } from "@/components/vinyl/collection-utils";
 import { ArtistFilter } from "@/components/vinyl/filters";
 import { GEMINI_IMPORT_PROMPT, parseCollectionBulkText } from "@/lib/collection-bulk";
 import { GRADE_ORDER } from "@/lib/grading";
-import { AiProviderSelect, AiProviderDialog } from "@/components/vinyl/ai-provider-controls";
-import { useAiProviderPicker } from "@/lib/use-ai-provider-picker";
+import { AiProviderSelect } from "@/components/vinyl/ai-provider-controls";
 import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
 import { getAiProvider, setAiProvider } from "@/lib/leiloesbr.functions";
 import type { CollectionItem, PendingWonLot } from "@/lib/collection.server";
@@ -62,6 +61,7 @@ import {
   COMPILATION_LABEL,
   LOTE_LABEL,
   normalizeForMatch,
+  pickCanonical,
   UNCLASSIFIED_LABEL,
 } from "@/lib/vinyl-parse";
 
@@ -93,21 +93,6 @@ function artistKey(artist: string): string {
 function filterKey(value: string): string {
   if (!value || value === UNCLASSIFIED_LABEL) return "";
   return normalizeForMatch(value);
-}
-
-/** Nº de diacríticos, p/ preferir a grafia acentuada ("Valença" > "Valenca") na exibição. */
-function accentScore(s: string): number {
-  return (s.normalize("NFD").match(/[̀-ͯ]/g) ?? []).length;
-}
-
-/** Escolhe a melhor grafia entre as variações de um mesmo artista (mais acentuada, depois mais longa). */
-function pickCanonical(names: string[]): string {
-  return names
-    .filter(Boolean)
-    .sort(
-      (a, b) =>
-        accentScore(b) - accentScore(a) || b.length - a.length || a.localeCompare(b, "pt-BR"),
-    )[0]!;
 }
 
 function displayName(key: string, variants: string[]): string {
@@ -290,7 +275,6 @@ function ColecaoPage() {
         toast.error((e as Error)?.message || "Não foi possível salvar o provedor de IA");
       });
   };
-  const providerPicker = useAiProviderPicker(aiProvider);
   // Avisa quando houve failover (o provedor pedido ficou sem créditos ou indisponível).
   const notifySwitch = (
     asked: AiProvider,
@@ -335,9 +319,8 @@ function ColecaoPage() {
   // (padrão) gasta IA só nos discos ainda sem identificação — uso rotineiro e barato; `false`
   // re-normaliza TODA a coleção (corrige identificações antigas), bem mais caro.
   async function runIdentify(onlyUnidentified = true) {
-    // Pergunta qual provedor usar antes de começar (cancelar aborta).
-    const provider = await providerPicker.pickProvider();
-    if (!provider) return;
+    // Usa SEMPRE o provedor selecionado no topo da página (sem perguntar).
+    const provider = aiProvider;
     setIdentifying(true);
     try {
       let total = 0;
@@ -475,13 +458,9 @@ function ColecaoPage() {
     },
     onError: (e: Error) => toast.error(e.message || "Não foi possível reprocessar"),
   });
-  // Reprocessa UM disco: pergunta o provedor antes (cancelar aborta).
+  // Reprocessa UM disco usando o provedor selecionado no topo da página.
   const startReprocess = (id: string) => {
-    void (async () => {
-      const provider = await providerPicker.pickProvider();
-      if (!provider) return;
-      reprocessMut.mutate({ id, provider });
-    })();
+    reprocessMut.mutate({ id, provider: aiProvider });
   };
 
   // Edição de tags direto no card (mesmo padrão dos lotes): otimista, com rollback em erro.
@@ -535,8 +514,8 @@ function ColecaoPage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/60">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-6">
+      <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:py-5">
           <div>
             <div className="flex items-center gap-3">
               <Button variant="ghost" size="sm" asChild>
@@ -550,12 +529,12 @@ function ColecaoPage() {
                 Coleção
               </h1>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
               Seus vinis, agrupados por artista. A varredura de "Minhas compras" acrescenta os lotes
               de vinil arrematados; cada disco é editável.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:overflow-visible sm:pb-0">
             <Button
               variant="outline"
               size="sm"
@@ -746,12 +725,6 @@ function ColecaoPage() {
         onAdd={(p) => addWonMut.mutate(p)}
         onIgnore={ignoreDuplicate}
         onClose={() => setReview([])}
-      />
-
-      <AiProviderDialog
-        {...providerPicker.dialogProps}
-        title="Identificar com qual IA?"
-        description="Escolha o provedor para esta identificação. Se ele ficar sem créditos, o outro assume automaticamente."
       />
     </main>
   );

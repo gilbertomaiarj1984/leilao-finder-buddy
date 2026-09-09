@@ -486,6 +486,25 @@ export function normalizeForMatch(value: string): string {
     .replace(/\s+/g, " ");
 }
 
+/** Quantidade de acentos numa string (desempate de grafia — mais acentuada é a "correta"). */
+function accentScore(s: string): number {
+  return (s.normalize("NFD").match(/[\u0300-\u036f]/g) ?? []).length;
+}
+
+/**
+ * Escolhe a MELHOR grafia entre variações do mesmo nome (mesmo `normalizeForMatch`):
+ * mais acentuada, depois mais longa, depois ordem alfabética. Usado para juntar registros
+ * que só diferem por acento/caixa/pontuação (ex.: "Alceu Valença" = "Alceu Valenca") num
+ * único nome canônico — evita 2 registros para o mesmo artista/álbum.
+ */
+export function pickCanonical(names: string[]): string {
+  const list = names.map((n) => n.trim()).filter(Boolean);
+  if (!list.length) return "";
+  return list.sort(
+    (a, b) => accentScore(b) - accentScore(a) || b.length - a.length || a.localeCompare(b, "pt-BR"),
+  )[0]!;
+}
+
 /**
  * Relevância de um lote para a busca, para ordenar "mais exato primeiro, parecidos depois".
  * `queryNorm` já vem normalizado (via `normalizeForMatch`). Camadas, da mais forte à mais

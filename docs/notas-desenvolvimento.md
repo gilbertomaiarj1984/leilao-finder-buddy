@@ -267,6 +267,21 @@ Visão de mercado por obra, independente da casa de leilão, sobre o histórico 
   (`deriveAlbum` deriva o álbum do título — heurístico, ruidoso; dá p/ refinar com `lot_ident`),
   com preço **médio/min/max**, **contagem na base**, **médias por Faixa** (`faixasFor` via
   `faixaFromScore`) e vendas ordenadas **pior→melhor** score.
+- **Padronização de nomes (v0.41.0, evita duplicatas):** o agrupamento é por **CHAVE
+  `normalizeForMatch`** (sem acento/caixa/pontuação) de artista E de álbum — pequenas diferenças
+  de grafia ("Jorge Ben" vs "Jorge ben ", "Alceu Valença" vs "Alceu Valenca") caem no MESMO
+  grupo; o nome exibido é a melhor grafia via **`pickCanonical`** (helper compartilhado em
+  `vinyl-parse.ts` — mais acentuada, depois mais longa; a Coleção reusa o mesmo). Corrige os
+  casos em que variações mínimas geravam 2 registros.
+- **Reidentificação por IA de TODO o histórico (v0.41.0):** `reidentifyAllSales(max)`
+  (`lot-sales.server.ts`) passa a IA (título+descrição da venda → "Artista - Álbum") pelas vendas
+  **ainda não identificadas** (sem linha em `lot_ident`, o checkpoint durável), grava em
+  `lot_ident` (inclusive linha "tentado" com álbum nulo, p/ não reprocessar) e **padroniza** a
+  grafia do artista de TODAS as vendas (canonização), regravando só o que muda. Provedor =
+  `resolveAiProvider()` (o do seletor do topo — Gemini quando escolhido). Cron `step=reident`
+  (`cron.server.ts` + `refresh.yml`), server fn `reidentifySales`, e botão **"Reidentificar
+  (IA)"** no header do Analytics (roda em laço até `done`). Sem provedor de IA, só a padronização
+  roda.
 - **UI:** artistas e álbuns **expansíveis** (padrão manual `useState` + Chevron, como a home —
   não há Accordion no `ui/`). Ao abrir o álbum: **eixo horizontal** (esquerda = pior, direita =
   melhor) de marcadores (score colorido por `scoreTone`, estado Disco/Capa, valor), chips de
@@ -332,7 +347,9 @@ por dia/casa não é mais exibida; a home, a Análise e o Ao vivo cobrem o uso. 
   Supabase/CSRF), protegido pelo segredo **`CRON_TOKEN`** (header `x-cron-token`; o fallback
   `?token=` foi removido — vazava em logs; comparação em tempo constante, `tokensMatch`).
 - **Steps:** `chunk` (varre bloco), `enrich` (nº de lote por `offset`), `aiident`
-  (identificação IA), `aieval` (avaliação IA), `market` (Discogs), `catdebug` (diagnóstico).
+  (identificação IA), `aieval` (avaliação IA), `market` (Discogs), `condition` (estado
+  pré-leilão), `sales` (captura de vendas), `reident` (reidentifica/padroniza o histórico de
+  vendas pela IA), `salesdebug`/`catdebug` (diagnósticos).
 - **GitHub Actions** `.github/workflows/refresh.yml`: `cron: "0 3,9,15,21 * * *"` (UTC = BRT
   00/06/12/18h) + `workflow_dispatch`. Varre em blocos até `nextPage:null`, enriquece por
   `offset` até `done:true`, depois laços curtos de `aiident` → `aieval` → `market`.
@@ -369,9 +386,13 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   `503 UNAVAILABLE "This model is currently experiencing high demand"` do `gemini-flash-latest`.
   Erros não-transitórios/não-quota (400/401/403, prompt bloqueado, parsing) propagam (por-item).
 - **Provedor PADRÃO** persistido em `app_state.ai_provider` (`getAiProvider`/`setAiProvider`;
-  precedência: `app_state` → env `AI_PROVIDER` → `anthropic`). **Seletor no header** (home e
-  Coleção, `AiProviderSelect`). Cada gatilho de processamento sob demanda **pergunta qual usar
-  antes** (`AiProviderDialog` + hook `useAiProviderPicker`), pré-selecionando o padrão.
+  precedência: `app_state` → env `AI_PROVIDER` → `anthropic`). **Seletor único no header**
+  (`AiProviderSelect`, na home, Coleção e Vinil Analytics) — é a **ÚNICA** forma de escolher a
+  IA. Todo recurso do site usa esse provedor: os síncronos sob demanda leem o `aiProvider` do
+  seletor no cliente; os assíncronos (cron) e as rotinas de servidor leem `resolveAiProvider()`
+  (o padrão em `app_state`). **NÃO existe mais o diálogo "qual IA usar?"** por ação
+  (`AiProviderDialog`/`useAiProviderPicker` foram removidos no v0.41.0 — a seleção por ação se
+  confundia; agora só o topo decide).
 - **Cron:** Claude usa **Batches** (assíncrono, ~50% mais barato); Gemini roda **síncrono** em
   bloco (`GEMINI_SYNC_CAP`, o laço do cron chama de novo até esgotar). Se o Claude estiver sem
   créditos no `submit`, o cron cai para o Gemini síncrono.
@@ -567,6 +588,13 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
 
 ## Páginas / UI
 
+- **Header persistente (v0.41.0):** o `<header>` de todas as páginas autenticadas (index,
+  Análise, Coleção, Ao vivo, Vinil Analytics) é **`sticky top-0 z-30`** com fundo translúcido +
+  `backdrop-blur` (mesmo padrão do rodapé fixo), então o topo (com o **seletor de IA**) fica
+  sempre acessível. **Mobile compacto:** no `sm-` o padding vertical cai, o título encolhe, a
+  descrição/tagline some (`hidden sm:block`) e a barra de ações rola na **horizontal** numa única
+  linha (`overflow-x-auto`, volta a `flex-wrap` no `sm+`) — para o header baixo não atrapalhar. O
+  rodapé fixo é `z-40`; header `z-30` (diálogos/toasts do Radix ficam acima, `z-50`).
 - **`index.tsx` (site principal):** cards por **dia → casa → artista**. `LotCard` mostra nota
   da IA no canto **direito** (`ScoreCorner`), nº do lote no canto **esquerdo**, e o `album` da
   IA ("Artista — Álbum (Ano)", `formatAiAlbum`) **acima** do título. Álbum resolvido por lote =
@@ -710,6 +738,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.30.0        | **Captura de vendas pós-leilão** (`lot_sales`) — varredura do **catálogo da casa** (`catalogo.asp`, 1 req/leilão, NÃO lote a lote): `parseCatalogData`/`fetchCatalogData` estendem o parser do nº do lote p/ ler **valor de venda** + texto (estado inline via `parseConditionFromText`). `captureFinishedSales` varre `seen_auctions` (durável) dos leilões terminados ainda não capturados (cursor `app_state.sales_captured`), com **backfill** do que já está na base; cron `step=sales` + `refresh.yml`. `sold_date` = **data do leilão**. Fail-closed (sem valor claro não grava). Server fns `getVinylSales`/`captureSales`                                                    | —       |
 | v0.31.0        | **Página Vinil Analytics** (`/vinil-analytics`, link no header) — preços de venda por **artista → álbum** sobre `lot_sales` (casa irrelevante). Agregação pura `analytics.ts` (`buildAnalytics`/`deriveAlbum`): preço médio, min/max, **contagem na base**, **médias por Faixa** e vendas ordenadas **pior→melhor** conservação. UI: artistas/álbuns expansíveis (padrão manual), **eixo horizontal** de marcadores (score/estado/valor), chips de faixa e **Dialog de detalhe** (tabela data/estado/score/valor/lote)                                                                                                                                                | —       |
 | v0.31.1        | **Calibração do catálogo (Discos Esquecidos)** — o descritivo completo vem no **tooltip** do card (atributo `title`/`alt`/`data-*`): `longestAttr` pega o texto mais longo → **estado rico** (`CAPA VG+ - DISCO VG+/NM`) direto do catálogo, sem `peca.asp`. Valor lido do rótulo **"Valor de venda: R$ …"** + marcador "vendido"/"arrematado" (fail-closed). `detectInsert` **conservador** (ignora o boilerplate "se o LP possuir encarte…"). `deriveAlbum` corta em "- CAPA/DISCO `<grau>`". Nº do lote ganha fallback "LOTE N"                                                                                                                            | —       |
+| v0.41.0        | **Seletor único de IA + header persistente + IA/padronização em todo o histórico** — (1) **remove o diálogo "qual IA usar?"** por ação (`AiProviderDialog`/`useAiProviderPicker`): o **seletor do topo** (`AiProviderSelect`) é a única escolha e vale para tudo (síncrono via `aiProvider`, assíncrono/servidor via `resolveAiProvider`). (2) **Header sticky/persistente** em todas as páginas autenticadas (fundo translúcido + `backdrop-blur`), **compacto no mobile** (título menor, descrição escondida, ações em barra rolável horizontal). (3) **`reidentifyAllSales`** (`lot-sales.server.ts`) passa a IA (título+descrição → "Artista - Álbum") por TODO o histórico de vendas ainda não identificado (checkpoint durável em `lot_ident`) e **padroniza a grafia** dos nomes (`normalizeForMatch`+`pickCanonical`, helper compartilhado em `vinyl-parse.ts`); `buildAnalytics` passa a agrupar por **chave normalizada** de artista/álbum exibindo a grafia canônica (junta duplicatas por diferença mínima). Cron `step=reident` + `refresh.yml`, server fn `reidentifySales`, botão "Reidentificar (IA)" no Analytics. Prompt de identificação pede grafia **canônica/consistente** do artista (leilões futuros já saem padronizados). Typecheck/lint/build OK | —      |
 | v0.40.0        | **Analytics: exclui não-vinil + reident por IA de artistas genéricos** — dois problemas de qualidade no Vinil Analytics: (1) grupos de OUTRO formato (DVD/HQ/revista/livro/K7/VHS) caindo no histórico; (2) "artistas" genéricos/lixo do `extractArtist` ("Colecionismo", "Duplo", "Various Artists", "Various", "Ao Vivo", "Ao vivo \| Código"). Novos helpers puros em `vinyl-parse.ts`: `looksNonVinylSale` (mais rígido que `looksNonVinyl` — "disco" sozinho não salva, pois DVD também é "disco"; só sinal FORTE de vinil isenta) e `isGenericArtist` (categoria/formato/coletânea/rótulo solto/pipe/vazio). **Exclusão:** `salesRowsFromCatalog` pula lotes não-vinil na captura, e `buildAnalytics` também filtra na LEITURA (limpa o que já estava gravado, sem re-capturar). **Reident:** `captureFinishedSales` manda as vendas de artista genérico (com texto) à IA de identificação (`identLotsSyncRows`, reaproveitada; teto 25/rodada), grava o "Artista - Álbum" em `lot_ident` (durável) e aplica à venda. Sem provedor de IA, só a exclusão roda. Validado (28/28 casos dos dois classificadores)                                                                                                                                          | —       |
 | v0.39.0        | **Fallback de IA para o estado (quando o regex não acha NADA)** — novo em `ai-eval.server.ts`: `buildConditionRequest`/`parseConditionAiObject` (prompt só-texto pedindo `media`/`sleeve`/`insert` na escala canônica; `media`/`sleeve` passam por `normalizeGrade` — grau fora da escala vira `null`, nunca inventa) + `conditionAiSync` (worker-pool síncrono, mesmo padrão de `identLotsSync`, com failover de provedor) + `resolveAiProvider` (padrão do usuário com fallback ao 1º configurado). Ligado em `enrichConditions` (`lot_condition`, cards PRÉ-leilão) e `captureFinishedSales` (`lot_sales`, Analytics): dos lotes/vendas que ficaram **indefinidos** pelo regex mas TÊM texto, até 25/rodada passam pela IA (`source: 'ia'` em `lot_condition`); sem provedor configurado, comportamento e custo continuam inalterados (best-effort, nunca falha a rodada). Validado (10/10 casos: prompt, parse limpo/com cercas de código, grau inválido rejeitado, tudo-null, JSON quebrado)                                                                                                                                          | —       |
 | v0.38.0        | **Grading tolerante a PROSA + regra de score = MÉDIA (padrão em todos os cards)** — muitas descrições reais têm o estado em prosa ("capa em bom estado", "disco apresenta-se em estado excelente"), não só siglas coladas ao rótulo (`Capa: VG+`); `gradeAfterLabel` passa a aceitar **conectores** entre rótulo e grau (até ~40 caracteres, sem cruzar fim de frase nem o rótulo do OUTRO lado — evita atribuir "disco muito bom" à capa em "Capa com riscos, disco muito bom"), rótulo **combinado** ("Capa e Disco: VG+"), mais sinônimos (`quase novo`→NM, `ótimo`→EX, `boa`/`muito boa`, `péssimo`, `danificado`) e parênteses (`Capa (VG+)`); texto é dobrado (maiúsculas/sem acento) uma vez, com guarda simples contra negação adjacente ("não bom"). **`scoreCondition` substitui a matriz fixa por uma regra simétrica**: só um lado conhecido → **ESPELHA** o mesmo grau pro outro (nunca fica "só Disco"/"só Capa"); ambos conhecidos → Score Final = **MÉDIA** dos scores-base (arredondada). O retorno inclui `media`/`sleeve` já espelhados — `index.tsx` (`conditionById`) e `CollectionCard` passam a exibir os badges a partir desse retorno, padronizando Disco/Capa/Faixa/encarte em **todos** os cards do sistema (lote e Coleção). Fluxo do catálogo (`lot_condition`/`lot_sales`) herda automaticamente por já passar por `parseConditionFromText`. Validado (21/21 casos, incl. regressão dos formatos antigos)                                                                                                                                          | —       |

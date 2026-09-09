@@ -359,6 +359,16 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await captureFinishedSales(max));
     }
 
+    // Reidentificação por IA de TODO o histórico de vendas (`lot_sales`): ajusta artista/álbum
+    // (título+descrição → "Artista - Álbum") e PADRONIZA a grafia dos nomes (evita registros
+    // duplicados por diferenças mínimas). Provedor = padrão em `app_state` (Gemini quando
+    // selecionado). Chunked: repete até `done=true`. Sem provedor de IA, só a padronização roda.
+    if (step === "reident") {
+      const { reidentifyAllSales } = await import("./lot-sales.server");
+      const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 25, 1), 50);
+      return json(await reidentifyAllSales(max));
+    }
+
     // Diagnóstico da captura de vendas: sinais crus do catálogo dos leilões terminados
     // (não grava, não marca). Útil quando `sales` volta 0 — confirma se é legítimo.
     if (step === "salesdebug") {
@@ -411,7 +421,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     return json(
       {
         error:
-          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|salesdebug|catdebug)",
+          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|salesdebug|catdebug)",
       },
       400,
     );

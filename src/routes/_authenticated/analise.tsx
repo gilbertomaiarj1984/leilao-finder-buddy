@@ -976,8 +976,8 @@ function AnalisePage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/60">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-6">
+      <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:py-5">
           <div>
             <div className="flex items-center gap-3">
               <Button variant="ghost" size="sm" asChild>
@@ -991,13 +991,13 @@ function AnalisePage() {
                 Análise de Lotes
               </h1>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
               Lotes ranqueados por nota da IA (raridade + oportunidade). ⭐ = combina com seus
               interesses; 🎯 = casa com a sondagem.{" "}
               {evaluated ? `${evaluated} lote(s) avaliado(s).` : "Ainda sem avaliações."}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:overflow-visible sm:pb-0">
             <SondagemDialog
               items={wantlistQuery.data ?? []}
               loading={wantlistQuery.isLoading}

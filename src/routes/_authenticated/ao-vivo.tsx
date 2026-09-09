@@ -198,8 +198,8 @@ function AoVivoPage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/60">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-6">
+      <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:py-5">
           <div>
             <div className="flex items-center gap-3">
               <Button variant="ghost" size="sm" asChild>
@@ -213,7 +213,7 @@ function AoVivoPage() {
                 Leilões ao vivo
               </h1>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
               Pregões de vinil de hoje, por casa. Acompanhe o pregão presencial ao vivo — mesmo os
               que ainda não começaram.
               {liveCount ? ` ${liveCount} acontecendo agora.` : ""}

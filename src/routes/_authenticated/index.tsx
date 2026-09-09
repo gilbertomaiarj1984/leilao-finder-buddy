@@ -86,8 +86,7 @@ import {
   setLotTags,
   setVerifiedHouses,
 } from "@/lib/leiloesbr.functions";
-import { AiProviderSelect, AiProviderDialog } from "@/components/vinyl/ai-provider-controls";
-import { useAiProviderPicker } from "@/lib/use-ai-provider-picker";
+import { AiProviderSelect } from "@/components/vinyl/ai-provider-controls";
 import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { getCollection } from "@/lib/collection.functions";
@@ -391,9 +390,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         toast.error((error as Error)?.message || "Não foi possível salvar o provedor de IA");
       });
   };
-  // Diálogo "qual IA usar?" antes de cada análise sob demanda (padrão pré-selecionado).
-  const providerPicker = useAiProviderPicker(aiProvider);
-
   // Análise SOB DEMANDA (botões por dia/casa). `analyzing` guarda a chave em execução:
   // o dia (`day`) ou a casa (`${day}|${casa}`). Roda em laço até esgotar os não avaliados
   // (ou parar de progredir), depois revalida o cache ["lot-ai"] para as notas aparecerem.
@@ -401,10 +397,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const analyzeScope = (opts: { day: string; house?: string }) => {
     if (analyzing) return; // uma análise por vez (evita disparar vários batches síncronos)
     const key = opts.house ? `${opts.day}|${opts.house}` : opts.day;
+    // Usa SEMPRE o provedor selecionado no topo da página (sem perguntar).
+    const provider = aiProvider;
     void (async () => {
-      // Pergunta qual provedor usar antes de começar (cancelar aborta).
-      const provider = await providerPicker.pickProvider();
-      if (!provider) return;
       setAnalyzing(key);
       let evaluated = 0;
       let failed = 0;
@@ -1042,19 +1037,23 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
 
   return (
     <main className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/60">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-4 px-4 py-8">
+      <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-3 px-4 py-3 sm:gap-4 sm:py-6">
           <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-primary">LeilõesBR</p>
-            <h1 className="mt-2 text-4xl font-bold tracking-tight text-foreground">
+            <p className="hidden text-xs uppercase tracking-[0.35em] text-primary sm:block">
+              LeilõesBR
+            </p>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:mt-2 sm:text-4xl">
               Garimpo de Vinil
             </h1>
-            <p className="mt-2 max-w-xl text-sm text-muted-foreground">
+            <p className="mt-2 hidden max-w-xl text-sm text-muted-foreground sm:block">
               LPs, compactos e bolachões que vão a leilão nos próximos 5 dias, agrupados por dia,
               casa de leilão e artista. A vigia é sincronizada com a sua conta do LeilõesBR.
             </p>
           </div>
-          <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+          {/* No mobile a barra de ações rola na horizontal (uma linha), para o header sticky
+              ficar baixo e não atrapalhar; no desktop volta a quebrar em linhas (flex-wrap). */}
+          <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible sm:pb-0">
             <Button variant="outline" size="sm" asChild title="Leilões ao vivo (pregão presencial)">
               <Link to="/ao-vivo">
                 <Radio className="mr-2 h-4 w-4" />
@@ -2022,7 +2021,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             );
           })()
         : null}
-      <AiProviderDialog {...providerPicker.dialogProps} />
     </main>
   );
 }
