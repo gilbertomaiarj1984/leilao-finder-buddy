@@ -171,8 +171,7 @@ export async function debugSales(
   limit = 3,
   num?: string,
 ): Promise<{ probed: number; auctions: unknown[] }> {
-  const { parseAuctionRef, parseCatalogData } = await import("./leiloesbr-catalog.server");
-  const { publicFetch } = await import("./leiloesbr-auth.server");
+  const { parseAuctionRef, fetchCatalogData } = await import("./leiloesbr-catalog.server");
   const seen = await readSeenAuctions();
   const now = Date.now();
   const finished = seen
@@ -189,10 +188,8 @@ export async function debugSales(
 
   const auctions: unknown[] = [];
   for (const { row, ref } of finished) {
-    const url = `${ref.domain}/catalogo.asp?Num=${ref.idLeilao}`;
     try {
-      const html = await publicFetch(url, {});
-      const map = parseCatalogData(html);
+      const map = await fetchCatalogData(ref.domain, ref.idLeilao);
       let sold = 0;
       let sample: unknown = null;
       for (const [idPeca, d] of map) {
@@ -205,21 +202,16 @@ export async function debugSales(
       auctions.push({
         idLeilao: ref.idLeilao,
         house: row.house,
-        url,
-        htmlLen: html.length,
-        pecaMatches: (html.match(/peca\.asp\?ID=/gi) ?? []).length,
+        domain: ref.domain,
         lotsParsed: map.size,
         soldParsed: sold,
-        hasValorVenda: /valor\s+de\s+venda/i.test(html),
-        hasVendido: /vendid/i.test(html),
-        hasNaoVendido: /n[ãa]o\s+vendid/i.test(html),
         sample,
       });
     } catch (error) {
       auctions.push({
         idLeilao: ref.idLeilao,
         house: row.house,
-        url,
+        domain: ref.domain,
         error: (error as Error)?.message,
       });
     }
