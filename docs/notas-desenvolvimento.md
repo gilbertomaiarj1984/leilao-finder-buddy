@@ -178,9 +178,37 @@ enriquecimento no servidor e pelo Vinil Analytics.
   a Faixa/Score sai de `scoreCondition(normalizeGrade(midia), normalizeGrade(capa))`.
 - **Coleção alinhada aos 10 graus:** `toGrade` (`collection-bulk.ts`) usa `normalizeGrade`; o
   `Select` de mídia/capa (`colecao.tsx`) mapeia `GRADE_ORDER`; o prompt de import lista os 10.
-- **Roadmap:** a captura de venda + estado por **varredura do catálogo** (`catalogo.asp`,
-  1 req/leilão) grava `lot_sales`/`lot_condition` (PR seguinte); depois a página **Vinil
-  Analytics** agrega por artista→álbum sobre esse histórico.
+- **Roadmap:** a captura de venda por **varredura do catálogo** (`catalogo.asp`, 1 req/leilão)
+  grava `lot_sales` com o estado **inline** (v0.30.0, abaixo); a tabela separada
+  `lot_condition` foi **adiada** — sem o fetch por lote da `peca.asp` (que estamos evitando)
+  ela não traz sinal além do parse do título. Depois a página **Vinil Analytics** agrega por
+  artista→álbum sobre esse histórico.
+
+## Histórico de vendas — `lot_sales` (v0.30.0)
+
+Base do Vinil Analytics: cada venda de cada lote, capturada do **catálogo da casa**
+(`catalogo.asp`) DEPOIS do leilão — **1 requisição por leilão**, nunca lote a lote.
+
+- **Fonte/parse:** `parseCatalogData`/`fetchCatalogData` (`leiloesbr-catalog.server.ts`)
+  estendem o parser do nº do lote — no mesmo segmento por `peca.asp?ID=` capturam também o
+  **valor de venda** e o **texto do card**. `fetchLoteMap` virou um wrapper fino disso.
+  ⚠️ **Fail-closed**: só marca `sold` quando há `R$ x,xx` e nenhum marcador de "não vendido";
+  sem isso, não grava (nunca inventa venda). O layout do `catalogo.asp` não pôde ser
+  inspecionado deste ambiente (rede bloqueada p/ o domínio das casas) → **calibrar
+  `BRL_RE`/`UNSOLD_RE`/título** contra uma página real em produção.
+- **Varredura/backfill:** `captureFinishedSales` (`lot-sales.server.ts`) lê `seen_auctions`
+  (durável, **nunca podado** — ao contrário de `lots`, que é limitado à janela de 5 dias),
+  filtra os leilões **terminados** (`auctionFinished`) ainda não capturados (checkpoint
+  `app_state.sales_captured`), busca o catálogo por leilão e grava as vendas. Processa um
+  bloco por rodada (`max`), então **drena o backlog** em várias rodadas (backfill do que já
+  está na base + fluxo contínuo). Idempotente (leilão capturado não revisita).
+- **Estado inline:** cada venda guarda `media`/`sleeve`/`score`/`faixa`/`insert_state` via
+  `parseConditionFromText` do texto do card/título (o catálogo raramente traz Disco/Capa —
+  costuma ficar indefinido; o estado rico depende da descrição da `peca.asp`, adiado).
+- **`sold_date` = data do LEILÃO** (`seen_auctions.day_key`), não a da captura — âncora
+  temporal do histórico. `artist` via `extractArtist(title)` (o Analytics pode refinar com
+  `lot_ident`). Agendamento: cron `step=sales` (`cron.server.ts` + `refresh.yml`). Server fns
+  `getVinylSales` (ler) e `captureSales` (disparar sob demanda) em `leiloesbr.functions.ts`.
 
 ## Valores do lote: atual / próximo / meu lance
 
@@ -616,6 +644,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.28.1        | **Correção Gemini "não retorna nada"** na Coleção e na avaliação de leilão: `runGemini` ganha folga de `maxOutputTokens` (o `thinkingBudget:0` não era honrado → `MAX_TOKENS` com resposta vazia) e passa a **lançar erro** com `finishReason`/`blockReason` em vez de devolver `""` em silêncio; descritivo da coleção sobe p/ `maxTokens:4096`. `SyncOutcome` ganha `failed`/`error`, propagados até os toasts — "a IA falhou" deixa de virar o falso "já avaliado" / "nada a mudar"                                                    | #99     |
 | v0.28.2        | **Resiliência a erro transitório do Gemini** (503 "high demand"): `isTransientError` (500/502/503/504 + "unavailable"/"overloaded"/…); `runGemini` faz **retry com backoff** (3×) e o `runText` passa a **fazer failover** também por indisponibilidade transitória (não só por quota). Toast de troca generalizado p/ "X indisponível — usei Y"                                                                                                                                                                                             | —       |
 | v0.29.0        | **Grading de estado (Disco × Capa)** — módulo puro `src/lib/grading.ts`: escala canônica de 10 graus (M…F/P), matriz de **Score Final** (0–100) e **Faixas de Classificação**; `parseConditionFromText` (regex/dicionário) extrai Disco/Capa/encarte do texto do lote; **badge de estado** no `LotCard` (derivado do título nesta fase) e no `CollectionCard` (Faixa/Score via `scoreCondition`). Escala da Coleção alinhada aos 10 graus (`normalizeGrade`, dropdown `GRADE_ORDER`, prompt de import). Base para captura de venda + Vinil Analytics                                                                                        | —       |
+| v0.30.0        | **Captura de vendas pós-leilão** (`lot_sales`) — varredura do **catálogo da casa** (`catalogo.asp`, 1 req/leilão, NÃO lote a lote): `parseCatalogData`/`fetchCatalogData` estendem o parser do nº do lote p/ ler **valor de venda** + texto (estado inline via `parseConditionFromText`). `captureFinishedSales` varre `seen_auctions` (durável) dos leilões terminados ainda não capturados (cursor `app_state.sales_captured`), com **backfill** do que já está na base; cron `step=sales` + `refresh.yml`. `sold_date` = **data do leilão**. Fail-closed (sem valor claro não grava). Server fns `getVinylSales`/`captureSales`                                                    | —       |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.

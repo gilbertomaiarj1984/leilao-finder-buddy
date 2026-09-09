@@ -517,6 +517,38 @@ export const analyzeOnDemand = createServerFn({ method: "POST" })
     };
   });
 
+/** Histórico de vendas (`lot_sales`, base do Vinil Analytics). Best-effort: [] em erro. */
+export const getVinylSales = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    try {
+      const { getAllLotSales } = await import("./lot-sales.server");
+      return await getAllLotSales();
+    } catch (error) {
+      console.error("[lot-sales] não foi possível ler o histórico de vendas", error);
+      return [];
+    }
+  });
+
+/**
+ * Captura de vendas pós-leilão sob demanda (mesma rotina do cron `step=sales`): varre o
+ * catálogo de até `max` leilões terminados ainda não capturados e grava em `lot_sales`.
+ * O cliente pode chamar em laço até `done` (igual ao preenchimento de nº de lote).
+ */
+export const captureSales = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { max?: number } | undefined) => ({
+    max: Math.min(Math.max(Number(input?.max) || 8, 1), 20),
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { captureFinishedSales } = await import("./lot-sales.server");
+    return await captureFinishedSales(data.max);
+  });
+
 /** Âncora de mercado do Discogs por lote (preço/demanda). Best-effort: [] em erro. */
 export const getLotMarket = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
