@@ -46,6 +46,24 @@ export type CatalogLot = {
   // identidade em casas cujo DESCRICAO é prosa (sem "Artista - Álbum").
 };
 
+/**
+ * Repara **mojibake** de dupla-codificação (#10): algumas casas (ex.: santavelharia) servem o
+ * DESCRICAO com o texto UTF-8 re-codificado como se fosse Latin-1 ("descriçÃ£o" → "descriÃ§Ã£o").
+ * Como `Response.text()` já decodifica UTF-8, revertemos UMA camada: reinterpreta a string como
+ * bytes Latin-1 e re-decodifica em UTF-8. Só age quando a assinatura de UTF-8-lido-como-Latin-1
+ * está presente (byte líder C2/C3 seguido de byte de continuação 0x80–0xBF) e o reparo não
+ * introduz o caractere de substituição (�) — assim texto já correto passa intacto.
+ */
+export function fixMojibake(s: string): string {
+  if (!s || !/[\u00c2\u00c3\u00e2][\u0080-\u00bf]/.test(s)) return s;
+  try {
+    const repaired = Buffer.from(s, "latin1").toString("utf8");
+    return repaired.includes("�") ? s : repaired;
+  } catch {
+    return s;
+  }
+}
+
 /** Converte um valor cru do JSON (string/number) em número, ou null quando não numérico ("--", ""). */
 function numOrNull(v: unknown): number | null {
   if (v === null || v === undefined) return null;
@@ -231,7 +249,7 @@ async function fetchCatalogJson(
       const sold = p["MOSTRABTN_CLASS"] === "is-vendido";
       const valor = String(p["VALOR_VENDA"] ?? p["VALOR_VALUE"] ?? "").trim();
       const soldPrice = sold && valor && valor !== "0" ? `R$ ${valor},00` : null;
-      const text = String(p["DESCRICAO"] ?? p["MINI_DESCRICAO"] ?? "").trim();
+      const text = fixMojibake(String(p["DESCRICAO"] ?? p["MINI_DESCRICAO"] ?? "").trim());
       const lote = String(p["LOTE"] ?? "").trim() || null;
       map.set(id, {
         lote,
@@ -242,7 +260,7 @@ async function fetchCatalogJson(
         bids: numOrNull(p["QTDLANCE"]),
         feePct: numOrNull(p["TAXA_LEILOEIRO"]),
         initialPrice: numOrNull(p["VALOR_CONTRATADO"] ?? p["VALOR_VALUE"]),
-        peca: String(p["PECA"] ?? "").trim() || null,
+        peca: fixMojibake(String(p["PECA"] ?? "").trim()) || null,
       });
     }
     if (pecas.length < LIMIT) break; // última página
