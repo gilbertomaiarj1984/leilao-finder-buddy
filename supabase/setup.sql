@@ -176,6 +176,23 @@ CREATE TRIGGER update_wantlist_items_updated_at BEFORE UPDATE ON public.wantlist
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- ---------------------------------------------------------------------
+-- lot_condition — cache de estado (Disco/Capa) por lote p/ os cards PRÉ-leilão.
+-- Alimentado pelo CATÁLOGO da casa (descritivo no tooltip do card), sem abrir a
+-- peca.asp lote a lote. `id` = lots.id; `title_hash` re-avalia quando o título muda.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.lot_condition (
+  id           text PRIMARY KEY,
+  title_hash   text NOT NULL,
+  media        text NOT NULL DEFAULT '',
+  sleeve       text NOT NULL DEFAULT '',
+  insert_state text NOT NULL DEFAULT '',
+  score        integer,
+  faixa        text NOT NULL DEFAULT '',
+  source       text NOT NULL DEFAULT '',
+  evaluated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------
 -- lot_sales — histórico de vendas dos lotes (base do Vinil Analytics).
 -- Capturado do catálogo da casa (`catalogo.asp`) DEPOIS do leilão: 1 requisição
 -- por leilão, não lote a lote. `sold_date` = data do LEILÃO (âncora temporal do
@@ -262,6 +279,7 @@ ALTER TABLE public.app_state      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_ai         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_ident      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_market     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lot_condition  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_sales      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wantlist_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.collection_items ENABLE ROW LEVEL SECURITY;
@@ -273,6 +291,7 @@ REVOKE ALL ON public.app_state      FROM anon, authenticated;
 REVOKE ALL ON public.lot_ai         FROM anon, authenticated;
 REVOKE ALL ON public.lot_ident      FROM anon, authenticated;
 REVOKE ALL ON public.lot_market     FROM anon, authenticated;
+REVOKE ALL ON public.lot_condition  FROM anon, authenticated;
 REVOKE ALL ON public.lot_sales      FROM anon, authenticated;
 REVOKE ALL ON public.wantlist_items FROM anon, authenticated;
 REVOKE ALL ON public.collection_items FROM anon, authenticated;
@@ -284,6 +303,7 @@ GRANT ALL ON public.app_state      TO service_role;
 GRANT ALL ON public.lot_ai         TO service_role;
 GRANT ALL ON public.lot_ident      TO service_role;
 GRANT ALL ON public.lot_market     TO service_role;
+GRANT ALL ON public.lot_condition  TO service_role;
 GRANT ALL ON public.lot_sales      TO service_role;
 GRANT ALL ON public.wantlist_items TO service_role;
 GRANT ALL ON public.collection_items TO service_role;

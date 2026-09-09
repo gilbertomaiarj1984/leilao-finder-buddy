@@ -178,13 +178,12 @@ enriquecimento no servidor e pelo Vinil Analytics.
   a Faixa/Score sai de `scoreCondition(normalizeGrade(midia), normalizeGrade(capa))`.
 - **Coleção alinhada aos 10 graus:** `toGrade` (`collection-bulk.ts`) usa `normalizeGrade`; o
   `Select` de mídia/capa (`colecao.tsx`) mapeia `GRADE_ORDER`; o prompt de import lista os 10.
-- **Roadmap:** a captura de venda por **varredura do catálogo** (`catalogo.asp`, 1 req/leilão)
-  grava `lot_sales` com o estado **inline** (v0.30.0/v0.31.1). O **descritivo completo** vem no
-  **tooltip** do card do catálogo (atributo `title`/`data-*`), então o estado rico (Disco/Capa)
-  sai do catálogo SEM `peca.asp` lote a lote. A tabela separada `lot_condition` segue **adiada**,
-  mas agora é viável alimentá-la desse mesmo descritivo no passo de nº do lote (enrich) para dar
-  estado rico aos cards **pré-leilão** — melhoria futura. Depois a página **Vinil Analytics**
-  agrega por artista→álbum sobre esse histórico.
+- **De onde vem o estado:** o **descritivo completo** do lote está no **tooltip** do card do
+  catálogo (atributo `title`/`alt`/`data-*`) — ver "Estrutura do card do catálogo" abaixo. Logo o
+  estado rico (Disco/Capa) sai do **catálogo** (1 req/leilão) SEM abrir a `peca.asp` lote a lote.
+  Isso alimenta tanto o histórico de vendas (`lot_sales`, v0.30.0) quanto o cache de estado dos
+  cards **pré-leilão** (`lot_condition`, v0.32.0). Depois a página **Vinil Analytics** agrega por
+  artista→álbum sobre o histórico.
 
 ## Histórico de vendas — `lot_sales` (v0.30.0)
 
@@ -194,10 +193,11 @@ Base do Vinil Analytics: cada venda de cada lote, capturada do **catálogo da ca
 - **Fonte/parse:** `parseCatalogData`/`fetchCatalogData` (`leiloesbr-catalog.server.ts`)
   estendem o parser do nº do lote — no mesmo segmento por `peca.asp?ID=` capturam também o
   **valor de venda** e o **texto do card**. `fetchLoteMap` virou um wrapper fino disso.
-  ⚠️ **Fail-closed**: só marca `sold` quando há `R$ x,xx` e nenhum marcador de "não vendido";
-  sem isso, não grava (nunca inventa venda). O layout do `catalogo.asp` não pôde ser
-  inspecionado deste ambiente (rede bloqueada p/ o domínio das casas) → **calibrar
-  `BRL_RE`/`UNSOLD_RE`/título** contra uma página real em produção.
+  ⚠️ **Fail-closed**: só marca `sold` quando há valor (rótulo "Valor de venda: R$ …", ou
+  marcador "vendido"/"arrematado" + `R$`) e nenhum marcador de "não vendido"; sem isso, não grava
+  (nunca inventa venda). Calibrado a partir do catálogo real do **Discos Esquecidos** (v0.31.1) —
+  ver "Estrutura do card do catálogo" abaixo; outras casas podem exigir ajuste de
+  `SALE_VALUE_RE`/`SOLD_MARKER_RE`/`UNSOLD_RE`.
 - **Varredura/backfill:** `captureFinishedSales` (`lot-sales.server.ts`) lê `seen_auctions`
   (durável, **nunca podado** — ao contrário de `lots`, que é limitado à janela de 5 dias),
   filtra os leilões **terminados** (`auctionFinished`) ainda não capturados (checkpoint
@@ -213,6 +213,42 @@ Base do Vinil Analytics: cada venda de cada lote, capturada do **catálogo da ca
   temporal do histórico. `artist` via `extractArtist(title)` (o Analytics pode refinar com
   `lot_ident`). Agendamento: cron `step=sales` (`cron.server.ts` + `refresh.yml`). Server fns
   `getVinylSales` (ler) e `captureSales` (disparar sob demanda) em `leiloesbr.functions.ts`.
+
+### Estrutura do card do catálogo (descobertas — Discos Esquecidos, leilões br)
+
+Inspeção de um card real do `catalogo.asp` (casa Discos Esquecidos). Fonte da calibração dos
+parsers de venda/estado/nº do lote:
+
+- **Descritivo completo no tooltip:** o texto que aparece ao passar o mouse sobre o lote é um
+  atributo (`title`/`alt`/`data-*`) do card — **já vem no HTML**, não precisa da `peca.asp`.
+  `longestAttr` pega o atributo mais longo (ignorando o "Lote-NN"). Ex.:
+  `GILBERTO GIL - RAÇA HUMANA - CAPA VG+ - DISCO VG+/NM - Disco com mínimos riscos superficiais…`.
+- **Estado no próprio título**, formato `CAPA <grau> - DISCO <grau>` (sem dois-pontos; `DISCO
+  VG+/NM` = faixa entre VG+ e NM). `parseConditionFromText` casa pelos rótulos `CAPA`/`DISCO`.
+- **Valor de venda** rotulado: `Valor de venda: R$ 70,00` (`SALE_VALUE_RE`), com botão
+  **"Lote vendido"** (`SOLD_MARKER_RE`); não vendidos trazem "Lote não vendido" (`UNSOLD_RE`).
+- **Nº do lote** no cabeçalho do card: `LOTE 4` (fallback genérico além de `LoteProd`/`title`).
+- ⚠️ **Boilerplate de encarte:** a descrição termina com um texto padrão que inclui "Se o LP
+  possuir encarte estará nas imagens" — **não** garante encarte. Por isso `detectInsert` é
+  conservador (só afirmação definida "com/sem encarte" conta; menção condicional → indefinido).
+
+## Estado dos lotes pré-leilão — `lot_condition` (v0.32.0)
+
+Cache de estado (Disco/Capa) por lote para os **cards pré-leilão**, alimentado pelo **catálogo**
+(o descritivo do tooltip), sem `peca.asp` lote a lote. Espelha `lot_ident`/`lot_market`.
+
+- **Enriquecimento:** `enrichConditions` (`lot-condition.server.ts`) lê a janela (`scrapeVinylLots`),
+  seleciona os lotes SEM linha em `lot_condition` (ou com `title_hash` mudado), agrupa por leilão,
+  busca `fetchCatalogData` (1 req/leilão, até `max` por rodada) e parseia o descritivo do card;
+  fallback ao título quando o catálogo não traz o estado. Grava linha para **todos** os lotes
+  processados (mesmo `indefinido`, marcando `source` = `catalog`/`title`/`indefinido`) para não
+  reprocessar à toa; drena por rodadas. Cron `step=condition` (`cron.server.ts` + `refresh.yml`).
+- **UI:** server fn `getLotCondition` (query `["lot-condition"]`); no `VinylDashboard`
+  (`index.tsx`) o resolver `conditionFor` passa a **priorizar o cache** (`conditionById`,
+  reconstruído com `scoreCondition`) e cai no parse do título quando não há linha. O badge
+  `ConditionBadges` no `LotCard` é o mesmo — agora com estado mais rico.
+- **Cobertura:** preenche ao longo das rodadas do cron, como IA/mercado; casas fora do padrão de
+  catálogo simplesmente ficam `indefinido`.
 
 ## Vinil Analytics — página (`/vinil-analytics`, v0.31.0)
 
@@ -667,6 +703,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.30.0        | **Captura de vendas pós-leilão** (`lot_sales`) — varredura do **catálogo da casa** (`catalogo.asp`, 1 req/leilão, NÃO lote a lote): `parseCatalogData`/`fetchCatalogData` estendem o parser do nº do lote p/ ler **valor de venda** + texto (estado inline via `parseConditionFromText`). `captureFinishedSales` varre `seen_auctions` (durável) dos leilões terminados ainda não capturados (cursor `app_state.sales_captured`), com **backfill** do que já está na base; cron `step=sales` + `refresh.yml`. `sold_date` = **data do leilão**. Fail-closed (sem valor claro não grava). Server fns `getVinylSales`/`captureSales`                                                    | —       |
 | v0.31.0        | **Página Vinil Analytics** (`/vinil-analytics`, link no header) — preços de venda por **artista → álbum** sobre `lot_sales` (casa irrelevante). Agregação pura `analytics.ts` (`buildAnalytics`/`deriveAlbum`): preço médio, min/max, **contagem na base**, **médias por Faixa** e vendas ordenadas **pior→melhor** conservação. UI: artistas/álbuns expansíveis (padrão manual), **eixo horizontal** de marcadores (score/estado/valor), chips de faixa e **Dialog de detalhe** (tabela data/estado/score/valor/lote)                                                                                                                                                | —       |
 | v0.31.1        | **Calibração do catálogo (Discos Esquecidos)** — o descritivo completo vem no **tooltip** do card (atributo `title`/`alt`/`data-*`): `longestAttr` pega o texto mais longo → **estado rico** (`CAPA VG+ - DISCO VG+/NM`) direto do catálogo, sem `peca.asp`. Valor lido do rótulo **"Valor de venda: R$ …"** + marcador "vendido"/"arrematado" (fail-closed). `detectInsert` **conservador** (ignora o boilerplate "se o LP possuir encarte…"). `deriveAlbum` corta em "- CAPA/DISCO `<grau>`". Nº do lote ganha fallback "LOTE N"                                                                                                                            | —       |
+| v0.32.0        | **Estado (Disco/Capa) nos cards PRÉ-leilão** (`lot_condition`) — `enrichConditions` busca o catálogo (1 req/leilão) e parseia o descritivo do tooltip, cacheando por lote (`source` catalog/title/indefinido; re-avalia por `title_hash`); cron `step=condition` + `refresh.yml`; `getLotCondition` e o resolver `conditionFor` no `index.tsx` passam a **priorizar o cache** (fallback ao título). Nova tabela `lot_condition` (migration+setup+types). **Diagnóstico** `step=salesdebug` (`debugSales`) para sinais crus do catálogo quando `sales` volta 0                                                                                          | —       |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.

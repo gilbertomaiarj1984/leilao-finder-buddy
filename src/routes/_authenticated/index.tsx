@@ -52,7 +52,7 @@ import {
 } from "@/components/vinyl/grouping";
 import { LiveAuctions } from "@/components/vinyl/live-auctions";
 import { LotCard } from "@/components/vinyl/lot-card";
-import { type Condition, parseConditionFromText } from "@/lib/grading";
+import { type Condition, type Grade, parseConditionFromText, scoreCondition } from "@/lib/grading";
 import { OwnedPanel } from "@/components/vinyl/owned-panel";
 import {
   buildInterestMatcher,
@@ -72,6 +72,7 @@ import {
   getCollectionFeedback,
   getCollectionLinks,
   getLotAi,
+  getLotCondition,
   getLotIdent,
   getLotMarket,
   getNextBids,
@@ -290,6 +291,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const fetchLotIdent = useServerFn(getLotIdent);
   const runSaveTags = useServerFn(setLotTags);
   const fetchLotMarket = useServerFn(getLotMarket);
+  const fetchLotCondition = useServerFn(getLotCondition);
   const fetchInterests = useServerFn(getUserInterests);
   const fetchAiMode = useServerFn(getAiMode);
   const runSetAiMode = useServerFn(setAiMode);
@@ -500,10 +502,31 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     return { ...base, matchesInterests: matchesInterest(lot.title ?? "") };
   };
   const marketFor = (lot: { id: string }): LotMarket | undefined => marketById.get(lot.id);
-  // Estado de conservação. Nesta fase é derivado do TÍTULO do lote (quando traz sigla/palavra);
-  // a fase seguinte adiciona o cache do servidor (catálogo/descrição), que terá prioridade.
-  const conditionFor = (lot: { title?: string }): Condition =>
-    parseConditionFromText(lot.title ?? "");
+  // Estado de conservação (Disco/Capa). Prioriza o CACHE do servidor (`lot_condition`,
+  // alimentado pelo descritivo do catálogo — mais rico); cai no parse do TÍTULO quando não
+  // há linha no cache ainda (ou ela ficou indefinida).
+  const lotConditionQuery = useQuery({
+    queryKey: ["lot-condition"] as const,
+    queryFn: () => fetchLotCondition(),
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const conditionById = useMemo(() => {
+    const map = new Map<string, Condition>();
+    for (const r of lotConditionQuery.data ?? []) {
+      const media = (r.media || null) as Grade | null;
+      const sleeve = (r.sleeve || null) as Grade | null;
+      const { score, faixa } = scoreCondition(media, sleeve);
+      const insert = r.insert_state === "sim" ? "sim" : r.insert_state === "nao" ? "nao" : null;
+      if (!media && !sleeve && insert === null) continue; // indefinido → não guarda
+      map.set(r.id, { media, sleeve, insert, score, faixa, source: "regex", raw: "" });
+    }
+    return map;
+  }, [lotConditionQuery.data]);
+  const conditionFor = (lot: { id?: string; title?: string }): Condition => {
+    const cached = lot.id ? conditionById.get(lot.id) : undefined;
+    return cached ?? parseConditionFromText(lot.title ?? "");
+  };
 
   // Coleção do usuário: discos que ele JÁ possui (`collection_items`). Usada só para marcar
   // no card, com um ícone roxo, os lotes que ele já tem — evitando arrematar duplicado. Mesma
