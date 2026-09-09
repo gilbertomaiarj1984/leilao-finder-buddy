@@ -138,10 +138,55 @@ export function parseCatalogData(html: string): Map<string, CatalogLot> {
 }
 
 /**
- * Busca o catálogo do leilão (paginando best-effort) e devolve `idPeca -> CatalogLot`.
- * Fonte única da varredura por leilão (nº do lote e captura de venda). 1 req por página.
+ * Endpoint de DADOS do catálogo (JSON), usado pelo template novo da LeilõesBR. O `catalogo.asp`
+ * dessas casas é renderizado por JavaScript (o HTML server-side vem sem os lotes), mas o JS
+ * busca os lotes deste endpoint — que o nosso servidor pode chamar direto. Retorna
+ * `[{ "PECAS": [ {ID, LOTE, VALOR_VENDA, DESCRICAO, MOSTRABTN_CLASS ('is-vendido'|'is-naovendido'), …} ] }]`.
+ * Paginado (`limit=30`). Fonte PREFERIDA: JSON limpo, com valor de venda e status inequívocos.
  */
-export async function fetchCatalogData(
+async function fetchCatalogJson(
+  domain: string,
+  idLeilao: string,
+): Promise<Map<string, CatalogLot>> {
+  const map = new Map<string, CatalogLot>();
+  const LIMIT = 30;
+  for (let pag = 1; pag <= 80; pag++) {
+    const url =
+      `${domain}/templates/catalogo/asp/catalogocontentload.asp` +
+      `?leilao=${idLeilao}&pesquisa=&irpara=&Dia=&Tipo=&artista=&Srt=0` +
+      `&pag=${pag}&remote=1&limit=${LIMIT}&_=${Date.now()}`;
+    let raw: string;
+    try {
+      raw = await publicFetch(url, {});
+    } catch {
+      break;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      break; // não é JSON → casa não usa este endpoint (template antigo)
+    }
+    const container = Array.isArray(parsed) ? parsed[0] : parsed;
+    const pecas = (container as { PECAS?: unknown[] } | null)?.PECAS;
+    if (!Array.isArray(pecas) || pecas.length === 0) break;
+    for (const p of pecas as Record<string, unknown>[]) {
+      const id = String(p["ID"] ?? "").trim();
+      if (!id || map.has(id)) continue;
+      const sold = p["MOSTRABTN_CLASS"] === "is-vendido";
+      const valor = String(p["VALOR_VENDA"] ?? p["VALOR_VALUE"] ?? "").trim();
+      const soldPrice = sold && valor && valor !== "0" ? `R$ ${valor},00` : null;
+      const text = String(p["DESCRICAO"] ?? p["MINI_DESCRICAO"] ?? "").trim();
+      const lote = String(p["LOTE"] ?? "").trim() || null;
+      map.set(id, { lote, sold: sold && soldPrice !== null, soldPrice, text });
+    }
+    if (pecas.length < LIMIT) break; // última página
+  }
+  return map;
+}
+
+/** Fallback: catálogo renderizado no HTML (template antigo, server-side). Paginado. */
+async function fetchCatalogHtml(
   domain: string,
   idLeilao: string,
 ): Promise<Map<string, CatalogLot>> {
@@ -164,11 +209,24 @@ export async function fetchCatalogData(
         added++;
       }
     }
-    // Sem novos itens (catálogo de página única ou fim da paginação) -> encerra.
     if (added === 0) break;
     if (!html.includes(`pag=${page + 1}`)) break;
   }
   return map;
+}
+
+/**
+ * Busca os lotes de um leilão e devolve `idPeca -> CatalogLot`. Tenta primeiro o endpoint JSON
+ * (`catalogocontentload.asp`, template novo — casas de vinil); se não vier JSON, cai no HTML do
+ * `catalogo.asp` (template antigo, server-side). Fonte única da varredura por leilão.
+ */
+export async function fetchCatalogData(
+  domain: string,
+  idLeilao: string,
+): Promise<Map<string, CatalogLot>> {
+  const json = await fetchCatalogJson(domain, idLeilao);
+  if (json.size) return json;
+  return fetchCatalogHtml(domain, idLeilao);
 }
 
 /** Compat: `idPeca -> nº do lote` (só onde há número). Derivado de `fetchCatalogData`. */
