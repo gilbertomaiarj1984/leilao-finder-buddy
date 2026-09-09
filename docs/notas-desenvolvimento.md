@@ -179,10 +179,12 @@ enriquecimento no servidor e pelo Vinil Analytics.
 - **Coleção alinhada aos 10 graus:** `toGrade` (`collection-bulk.ts`) usa `normalizeGrade`; o
   `Select` de mídia/capa (`colecao.tsx`) mapeia `GRADE_ORDER`; o prompt de import lista os 10.
 - **Roadmap:** a captura de venda por **varredura do catálogo** (`catalogo.asp`, 1 req/leilão)
-  grava `lot_sales` com o estado **inline** (v0.30.0, abaixo); a tabela separada
-  `lot_condition` foi **adiada** — sem o fetch por lote da `peca.asp` (que estamos evitando)
-  ela não traz sinal além do parse do título. Depois a página **Vinil Analytics** agrega por
-  artista→álbum sobre esse histórico.
+  grava `lot_sales` com o estado **inline** (v0.30.0/v0.31.1). O **descritivo completo** vem no
+  **tooltip** do card do catálogo (atributo `title`/`data-*`), então o estado rico (Disco/Capa)
+  sai do catálogo SEM `peca.asp` lote a lote. A tabela separada `lot_condition` segue **adiada**,
+  mas agora é viável alimentá-la desse mesmo descritivo no passo de nº do lote (enrich) para dar
+  estado rico aos cards **pré-leilão** — melhoria futura. Depois a página **Vinil Analytics**
+  agrega por artista→álbum sobre esse histórico.
 
 ## Histórico de vendas — `lot_sales` (v0.30.0)
 
@@ -203,8 +205,10 @@ Base do Vinil Analytics: cada venda de cada lote, capturada do **catálogo da ca
   bloco por rodada (`max`), então **drena o backlog** em várias rodadas (backfill do que já
   está na base + fluxo contínuo). Idempotente (leilão capturado não revisita).
 - **Estado inline:** cada venda guarda `media`/`sleeve`/`score`/`faixa`/`insert_state` via
-  `parseConditionFromText` do texto do card/título (o catálogo raramente traz Disco/Capa —
-  costuma ficar indefinido; o estado rico depende da descrição da `peca.asp`, adiado).
+  `parseConditionFromText` do **descritivo do card** — capturado do **tooltip** (`longestAttr`
+  pega o atributo mais longo: `title`/`alt`/`data-*`), que traz o texto completo tipo
+  "CAPA VG+ - DISCO VG+/NM …". `detectInsert` é conservador (o boilerplate "se o LP possuir
+  encarte…" NÃO conta como encarte).
 - **`sold_date` = data do LEILÃO** (`seen_auctions.day_key`), não a da captura — âncora
   temporal do histórico. `artist` via `extractArtist(title)` (o Analytics pode refinar com
   `lot_ident`). Agendamento: cron `step=sales` (`cron.server.ts` + `refresh.yml`). Server fns
@@ -662,6 +666,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.29.0        | **Grading de estado (Disco × Capa)** — módulo puro `src/lib/grading.ts`: escala canônica de 10 graus (M…F/P), matriz de **Score Final** (0–100) e **Faixas de Classificação**; `parseConditionFromText` (regex/dicionário) extrai Disco/Capa/encarte do texto do lote; **badge de estado** no `LotCard` (derivado do título nesta fase) e no `CollectionCard` (Faixa/Score via `scoreCondition`). Escala da Coleção alinhada aos 10 graus (`normalizeGrade`, dropdown `GRADE_ORDER`, prompt de import). Base para captura de venda + Vinil Analytics                                                                                        | —       |
 | v0.30.0        | **Captura de vendas pós-leilão** (`lot_sales`) — varredura do **catálogo da casa** (`catalogo.asp`, 1 req/leilão, NÃO lote a lote): `parseCatalogData`/`fetchCatalogData` estendem o parser do nº do lote p/ ler **valor de venda** + texto (estado inline via `parseConditionFromText`). `captureFinishedSales` varre `seen_auctions` (durável) dos leilões terminados ainda não capturados (cursor `app_state.sales_captured`), com **backfill** do que já está na base; cron `step=sales` + `refresh.yml`. `sold_date` = **data do leilão**. Fail-closed (sem valor claro não grava). Server fns `getVinylSales`/`captureSales`                                                    | —       |
 | v0.31.0        | **Página Vinil Analytics** (`/vinil-analytics`, link no header) — preços de venda por **artista → álbum** sobre `lot_sales` (casa irrelevante). Agregação pura `analytics.ts` (`buildAnalytics`/`deriveAlbum`): preço médio, min/max, **contagem na base**, **médias por Faixa** e vendas ordenadas **pior→melhor** conservação. UI: artistas/álbuns expansíveis (padrão manual), **eixo horizontal** de marcadores (score/estado/valor), chips de faixa e **Dialog de detalhe** (tabela data/estado/score/valor/lote)                                                                                                                                                | —       |
+| v0.31.1        | **Calibração do catálogo (Discos Esquecidos)** — o descritivo completo vem no **tooltip** do card (atributo `title`/`alt`/`data-*`): `longestAttr` pega o texto mais longo → **estado rico** (`CAPA VG+ - DISCO VG+/NM`) direto do catálogo, sem `peca.asp`. Valor lido do rótulo **"Valor de venda: R$ …"** + marcador "vendido"/"arrematado" (fail-closed). `detectInsert` **conservador** (ignora o boilerplate "se o LP possuir encarte…"). `deriveAlbum` corta em "- CAPA/DISCO `<grau>`". Nº do lote ganha fallback "LOTE N"                                                                                                                            | —       |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.

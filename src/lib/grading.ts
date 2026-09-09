@@ -182,11 +182,24 @@ function gradeAfterLabel(text: string, labels: string): Grade | null {
   return m ? normalizeGrade(m[1]!) : null;
 }
 
-/** Detecta a presença do encarte interno: 'nao' (sem encarte) tem prioridade sobre 'sim'. */
+/**
+ * Detecta a presença do encarte interno. CONSERVADOR: só conta afirmação DEFINIDA
+ * ('nao' vence 'sim'). Uma menção genérica/condicional — como o boilerplate de catálogo
+ * "Se o LP possuir encarte estará nas imagens" — NÃO conta (retorna null), para não
+ * marcar "tem encarte" onde a loja só diz que, se houver, aparece nas fotos.
+ */
 export function detectInsert(text: string): InsertState {
   const t = foldUpper(text);
-  if (/\bSEM\s+ENCARTE\b|\bN[AÃ]O\s+(?:POSSUI|TEM|ACOMPANHA)\s+ENCARTE\b/.test(t)) return "nao";
-  if (/\bENCARTE\b/.test(t)) return "sim";
+  if (/\bSEM\s+ENCARTE\b|\bN[AÃ]O\s+(?:POSSUI|TEM|ACOMPANHA|INCLUI)\s+ENCARTE\b/.test(t)) {
+    return "nao";
+  }
+  if (
+    /\b(COM|POSSUI|ACOMPANHA|INCLUI|CONT[EÉ]M)\s+ENCARTE\b|\bENCARTE\s+(INTERNO|INCLUSO|PRESENTE|ORIGINAL|JUNTO)\b/.test(
+      t,
+    )
+  ) {
+    return "sim";
+  }
   return null;
 }
 
