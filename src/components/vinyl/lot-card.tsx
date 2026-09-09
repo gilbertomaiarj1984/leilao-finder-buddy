@@ -62,9 +62,9 @@ export function LotCard({
   onOpenOwned?: () => void;
   onEditTags?: (next: string[]) => void;
 }) {
-  // Algumas imagens hotlinkadas das casas falham (403/404/expirada). Sem isto, o navegador
-  // renderiza o `alt` (o título, às vezes bem extenso) por cima do card inteiro no lugar da
-  // imagem quebrada — troca para o mesmo placeholder usado quando não há imagem.
+  // Imagens hotlinkadas das casas às vezes falham (403/404/expirada) — troca para o mesmo
+  // placeholder "sem imagem". (O transbordo do texto do `alt` por cima do card é evitado de
+  // vez com `alt=""` + a caixa de mídia com altura fixa e overflow-hidden abaixo.)
   const [imgFailed, setImgFailed] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   useEffect(() => {
@@ -135,18 +135,26 @@ export function LotCard({
           </span>
         </div>
       ) : null}
-      <a href={lot.url} target="_blank" rel="noreferrer" className="block bg-secondary">
+      {/* Caixa de mídia de ALTURA FIXA com overflow-hidden: enquanto a imagem carrega (ou se
+          falha), o navegador desenha o texto do `alt` (o título, às vezes enorme) no lugar —
+          e sem o clip ele transbordava por cima do card inteiro. Aqui ele fica contido. */}
+      <a
+        href={lot.url}
+        target="_blank"
+        rel="noreferrer"
+        className="relative block h-44 w-full overflow-hidden bg-secondary"
+      >
         {lot.image && !imgFailed ? (
           <img
             ref={imgRef}
             src={lot.image}
-            alt={lot.title}
+            alt=""
             loading="lazy"
-            className="h-44 w-full object-contain p-2"
+            className="absolute inset-0 h-full w-full object-contain p-2"
             onError={() => setImgFailed(true)}
           />
         ) : (
-          <div className="flex h-44 items-center justify-center text-xs text-muted-foreground">
+          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
             sem imagem
           </div>
         )}
