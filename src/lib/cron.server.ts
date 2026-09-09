@@ -360,7 +360,8 @@ export async function handleCron(request: Request): Promise<Response | null> {
     if (step === "salesdebug") {
       const { debugSales } = await import("./lot-sales.server");
       const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 3, 1), 10);
-      return json(await debugSales(limit));
+      const num = url.searchParams.get("num")?.trim() || undefined;
+      return json(await debugSales(limit, num));
     }
 
     // Diagnóstico: sonda os catálogos das casas dos primeiros leilões sem nº de lote.
