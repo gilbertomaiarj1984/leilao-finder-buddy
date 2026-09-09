@@ -40,10 +40,43 @@ function stripTags(html: string): string {
 
 // Valor em reais no formato BR ("R$ 1.234,56" / "R$ 90,00"). Captura o número.
 const BRL_RE = /R\$\s*([\d.]{1,12},\d{2})/i;
+// Valor de VENDA rotulado no card ("Valor de venda: R$ 70,00") — fonte preferida.
+const SALE_VALUE_RE = /valor\s+de\s+venda[^R$]{0,20}R\$\s*([\d.]{1,12},\d{2})/i;
+// Marcadores de que o lote foi VENDIDO ("Lote vendido", "arrematado").
+const SOLD_MARKER_RE = /lote\s+vendido|arrematad|\bvendid[oa]\b/i;
 // Marcadores de lote NÃO vendido no card do catálogo (fail-closed: some da captura).
 const UNSOLD_RE = /n[ãa]o\s+vendid|n[ãa]o\s+arrematad|sem\s+lances?|retirad[oa]|deserto/i;
-// Título no atributo `title="..."` do card, ignorando o "Lote-NN".
-const TITLE_ATTR_RE = /title="((?!Lote-?\s*\d)[^"]{3,200})"/i;
+
+/** Decodifica as entidades HTML comuns de um texto de atributo. */
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0*39;|&apos;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Descritivo do lote = o texto MAIS LONGO entre os atributos que carregam o tooltip do
+ * card (`title`/`alt`/`data-*`). É onde o site guarda a descrição completa que aparece ao
+ * passar o mouse (ex.: "GILBERTO GIL - RAÇA HUMANA - CAPA VG+ - DISCO VG+/NM - ..."), então
+ * traz o estado (Disco/Capa) sem precisar abrir a `peca.asp` lote a lote. Ignora "Lote-NN".
+ */
+function longestAttr(seg: string): string {
+  let best = "";
+  for (const m of seg.matchAll(
+    /(?:title|alt|data-(?:title|original-title|content|descricao|desc|tooltip))\s*=\s*"([^"]*)"/gi,
+  )) {
+    const v = decodeEntities(m[1] ?? "");
+    if (/^lote-?\s*\d/i.test(v)) continue; // "Lote-4" não é descritivo
+    if (v.length > best.length) best = v;
+  }
+  return best;
+}
 
 /**
  * Extrai, por posição, os dados de cada lote do HTML do catálogo da casa. Casa por
@@ -51,12 +84,10 @@ const TITLE_ATTR_RE = /title="((?!Lote-?\s*\d)[^"]{3,200})"/i;
  * exatamente como o mapeamento do nº do lote sempre fez — a estrutura do container varia
  * entre casas, então NÃO dependemos de classes específicas.
  *
- * ⚠️ CALIBRAÇÃO: o valor de venda é lido de forma tolerante (primeiro `R$ x.xxx,xx` do
- * card, exceto quando há marcador de "não vendido"). O layout exato do `catalogo.asp` de
- * cada casa não pôde ser inspecionado deste ambiente (rede bloqueada p/ o domínio das
- * casas) — ao validar em produção com uma página real, ajuste `BRL_RE`/`UNSOLD_RE` e a
- * captura do título se necessário. É **fail-closed**: sem valor claro, `sold=false` e nada
- * é gravado (nunca inventa venda).
+ * Valor de venda: preferimos o rótulo "Valor de venda: R$ …"; na falta dele, um marcador de
+ * "vendido"/"arrematado" + o 1º `R$` do card. **Fail-closed**: sem valor claro OU com
+ * marcador de "não vendido", `sold=false` e nada é gravado (nunca inventa venda). O layout
+ * pode variar entre casas — calibrado a partir do catálogo do Discos Esquecidos (leilões br).
  */
 export function parseCatalogData(html: string): Map<string, CatalogLot> {
   const map = new Map<string, CatalogLot>();
@@ -71,14 +102,23 @@ export function parseCatalogData(html: string): Map<string, CatalogLot> {
     const lote =
       seg.match(/LoteProd[\s\S]{0,250}?lote\s*:?\s*([0-9]+[a-zA-Z]?)/i)?.[1] ??
       seg.match(/title="Lote-?\s*([0-9]+[a-zA-Z]?)"/i)?.[1] ??
+      // Fallback genérico: o cabeçalho "LOTE 4" / "Lote nº 4" do próprio card (último recurso,
+      // só quando os padrões acima não casam — melhora a cobertura do nº pré-leilão).
+      seg.match(/\blote\s*n?[ºo°]?\s*[:.-]?\s*([0-9]+[a-zA-Z]?)\b/i)?.[1] ??
       null;
 
-    const priceMatch = seg.match(BRL_RE);
-    const soldPrice = priceMatch ? `R$ ${priceMatch[1]}` : null;
-    const sold = soldPrice !== null && !UNSOLD_RE.test(seg);
+    const unsold = UNSOLD_RE.test(seg);
+    const labeled = seg.match(SALE_VALUE_RE);
+    let soldPrice: string | null = null;
+    if (labeled) {
+      soldPrice = `R$ ${labeled[1]}`;
+    } else if (SOLD_MARKER_RE.test(seg)) {
+      const brl = seg.match(BRL_RE);
+      if (brl) soldPrice = `R$ ${brl[1]}`;
+    }
+    const sold = soldPrice !== null && !unsold;
 
-    const title = seg.match(TITLE_ATTR_RE)?.[1]?.trim() ?? "";
-    const text = title || stripTags(seg).slice(0, 300);
+    const text = longestAttr(seg) || stripTags(seg).slice(0, 400);
 
     map.set(id, { lote, sold, soldPrice, text });
   }

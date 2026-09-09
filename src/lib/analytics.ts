@@ -53,6 +53,11 @@ export function avg(values: (number | null)[]): number | null {
 const FORMAT_PREFIX =
   /^(lps?|disco de vinil|discos?|vinil|compacto|bolacha|ep|[aá]lbum)\b[\s:.\-–—]*/i;
 
+// Marcador de estado embutido no título SEM dois-pontos ("… - CAPA VG+ - DISCO VG+/NM …"):
+// rótulo Capa/Disco/Mídia/Vinil seguido de um grau. Tudo a partir daí não é o nome do álbum.
+const GRADE_MARK =
+  /[\s\-–—]+(?:capa|disco|m[íi]dia|midia|vinil)\s+(?:M-|VG\+\+|VG\+|VG-|G\+|G-|F\/P|NM|EX|VG|G|M)\b/i;
+
 /**
  * Deriva o nome do álbum a partir do título do lote (heurístico): corta a partir do 1º rótulo
  * de estado (Disco:/Capa:/…), remove ano e prefixos de formato (LP, Disco de vinil…), e tira o
@@ -61,7 +66,10 @@ const FORMAT_PREFIX =
  */
 export function deriveAlbum(title: string, artist: string): string {
   let s = (title || "").trim();
-  // Corta a descrição de estado ("... Disco: VG+ Capa: VG").
+  // Corta no 1º marcador de estado sem dois-pontos ("… - CAPA VG+ - DISCO VG+/NM - …").
+  const mark = s.match(GRADE_MARK);
+  if (mark && mark.index !== undefined && mark.index > 0) s = s.slice(0, mark.index);
+  // Corta a descrição de estado com rótulo e dois-pontos ("... Disco: VG+ Capa: VG").
   s = s.replace(/\b(disco|m[ií]dia|midia|vinil|capa|sleeve|estado|conserva[cç][aã]o)\s*:.*/i, " ");
   // Remove ano.
   s = s.replace(/\b(19|20)\d{2}\b/g, " ");
