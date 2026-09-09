@@ -235,17 +235,24 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   const { parseAuctionRef, fetchCatalogData } = await import("./leiloesbr-catalog.server");
   const { getSalesCaptured, markSalesCaptured } = await import("./app-state.server");
   const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
+  const { getAllLotIdent } = await import("./lot-ident.server");
 
-  const [seen, captured, snapshot] = await Promise.all([
+  const [seen, captured, snapshot, identRows] = await Promise.all([
     readSeenAuctions(),
     getSalesCaptured(),
     scrapeVinylLots(false),
+    getAllLotIdent().catch(() => []),
   ]);
   const now = Date.now();
 
-  // Identidade dos NOSSOS lotes de vinil (id → título/artista já parseados). Só capturamos
-  // vendas destes — o catálogo da casa traz todas as categorias (livros, DVDs, medalhas…).
+  // Identidade dos NOSSOS lotes de vinil (id → título/artista já parseados), com a qual nomeamos
+  // a venda e priorizamos identidade LIMPA. Do snapshot da janela (título/artista) e, de forma
+  // DURÁVEL, do `lot_ident` (álbum "Artista - Álbum") — cobre leilões que já saíram da janela e
+  // casas cujo descritivo não vem no formato "Artista - Álbum" (ex.: Catavento).
   const vinylById = new Map<string, VinylInfo>();
+  for (const r of identRows) {
+    if (r.album) vinylById.set(r.id, { title: r.album, artist: extractArtist(r.album) });
+  }
   for (const lot of snapshot.lots) vinylById.set(lot.id, { title: lot.title, artist: lot.artist });
 
   // Leilões terminados, com link de catálogo válido, ainda não capturados. Mais RECENTES
