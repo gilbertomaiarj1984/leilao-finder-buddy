@@ -333,7 +333,9 @@ export async function handleCron(request: Request): Promise<Response | null> {
 
     // Enriquecimento de ESTADO (Disco/Capa) dos lotes PRÉ-leilão (`lot_condition`).
     // Busca o catálogo da casa (1 req/leilão) e parseia o descritivo do card (tooltip),
-    // gravando o estado por lote. Chunked: repete até `done=true`. Sem custo de IA.
+    // gravando o estado por lote. Chunked: repete até `done=true`. Regex é gratuito; o
+    // fallback de IA (só p/ lotes indefinidos com texto, até um teto/rodada) só roda quando
+    // algum provedor está configurado — sem chave configurada, custo de IA continua zero.
     if (step === "condition") {
       const { enrichConditions } = await import("./lot-condition.server");
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 8, 1), 20);
@@ -343,7 +345,9 @@ export async function handleCron(request: Request): Promise<Response | null> {
     // Captura de VENDAS pós-leilão (histórico `lot_sales`, base do Vinil Analytics).
     // Varre o catálogo da casa (1 req/leilão) dos leilões JÁ CONHECIDOS que terminaram e
     // ainda não foram capturados (cursor em `app_state.sales_captured`). Chunked: repete
-    // até `done=true`. Também faz o BACKFILL do que já está na base. Sem custo de IA.
+    // até `done=true`. Também faz o BACKFILL do que já está na base. Regex é gratuito; o
+    // fallback de IA (só p/ vendas sem estado com texto, até um teto/rodada) só roda quando
+    // algum provedor está configurado — sem chave configurada, custo de IA continua zero.
     if (step === "sales") {
       const { captureFinishedSales } = await import("./lot-sales.server");
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 8, 1), 20);

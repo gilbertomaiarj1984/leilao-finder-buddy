@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-import { type Condition, parseConditionFromText } from "./grading";
+import { type Condition, parseConditionFromText, scoreCondition } from "./grading";
 import { auctionFinished, extractArtist, parsePrice } from "./vinyl-parse";
 
 /**
@@ -263,23 +263,34 @@ export async function debugSales(
   return { probed: auctions.length, auctions };
 }
 
+// Teto de linhas por RODADA (somado entre todos os leilões do batch) que passam pelo
+// fallback de IA — mantém a rodada rápida/barata mesmo com muitos lotes sem sigla no catálogo.
+const AI_CONDITION_CAP = 25;
+
 /**
  * Varredura pós-leilão: para os leilões JÁ CONHECIDOS (`seen_auctions`) que terminaram e
  * ainda não foram capturados, busca o catálogo UMA vez por leilão e grava as vendas em
  * `lot_sales`. Processa até `maxAuctions` por rodada (cursor em `app_state.sales_captured`),
  * então roda várias vezes até zerar o backlog (backfill retroativo + fluxo contínuo).
  * Retorna quantas vendas gravou, quantos leilões processou e se ainda há pendentes.
+ *
+ * **Fallback de IA**: das vendas que ficaram sem estado pelo regex mas TÊM texto descritivo,
+ * até `AI_CONDITION_CAP` por rodada (somado entre os leilões do batch) passam por
+ * `conditionAiSync` (só quando algum provedor está configurado — best-effort).
  */
 export async function captureFinishedSales(maxAuctions = 8): Promise<{
   sales: number;
   auctions: number;
   remaining: number;
   done: boolean;
+  aiUsed?: number;
 }> {
   const { parseAuctionRef, fetchCatalogData } = await import("./leiloesbr-catalog.server");
   const { getSalesCaptured, markSalesCaptured } = await import("./app-state.server");
   const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
   const { getAllLotIdent } = await import("./lot-ident.server");
+  const { aiConfigured } = await import("./ai-eval.server");
+  const aiOn = aiConfigured();
 
   const [seen, captured, snapshot, identRows] = await Promise.all([
     readSeenAuctions(),
@@ -315,6 +326,7 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
 
   const batch = pending.slice(0, maxAuctions);
   let sales = 0;
+  let aiUsed = 0;
   const doneIds: string[] = [];
   for (const { row, ref } of batch) {
     try {
@@ -330,6 +342,40 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
         catalog,
         vinylById,
       );
+
+      // Fallback de IA: só as vendas SEM estado pelo regex mas com texto pra IA ler, até
+      // esgotar o teto da RODADA (soma entre os leilões deste batch).
+      if (aiOn && aiUsed < AI_CONDITION_CAP && rows.length) {
+        const budget = AI_CONDITION_CAP - aiUsed;
+        const candidates = rows
+          .filter((r) => !r.media && !r.sleeve && !r.insert_state)
+          .map((r) => ({ row: r, text: catalog.get(r.id_peca)?.text ?? "" }))
+          .filter((c) => c.text.trim())
+          .slice(0, budget);
+        if (candidates.length) {
+          const { conditionAiSync, resolveAiProvider } = await import("./ai-eval.server");
+          const provider = await resolveAiProvider();
+          const { rows: aiRows } = await conditionAiSync(
+            candidates.map((c) => ({ id: c.row.lot_id, text: c.text })),
+            provider,
+          );
+          const byId = new Map(aiRows.map((r) => [r.id, r]));
+          for (const { row: saleRow } of candidates) {
+            const ai = byId.get(saleRow.lot_id);
+            if (!ai) continue;
+            const { media, sleeve, score, faixa } = scoreCondition(ai.media, ai.sleeve);
+            if (media || sleeve) {
+              saleRow.media = media ?? "";
+              saleRow.sleeve = sleeve ?? "";
+              saleRow.score = score;
+              saleRow.faixa = faixa?.label ?? "";
+              aiUsed += 1;
+            }
+            if (ai.insert !== null) saleRow.insert_state = ai.insert;
+          }
+        }
+      }
+
       if (rows.length) sales += await upsertLotSales(rows);
       // Catálogo lido com sucesso → leilão capturado (não revisita), mesmo com 0 vendas
       // reconhecidas (leilão terminado tem catálogo estável).
@@ -342,5 +388,5 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   if (doneIds.length) await markSalesCaptured(doneIds);
 
   const remaining = Math.max(0, pending.length - doneIds.length);
-  return { sales, auctions: doneIds.length, remaining, done: remaining === 0 };
+  return { sales, auctions: doneIds.length, remaining, done: remaining === 0, aiUsed };
 }

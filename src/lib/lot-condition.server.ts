@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-import { parseConditionFromText } from "./grading";
+import { parseConditionFromText, scoreCondition } from "./grading";
 import type { VinylLot } from "./vinyl-parse";
 
 /**
@@ -18,7 +18,7 @@ export type LotConditionRow = {
   insert_state: string; // 'sim' | 'nao' | ''
   score: number | null;
   faixa: string;
-  source: string; // 'catalog' | 'title' | 'indefinido'
+  source: string; // 'catalog' | 'title' | 'ia' | 'indefinido'
   views: number | null; // VISITAS — demanda (visualizações) do lote pré-leilão
   bids: number | null; // QTDLANCE — demanda (lances) do lote pré-leilão
 };
@@ -91,18 +91,27 @@ function conditionRow(
   };
 }
 
+// Teto de lotes por rodada que passam pelo fallback de IA (quando o regex fica indefinido
+// mas há texto) — mantém a rodada rápida/barata mesmo com muitos lotes sem sigla no catálogo.
+const AI_CONDITION_CAP = 25;
+
 /**
  * Enriquece o estado (Disco/Capa) dos lotes da janela buscando o **catálogo** de cada leilão
  * (1 req/leilão) e parseando o descritivo do card. Seleciona os lotes SEM linha em
  * `lot_condition` (ou com título mudado), agrupa por leilão e processa até `maxAuctions` por
  * rodada; grava linha para TODOS os lotes processados (mesmo `indefinido`, para não reprocessar
  * à toa). Roda várias vezes até esgotar. Reaproveita o catálogo já usado pelo nº do lote.
+ *
+ * **Fallback de IA**: dos lotes que ficaram `indefinido` pelo regex mas TÊM texto descritivo,
+ * até `AI_CONDITION_CAP` por rodada passam por `conditionAiSync` (só quando algum provedor
+ * está configurado — best-effort, nunca falha a rodada). Um acerto da IA vira `source: 'ia'`.
  */
 export async function enrichConditions(maxAuctions = 8): Promise<{
   updated: number;
   auctions: number;
   remaining: number;
   done: boolean;
+  aiUsed?: number;
 }> {
   const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
   const { parseAuctionRef, fetchCatalogData } = await import("./leiloesbr-catalog.server");
@@ -128,6 +137,9 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
   const batch = all.slice(0, maxAuctions);
 
   const rows: LotConditionRow[] = [];
+  // Texto usado no parse por lote (descritivo do catálogo, cai no título) — reaproveitado
+  // pelo fallback de IA quando o regex não encontra nada nele.
+  const textByLotId = new Map<string, string>();
   for (const auction of batch) {
     let catalog: Map<string, import("./leiloesbr-catalog.server").CatalogLot>;
     try {
@@ -137,11 +149,43 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
       continue; // sem gravar → tenta de novo numa próxima rodada
     }
     for (const lot of auction.lots) {
-      rows.push(conditionRow(lot, catalog.get(lot.idPeca)));
+      const catalogLot = catalog.get(lot.idPeca);
+      rows.push(conditionRow(lot, catalogLot));
+      textByLotId.set(lot.id, catalogLot?.text || lot.title || "");
+    }
+  }
+
+  // Fallback de IA: só os que ficaram INDEFINIDOS pelo regex mas têm texto pra IA ler.
+  let aiUsed = 0;
+  const { aiConfigured } = await import("./ai-eval.server");
+  if (aiConfigured()) {
+    const candidates = rows
+      .filter((r) => r.source === "indefinido" && (textByLotId.get(r.id) ?? "").trim())
+      .slice(0, AI_CONDITION_CAP)
+      .map((r) => ({ id: r.id, text: textByLotId.get(r.id)! }));
+    if (candidates.length) {
+      const { conditionAiSync, resolveAiProvider } = await import("./ai-eval.server");
+      const provider = await resolveAiProvider();
+      const { rows: aiRows } = await conditionAiSync(candidates, provider);
+      const byId = new Map(aiRows.map((r) => [r.id, r]));
+      for (const row of rows) {
+        const ai = byId.get(row.id);
+        if (!ai) continue;
+        const { media, sleeve, score, faixa } = scoreCondition(ai.media, ai.sleeve);
+        if (media || sleeve) {
+          row.media = media ?? "";
+          row.sleeve = sleeve ?? "";
+          row.score = score;
+          row.faixa = faixa?.label ?? "";
+          row.source = "ia";
+          aiUsed += 1;
+        }
+        if (ai.insert !== null) row.insert_state = ai.insert;
+      }
     }
   }
 
   const updated = await upsertLotCondition(rows);
   const remaining = Math.max(0, total - batch.length);
-  return { updated, auctions: batch.length, remaining, done: remaining === 0 };
+  return { updated, auctions: batch.length, remaining, done: remaining === 0, aiUsed };
 }
