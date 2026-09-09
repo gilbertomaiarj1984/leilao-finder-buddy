@@ -109,6 +109,26 @@ export function looksNonVinyl(title: string): boolean {
   return NON_VINYL_HINTS.some((hint) => t.includes(hint));
 }
 
+// Sinal FORTE de vinil (formato explícito) — "disco" sozinho NÃO conta (DVD também é "disco").
+const VINYL_STRONG_RE =
+  /\b(?:lps?|vinil|vinyl|compactos?|bolach[aã]o|long\s*play|78\s*rpm|33\s*rpm)\b/;
+// Formatos que NÃO são vinil (inequívocos) — no histórico de vendas/Analytics excluímos o
+// lote inteiro quando aparecem SEM sinal forte de vinil. Cobre DVD/HQ/revista/livro/K7/VHS…
+const NON_VINYL_SALE_RE =
+  /\b(?:dvds?|blu[-\s]?ray|vhs|hqs?|gibis?|quadrinhos?|revistas?|livros?|figurinhas?|fita\s*k7|k7|cass?ete?s?)\b/;
+
+/**
+ * No contexto de VENDAS/Analytics: true quando o lote é claramente de OUTRO formato
+ * (DVD, HQ/gibi, revista, livro, K7, VHS…) e NÃO há sinal forte de vinil no texto. Mais
+ * rígido que `looksNonVinyl`: aqui "disco" sozinho não salva o lote (um DVD também é "disco").
+ * Serve para EXCLUIR do histórico o que caiu por engano (ex.: grupos "2 dvds", "hqs").
+ */
+export function looksNonVinylSale(text: string): boolean {
+  const t = ` ${normalize(text)} `;
+  if (VINYL_STRONG_RE.test(t)) return false;
+  return NON_VINYL_SALE_RE.test(t);
+}
+
 /**
  * true quando o status do meu lance é um resultado POSITIVO (cor verde na UI):
  * ganhando agora ("Vencendo") OU já arrematado/vencedor com o leilão encerrado
@@ -332,6 +352,59 @@ export function titleCase(value: string): string {
 }
 
 export const UNCLASSIFIED_LABEL = "Novelas, coletâneas e não classificados";
+
+// "Artistas" genéricos/lixo que o `extractArtist` produz de títulos ruidosos: categorias
+// ("Colecionismo"), formato ("Duplo"), coletânea ("Various Artists", "Various", "Vários"),
+// descritor de faixa ("Ao Vivo") ou rótulo solto ("Código"). Não são nomes de artista — o
+// valor real precisa vir da IA de identificação. Já normalizados (sem acento, minúsculo).
+const GENERIC_ARTISTS = new Set([
+  "lote",
+  "colecionismo",
+  "colecao",
+  "acervo",
+  "duplo",
+  "triplo",
+  "quadruplo",
+  "various",
+  "various artists",
+  "va",
+  "varios",
+  "varios artistas",
+  "coletanea",
+  "coletaneas",
+  "ao vivo",
+  "codigo",
+  "novela",
+  "novelas",
+  "trilha sonora",
+  "trilha original",
+  "importado",
+  "nacional",
+  "internacional",
+  "sucessos",
+  "diversos",
+  "promocional",
+  "single",
+  "compacto",
+  "selecao",
+  "selecoes",
+]);
+
+/**
+ * true quando o "artista" é genérico/lixo (categoria, formato, coletânea, rótulo solto ou
+ * vazio) e NÃO um nome real — casos em que o artista/álbum corretos devem ser buscados pela IA
+ * de identificação. Ex.: "Colecionismo", "Duplo", "Various Artists", "Various", "Ao Vivo",
+ * "Ao vivo | Código" (resto de parse com "|").
+ */
+export function isGenericArtist(artist: string | null | undefined): boolean {
+  const a = normalize(artist ?? "");
+  if (!a) return true; // vazio → agrupa em "não classificados"
+  if (a.includes("|")) return true; // resto de "X | Código"
+  if (GENERIC_ARTISTS.has(a)) return true;
+  // Rótulo/dica de coletânea como o texto inteiro (não um nome de artista).
+  if (UNCLASSIFIED_HINTS.some((hint) => a === hint)) return true;
+  return false;
+}
 
 /** Parses "20/8/2026 - 19:30h - MG" style info lines. */
 export function parseInfoLine(line: string): { dayKey: string; time: string } | null {

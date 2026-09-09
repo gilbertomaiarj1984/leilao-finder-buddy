@@ -1,7 +1,13 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 import { type Condition, parseConditionFromText, scoreCondition } from "./grading";
-import { auctionFinished, extractArtist, parsePrice } from "./vinyl-parse";
+import {
+  auctionFinished,
+  extractArtist,
+  isGenericArtist,
+  looksNonVinylSale,
+  parsePrice,
+} from "./vinyl-parse";
 
 /**
  * Histórico de vendas (`lot_sales`) — a casa de leilão é irrelevante para o Vinil Analytics,
@@ -169,6 +175,9 @@ function salesRowsFromCatalog(
   const rows: LotSaleRow[] = [];
   for (const [idPeca, data] of catalog) {
     if (!data.sold || !data.soldPrice) continue; // fail-closed: sem venda clara, não grava
+    // Exclui OUTROS formatos (DVD, HQ, revista, livro, K7…) do histórico — mesmo se o texto
+    // disser "disco" (um DVD também é "disco"). Aplica-se a conhecidos e desconhecidos.
+    if (looksNonVinylSale(`${data.peca ?? ""} ${data.text}`)) continue;
     const lotId = `${auction.idLeilao}-${idPeca}`;
     const known = vinylById.get(lotId);
     const catCond = parseConditionFromText(data.text);
@@ -266,6 +275,9 @@ export async function debugSales(
 // Teto de linhas por RODADA (somado entre todos os leilões do batch) que passam pelo
 // fallback de IA — mantém a rodada rápida/barata mesmo com muitos lotes sem sigla no catálogo.
 const AI_CONDITION_CAP = 25;
+// Teto por RODADA de vendas cujo ARTISTA é genérico/lixo e vão à IA de identificação
+// (extrai "Artista - Álbum" corretos do texto do catálogo; grava também em `lot_ident`).
+const AI_IDENT_CAP = 25;
 
 /**
  * Varredura pós-leilão: para os leilões JÁ CONHECIDOS (`seen_auctions`) que terminaram e
@@ -284,6 +296,7 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   remaining: number;
   done: boolean;
   aiUsed?: number;
+  identUsed?: number;
 }> {
   const { parseAuctionRef, fetchCatalogData } = await import("./leiloesbr-catalog.server");
   const { getSalesCaptured, markSalesCaptured } = await import("./app-state.server");
@@ -327,6 +340,7 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   const batch = pending.slice(0, maxAuctions);
   let sales = 0;
   let aiUsed = 0;
+  let identUsed = 0;
   const doneIds: string[] = [];
   for (const { row, ref } of batch) {
     try {
@@ -342,6 +356,45 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
         catalog,
         vinylById,
       );
+
+      // Reident por IA: vendas cujo ARTISTA ficou genérico/lixo ("Colecionismo", "Duplo",
+      // "Various Artists", "Ao Vivo"…) — a IA extrai "Artista - Álbum" corretos do texto do
+      // catálogo. O resultado é gravado em `lot_ident` (durável, reaproveitado nas próximas
+      // rodadas) e aplicado à venda agora. Teto por rodada, best-effort.
+      if (aiOn && identUsed < AI_IDENT_CAP && rows.length) {
+        const budget = AI_IDENT_CAP - identUsed;
+        const candidates = rows
+          .filter((r) => isGenericArtist(r.artist))
+          .map((r) => ({ row: r, text: catalog.get(r.id_peca)?.text ?? "" }))
+          .filter((c) => c.text.trim())
+          .slice(0, budget);
+        if (candidates.length) {
+          const { identLotsSyncRows, resolveAiProvider } = await import("./ai-eval.server");
+          const { upsertLotIdent } = await import("./lot-ident.server");
+          const provider = await resolveAiProvider();
+          const { rows: identOut } = await identLotsSyncRows(
+            candidates.map((c) => ({
+              id: c.row.lot_id,
+              title: c.text,
+              price: "",
+              house: row.house,
+              image: null,
+            })),
+            false,
+            provider,
+          );
+          const withAlbum = identOut.filter((r) => r.album);
+          if (withAlbum.length) await upsertLotIdent(withAlbum);
+          const byId = new Map(withAlbum.map((r) => [r.id, r.album!]));
+          for (const { row: saleRow } of candidates) {
+            const album = byId.get(saleRow.lot_id);
+            if (!album) continue;
+            saleRow.title = album;
+            saleRow.artist = extractArtist(album);
+            identUsed += 1;
+          }
+        }
+      }
 
       // Fallback de IA: só as vendas SEM estado pelo regex mas com texto pra IA ler, até
       // esgotar o teto da RODADA (soma entre os leilões deste batch).
@@ -388,5 +441,5 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   if (doneIds.length) await markSalesCaptured(doneIds);
 
   const remaining = Math.max(0, pending.length - doneIds.length);
-  return { sales, auctions: doneIds.length, remaining, done: remaining === 0, aiUsed };
+  return { sales, auctions: doneIds.length, remaining, done: remaining === 0, aiUsed, identUsed };
 }

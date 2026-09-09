@@ -2,7 +2,12 @@
 // (histórico de vendas) e agrupa por **artista → álbum**, com preço médio, contagem e médias
 // por Faixa de Classificação. A casa de leilão é irrelevante aqui.
 import { FAIXAS, faixaFromScore } from "@/lib/grading";
-import { LOTE_LABEL, normalizeForMatch, UNCLASSIFIED_LABEL } from "@/lib/vinyl-parse";
+import {
+  LOTE_LABEL,
+  looksNonVinylSale,
+  normalizeForMatch,
+  UNCLASSIFIED_LABEL,
+} from "@/lib/vinyl-parse";
 
 /** Forma da linha vinda de `getVinylSales` (snake_case, espelha `lot_sales`). */
 export type SaleRow = {
@@ -122,6 +127,9 @@ function byScoreAsc(a: SaleRow, b: SaleRow): number {
 export function buildAnalytics(rows: SaleRow[]): ArtistAgg[] {
   const byArtist = new Map<string, Map<string, SaleRow[]>>();
   for (const row of rows) {
+    // Exclui do Analytics o que caiu por engano de OUTRO formato (DVD/HQ/revista/livro…),
+    // limpando também as linhas já gravadas antes deste filtro — sem precisar re-capturar.
+    if (looksNonVinylSale(`${row.title} ${row.artist}`)) continue;
     const artist = row.artist?.trim() || UNCLASSIFIED_LABEL;
     const album = deriveAlbum(row.title, artist);
     const albums = byArtist.get(artist) ?? new Map<string, SaleRow[]>();
