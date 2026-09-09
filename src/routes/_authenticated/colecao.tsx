@@ -39,6 +39,7 @@ import { CollectionCard } from "@/components/vinyl/collection-card";
 import { collectionLabel } from "@/components/vinyl/collection-utils";
 import { ArtistFilter } from "@/components/vinyl/filters";
 import { GEMINI_IMPORT_PROMPT, parseCollectionBulkText } from "@/lib/collection-bulk";
+import { GRADE_ORDER } from "@/lib/grading";
 import { AiProviderSelect, AiProviderDialog } from "@/components/vinyl/ai-provider-controls";
 import { useAiProviderPicker } from "@/lib/use-ai-provider-picker";
 import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
@@ -188,8 +189,8 @@ const EMPTY_DRAFT: Draft = {
   tags: "",
 };
 
-// Escala de conservação (grading) usada para mídia e capa.
-const GRADES = ["NM", "EX", "VG+", "VG-", "G+", "G-"] as const;
+// Escala de conservação (grading) canônica de 10 graus (M…F/P), usada para mídia e capa.
+const GRADES = GRADE_ORDER;
 // Radix Select não aceita item com value "" → sentinela para "não definido".
 const GRADE_NONE = "__none__";
 

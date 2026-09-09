@@ -51,6 +51,7 @@ import {
 } from "@/components/vinyl/grouping";
 import { LiveAuctions } from "@/components/vinyl/live-auctions";
 import { LotCard } from "@/components/vinyl/lot-card";
+import { type Condition, parseConditionFromText } from "@/lib/grading";
 import { OwnedPanel } from "@/components/vinyl/owned-panel";
 import {
   buildInterestMatcher,
@@ -498,6 +499,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     return { ...base, matchesInterests: matchesInterest(lot.title ?? "") };
   };
   const marketFor = (lot: { id: string }): LotMarket | undefined => marketById.get(lot.id);
+  // Estado de conservação. Nesta fase é derivado do TÍTULO do lote (quando traz sigla/palavra);
+  // a fase seguinte adiciona o cache do servidor (catálogo/descrição), que terá prioridade.
+  const conditionFor = (lot: { title?: string }): Condition =>
+    parseConditionFromText(lot.title ?? "");
 
   // Coleção do usuário: discos que ele JÁ possui (`collection_items`). Usada só para marcar
   // no card, com um ícone roxo, os lotes que ele já tem — evitando arrematar duplicado. Mesma
@@ -1409,6 +1414,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   ai={aiFor(lot)}
                                   market={marketFor(lot)}
                                   album={albumFor(lot)}
+                                  condition={conditionFor(lot)}
                                   owned={ownedFor(lot)}
                                   onOpenOwned={() => setOwnedPanelLot(lot)}
                                   onEditTags={editTags(lot.id)}
@@ -1491,6 +1497,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                 ai={aiFor(lot)}
                                 market={marketFor(lot)}
                                 album={albumFor(lot)}
+                                condition={conditionFor(lot)}
                                 owned={ownedFor(lot)}
                                 onOpenOwned={() => setOwnedPanelLot(lot)}
                                 onEditTags={editTags(lot.id)}
@@ -1662,6 +1669,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                             ai={aiFor(lot)}
                                             market={marketFor(lot)}
                                             album={albumFor(lot)}
+                                            condition={conditionFor(lot)}
                                             owned={ownedFor(lot)}
                                             onOpenOwned={() => setOwnedPanelLot(lot)}
                                             onEditTags={editTags(lot.id)}
@@ -1824,6 +1832,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                       ai={aiFor(lot)}
                                       market={marketFor(lot)}
                                       album={albumFor(lot)}
+                                      condition={conditionFor(lot)}
                                       owned={ownedFor(lot)}
                                       onOpenOwned={() => setOwnedPanelLot(lot)}
                                       onEditTags={editTags(lot.id)}

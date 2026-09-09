@@ -155,6 +155,33 @@ feedback, id)` → `none|rejected|linked|auto|suggested`. Confirmar grava feedba
   vira **lista única ordenada por relevância** (não agrupa por casa). Vigiados/Lances usam
   casamento contíguo (`watchedMatchesSearch`/`bidMatchesSearch`), sem ranqueamento.
 
+## Grading de estado — Disco × Capa (`grading.ts`, v0.29.0)
+
+Módulo **puro/client-safe** `src/lib/grading.ts` — fonte única da conservação, sem rede nem
+imports de servidor. Consumido pelo card do lote, pela Coleção e (nas fases seguintes) pelo
+enriquecimento no servidor e pelo Vinil Analytics.
+
+- **Escala canônica de 10 graus** (melhor→pior): `M, NM, EX, VG+, VG, VG-, G+, G, G-, F/P`
+  (`GRADE_ORDER`), com score-base (`GRADE_SCORES`, M=100…F/P=0). Sinônimos: `M-`≈NM, `VG++`≈EX
+  e palavras (Mint/Lacrado, Near Mint, Excelente, Muito Bom, Bom, Regular, Fair/Poor).
+- **Score Final** = matriz fixa **Disco × Capa** (`scoreCondition`; diagonal = score-base; um
+  lado só → score-base desse lado; nenhum → null) e **Faixas de Classificação** (`FAIXAS`:
+  90–100 Colecionador · 75–89 Excelente · 60–74 Muito Bom · 45–59 Aceitável · 30–44 Abaixo da
+  Média · 0–29 Muito Danificado; `faixaFromScore`).
+- **Extração do texto** (`parseConditionFromText`, determinística): rótulos `Disco/Mídia/Vinil`
+  e `Capa/Sleeve`; rótulo geral `Estado/Conservação` aplica aos dois; palavra de item inteiro
+  (Lacrado/Mint) → ambos; senão uma única sigla forte solta → Disco. **Nunca inventa** →
+  `source: 'indefinido'`. Encarte: `detectInsert` (`sem encarte` vence `encarte`).
+- **UI:** componente compartilhado `ConditionBadges` (`condition-badges.tsx`) no padrão de pill
+  do app; pill de Faixa/Score colorida por `scoreTone`. No `LotCard` o estado é **derivado do
+  título** nesta fase (prop `condition`, resolver `conditionFor` na home); no `CollectionCard`
+  a Faixa/Score sai de `scoreCondition(normalizeGrade(midia), normalizeGrade(capa))`.
+- **Coleção alinhada aos 10 graus:** `toGrade` (`collection-bulk.ts`) usa `normalizeGrade`; o
+  `Select` de mídia/capa (`colecao.tsx`) mapeia `GRADE_ORDER`; o prompt de import lista os 10.
+- **Roadmap:** a captura de venda + estado por **varredura do catálogo** (`catalogo.asp`,
+  1 req/leilão) grava `lot_sales`/`lot_condition` (PR seguinte); depois a página **Vinil
+  Analytics** agrega por artista→álbum sobre esse histórico.
+
 ## Valores do lote: atual / próximo / meu lance
 
 Três valores de **fontes diferentes** — não confundir:
@@ -588,6 +615,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.28.0        | **Rodapé fixo/persistente** (`Footer.tsx`): a versão fica sempre visível na base da janela (`position: fixed`, `z-40`, fundo translúcido com `backdrop-blur`), sem precisar rolar até o fim; `__root.tsx` reserva o espaço com `pb-12` e move o `<Footer/>` para fora do fluxo do conteúdo                                                                                                                        | —       |
 | v0.28.1        | **Correção Gemini "não retorna nada"** na Coleção e na avaliação de leilão: `runGemini` ganha folga de `maxOutputTokens` (o `thinkingBudget:0` não era honrado → `MAX_TOKENS` com resposta vazia) e passa a **lançar erro** com `finishReason`/`blockReason` em vez de devolver `""` em silêncio; descritivo da coleção sobe p/ `maxTokens:4096`. `SyncOutcome` ganha `failed`/`error`, propagados até os toasts — "a IA falhou" deixa de virar o falso "já avaliado" / "nada a mudar"                                                    | #99     |
 | v0.28.2        | **Resiliência a erro transitório do Gemini** (503 "high demand"): `isTransientError` (500/502/503/504 + "unavailable"/"overloaded"/…); `runGemini` faz **retry com backoff** (3×) e o `runText` passa a **fazer failover** também por indisponibilidade transitória (não só por quota). Toast de troca generalizado p/ "X indisponível — usei Y"                                                                                                                                                                                             | —       |
+| v0.29.0        | **Grading de estado (Disco × Capa)** — módulo puro `src/lib/grading.ts`: escala canônica de 10 graus (M…F/P), matriz de **Score Final** (0–100) e **Faixas de Classificação**; `parseConditionFromText` (regex/dicionário) extrai Disco/Capa/encarte do texto do lote; **badge de estado** no `LotCard` (derivado do título nesta fase) e no `CollectionCard` (Faixa/Score via `scoreCondition`). Escala da Coleção alinhada aos 10 graus (`normalizeGrade`, dropdown `GRADE_ORDER`, prompt de import). Base para captura de venda + Vinil Analytics                                                                                        | —       |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.

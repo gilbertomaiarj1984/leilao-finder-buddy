@@ -3,6 +3,8 @@ import { Disc3, ExternalLink, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
 import { formatAiAlbum, type LotAi, type LotMarket } from "@/components/vinyl/ai-score-utils";
+import { ConditionBadges } from "@/components/vinyl/condition-badges";
+import type { Condition } from "@/lib/grading";
 import { bidIsWinning } from "@/lib/vinyl-parse";
 import { OWNED_CONFIDENT_MIN, type OwnedHit } from "@/lib/wantlist-match";
 
@@ -30,6 +32,7 @@ export function LotCard({
   ai,
   market,
   album,
+  condition,
   owned,
   onOpenOwned,
   onEditTags,
@@ -41,6 +44,9 @@ export function LotCard({
   bidStatus?: string | null;
   ai?: LotAi;
   market?: LotMarket;
+  // Estado de conservação (Disco/Capa/encarte + Score/Faixa), resolvido pelo pai. Quando
+  // indefinido (sem sinal no texto), os badges simplesmente não aparecem.
+  condition?: Condition | null;
   // Artista/álbum identificado pela IA (avaliação completa OU identificação simples),
   // já resolvido pelo pai. Priorizado sobre o título quando existir.
   album?: string | null;
@@ -182,6 +188,13 @@ export function LotCard({
           {showDate && lot.dayKey ? <span>{lot.dayKey}</span> : null}
           {lot.time ? <span>{lot.time}</span> : null}
           {lot.uf ? <span>{lot.uf}</span> : null}
+          {/* Estado de conservação (Disco/Capa/Faixa/encarte) numa linha própria. */}
+          {condition && (condition.media || condition.sleeve || condition.insert !== null) ? (
+            <>
+              <span className="w-full" aria-hidden="true" />
+              <ConditionBadges condition={condition} />
+            </>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <Button
