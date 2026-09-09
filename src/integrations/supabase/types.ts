@@ -187,6 +187,7 @@ export type Database = {
       }
       lot_condition: {
         Row: {
+          bids: number | null
           evaluated_at: string
           faixa: string
           id: string
@@ -196,8 +197,10 @@ export type Database = {
           sleeve: string
           source: string
           title_hash: string
+          views: number | null
         }
         Insert: {
+          bids?: number | null
           evaluated_at?: string
           faixa?: string
           id: string
@@ -207,8 +210,10 @@ export type Database = {
           sleeve?: string
           source?: string
           title_hash: string
+          views?: number | null
         }
         Update: {
+          bids?: number | null
           evaluated_at?: string
           faixa?: string
           id?: string
@@ -218,17 +223,21 @@ export type Database = {
           sleeve?: string
           source?: string
           title_hash?: string
+          views?: number | null
         }
         Relationships: []
       }
       lot_sales: {
         Row: {
           artist: string
+          bids: number | null
           captured_at: string
           faixa: string
+          fee_pct: number | null
           house: string
           id_leilao: string
           id_peca: string
+          initial_price: number | null
           insert_state: string
           lot_id: string
           media: string
@@ -240,14 +249,18 @@ export type Database = {
           source_url: string
           title: string
           uf: string
+          views: number | null
         }
         Insert: {
           artist?: string
+          bids?: number | null
           captured_at?: string
           faixa?: string
+          fee_pct?: number | null
           house?: string
           id_leilao: string
           id_peca: string
+          initial_price?: number | null
           insert_state?: string
           lot_id: string
           media?: string
@@ -259,14 +272,18 @@ export type Database = {
           source_url?: string
           title?: string
           uf?: string
+          views?: number | null
         }
         Update: {
           artist?: string
+          bids?: number | null
           captured_at?: string
           faixa?: string
+          fee_pct?: number | null
           house?: string
           id_leilao?: string
           id_peca?: string
+          initial_price?: number | null
           insert_state?: string
           lot_id?: string
           media?: string
@@ -278,6 +295,7 @@ export type Database = {
           source_url?: string
           title?: string
           uf?: string
+          views?: number | null
         }
         Relationships: []
       }

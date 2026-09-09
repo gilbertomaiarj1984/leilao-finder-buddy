@@ -19,10 +19,13 @@ export type LotConditionRow = {
   score: number | null;
   faixa: string;
   source: string; // 'catalog' | 'title' | 'indefinido'
+  views: number | null; // VISITAS — demanda (visualizações) do lote pré-leilão
+  bids: number | null; // QTDLANCE — demanda (lances) do lote pré-leilão
 };
 
 const PAGE = 1000;
-const COND_COLUMNS = "id, title_hash, media, sleeve, insert_state, score, faixa, source";
+const COND_COLUMNS =
+  "id, title_hash, media, sleeve, insert_state, score, faixa, source, views, bids";
 
 /** Hash estável e curto do título (djb2 → base36), igual ao de `ai-eval.server` (título muda ⇒ re-avalia). */
 function titleHash(title: string): string {
@@ -61,9 +64,12 @@ export async function upsertLotCondition(rows: LotConditionRow[]): Promise<numbe
   return payload.length;
 }
 
-/** Monta a linha de estado de um lote a partir do texto do catálogo (com fallback ao título). */
-function conditionRow(lot: VinylLot, catalogText: string): LotConditionRow {
-  const fromCatalog = parseConditionFromText(catalogText);
+/** Monta a linha de estado de um lote a partir do lote do catálogo (com fallback ao título). */
+function conditionRow(
+  lot: VinylLot,
+  catalog?: import("./leiloesbr-catalog.server").CatalogLot,
+): LotConditionRow {
+  const fromCatalog = parseConditionFromText(catalog?.text ?? "");
   const hasCatalog = Boolean(fromCatalog.media || fromCatalog.sleeve || fromCatalog.insert);
   const cond = hasCatalog ? fromCatalog : parseConditionFromText(lot.title);
   const source = hasCatalog
@@ -80,6 +86,8 @@ function conditionRow(lot: VinylLot, catalogText: string): LotConditionRow {
     score: cond.score,
     faixa: cond.faixa?.label ?? "",
     source,
+    views: catalog?.views ?? null,
+    bids: catalog?.bids ?? null,
   };
 }
 
@@ -129,7 +137,7 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
       continue; // sem gravar → tenta de novo numa próxima rodada
     }
     for (const lot of auction.lots) {
-      rows.push(conditionRow(lot, catalog.get(lot.idPeca)?.text ?? ""));
+      rows.push(conditionRow(lot, catalog.get(lot.idPeca)));
     }
   }
 

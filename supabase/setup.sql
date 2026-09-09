@@ -189,8 +189,13 @@ CREATE TABLE IF NOT EXISTS public.lot_condition (
   score        integer,
   faixa        text NOT NULL DEFAULT '',
   source       text NOT NULL DEFAULT '',
+  views        integer,
+  bids         integer,
   evaluated_at timestamptz NOT NULL DEFAULT now()
 );
+-- Sinais de demanda (VISITAS/QTDLANCE) do catálogo, adicionados depois (idempotente).
+ALTER TABLE public.lot_condition ADD COLUMN IF NOT EXISTS views integer;
+ALTER TABLE public.lot_condition ADD COLUMN IF NOT EXISTS bids  integer;
 
 -- ---------------------------------------------------------------------
 -- lot_sales — histórico de vendas dos lotes (base do Vinil Analytics).
@@ -215,10 +220,19 @@ CREATE TABLE IF NOT EXISTS public.lot_sales (
   faixa          text NOT NULL DEFAULT '',
   insert_state   text NOT NULL DEFAULT '',
   source_url     text NOT NULL DEFAULT '',
+  views          integer,
+  bids           integer,
+  fee_pct        numeric,
+  initial_price  numeric,
   captured_at    timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS lot_sales_artist_idx ON public.lot_sales (artist);
 CREATE INDEX IF NOT EXISTS lot_sales_sold_date_idx ON public.lot_sales (sold_date);
+-- Sinais ricos do catálogo (demanda/taxa/valor inicial), adicionados depois (idempotente).
+ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS views         integer;
+ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS bids          integer;
+ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS fee_pct       numeric;
+ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS initial_price numeric;
 
 -- ---------------------------------------------------------------------
 -- collection_items

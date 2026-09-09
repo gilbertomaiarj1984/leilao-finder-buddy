@@ -527,6 +527,16 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     const cached = lot.id ? conditionById.get(lot.id) : undefined;
     return cached ?? parseConditionFromText(lot.title ?? "");
   };
+  // Demanda (visualizações/lances) por lote, do mesmo cache `lot_condition`.
+  const demandById = useMemo(() => {
+    const map = new Map<string, { views: number | null; bids: number | null }>();
+    for (const r of lotConditionQuery.data ?? []) {
+      if (r.views == null && r.bids == null) continue;
+      map.set(r.id, { views: r.views ?? null, bids: r.bids ?? null });
+    }
+    return map;
+  }, [lotConditionQuery.data]);
+  const demandFor = (lot: { id?: string }) => (lot.id ? demandById.get(lot.id) : undefined) ?? null;
 
   // Coleção do usuário: discos que ele JÁ possui (`collection_items`). Usada só para marcar
   // no card, com um ícone roxo, os lotes que ele já tem — evitando arrematar duplicado. Mesma
@@ -1445,6 +1455,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   market={marketFor(lot)}
                                   album={albumFor(lot)}
                                   condition={conditionFor(lot)}
+                                  demand={demandFor(lot)}
                                   owned={ownedFor(lot)}
                                   onOpenOwned={() => setOwnedPanelLot(lot)}
                                   onEditTags={editTags(lot.id)}
@@ -1528,6 +1539,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                 market={marketFor(lot)}
                                 album={albumFor(lot)}
                                 condition={conditionFor(lot)}
+                                demand={demandFor(lot)}
                                 owned={ownedFor(lot)}
                                 onOpenOwned={() => setOwnedPanelLot(lot)}
                                 onEditTags={editTags(lot.id)}
@@ -1700,6 +1712,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                             market={marketFor(lot)}
                                             album={albumFor(lot)}
                                             condition={conditionFor(lot)}
+                                            demand={demandFor(lot)}
                                             owned={ownedFor(lot)}
                                             onOpenOwned={() => setOwnedPanelLot(lot)}
                                             onEditTags={editTags(lot.id)}
@@ -1863,6 +1876,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                       market={marketFor(lot)}
                                       album={albumFor(lot)}
                                       condition={conditionFor(lot)}
+                                      demand={demandFor(lot)}
                                       owned={ownedFor(lot)}
                                       onOpenOwned={() => setOwnedPanelLot(lot)}
                                       onEditTags={editTags(lot.id)}

@@ -33,6 +33,7 @@ export function LotCard({
   market,
   album,
   condition,
+  demand,
   owned,
   onOpenOwned,
   onEditTags,
@@ -47,6 +48,9 @@ export function LotCard({
   // Estado de conservação (Disco/Capa/encarte + Score/Faixa), resolvido pelo pai. Quando
   // indefinido (sem sinal no texto), os badges simplesmente não aparecem.
   condition?: Condition | null;
+  // Sinais de demanda do catálogo (visualizações/lances), resolvidos pelo pai. Ajudam a
+  // identificar lotes "quentes" antes do leilão. Ausentes → badge não aparece.
+  demand?: { views: number | null; bids: number | null } | null;
   // Artista/álbum identificado pela IA (avaliação completa OU identificação simples),
   // já resolvido pelo pai. Priorizado sobre o título quando existir.
   album?: string | null;
@@ -188,6 +192,17 @@ export function LotCard({
           {showDate && lot.dayKey ? <span>{lot.dayKey}</span> : null}
           {lot.time ? <span>{lot.time}</span> : null}
           {lot.uf ? <span>{lot.uf}</span> : null}
+          {/* Demanda (visualizações · lances) do catálogo — sinaliza lote "quente". */}
+          {demand && (demand.views != null || demand.bids != null) ? (
+            <span
+              className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground"
+              title="Demanda: visualizações · lances"
+            >
+              {demand.views != null ? `👁 ${demand.views}` : ""}
+              {demand.views != null && demand.bids != null ? " · " : ""}
+              {demand.bids != null ? `🔨 ${demand.bids}` : ""}
+            </span>
+          ) : null}
           {/* Estado de conservação (Disco/Capa/Faixa/encarte) numa linha própria. */}
           {condition && (condition.media || condition.sleeve || condition.insert !== null) ? (
             <>
