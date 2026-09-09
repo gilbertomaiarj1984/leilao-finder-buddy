@@ -6,7 +6,9 @@ import {
   extractArtist,
   isGenericArtist,
   looksNonVinylSale,
+  normalizeForMatch,
   parsePrice,
+  pickCanonical,
 } from "./vinyl-parse";
 
 /**
@@ -442,4 +444,120 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
 
   const remaining = Math.max(0, pending.length - doneIds.length);
   return { sales, auctions: doneIds.length, remaining, done: remaining === 0, aiUsed, identUsed };
+}
+
+// Teto de vendas por RODADA que passam pela IA de identificação (mantém a rodada barata/rápida;
+// o laço do cron/UI chama de novo até `done`).
+const REIDENT_CAP = 25;
+
+/**
+ * Reidentifica TODO o histórico de vendas (`lot_sales`) pela IA, ajustando **artista** e **nome
+ * do álbum** e PADRONIZANDO a grafia dos nomes.
+ *
+ * 1) **IA (título + descrição → "Artista - Álbum")**: para as vendas que ainda NÃO foram
+ *    identificadas (sem linha em `lot_ident`, o checkpoint durável) e têm texto, manda o título
+ *    da venda (que embute a descrição capturada do catálogo) à IA com o provedor **padrão**
+ *    (o selecionado no topo do site — Gemini, quando escolhido). Grava o resultado em
+ *    `lot_ident` (durável, reaproveitado por Discogs/UI) — inclusive uma linha "tentado" com
+ *    álbum nulo quando a IA não identifica, para não reprocessar à toa. Teto `max` por rodada.
+ * 2) **Padronização (evita registros duplicados)**: reescreve artista/título de TODAS as vendas
+ *    a partir da identificação (quando houver) e **canoniza a grafia do artista** entre
+ *    variações que só diferem por acento/caixa/pontuação (mesmo `normalizeForMatch` → melhor
+ *    grafia via `pickCanonical`). Corrige os casos em que "Jorge Ben" vs "Jorge ben " geravam
+ *    dois registros. Só regrava as linhas que de fato mudam (idempotente).
+ *
+ * Sem provedor de IA configurado, o passo (1) é no-op e só a padronização (2) roda. Chame em
+ * laço até `done` para cobrir todo o backlog de identificação.
+ */
+export async function reidentifyAllSales(max = REIDENT_CAP): Promise<{
+  identified: number;
+  applied: number;
+  processed: number;
+  remaining: number;
+  done: boolean;
+}> {
+  const { getAllLotIdent, upsertLotIdent } = await import("./lot-ident.server");
+  const { aiConfigured, identLotsSync, resolveAiProvider, titleHash } =
+    await import("./ai-eval.server");
+
+  const [sales, identRows] = await Promise.all([
+    getAllLotSales(),
+    getAllLotIdent().catch(() => []),
+  ]);
+
+  const attempted = new Set(identRows.map((r) => r.id));
+  const albumById = new Map<string, string>();
+  for (const r of identRows) if (r.album) albumById.set(r.id, r.album);
+
+  // 1) IA nos que nunca foram identificados (sem linha em `lot_ident`) e têm texto.
+  const needAi = sales.filter((s) => !attempted.has(s.lot_id) && s.title.trim());
+  const batch = needAi.slice(0, Math.max(1, max));
+  let identified = 0;
+  if (aiConfigured() && batch.length) {
+    const provider = await resolveAiProvider();
+    const results = await identLotsSync(
+      batch.map((s) => ({ id: s.lot_id, title: s.title, price: "", house: s.house, image: null })),
+      false,
+      provider,
+    );
+    const byId = new Map(results.map((r) => [r.id, r]));
+    // Grava lot_ident para TODOS os processados (álbum nulo quando a IA não achou) → marca
+    // "já tentado" para não reprocessar nas próximas rodadas.
+    const identNew = batch.map((s) => {
+      const r = byId.get(s.lot_id);
+      return {
+        id: s.lot_id,
+        title_hash: titleHash(s.title),
+        album: r?.album ?? null,
+        year: r?.year ?? null,
+        confidence: r?.confidence ?? null,
+        source: "title" as const,
+        model: null,
+      };
+    });
+    await upsertLotIdent(identNew);
+    for (const r of identNew) {
+      attempted.add(r.id);
+      if (r.album) {
+        albumById.set(r.id, r.album);
+        identified += 1;
+      }
+    }
+  }
+
+  // 2) Padronização: artista-alvo de cada venda (da identificação quando houver, senão o atual).
+  const targetArtist = (s: LotSaleRow): string => {
+    const album = albumById.get(s.lot_id);
+    return (album ? extractArtist(album) : s.artist)?.trim() || "";
+  };
+  // Mapa canônico por chave normalizada (junta variações de grafia do mesmo artista).
+  const variantsByKey = new Map<string, string[]>();
+  for (const s of sales) {
+    const a = targetArtist(s);
+    const key = normalizeForMatch(a);
+    if (!a || !key) continue;
+    const list = variantsByKey.get(key) ?? [];
+    list.push(a);
+    variantsByKey.set(key, list);
+  }
+  const canonicalArtist = (a: string): string => {
+    const variants = variantsByKey.get(normalizeForMatch(a));
+    return variants?.length ? pickCanonical(variants) : a;
+  };
+
+  // Regrava só as vendas que mudam (título/artista canonizados).
+  const changed: LotSaleRow[] = [];
+  for (const s of sales) {
+    const album = albumById.get(s.lot_id);
+    const newTitle = album || s.title;
+    const rawArtist = (album ? extractArtist(album) : s.artist)?.trim() || s.artist;
+    const newArtist = canonicalArtist(rawArtist);
+    if (newArtist !== s.artist || newTitle !== s.title) {
+      changed.push({ ...s, artist: newArtist, title: newTitle });
+    }
+  }
+  const applied = changed.length ? await upsertLotSales(changed) : 0;
+
+  const remaining = Math.max(0, needAi.length - batch.length);
+  return { identified, applied, processed: batch.length, remaining, done: remaining === 0 };
 }

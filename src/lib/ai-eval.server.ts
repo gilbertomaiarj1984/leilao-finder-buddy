@@ -256,8 +256,11 @@ const CONFIDENCES = ["alta", "media", "baixa"] as const;
 
 const IDENT_SYSTEM_PROMPT =
   "Você identifica discos de vinil (artista e álbum) que vão a leilão no Brasil. " +
-  "Use seu conhecimento de música e discografia. Responda SOMENTE com um objeto JSON, " +
-  "sem nenhum texto fora do JSON.";
+  "Use seu conhecimento de música e discografia. Use SEMPRE o nome ARTÍSTICO padrão e " +
+  "consistente do artista (a grafia oficial/canônica, com acentuação correta), o MESMO " +
+  "entre discos diferentes do mesmo artista — nunca abreviações, variações ou grafias " +
+  "alternativas — para não criar registros duplicados. Responda SOMENTE com um objeto " +
+  "JSON, sem nenhum texto fora do JSON.";
 
 /** Prompt de identificação de UM lote. Sem imagem por padrão (só o título). */
 export function buildIdentUserPrompt(lot: EvalLot, opts?: { withImage?: boolean }): string {

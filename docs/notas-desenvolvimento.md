@@ -267,6 +267,21 @@ Visão de mercado por obra, independente da casa de leilão, sobre o histórico 
   (`deriveAlbum` deriva o álbum do título — heurístico, ruidoso; dá p/ refinar com `lot_ident`),
   com preço **médio/min/max**, **contagem na base**, **médias por Faixa** (`faixasFor` via
   `faixaFromScore`) e vendas ordenadas **pior→melhor** score.
+- **Padronização de nomes (v0.41.0, evita duplicatas):** o agrupamento é por **CHAVE
+  `normalizeForMatch`** (sem acento/caixa/pontuação) de artista E de álbum — pequenas diferenças
+  de grafia ("Jorge Ben" vs "Jorge ben ", "Alceu Valença" vs "Alceu Valenca") caem no MESMO
+  grupo; o nome exibido é a melhor grafia via **`pickCanonical`** (helper compartilhado em
+  `vinyl-parse.ts` — mais acentuada, depois mais longa; a Coleção reusa o mesmo). Corrige os
+  casos em que variações mínimas geravam 2 registros.
+- **Reidentificação por IA de TODO o histórico (v0.41.0):** `reidentifyAllSales(max)`
+  (`lot-sales.server.ts`) passa a IA (título+descrição da venda → "Artista - Álbum") pelas vendas
+  **ainda não identificadas** (sem linha em `lot_ident`, o checkpoint durável), grava em
+  `lot_ident` (inclusive linha "tentado" com álbum nulo, p/ não reprocessar) e **padroniza** a
+  grafia do artista de TODAS as vendas (canonização), regravando só o que muda. Provedor =
+  `resolveAiProvider()` (o do seletor do topo — Gemini quando escolhido). Cron `step=reident`
+  (`cron.server.ts` + `refresh.yml`), server fn `reidentifySales`, e botão **"Reidentificar
+  (IA)"** no header do Analytics (roda em laço até `done`). Sem provedor de IA, só a padronização
+  roda.
 - **UI:** artistas e álbuns **expansíveis** (padrão manual `useState` + Chevron, como a home —
   não há Accordion no `ui/`). Ao abrir o álbum: **eixo horizontal** (esquerda = pior, direita =
   melhor) de marcadores (score colorido por `scoreTone`, estado Disco/Capa, valor), chips de
@@ -309,13 +324,9 @@ Três valores de **fontes diferentes** — não confundir:
 
 ## Painel de mudanças — DESCONTINUADO (v0.25.0)
 
-A página **`/dashboard`** ("Painel de mudanças") foi **removida** (rota `dashboard.tsx`, o
-link "Painel" no header da home, as server functions `getDashboardBaseline`/`markDashboardSeen`
-e os helpers `getBaseline`/`markSeen`/`Baseline` de `app-state.server.ts`). A variação de preço
-por dia/casa não é mais exibida; a home, a Análise e o Ao vivo cobrem o uso. A chave
-`dashboard_baseline` em `app_state` (se existir em produção) fica órfã e pode ser apagada à mão
-(`DELETE FROM app_state WHERE key='dashboard_baseline'`) — nenhum código a lê ou grava. O
-`enrichLotes` (preenchimento de nº de lote) segue existindo, usado pela home ("Atualizar tudo").
+A página **`/dashboard`** foi removida (home/Análise/Ao vivo cobrem o uso). Chave órfã
+`dashboard_baseline` em `app_state` pode ser apagada à mão. O `enrichLotes` (nº de lote)
+segue existindo, usado pela home ("Atualizar tudo").
 
 ## Casas verificadas
 
@@ -332,7 +343,9 @@ por dia/casa não é mais exibida; a home, a Análise e o Ao vivo cobrem o uso. 
   Supabase/CSRF), protegido pelo segredo **`CRON_TOKEN`** (header `x-cron-token`; o fallback
   `?token=` foi removido — vazava em logs; comparação em tempo constante, `tokensMatch`).
 - **Steps:** `chunk` (varre bloco), `enrich` (nº de lote por `offset`), `aiident`
-  (identificação IA), `aieval` (avaliação IA), `market` (Discogs), `catdebug` (diagnóstico).
+  (identificação IA), `aieval` (avaliação IA), `market` (Discogs), `condition` (estado
+  pré-leilão), `sales` (captura de vendas), `reident` (reidentifica/padroniza o histórico de
+  vendas pela IA), `salesdebug`/`catdebug` (diagnósticos).
 - **GitHub Actions** `.github/workflows/refresh.yml`: `cron: "0 3,9,15,21 * * *"` (UTC = BRT
   00/06/12/18h) + `workflow_dispatch`. Varre em blocos até `nextPage:null`, enriquece por
   `offset` até `done:true`, depois laços curtos de `aiident` → `aieval` → `market`.
@@ -369,9 +382,13 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   `503 UNAVAILABLE "This model is currently experiencing high demand"` do `gemini-flash-latest`.
   Erros não-transitórios/não-quota (400/401/403, prompt bloqueado, parsing) propagam (por-item).
 - **Provedor PADRÃO** persistido em `app_state.ai_provider` (`getAiProvider`/`setAiProvider`;
-  precedência: `app_state` → env `AI_PROVIDER` → `anthropic`). **Seletor no header** (home e
-  Coleção, `AiProviderSelect`). Cada gatilho de processamento sob demanda **pergunta qual usar
-  antes** (`AiProviderDialog` + hook `useAiProviderPicker`), pré-selecionando o padrão.
+  precedência: `app_state` → env `AI_PROVIDER` → `anthropic`). **Seletor único no header**
+  (`AiProviderSelect`, na home, Coleção e Vinil Analytics) — é a **ÚNICA** forma de escolher a
+  IA. Todo recurso do site usa esse provedor: os síncronos sob demanda leem o `aiProvider` do
+  seletor no cliente; os assíncronos (cron) e as rotinas de servidor leem `resolveAiProvider()`
+  (o padrão em `app_state`). **NÃO existe mais o diálogo "qual IA usar?"** por ação
+  (`AiProviderDialog`/`useAiProviderPicker` foram removidos no v0.41.0 — a seleção por ação se
+  confundia; agora só o topo decide).
 - **Cron:** Claude usa **Batches** (assíncrono, ~50% mais barato); Gemini roda **síncrono** em
   bloco (`GEMINI_SYNC_CAP`, o laço do cron chama de novo até esgotar). Se o Claude estiver sem
   créditos no `submit`, o cron cai para o Gemini síncrono.
@@ -567,6 +584,13 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
 
 ## Páginas / UI
 
+- **Header persistente (v0.41.0):** o `<header>` de todas as páginas autenticadas (index,
+  Análise, Coleção, Ao vivo, Vinil Analytics) é **`sticky top-0 z-30`** com fundo translúcido +
+  `backdrop-blur` (mesmo padrão do rodapé fixo), então o topo (com o **seletor de IA**) fica
+  sempre acessível. **Mobile compacto:** no `sm-` o padding vertical cai, o título encolhe, a
+  descrição/tagline some (`hidden sm:block`) e a barra de ações rola na **horizontal** numa única
+  linha (`overflow-x-auto`, volta a `flex-wrap` no `sm+`) — para o header baixo não atrapalhar. O
+  rodapé fixo é `z-40`; header `z-30` (diálogos/toasts do Radix ficam acima, `z-50`).
 - **`index.tsx` (site principal):** cards por **dia → casa → artista**. `LotCard` mostra nota
   da IA no canto **direito** (`ScoreCorner`), nº do lote no canto **esquerdo**, e o `album` da
   IA ("Artista — Álbum (Ano)", `formatAiAlbum`) **acima** do título. Álbum resolvido por lote =
@@ -710,6 +734,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.30.0        | **Captura de vendas pós-leilão** (`lot_sales`) — varredura do **catálogo da casa** (`catalogo.asp`, 1 req/leilão, NÃO lote a lote): `parseCatalogData`/`fetchCatalogData` estendem o parser do nº do lote p/ ler **valor de venda** + texto (estado inline via `parseConditionFromText`). `captureFinishedSales` varre `seen_auctions` (durável) dos leilões terminados ainda não capturados (cursor `app_state.sales_captured`), com **backfill** do que já está na base; cron `step=sales` + `refresh.yml`. `sold_date` = **data do leilão**. Fail-closed (sem valor claro não grava). Server fns `getVinylSales`/`captureSales`                                                    | —       |
 | v0.31.0        | **Página Vinil Analytics** (`/vinil-analytics`, link no header) — preços de venda por **artista → álbum** sobre `lot_sales` (casa irrelevante). Agregação pura `analytics.ts` (`buildAnalytics`/`deriveAlbum`): preço médio, min/max, **contagem na base**, **médias por Faixa** e vendas ordenadas **pior→melhor** conservação. UI: artistas/álbuns expansíveis (padrão manual), **eixo horizontal** de marcadores (score/estado/valor), chips de faixa e **Dialog de detalhe** (tabela data/estado/score/valor/lote)                                                                                                                                                | —       |
 | v0.31.1        | **Calibração do catálogo (Discos Esquecidos)** — o descritivo completo vem no **tooltip** do card (atributo `title`/`alt`/`data-*`): `longestAttr` pega o texto mais longo → **estado rico** (`CAPA VG+ - DISCO VG+/NM`) direto do catálogo, sem `peca.asp`. Valor lido do rótulo **"Valor de venda: R$ …"** + marcador "vendido"/"arrematado" (fail-closed). `detectInsert` **conservador** (ignora o boilerplate "se o LP possuir encarte…"). `deriveAlbum` corta em "- CAPA/DISCO `<grau>`". Nº do lote ganha fallback "LOTE N"                                                                                                                            | —       |
+| v0.41.0        | **Seletor único de IA + header persistente + IA/padronização em todo o histórico** — (1) **remove o diálogo "qual IA usar?"** por ação (`AiProviderDialog`/`useAiProviderPicker`): o **seletor do topo** (`AiProviderSelect`) é a única escolha e vale para tudo (síncrono via `aiProvider`, assíncrono/servidor via `resolveAiProvider`). (2) **Header sticky/persistente** em todas as páginas autenticadas (fundo translúcido + `backdrop-blur`), **compacto no mobile** (título menor, descrição escondida, ações em barra rolável horizontal). (3) **`reidentifyAllSales`** (`lot-sales.server.ts`) passa a IA (título+descrição → "Artista - Álbum") por TODO o histórico de vendas ainda não identificado (checkpoint durável em `lot_ident`) e **padroniza a grafia** dos nomes (`normalizeForMatch`+`pickCanonical`, helper compartilhado em `vinyl-parse.ts`); `buildAnalytics` passa a agrupar por **chave normalizada** de artista/álbum exibindo a grafia canônica (junta duplicatas por diferença mínima). Cron `step=reident` + `refresh.yml`, server fn `reidentifySales`, botão "Reidentificar (IA)" no Analytics. Prompt de identificação pede grafia **canônica/consistente** do artista (leilões futuros já saem padronizados). Typecheck/lint/build OK | —      |
 | v0.40.0        | **Analytics: exclui não-vinil + reident por IA de artistas genéricos** — dois problemas de qualidade no Vinil Analytics: (1) grupos de OUTRO formato (DVD/HQ/revista/livro/K7/VHS) caindo no histórico; (2) "artistas" genéricos/lixo do `extractArtist` ("Colecionismo", "Duplo", "Various Artists", "Various", "Ao Vivo", "Ao vivo \| Código"). Novos helpers puros em `vinyl-parse.ts`: `looksNonVinylSale` (mais rígido que `looksNonVinyl` — "disco" sozinho não salva, pois DVD também é "disco"; só sinal FORTE de vinil isenta) e `isGenericArtist` (categoria/formato/coletânea/rótulo solto/pipe/vazio). **Exclusão:** `salesRowsFromCatalog` pula lotes não-vinil na captura, e `buildAnalytics` também filtra na LEITURA (limpa o que já estava gravado, sem re-capturar). **Reident:** `captureFinishedSales` manda as vendas de artista genérico (com texto) à IA de identificação (`identLotsSyncRows`, reaproveitada; teto 25/rodada), grava o "Artista - Álbum" em `lot_ident` (durável) e aplica à venda. Sem provedor de IA, só a exclusão roda. Validado (28/28 casos dos dois classificadores)                                                                                                                                          | —       |
 | v0.39.0        | **Fallback de IA para o estado (quando o regex não acha NADA)** — novo em `ai-eval.server.ts`: `buildConditionRequest`/`parseConditionAiObject` (prompt só-texto pedindo `media`/`sleeve`/`insert` na escala canônica; `media`/`sleeve` passam por `normalizeGrade` — grau fora da escala vira `null`, nunca inventa) + `conditionAiSync` (worker-pool síncrono, mesmo padrão de `identLotsSync`, com failover de provedor) + `resolveAiProvider` (padrão do usuário com fallback ao 1º configurado). Ligado em `enrichConditions` (`lot_condition`, cards PRÉ-leilão) e `captureFinishedSales` (`lot_sales`, Analytics): dos lotes/vendas que ficaram **indefinidos** pelo regex mas TÊM texto, até 25/rodada passam pela IA (`source: 'ia'` em `lot_condition`); sem provedor configurado, comportamento e custo continuam inalterados (best-effort, nunca falha a rodada). Validado (10/10 casos: prompt, parse limpo/com cercas de código, grau inválido rejeitado, tudo-null, JSON quebrado)                                                                                                                                          | —       |
 | v0.38.0        | **Grading tolerante a PROSA + regra de score = MÉDIA (padrão em todos os cards)** — muitas descrições reais têm o estado em prosa ("capa em bom estado", "disco apresenta-se em estado excelente"), não só siglas coladas ao rótulo (`Capa: VG+`); `gradeAfterLabel` passa a aceitar **conectores** entre rótulo e grau (até ~40 caracteres, sem cruzar fim de frase nem o rótulo do OUTRO lado — evita atribuir "disco muito bom" à capa em "Capa com riscos, disco muito bom"), rótulo **combinado** ("Capa e Disco: VG+"), mais sinônimos (`quase novo`→NM, `ótimo`→EX, `boa`/`muito boa`, `péssimo`, `danificado`) e parênteses (`Capa (VG+)`); texto é dobrado (maiúsculas/sem acento) uma vez, com guarda simples contra negação adjacente ("não bom"). **`scoreCondition` substitui a matriz fixa por uma regra simétrica**: só um lado conhecido → **ESPELHA** o mesmo grau pro outro (nunca fica "só Disco"/"só Capa"); ambos conhecidos → Score Final = **MÉDIA** dos scores-base (arredondada). O retorno inclui `media`/`sleeve` já espelhados — `index.tsx` (`conditionById`) e `CollectionCard` passam a exibir os badges a partir desse retorno, padronizando Disco/Capa/Faixa/encarte em **todos** os cards do sistema (lote e Coleção). Fluxo do catálogo (`lot_condition`/`lot_sales`) herda automaticamente por já passar por `parseConditionFromText`. Validado (21/21 casos, incl. regressão dos formatos antigos)                                                                                                                                          | —       |
@@ -729,7 +754,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 
 ## Pendências
 
-**Produto / código**
+**Produto / código (em aberto)**
 
 1. **Lance pelo app (leiloesbr):** avaliar/implementar dar lance pelo app (regra do usuário:
    sempre o próximo menor valor; após lançar, verificar em segundos se foi coberto e relançar).
@@ -737,65 +762,37 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
    usuário precisa **capturar** (F12 → Network, lote barato) a requisição de lance. Considerar
    que o site talvez já tenha "lance automático" nativo; ToS/edital costumam proibir automação
    (risco/decisão do usuário).
-2. **Upload de foto EM MASSA (pendente):** a importação em massa (v0.26.0) cria discos **sem
-   foto** — a foto é adicionada depois, por disco, no `EditDialog` (já com o botão **"Tirar foto"**
-   / câmera do celular). Fazer um fluxo de foto em lote (ex.: tirar/anexar fotos e casar com os
-   discos recém-importados) segue em aberto.
-3. **Sondagem não pesa na nota** — hoje é só destaque + filtro. Dar peso real (bônus
-   determinístico no ranking, ou mandar a lista ao prompt) segue em aberto, se desejado.
-4. **Importar o rascunho real da sondagem** pela UI e conferir o 🎯/tooltip e o filtro "Só
-   sondagem"; ajustar `WANT_MATCH_THRESHOLD`/pesos em `wantlist-match.ts` se pegar demais/de menos.
-6. **Imagem pelo CDN do catálogo (amarelo #9, ADIADO):** o JSON traz a **base** do CDN
-   (`URLCOMMON`/`CLOUD_LINK`), mas o exemplo (santavelharia) **não** trouxe o campo com o
-   **nome do arquivo** da imagem por lote — sem ele não dá para montar a URL. Pegar (F12 →
-   Network → resposta do `catalogocontentload.asp`, ou o HTML do card) o campo/arquivo de
-   imagem de um lote; então adicionar `image` ao `CatalogLot`/`lot_sales` e miniatura no
-   Analytics.
+2. **Upload de foto EM MASSA:** a importação em massa cria discos **sem foto** — a foto é
+   adicionada depois, por disco, no `EditDialog` (com "Tirar foto"/câmera). Um fluxo de foto em
+   lote (tirar/anexar e casar com os recém-importados) segue em aberto.
+3. **Sondagem não pesa na nota** — hoje é só destaque + filtro. Dar peso real (bônus no ranking
+   ou mandar a lista ao prompt) segue em aberto; ao importar o rascunho real, conferir 🎯/tooltip
+   e o filtro "Só sondagem" e ajustar `WANT_MATCH_THRESHOLD`/pesos em `wantlist-match.ts`.
+4. **Imagem pelo CDN do catálogo (ADIADO):** o JSON traz a **base** do CDN
+   (`URLCOMMON`/`CLOUD_LINK`), mas o exemplo (santavelharia) **não** trouxe o **nome do arquivo**
+   da imagem por lote — sem ele não dá para montar a URL. Pegar (F12 → resposta do
+   `catalogocontentload.asp`) o campo/arquivo de imagem; então adicionar `image` ao
+   `CatalogLot`/`lot_sales` e miniatura no Analytics.
+
 **Validar em produção (não dá para testar daqui)**
 
-4. **Aplicar o `setup.sql`** para as tabelas/colunas mais recentes (`lot_ident`, colunas BR de
-   `lot_market`, **`collection_items`** — inclui a coluna nova **`description`** e o **bucket de
-   Storage `collection`**, ambos idempotentes no `setup.sql`) caso ainda não tenham sido
-   aplicadas; garantir `ANTHROPIC_API_KEY` e `DISCOGS_TOKEN` configurados **nas env da Vercel**
-   (Production) — são lidos pelo servidor, inclusive no cron; **não** são secrets do GitHub (o
-   `refresh.yml` só usa `APP_URL` + `CRON_TOKEN`). **Upload de foto** da Coleção exige o bucket
-   `collection` criado (re-rodar o `setup.sql` cria/torna público).
-5. **Coleção:** aplicar `collection_items` no banco; conferir o botão **"Atualizar coleção"**
-   (varredura de `conta_site.asp?l=6`) — se algum campo vier vazio, capturar 1 card do HTML de
-   "Minhas compras" (F12) e ajustar os regexes de `leiloesbr-purchases.server.ts`. Confirmar que
-   re-varrer **não** duplica nem apaga edições, e que artista/álbum/ano são semeados da
-   identificação já existente.
-6. **Rodar o `refresh.yml`** (Actions → Run workflow) e conferir cada passo: `enrich`
-   (`updated>0`, nº de lote preenchendo), `aiident`/`aieval` (`submitted`/`collected>0`),
-   `market` (`updated>0`, inclusive lotes só identificados). Rodar mais vezes melhora o
-   casamento da sondagem (mais `album`/ano → mais sinais no `lotIdentity`).
-7. **Gemini (v0.27.0):** cadastrar **`GEMINI_API_KEY`** **só nas env da Vercel** (Production) e
-   **Redeploy** — o cron lê a chave do servidor da Vercel, então **NÃO** precisa de secret no
-   GitHub (o `refresh.yml` só usa `APP_URL` + `CRON_TOKEN`). Testar o seletor de provedor no
-   header e o diálogo "qual IA usar?" na home e na Coleção; validar o **failover** (deixar um
-   provedor sem crédito e conferir o toast + a troca). Opcional: `GEMINI_MODEL` / `AI_PROVIDER`
-   (padrão via env). Confirmar que a **visão** (capa) funciona no Gemini (imagem inline/base64).
-   **Custo:** `gemini-flash-latest` ≈ US$0,75/US$3,75 por 1M tok in/out (mais barato que o Haiku
-   4.5, ~US$1/US$5); o alias `-latest` acompanha o Flash mais novo (pode mudar) — para fixar,
-   usar `GEMINI_MODEL`.
-   **Concluído recentemente:** `wantlist_items` aplicada em produção (2026-09-03; importar/editar/
-   marcar adquirido gravam sem erro). Secrets do cron (`APP_URL`, `CRON_TOKEN`) e 1ª execução do
-   `refresh.yml` no ar. Revisão/refatoração pós-Lovable (lint/format, remoção de morto, DRY).
-   **Relação lote↔Coleção + aprendizado (v0.24.x) validada em produção** (2026-09-08): ícone em
-   todos os cards (cinza/roxo/roxo+?), painel com o card da Coleção, vincular/"não tenho"/reativar
-   persistidos (`collection_links`) e aprendizado (`collection_feedback`) — decisão persiste após
-   recarregar. As chaves `collection_links`/`collection_feedback` do `app_state` nascem sozinhas
-   (upsert na 1ª decisão), sem `setup.sql`.
+- **`setup.sql` aplicado** para as tabelas/colunas mais recentes (idempotente) e
+  `ANTHROPIC_API_KEY`/`GEMINI_API_KEY`/`DISCOGS_TOKEN` **só nas env da Vercel** (Production) — são
+  lidos pelo servidor, inclusive no cron; **não** são secrets do GitHub (o `refresh.yml` só usa
+  `APP_URL` + `CRON_TOKEN`). Após mudar env, **Redeploy**.
+- **Cron `refresh.yml`** (Actions → Run workflow): conferir cada passo, incluindo os novos
+  `condition`, `sales` e **`reident`** (reidentifica/padroniza o histórico — `identified`/
+  `applied`), e o `market` (inclui lotes só identificados).
+- **v0.41.0:** confirmar que o **seletor do topo** comanda toda IA (síncrona e cron); rodar
+  **"Reidentificar (IA)"** no Analytics com o Gemini selecionado e ver artistas antes duplicados
+  se fundirem; conferir o header **sticky** (desktop e mobile). Validar o **failover** do Gemini
+  (deixar um provedor sem crédito e conferir o toast + a troca) e a **visão** (capa) no Gemini.
+- **Custo Gemini:** `gemini-flash-latest` ≈ US$0,75/US$3,75 por 1M tok in/out (mais barato que o
+  Haiku 4.5); o alias `-latest` acompanha o Flash mais novo — para fixar, usar `GEMINI_MODEL`.
 
 > ⚠️ **Lição (evitar regressão):** módulo **`*.server.ts` NÃO deve importar de módulo
 > client-safe** (nem `import type`). No v0.24.0, `app-state.server.ts` importava um tipo de
 > `wantlist-match` → o _code-splitting_ deixou o chunk `wantlist-match-*.js` fora do `/assets/`
 > do cliente → **404** ("Failed to fetch dynamically imported module") só na home logada em
-> produção (preview deslogado e `/colecao` abriam). Corrigido no v0.24.1 definindo o tipo
-> localmente. Tipos compartilhados entre client e server: manter no lado **client-safe**.
-
-> 📌 **Observação (2026-09-08):** o usuário mesclou **duas PRs na `main`** durante esta sessão —
-> **#94** (v0.25.0, descontinuação do "Painel de mudanças" `/dashboard`) e **#95** (v0.26.0,
-> importação em massa da Coleção + câmera no upload). A branch da IA multi-provedor (v0.27.0) foi
-> **rebaseada sobre `origin/main`** já com as duas antes de finalizar (conflitos triviais em
-> `app-state.server.ts`, `colecao.tsx` e neste documento resolvidos mantendo ambos os lados).
+> produção. Corrigido no v0.24.1 definindo o tipo localmente. Tipos compartilhados entre client e
+> server: manter no lado **client-safe**.

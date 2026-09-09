@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   ArrowLeft,
@@ -11,15 +11,24 @@ import {
   Disc3,
   ExternalLink,
   RefreshCw,
+  Sparkles,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { AiProviderSelect } from "@/components/vinyl/ai-provider-controls";
 import { scoreTone } from "@/components/vinyl/ai-score-utils";
 import { fmtMoney } from "@/components/vinyl/ai-score-utils";
+import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
 import { type AlbumAgg, type ArtistAgg, buildAnalytics, type SaleRow } from "@/lib/analytics";
-import { getVinylSales } from "@/lib/leiloesbr.functions";
+import {
+  getAiProvider,
+  getVinylSales,
+  reidentifySales,
+  setAiProvider,
+} from "@/lib/leiloesbr.functions";
 import { normalizeForMatch } from "@/lib/vinyl-parse";
 
 export const Route = createFileRoute("/_authenticated/vinil-analytics")({
@@ -54,13 +63,65 @@ function demandLabel(s: SaleRow): string {
 }
 
 function VinilAnalyticsPage() {
+  const queryClient = useQueryClient();
   const fetchSales = useServerFn(getVinylSales);
+  const runReident = useServerFn(reidentifySales);
+  const fetchAiProvider = useServerFn(getAiProvider);
+  const runSetAiProvider = useServerFn(setAiProvider);
   const sales = useQuery({
     queryKey: ["vinyl-sales"] as const,
     queryFn: () => fetchSales(),
     staleTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
+
+  // Provedor de IA PADRÃO (o mesmo do topo da home/Coleção) — fonte da verdade no servidor.
+  const aiProviderQuery = useQuery({
+    queryKey: ["ai-provider"] as const,
+    queryFn: () => fetchAiProvider(),
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const aiProvider: AiProvider = aiProviderQuery.data ?? "anthropic";
+  const changeAiProvider = (provider: AiProvider) => {
+    const prev = aiProviderQuery.data;
+    queryClient.setQueryData(["ai-provider"], provider); // otimista
+    void runSetAiProvider({ data: { provider } })
+      .then(() => toast.success(`Provedor padrão: ${AI_PROVIDER_SHORT[provider]}`))
+      .catch((error: unknown) => {
+        queryClient.setQueryData(["ai-provider"], prev);
+        toast.error((error as Error)?.message || "Não foi possível salvar o provedor de IA");
+      });
+  };
+
+  // Reidentifica TODO o histórico pela IA (título+descrição → artista/álbum) e padroniza os
+  // nomes. Roda em laço até `done`, então revalida a lista. Usa o provedor selecionado no topo.
+  const [reidentifying, setReidentifying] = useState(false);
+  const reidentifyAll = () => {
+    if (reidentifying) return;
+    setReidentifying(true);
+    void (async () => {
+      let identified = 0;
+      let applied = 0;
+      try {
+        for (let guard = 0; guard < 200; guard += 1) {
+          const res = await runReident({ data: { max: 25 } });
+          identified += res.identified;
+          applied += res.applied;
+          if (res.done) break;
+        }
+        await queryClient.invalidateQueries({ queryKey: ["vinyl-sales"] });
+        await sales.refetch();
+        toast.success(
+          `Reidentificação concluída: ${identified} identificado(s) pela IA · ${applied} registro(s) padronizado(s)`,
+        );
+      } catch (error) {
+        toast.error((error as Error)?.message || "Não foi possível reidentificar agora");
+      } finally {
+        setReidentifying(false);
+      }
+    })();
+  };
 
   const rows = useMemo(() => (sales.data ?? []) as SaleRow[], [sales.data]);
   const analytics = useMemo(() => buildAnalytics(rows), [rows]);
@@ -91,8 +152,8 @@ function VinilAnalyticsPage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/60">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-6">
+      <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:py-5">
           <div>
             <div className="flex items-center gap-3">
               <Button variant="ghost" size="sm" asChild>
@@ -106,20 +167,37 @@ function VinilAnalyticsPage() {
                 Vinil Analytics
               </h1>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
               Preços de venda por artista e álbum (a casa de leilão é irrelevante). Da pior à melhor
               conservação, com médias por Faixa de Classificação.
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => sales.refetch()}
-            disabled={sales.isFetching}
-          >
-            <RefreshCw className={`mr-2 h-4 w-4 ${sales.isFetching ? "animate-spin" : ""}`} />
-            Atualizar
-          </Button>
+          <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible sm:pb-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={reidentifyAll}
+              disabled={reidentifying}
+              title="Passar a IA por todo o histórico: ajusta artista/álbum (título + descrição) e padroniza os nomes para não duplicar registros. Usa o provedor de IA selecionado ao lado."
+            >
+              <Sparkles className={`mr-2 h-4 w-4 ${reidentifying ? "animate-pulse" : ""}`} />
+              {reidentifying ? "Reidentificando…" : "Reidentificar (IA)"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => sales.refetch()}
+              disabled={sales.isFetching}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${sales.isFetching ? "animate-spin" : ""}`} />
+              Atualizar
+            </Button>
+            <AiProviderSelect
+              value={aiProvider}
+              onChange={changeAiProvider}
+              disabled={reidentifying}
+            />
+          </div>
         </div>
       </header>
 
