@@ -1,4 +1,5 @@
 import { Disc3, ExternalLink, Eye, EyeOff, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
@@ -61,6 +62,17 @@ export function LotCard({
   onOpenOwned?: () => void;
   onEditTags?: (next: string[]) => void;
 }) {
+  // Algumas imagens hotlinkadas das casas falham (403/404/expirada). Sem isto, o navegador
+  // renderiza o `alt` (o título, às vezes bem extenso) por cima do card inteiro no lugar da
+  // imagem quebrada — troca para o mesmo placeholder usado quando não há imagem.
+  const [imgFailed, setImgFailed] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
+  useEffect(() => {
+    // A imagem é renderizada no HTML do servidor e o navegador começa a carregá-la ANTES da
+    // hidratação anexar o `onError` — uma falha rápida (ex.: 404) passa despercebida pelo
+    // listener. Checa no mount se ela já falhou (naturalWidth 0 num <img> "completo").
+    if (imgRef.current?.complete && imgRef.current.naturalWidth === 0) setImgFailed(true);
+  }, [lot.image]);
   // Linha padrão de identificação da IA (Artista — Álbum (Ano)), quando houver.
   const aiLabel = album ? formatAiAlbum(album, market?.year) : "";
   // Cores (mesma regra do painel): meu lance ganhando = verde; meu lance coberto = vermelho;
@@ -124,12 +136,14 @@ export function LotCard({
         </div>
       ) : null}
       <a href={lot.url} target="_blank" rel="noreferrer" className="block bg-secondary">
-        {lot.image ? (
+        {lot.image && !imgFailed ? (
           <img
+            ref={imgRef}
             src={lot.image}
             alt={lot.title}
             loading="lazy"
             className="h-44 w-full object-contain p-2"
+            onError={() => setImgFailed(true)}
           />
         ) : (
           <div className="flex h-44 items-center justify-center text-xs text-muted-foreground">
