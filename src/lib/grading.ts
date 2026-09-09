@@ -1,12 +1,18 @@
 /**
  * Grading de conservação de vinil (Disco × Capa) — módulo PURO e client-safe (sem rede,
- * sem imports de servidor). Fonte única da escala canônica de 10 graus, da matriz de Score
- * Final e das faixas de classificação. É consumido pelo card dos lotes, pela Coleção e
- * (nas fases seguintes) pelo enriquecimento no servidor e pelo Vinil Analytics.
+ * sem imports de servidor). Fonte única da escala canônica de 10 graus e das faixas de
+ * classificação. É consumido pelo card dos lotes, pela Coleção e pelo enriquecimento no
+ * servidor (catálogo/IA) e pelo Vinil Analytics.
  *
  * Escala canônica (do MELHOR para o PIOR): M, NM, EX, VG+, VG, VG-, G+, G, G-, F/P.
  * Sinônimos aceitos: M- ≈ NM, VG++ ≈ EX, além de palavras (Mint/Lacrado, Near Mint,
  * Excelente, Muito Bom, Bom, Regular, Fair/Poor…).
+ *
+ * Regra de preenchimento cruzado (padrão em TODO o app — cards, Coleção, Analytics):
+ * - Só um lado conhecido (Disco OU Capa) → ESPELHA o mesmo grau para o outro lado — nunca
+ *   fica "só Disco" ou "só Capa" quando há QUALQUER sinal de estado.
+ * - Ambos conhecidos (iguais ou diferentes) → Score Final = MÉDIA dos scores-base dos dois
+ *   graus (arredondada). Ver `scoreCondition`.
  */
 
 /** Graus canônicos, do melhor (M) ao pior (F/P). A ordem define o eixo pior→melhor do Analytics. */
@@ -14,7 +20,7 @@ export const GRADE_ORDER = ["M", "NM", "EX", "VG+", "VG", "VG-", "G+", "G", "G-"
 
 export type Grade = (typeof GRADE_ORDER)[number];
 
-/** Score-base de cada grau (usado quando só um lado — Disco OU Capa — é conhecido). */
+/** Score-base de cada grau (usado no cálculo de Score Final — ver `scoreCondition`). */
 export const GRADE_SCORES: Record<Grade, number> = {
   M: 100,
   NM: 90,
@@ -26,23 +32,6 @@ export const GRADE_SCORES: Record<Grade, number> = {
   G: 25,
   "G-": 15,
   "F/P": 0,
-};
-
-/**
- * Matriz de Score Final: linha = Disco, coluna = Capa, na ordem de `GRADE_ORDER`.
- * Valores fixos conforme a tabela de referência (a diagonal reproduz o score-base).
- */
-const MATRIX_ROWS: Record<Grade, readonly number[]> = {
-  M: [100, 97, 93, 90, 84, 81, 77, 74, 70, 65],
-  NM: [94, 90, 87, 83, 78, 74, 71, 67, 64, 59],
-  EX: [87, 84, 80, 77, 71, 68, 64, 61, 57, 52],
-  "VG+": [81, 77, 74, 70, 65, 61, 58, 54, 51, 46],
-  VG: [71, 67, 64, 60, 55, 52, 48, 45, 41, 36],
-  "VG-": [64, 61, 57, 54, 49, 45, 42, 38, 35, 29],
-  "G+": [58, 54, 51, 47, 42, 39, 35, 32, 28, 23],
-  G: [51, 48, 44, 41, 36, 32, 29, 25, 22, 16],
-  "G-": [45, 41, 38, 34, 29, 26, 22, 19, 15, 10],
-  "F/P": [35, 32, 28, 25, 19, 16, 12, 9, 5, 0],
 };
 
 /** Faixas de Classificação do Score Final (limites inclusivos). `label` curto p/ chips. */
@@ -93,23 +82,23 @@ export const EMPTY_CONDITION: Condition = {
 };
 
 /**
- * Score Final a partir dos graus de Disco e Capa. Com ambos, usa a matriz; com apenas um
- * lado, cai no score-base desse lado; sem nenhum, null.
+ * Score Final a partir dos graus de Disco e Capa, aplicando a regra de preenchimento cruzado
+ * do sistema (padrão em toda a UI — cards de lote, Coleção, Vinil Analytics):
+ * - Só um lado conhecido → ESPELHA o mesmo grau para o outro lado. `media`/`sleeve` no
+ *   retorno já refletem o espelhamento (nunca "só Disco" ou "só Capa" quando há QUALQUER
+ *   sinal de estado) — use os valores retornados para exibir os badges.
+ * - Ambos conhecidos (iguais ou diferentes) → Score Final = MÉDIA dos scores-base dos dois
+ *   graus, arredondada ao inteiro mais próximo.
+ * - Nenhum lado conhecido → tudo null.
  */
 export function scoreCondition(
   media: Grade | null,
   sleeve: Grade | null,
-): { score: number | null; faixa: Faixa | null } {
-  let score: number | null = null;
-  if (media && sleeve) {
-    const col = GRADE_ORDER.indexOf(sleeve);
-    score = MATRIX_ROWS[media][col] ?? null;
-  } else if (media) {
-    score = GRADE_SCORES[media];
-  } else if (sleeve) {
-    score = GRADE_SCORES[sleeve];
-  }
-  return { score, faixa: faixaFromScore(score) };
+): { media: Grade | null; sleeve: Grade | null; score: number | null; faixa: Faixa | null } {
+  const m = media ?? sleeve;
+  const s = sleeve ?? media;
+  const score = m && s ? Math.round((GRADE_SCORES[m] + GRADE_SCORES[s]) / 2) : null;
+  return { media: m, sleeve: s, score, faixa: faixaFromScore(score) };
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +113,7 @@ function foldUpper(s: string): string {
 /**
  * Converte uma sigla OU palavra de conservação no grau canônico correspondente; null quando
  * não reconhece. Ex.: "vg+" → "VG+", "M-" → "NM", "VG++" → "EX", "lacrado" → "M",
- * "excelente" → "EX", "bom" → "VG".
+ * "excelente" → "EX", "bom"/"boa" → "VG", "quase novo" → "NM".
  */
 export function normalizeGrade(raw: string | null | undefined): Grade | null {
   if (!raw) return null;
@@ -155,11 +144,12 @@ export function normalizeGrade(raw: string | null | undefined): Grade | null {
   };
   if (SIGLA_MAP[sigla]) return SIGLA_MAP[sigla];
 
-  // Palavras/frases (checar "Near Mint"/"Quase perfeito" ANTES de Mint/Perfeito soltos).
-  if (/\bNEAR\s*MINT\b|\bQUASE\s*PERFEIT[OA]\b/.test(s)) return "NM";
+  // Palavras/frases (checar as compostas ANTES das soltas: "Near Mint"/"Quase Perfeito"/
+  // "Quase Novo" antes de "Mint"/"Perfeito"/"Novo"; "Muito Bom/Boa" antes de "Bom/Boa"…).
+  if (/\bNEAR\s*MINT\b|\bQUASE\s*PERFEIT[OA]\b|\bQUASE\s*NOVO\b/.test(s)) return "NM";
   if (/\b(MINT|LACRAD[OA]|SELAD[OA]|IMPECAVEL|PERFEIT[OA]|NOVO)\b/.test(s)) return "M";
-  if (/\bEXCELENTE\b|\bEXCELLENT\b/.test(s)) return "EX";
-  if (/\bMUITO\s*BOM\b|\bVERY\s*GOOD\s*PLUS\b/.test(s)) return "VG+";
+  if (/\bEXCELENTE\b|\bEXCELLENT\b|\bOTIM[OA]\b/.test(s)) return "EX";
+  if (/\bMUITO\s*BOM\b|\bMUITO\s*BOA\b|\bVERY\s*GOOD\s*PLUS\b/.test(s)) return "VG+";
   if (/\bVERY\s*GOOD\b|\bBOM\b|\bBOA\b/.test(s)) return "VG";
   if (/\bGOOD\s*PLUS\b/.test(s)) return "G+";
   if (/\bGOOD\b|\bREGULAR\b|\bRAZOAVEL\b/.test(s)) return "G";
@@ -171,14 +161,47 @@ export function normalizeGrade(raw: string | null | undefined): Grade | null {
 // Extração do estado a partir do texto livre (título/descrição do lote).
 // ---------------------------------------------------------------------------
 
-// Alternância de tokens de grau (siglas + palavras). Ordem importa: mais longo primeiro.
+// Alternância de tokens de grau (siglas + palavras), operando sobre texto JÁ dobrado
+// (`foldUpper`: maiúsculas, sem acento) — por isso não há variantes acentuadas aqui. Ordem
+// importa: alternativas que compartilham prefixo com outra mais curta vêm PRIMEIRO (ex.:
+// "VG++"/"VG+" antes de "VG"; "GOOD PLUS" antes de "GOOD"; "MUITO BOM" não conflita com
+// "BOM" solto pois começam com letras diferentes na mesma posição de busca).
 const GRADE_TOKEN =
-  "M-|VG\\+\\+|VG\\+|VG-|G\\+|G-|F/P|NM|EX|VG|NEAR\\s*MINT|MINT|LACRAD[OA]|SELAD[OA]|IMPEC[AÁ]VEL|EXCELENTE|MUITO\\s*BOM|GOOD\\s*PLUS|VERY\\s*GOOD\\s*PLUS|VERY\\s*GOOD|REGULAR|FAIR|POOR|RUIM|BOM|GOOD|\\bM\\b|\\bG\\b|\\bF\\b|\\bP\\b";
+  "M-|VG\\+\\+|VG\\+|VG-|G\\+|G-|F/P|NM|EX|VG" +
+  "|NEAR\\s*MINT|QUASE\\s*PERFEIT[OA]|QUASE\\s*NOVO" +
+  "|MINT|LACRAD[OA]|SELAD[OA]|IMPECAVEL|PERFEIT[OA]|NOVO" +
+  "|EXCELENTE|EXCELLENT|OTIM[OA]" +
+  "|MUITO\\s*BOA|MUITO\\s*BOM|GOOD\\s*PLUS|VERY\\s*GOOD\\s*PLUS|VERY\\s*GOOD" +
+  "|BOA|BOM|GOOD" +
+  "|RAZOAVEL|REGULAR" +
+  "|FAIR|POOR|RUIM|PESSIM[OA]|DANIFICAD[OA]" +
+  "|\\bM\\b|\\bG\\b|\\bF\\b|\\bP\\b";
 
-/** Captura o grau que segue um rótulo (ex.: "Disco: VG+", "Capa - NM", "Mídia EX"). */
-function gradeAfterLabel(text: string, labels: string): Grade | null {
-  const re = new RegExp(`(?:${labels})\\s*[:\\-–]?\\s*(${GRADE_TOKEN})`, "i");
-  const m = text.match(re);
+// Rótulos de cada lado (sobre texto dobrado — sem acento). "MIDIA" já cobre "mídia"
+// (acento removido pelo fold), sem precisar de classe de caracteres.
+const MEDIA_LABELS = "DISCO|MIDIA|VINIL|BOLACHA";
+const SLEEVE_LABELS = "CAPA|SLEEVE|JAQUETA";
+const OVERALL_LABELS = "ESTADO|CONSERVACAO|GRADE|CLASSIFICACAO";
+// Rótulo combinado ("Capa e Disco: VG+", "Disco/Capa NM") — aplica aos dois lados.
+const COMBINED_LABELS = `CAPA\\s*(?:E|/|,)?\\s*DISCO|DISCO\\s*(?:E|/|,)?\\s*CAPA`;
+
+/**
+ * Captura o grau que segue um rótulo, tolerando CONECTORES DE PROSA entre o rótulo e o grau
+ * (ex.: "Capa em bom estado", "Disco apresenta-se em estado excelente", "Capa (VG+)") — até
+ * ~40 caracteres de enchimento, sem cruzar fim de frase (.;!?) nem, quando informado, o
+ * rótulo do OUTRO lado (`stopLabels`) — evita atribuir o grau do Disco à Capa (ou vice-versa)
+ * em frases como "Capa com riscos, disco muito bom". Rejeita negação IMEDIATAMENTE adjacente
+ * ("não bom", "sem excelente"); negação mais distante ("não está em bom estado") é uma
+ * limitação conhecida do regex — fica para o fallback de IA.
+ */
+function gradeAfterLabel(foldedText: string, labels: string, stopLabels = ""): Grade | null {
+  const stop = stopLabels ? `(?!${stopLabels})` : "";
+  const filler = `(?:${stop}[^.;!?]){0,40}?`;
+  const re = new RegExp(
+    `(?:${labels})${filler}[:\\-–=]?\\s*\\(?\\s*(?<!NAO\\s)(?<!SEM\\s)(${GRADE_TOKEN})`,
+    "i",
+  );
+  const m = foldedText.match(re);
   return m ? normalizeGrade(m[1]!) : null;
 }
 
@@ -205,37 +228,42 @@ export function detectInsert(text: string): InsertState {
 
 /**
  * Interpreta o estado de conservação a partir do texto do lote (título e/ou descrição).
- * Estratégia determinística (regex/dicionário):
- * 1. Rótulos explícitos "Disco/Mídia/Vinil" e "Capa/Sleeve" definem cada lado.
- * 2. Rótulo geral ("Estado/Conservação/Grade") aplica o mesmo grau aos dois lados.
+ * Estratégia determinística (regex/dicionário), tolerante a PROSA (não só siglas coladas
+ * ao rótulo):
+ * 1. Rótulos explícitos "Disco/Mídia/Vinil" e "Capa/Sleeve" definem cada lado (mesmo com
+ *    conectores no meio: "capa em bom estado", "disco apresenta leves riscos, EX").
+ * 2. Sem nenhum dos dois: rótulo geral ("Estado/Conservação/Grade") ou combinado ("Capa e
+ *    Disco: VG+") aplica o mesmo grau aos dois lados.
  * 3. Palavra de item inteiro ("Lacrado/Mint/Impecável") sem rótulo → ambos os lados.
- * 4. Uma única sigla forte solta (NM, EX, VG+, VG-, G+, G-, VG++, M-, F/P) → Disco (geral).
- * Nunca inventa: sem sinal → `source: 'indefinido'`.
+ * 4. Uma única sigla forte solta (NM, EX, VG+, VG-, G+, G-, VG++, M-, F/P) → um lado (geral).
+ * Nunca inventa: sem sinal → `source: 'indefinido'`. O resultado final passa por
+ * `scoreCondition`, que ESPELHA o grau quando só um lado foi encontrado (ver seu doc).
  */
 export function parseConditionFromText(text: string | null | undefined): Condition {
-  const raw = (text ?? "").trim();
-  if (!raw) return { ...EMPTY_CONDITION };
+  const rawTrim = (text ?? "").trim();
+  if (!rawTrim) return { ...EMPTY_CONDITION };
+  const folded = foldUpper(rawTrim);
 
-  let media = gradeAfterLabel(raw, "disco|m[ií]dia|midia|vinil|bolacha");
-  let sleeve = gradeAfterLabel(raw, "capa|sleeve|jaqueta");
+  let media = gradeAfterLabel(folded, MEDIA_LABELS, SLEEVE_LABELS);
+  let sleeve = gradeAfterLabel(folded, SLEEVE_LABELS, MEDIA_LABELS);
 
   if (!media && !sleeve) {
-    // (2) rótulo geral: aplica aos dois lados.
-    const overall = gradeAfterLabel(raw, "estado|conserva[cç][aã]o|grade|classifica[cç][aã]o");
+    // (2) rótulo geral OU combinado: aplica aos dois lados.
+    const overall =
+      gradeAfterLabel(folded, OVERALL_LABELS) ?? gradeAfterLabel(folded, COMBINED_LABELS);
     if (overall) {
       media = overall;
       sleeve = overall;
     } else {
       // (3) palavra de item inteiro sem rótulo.
-      const whole = foldUpper(raw);
-      if (/\b(MINT|LACRAD[OA]|SELAD[OA]|IMPEC[AÁ]VEL)\b/.test(whole)) {
+      if (/\b(MINT|LACRAD[OA]|SELAD[OA]|IMPECAVEL)\b/.test(folded)) {
         media = "M";
         sleeve = "M";
       } else {
         // (4) uma única sigla forte solta (evita M/G/F/P sozinhos, ambíguos demais).
-        const STRONG = /\b(VG\+\+|VG\+|VG-|M-|NM|EX|G\+|G-|F\/P)\b/gi;
+        const STRONG = /\b(VG\+\+|VG\+|VG-|M-|NM|EX|G\+|G-|F\/P)\b/g;
         const found = new Set<Grade>();
-        for (const m of raw.matchAll(STRONG)) {
+        for (const m of folded.matchAll(STRONG)) {
           const g = normalizeGrade(m[1]!);
           if (g) found.add(g);
         }
@@ -244,8 +272,8 @@ export function parseConditionFromText(text: string | null | undefined): Conditi
     }
   }
 
-  const insert = detectInsert(raw);
-  const { score, faixa } = scoreCondition(media, sleeve);
-  const source: ConditionSource = media || sleeve ? "regex" : "indefinido";
-  return { media, sleeve, insert, score, faixa, source, raw };
+  const insert = detectInsert(rawTrim);
+  const { media: m, sleeve: s, score, faixa } = scoreCondition(media, sleeve);
+  const source: ConditionSource = m || s ? "regex" : "indefinido";
+  return { media: m, sleeve: s, insert, score, faixa, source, raw: rawTrim };
 }

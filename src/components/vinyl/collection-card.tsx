@@ -68,36 +68,41 @@ export function CollectionCard({
               Pago {item.wonPrice}
             </span>
           ) : null}
-          {item.conditionMedia ? (
-            <span
-              className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground"
-              title="Estado da mídia"
-            >
-              Mídia {item.conditionMedia}
-            </span>
-          ) : null}
-          {item.conditionSleeve ? (
-            <span
-              className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground"
-              title="Estado da capa"
-            >
-              Capa {item.conditionSleeve}
-            </span>
-          ) : null}
-          {/* Faixa/Score Final derivados dos graus (Disco × Capa). */}
+          {/* Mídia/Capa/Faixa/Score, com a regra padrão do app: só um lado conhecido → o
+              outro é ESPELHADO com o mesmo grau (nunca fica "só Mídia" ou "só Capa"). */}
           {(() => {
-            const { score, faixa } = scoreCondition(
+            const { media, sleeve, score, faixa } = scoreCondition(
               normalizeGrade(item.conditionMedia),
               normalizeGrade(item.conditionSleeve),
             );
-            return score !== null && faixa ? (
-              <span
-                className={`rounded px-1.5 py-0.5 font-semibold ${scoreTone(score)}`}
-                title={`Score Final ${score} — ${faixa.full}`}
-              >
-                {faixa.label} · {score}
-              </span>
-            ) : null;
+            return (
+              <>
+                {media ? (
+                  <span
+                    className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground"
+                    title="Estado da mídia"
+                  >
+                    Mídia {media}
+                  </span>
+                ) : null}
+                {sleeve ? (
+                  <span
+                    className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground"
+                    title="Estado da capa"
+                  >
+                    Capa {sleeve}
+                  </span>
+                ) : null}
+                {score !== null && faixa ? (
+                  <span
+                    className={`rounded px-1.5 py-0.5 font-semibold ${scoreTone(score)}`}
+                    title={`Score Final ${score} — ${faixa.full}`}
+                  >
+                    {faixa.label} · {score}
+                  </span>
+                ) : null}
+              </>
+            );
           })()}
         </div>
 
