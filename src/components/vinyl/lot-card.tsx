@@ -145,15 +145,17 @@ export function LotCard({
             <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
               {aiLabel}
             </p>
-            <p
-              className="line-clamp-2 text-xs leading-snug text-muted-foreground"
-              title={lot.title}
-            >
+            {/* Título original: alguns leiloeiros colocam a descrição INTEIRA do lote aqui (o
+                site guarda o texto completo no atributo de tooltip do card) — em vez de cortar
+                com reticências, damos 2 linhas de altura e deixamos rolar para ler o resto. */}
+            <div className="h-8 overflow-y-auto text-xs leading-snug text-muted-foreground">
               {lot.title}
-            </p>
+            </div>
           </div>
         ) : (
-          <p className="line-clamp-3 text-sm leading-snug text-foreground">{lot.title}</p>
+          <div className="h-10 overflow-y-auto text-sm leading-snug text-foreground">
+            {lot.title}
+          </div>
         )}
         {ai?.tags?.length ? <LotTags tags={ai.tags} onEdit={onEditTags} /> : null}
         <div className="mt-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

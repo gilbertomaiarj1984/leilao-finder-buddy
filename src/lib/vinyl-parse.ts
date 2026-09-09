@@ -37,6 +37,27 @@ const VINYL_HINTS = [
 
 const NON_VINYL_HINTS = ["cd ", " cd", "dvd", "blu-ray", "fita k7", "k7", "cassete", "cassette"];
 
+/**
+ * Decodifica entidades HTML de um texto vindo de atributo/markup (`&#34;`, `&amp;`, `&#xE7;`…).
+ * Algumas casas colocam a descrição completa do lote no atributo `title` do card (o tooltip
+ * do site), e o parser de HTML usado na varredura NÃO decodifica entidades de atributos — daí
+ * títulos aparecerem com `&#34;` literal em vez de `"`. Cobre nomeadas comuns + numéricas
+ * (decimais e hex), que é o que sobra depois das nomeadas.
+ */
+export function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(parseInt(dec, 10)))
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function normalize(value: string): string {
   return value
     .normalize("NFD")
