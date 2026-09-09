@@ -20,6 +20,16 @@ export function parseAuctionRef(url: string): { domain: string; idLeilao: string
   return { domain: domain.replace(/\/+$/, ""), idLeilao: m[2]! };
 }
 
+/**
+ * Categoria "Disco de Vinil" da plataforma LeilõesBR (o filtro que aparece na tela do catálogo
+ * dispara `catalogocontentload.asp?...&Tipo=129&...`). Pedindo com este `Tipo` recebemos **só
+ * vinil** — em casas GERAIS isso corta os itens aleatórios (livros, DVD, medalhas…) na origem,
+ * em vez de baixar tudo e filtrar por heurística. É um pré-filtro: se a casa não etiquetar os
+ * lotes com este Tipo (algumas casas de vinil não etiquetam), o retorno vem vazio e caímos no
+ * catálogo completo (o `looksVinyl` downstream continua sendo a última barreira).
+ */
+const VINYL_TIPO = "129";
+
 /** Dado de um lote extraído do card do catálogo da casa. */
 export type CatalogLot = {
   lote: string | null;
@@ -177,13 +187,14 @@ export function extractPecas(parsed: unknown): Record<string, unknown>[] {
 async function fetchCatalogJson(
   domain: string,
   idLeilao: string,
+  tipo = "",
 ): Promise<Map<string, CatalogLot>> {
   const map = new Map<string, CatalogLot>();
   const LIMIT = 30;
   for (let pag = 1; pag <= 80; pag++) {
     const url =
       `${domain}/templates/catalogo/asp/catalogocontentload.asp` +
-      `?leilao=${idLeilao}&pesquisa=&irpara=&Dia=&Tipo=&artista=&Srt=0` +
+      `?leilao=${idLeilao}&pesquisa=&irpara=&Dia=&Tipo=${tipo}&artista=&Srt=0&Temtotal=1` +
       `&pag=${pag}&remote=1&limit=${LIMIT}&_=${Date.now()}`;
     let raw: string;
     try {
@@ -253,6 +264,11 @@ export async function fetchCatalogData(
   domain: string,
   idLeilao: string,
 ): Promise<Map<string, CatalogLot>> {
+  // 1) Só vinil (Tipo=129): casas gerais devolvem apenas discos, cortando itens aleatórios na
+  //    origem. 2) Se vier vazio (casa não etiqueta esse Tipo), catálogo completo por JSON.
+  //    3) Fallback final: HTML server-side (template antigo).
+  const vinyl = await fetchCatalogJson(domain, idLeilao, VINYL_TIPO);
+  if (vinyl.size) return vinyl;
   const json = await fetchCatalogJson(domain, idLeilao);
   if (json.size) return json;
   return fetchCatalogHtml(domain, idLeilao);
