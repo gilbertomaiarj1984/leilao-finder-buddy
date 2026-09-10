@@ -207,10 +207,16 @@ export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): Art
     // o usuário pode afirmar que aquela venda é um disco específico. Não deleta nada; só some da
     // leitura.
     if (!saleOv && (isDiscBundle(row.title) || isDiscBundle(row.orig_text ?? ""))) continue;
-    // Coletâneas/novelas → balaio "Coletâneas, Novela e etc" (a menos de correção manual). Casa a
-    // dica no TÍTULO (coletânea/sucessos/trilha/novela) e o "artista" que é de vários intérpretes.
+    // Coletâneas/novelas → balaio "Coletâneas, Novela e etc" (a menos de correção manual). O
+    // "artista" que é de vários intérpretes (isVariousArtists) SEMPRE cai no balaio. A dica no
+    // TÍTULO ("sucessos"/"grandes sucessos"/"trilha sonora"…) só conta quando o ARTISTA ainda é
+    // genérico/desconhecido — um "Grandes Sucessos" de um artista JÁ IDENTIFICADO (ex.: "João
+    // Bosco - Os Grandes Sucessos") é uma coletânea DAQUELE artista, não uma "various artists":
+    // sem essa condição, a venda ficava presa em "Coletâneas" mesmo já sabendo o artista certo.
     const rawArtist = row.artist?.trim() || "";
-    const isComp = !saleOv && (isVariousArtists(rawArtist) || isCompilation(row.title));
+    const isComp =
+      !saleOv &&
+      (isVariousArtists(rawArtist) || (isGenericArtist(rawArtist) && isCompilation(row.title)));
     // Rótulo genérico/placeholder da CASA ("Discos5", "Discos 6", "Proposta de Lote Para
     // Leilão"…) não é nome de artista — sem isso, cada código de casa virava seu próprio balaio
     // "artista" na tela. Cai em "Não classificados" (mesmo balaio de artista vazio). "Lote"
