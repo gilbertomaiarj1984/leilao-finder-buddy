@@ -37,6 +37,19 @@ const VINYL_HINTS = [
 
 const NON_VINYL_HINTS = ["cd ", " cd", "dvd", "blu-ray", "fita k7", "k7", "cassete", "cassette"];
 
+// Colecionismo GERAL sem NADA a ver com disco (ex-libris, pin/broche, numismática, filatelia,
+// perfumaria, couro/bijuteria…) — casas que vendem de tudo às vezes colocam esses itens na
+// MESMA categoria "Disco de vinil" do site (ou o filtro `Tipo=129` não é honrado pela casa) e
+// eles entram na nossa varredura/captura por não baterem em NENHUM formato de mídia bloqueado
+// (CD/DVD/K7…). Cada item vira seu próprio "álbum" no Analytics (preço de uma coisa que não é
+// disco). Lista por CATEGORIA de colecionismo, não por marca/evento — cresce conforme aparecem
+// casos reais.
+const NON_MEDIA_COLLECTIBLE_RE =
+  /\b(ex-?libris|pin\s+de\s+lapela|broche|medalh(?:a|ao|oes|as)|moedas?|cedulas?|numismatic\w*|selos?\s+postais?|filatelic\w*|porta-?moedas|carteira\s+de\s+couro|cinto\s+de\s+couro|perfume|colonia|fragrancia|estatueta|porcelana)\b/;
+// Callout de DIMENSÃO física ("TAM: 12,4CM X 9CM") — típico de gravura/print/foto/cartão
+// postal, NUNCA de um disco (LP/compacto tem tamanho padrão, não descrito item a item).
+const PAPER_DIMENSION_RE = /\btam[.:]?\s*\d+(?:[,.]\d+)?\s*cm\s*x\b/;
+
 /**
  * Decodifica entidades HTML de um texto vindo de atributo/markup (`&#34;`, `&amp;`, `&#xE7;`…).
  * Algumas casas colocam a descrição completa do lote no atributo `title` do card (o tooltip
@@ -106,7 +119,11 @@ export function looksNonVinyl(title: string): boolean {
     t.includes("bolachao") ||
     t.includes("long play");
   if (mentionsVinyl) return false;
-  return NON_VINYL_HINTS.some((hint) => t.includes(hint));
+  return (
+    NON_VINYL_HINTS.some((hint) => t.includes(hint)) ||
+    NON_MEDIA_COLLECTIBLE_RE.test(t) ||
+    PAPER_DIMENSION_RE.test(t)
+  );
 }
 
 // Sinal FORTE de vinil (formato explícito) — "disco" sozinho NÃO conta (DVD também é "disco").
@@ -119,14 +136,19 @@ const NON_VINYL_SALE_RE =
 
 /**
  * No contexto de VENDAS/Analytics: true quando o lote é claramente de OUTRO formato
- * (DVD, HQ/gibi, revista, livro, K7, VHS…) e NÃO há sinal forte de vinil no texto. Mais
+ * (DVD, HQ/gibi, revista, livro, K7, VHS…), de colecionismo geral sem nada a ver com disco
+ * (ex-libris, pin, numismática, perfumaria, couro…) ou traz callout de DIMENSÃO física
+ * ("TAM: 12,4CM X 9CM", típico de gravura/print) — e NÃO há sinal forte de vinil no texto. Mais
  * rígido que `looksNonVinyl`: aqui "disco" sozinho não salva o lote (um DVD também é "disco").
- * Serve para EXCLUIR do histórico o que caiu por engano (ex.: grupos "2 dvds", "hqs").
+ * Serve para EXCLUIR do histórico o que caiu por engano (ex.: grupos "2 dvds", "hqs", itens de
+ * colecionismo geral que a casa lista na mesma categoria "Disco de vinil").
  */
 export function looksNonVinylSale(text: string): boolean {
   const t = ` ${normalize(text)} `;
   if (VINYL_STRONG_RE.test(t)) return false;
-  return NON_VINYL_SALE_RE.test(t);
+  return (
+    NON_VINYL_SALE_RE.test(t) || NON_MEDIA_COLLECTIBLE_RE.test(t) || PAPER_DIMENSION_RE.test(t)
+  );
 }
 
 /**

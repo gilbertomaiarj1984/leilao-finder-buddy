@@ -6,6 +6,7 @@ import {
   ANALYTICS_COMPILATION_LABEL,
   isCompilation,
   isDiscBundle,
+  isGenericArtist,
   isVariousArtists,
   LOTE_LABEL,
   looksNonVinylSale,
@@ -210,9 +211,15 @@ export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): Art
     // dica no TÍTULO (coletânea/sucessos/trilha/novela) e o "artista" que é de vários intérpretes.
     const rawArtist = row.artist?.trim() || "";
     const isComp = !saleOv && (isVariousArtists(rawArtist) || isCompilation(row.title));
+    // Rótulo genérico/placeholder da CASA ("Discos5", "Discos 6", "Proposta de Lote Para
+    // Leilão"…) não é nome de artista — sem isso, cada código de casa virava seu próprio balaio
+    // "artista" na tela. Cai em "Não classificados" (mesmo balaio de artista vazio). "Lote"
+    // fica de fora: já tem balaio próprio (`LOTE_LABEL`) para os lotes ainda não ocultados.
+    const isJunkArtist =
+      !saleOv && !isComp && rawArtist !== LOTE_LABEL && isGenericArtist(rawArtist);
     const artist =
       saleOv?.artist?.trim() ||
-      (isComp ? ANALYTICS_COMPILATION_LABEL : rawArtist) ||
+      (isComp ? ANALYTICS_COMPILATION_LABEL : isJunkArtist ? UNCLASSIFIED_LABEL : rawArtist) ||
       UNCLASSIFIED_LABEL;
     const album = saleOv?.album?.trim() || deriveAlbum(row.title, artist);
     // Chave ORIGINAL do artista (antes de qualquer apelido) — guardada p/ persistir fusões.
