@@ -352,15 +352,24 @@ export function isDiscBundle(title: string): boolean {
   return false;
 }
 
+// "Grandes Sucessos de X" / "Sucessos de X" / "As Melhores de X" / "O Melhor de X" — um "best
+// of" de UM artista específico, não uma coletânea de vários intérpretes. Sem isso, o "de X" no
+// FIM do título (sem separador "-") nunca chegava a ser tentado como candidato: a checagem de
+// UNCLASSIFIED_HINTS batia em "sucessos"/"melhores" antes de olhar pro nome depois do "de".
+const COMPILATION_TAIL_RE =
+  /\b(?:grandes\s+sucessos|sucessos|as\s+melhores|melhores|o\s+melhor)\s+d[eo]\s+(.+)$/i;
+
+// "Sucessos de OURO/PRATA/ÉPOCA…" é o NOME DA SÉRIE de coletânea (tipo "Golden Hits"), não um
+// artista chamado "Ouro" — sem essa trava, o padrão acima promoveria o qualificador a "artista".
+const COMPILATION_SERIES_QUALIFIERS = new Set(["ouro", "prata", "bronze", "platina", "epoca"]);
+
 /**
  * Best-effort artist extraction from a lot title. Returns `LOTE_LABEL` for lots that are a
  * bundle of several discs, and "" when the title looks like a compilation / soundtrack or
  * no artist can be isolated.
  */
 export function extractArtist(title: string): string {
-  const normalized = normalize(title);
   if (isDiscBundle(title)) return LOTE_LABEL;
-  if (UNCLASSIFIED_HINTS.some((hint) => normalized.includes(hint))) return "";
 
   let rest = title.replace(/\s+/g, " ").trim();
   let changed = true;
@@ -375,7 +384,23 @@ export function extractArtist(title: string): string {
     }
   }
 
-  // "ARTISTA - TITULO" / "ARTISTA – TITULO" / "ARTISTA: TITULO" / "ARTISTA. resto"
+  // "Grandes Sucessos de Ray Charles" → candidato = "Ray Charles" (tira o padrão ANTES do
+  // dash-split abaixo: aqui não há "-", o nome vem depois de "de/do" no fim do título). Só a
+  // PRIMEIRA palavra do resto entra na trava do qualificador de série (`.+$` é guloso e pegaria
+  // "Ouro - MPB" inteiro em "Sucessos de Ouro - MPB"; o qualificador mora sempre logo após "de").
+  const tailMatch = rest.match(COMPILATION_TAIL_RE);
+  if (tailMatch) {
+    const tail = tailMatch[1]!.trim();
+    const tailFirstWord = normalize(tail).split(/[\s\-–—]+/)[0] ?? "";
+    if (!COMPILATION_SERIES_QUALIFIERS.has(tailFirstWord)) rest = tail;
+  }
+
+  // "ARTISTA - TITULO" / "ARTISTA – TITULO" / "ARTISTA: TITULO" / "ARTISTA. resto". Um "best of"
+  // de artista identificável ("Jorge Ben Jor - Grandes Sucessos") tem candidato válido À
+  // ESQUERDA do separador mesmo com "sucessos" no título — por isso NÃO descartamos pelo título
+  // INTEIRO aqui; a checagem de coletânea roda só no CANDIDATO final (abaixo), que é o nome
+  // isolado, não a frase toda. Só falha quando não sobra um nome específico (ex.: "Grandes
+  // Sucessos" sozinho, "Trilha Sonora Novela Tieta" sem artista).
   const parts = rest.split(/\s[-–—:]\s|[-–—:](?=\s)|\s[-–—](?=\S)/);
   let candidate = (parts[0] ?? "").trim();
 
@@ -401,6 +426,11 @@ export function extractArtist(title: string): string {
   // criar um grupo espúrio "Artista" (o valor real vem da identificação da IA).
   if (LABEL_WORDS.has(normCandidate)) return "";
   if (UNCLASSIFIED_HINTS.some((hint) => normCandidate.includes(hint))) return "";
+  // Mesma trava, mas com os gatilhos de COLETÂNEA (`isCompilation`) — cobre frases como "As
+  // Melhores da MPB" que sobram como candidato inteiro (sem "-"/"de X" pra extrair um nome) e
+  // não estão em UNCLASSIFIED_HINTS: sem isso, a frase virava "artista" (ex.: "As Melhores Da
+  // Mpb"), inclusive sobrescrevendo um `isVariousArtists` já correto ao rederivar na leitura.
+  if (COMPILATION_HINTS.some((hint) => normCandidate.includes(hint))) return "";
 
   return titleCase(candidate);
 }
