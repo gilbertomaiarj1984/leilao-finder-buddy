@@ -4,6 +4,7 @@ import { type Condition, parseConditionFromText, scoreCondition } from "./gradin
 import {
   auctionFinished,
   extractArtist,
+  isDiscBundle,
   isGenericArtist,
   looksNonVinylSale,
   normalizeForMatch,
@@ -398,10 +399,13 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
       // "Various Artists", "Ao Vivo"…) — a IA extrai "Artista - Álbum" corretos do texto do
       // catálogo. O resultado é gravado em `lot_ident` (durável, reaproveitado nas próximas
       // rodadas) e aplicado à venda agora. Teto por rodada, best-effort.
+      // EXCLUI lotes CONFIRMADOS (`isDiscBundle`): o valor vendido é do CONJUNTO, então
+      // atribuí-lo a um único artista/álbum que a IA "garimpe" no texto poluiria a média —
+      // esses ficam com artista "Lote" e seguem ocultos do Analytics (`buildAnalytics`).
       if (aiOn && identUsed < AI_IDENT_CAP && rows.length) {
         const budget = AI_IDENT_CAP - identUsed;
         const candidates = rows
-          .filter((r) => isGenericArtist(r.artist))
+          .filter((r) => isGenericArtist(r.artist) && !isDiscBundle(r.title))
           .map((r) => ({ row: r, text: catalog.get(r.id_peca)?.text ?? "" }))
           .filter((c) => c.text.trim())
           .slice(0, budget);
@@ -542,9 +546,13 @@ export async function reidentifyAllSales(
   //  - POR GRUPO: vendas ainda NÃO identificadas com sucesso (álbum nulo/sem linha), RETENTANDO
   //    as que falharam antes. O alvo encolhe conforme identifica, então uma nova execução avança
   //    (a UI não roda em laço no modo por grupo — evita reprocessar eternamente as sem solução).
+  //  EXCLUI lotes CONFIRMADOS (`isDiscBundle` no texto original): o valor vendido é do CONJUNTO,
+  //  então "achar" um artista/álbum dentro do texto reescreveria a venda com o preço do lote
+  //  inteiro, reaparecendo no Analytics com um preço que não é o do álbum. Ficam com artista
+  //  "Lote" e seguem ocultos (`buildAnalytics`).
   const needAi = scope
-    ? sales.filter((s) => !albumById.has(s.lot_id) && aiInput(s))
-    : sales.filter((s) => !attempted.has(s.lot_id) && aiInput(s));
+    ? sales.filter((s) => !albumById.has(s.lot_id) && aiInput(s) && !isDiscBundle(aiInput(s)))
+    : sales.filter((s) => !attempted.has(s.lot_id) && aiInput(s) && !isDiscBundle(aiInput(s)));
   const batch = needAi.slice(0, Math.max(1, max));
   let identified = 0;
   if (aiConfigured() && batch.length) {

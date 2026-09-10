@@ -6,6 +6,7 @@ import {
   ANALYTICS_COMPILATION_LABEL,
   isCompilation,
   isDiscBundle,
+  isGenericArtist,
   isVariousArtists,
   LOTE_LABEL,
   looksNonVinylSale,
@@ -199,18 +200,26 @@ export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): Art
     // correção manual da venda ISENTA do filtro (o usuário afirmou que é um vinil).
     if (!saleOv && looksNonVinylSale(`${row.title} ${row.artist}`)) continue;
     // Oculta LOTES confirmados (conjunto de vários discos): o preço do conjunto não é preço por
-    // álbum e polui as estatísticas. A correção manual da venda (saleOv) ISENTA — o usuário pode
-    // afirmar que aquela venda é um disco específico. Não deleta nada; só some da leitura. A IA de
-    // identificação ainda garimpa artistas/coletâneas de dentro do lote (reescreve o título a
-    // partir do `orig_text`) — quando encontra, o título deixa de ser lote e a venda reaparece.
-    if (!saleOv && isDiscBundle(row.title)) continue;
+    // álbum e polui as estatísticas. Checa o TÍTULO atual e o `orig_text` (descritivo bruto do
+    // catálogo, preservado mesmo quando a reidentificação por IA reescreve o título) — sem isso,
+    // uma venda que a IA "garimpou" um artista de dentro do lote reaparecia com o preço do
+    // CONJUNTO inteiro atribuído a um único álbum. A correção manual da venda (saleOv) ISENTA —
+    // o usuário pode afirmar que aquela venda é um disco específico. Não deleta nada; só some da
+    // leitura.
+    if (!saleOv && (isDiscBundle(row.title) || isDiscBundle(row.orig_text ?? ""))) continue;
     // Coletâneas/novelas → balaio "Coletâneas, Novela e etc" (a menos de correção manual). Casa a
     // dica no TÍTULO (coletânea/sucessos/trilha/novela) e o "artista" que é de vários intérpretes.
     const rawArtist = row.artist?.trim() || "";
     const isComp = !saleOv && (isVariousArtists(rawArtist) || isCompilation(row.title));
+    // Rótulo genérico/placeholder da CASA ("Discos5", "Discos 6", "Proposta de Lote Para
+    // Leilão"…) não é nome de artista — sem isso, cada código de casa virava seu próprio balaio
+    // "artista" na tela. Cai em "Não classificados" (mesmo balaio de artista vazio). "Lote"
+    // fica de fora: já tem balaio próprio (`LOTE_LABEL`) para os lotes ainda não ocultados.
+    const isJunkArtist =
+      !saleOv && !isComp && rawArtist !== LOTE_LABEL && isGenericArtist(rawArtist);
     const artist =
       saleOv?.artist?.trim() ||
-      (isComp ? ANALYTICS_COMPILATION_LABEL : rawArtist) ||
+      (isComp ? ANALYTICS_COMPILATION_LABEL : isJunkArtist ? UNCLASSIFIED_LABEL : rawArtist) ||
       UNCLASSIFIED_LABEL;
     const album = saleOv?.album?.trim() || deriveAlbum(row.title, artist);
     // Chave ORIGINAL do artista (antes de qualquer apelido) — guardada p/ persistir fusões.
