@@ -595,7 +595,7 @@ export const getAnalyticsAliases = createServerFn({ method: "GET" })
       return await read();
     } catch (error) {
       console.error("[analytics] não foi possível ler os apelidos", error);
-      return { artists: {}, albums: {} };
+      return { artists: {}, albums: {}, sales: {} };
     }
   });
 
@@ -643,6 +643,29 @@ export const clearAnalyticsAlias = createServerFn({ method: "POST" })
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { clearAnalyticsAlias: clear } = await import("./app-state.server");
     return await clear(data.kind, data.key);
+  });
+
+/**
+ * Correção POR VENDA (aprendizado por `lot_id`): define artista/álbum de UMA venda específica —
+ * usada para separar os "(álbum não identificado)". `clear` (ou artista+álbum vazios) remove a
+ * correção (volta ao automático).
+ */
+export const setAnalyticsSaleOverride = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: { lotId?: unknown; artist?: unknown; album?: unknown; clear?: unknown }) => ({
+      lotId: typeof input?.lotId === "string" ? input.lotId : "",
+      artist: typeof input?.artist === "string" ? input.artist.trim() : "",
+      album: typeof input?.album === "string" ? input.album.trim() : "",
+      clear: input?.clear === true,
+    }),
+  )
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setAnalyticsSaleOverride: save } = await import("./app-state.server");
+    const value = data.clear ? null : { artist: data.artist, album: data.album };
+    return await save(data.lotId, value);
   });
 
 /** Âncora de mercado do Discogs por lote (preço/demanda). Best-effort: [] em erro. */

@@ -224,6 +224,7 @@ CREATE TABLE IF NOT EXISTS public.lot_sales (
   bids           integer,
   fee_pct        numeric,
   initial_price  numeric,
+  orig_text      text NOT NULL DEFAULT '',        -- descritivo completo do catálogo (texto original)
   captured_at    timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS lot_sales_artist_idx ON public.lot_sales (artist);
@@ -233,6 +234,8 @@ ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS views         integer;
 ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS bids          integer;
 ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS fee_pct       numeric;
 ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS initial_price numeric;
+-- Texto original completo do card do catálogo (preservado após a reidentificação por IA).
+ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS orig_text     text NOT NULL DEFAULT '';
 
 -- ---------------------------------------------------------------------
 -- collection_items

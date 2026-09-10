@@ -32,6 +32,7 @@ export type SaleRow = {
   bids?: number | null; // demanda (lances)
   fee_pct?: number | null; // taxa do leiloeiro (%)
   initial_price?: number | null; // valor inicial (p/ desconto/ágio)
+  orig_text?: string | null; // descritivo completo do catálogo (texto original do lote)
 };
 
 export type FaixaAgg = { label: string; count: number; avgPrice: number | null };
@@ -62,9 +63,14 @@ export type ArtistAgg = {
  * CHAVE normalizada de origem para o nome canônico escolhido; renomear e fundir são o mesmo
  * mecanismo (chaves diferentes apontando para o mesmo nome caem no mesmo grupo).
  */
+export type SaleOverride = { artist?: string; album?: string };
+
 export type AnalyticsAliases = {
   artists?: Record<string, string>;
   albums?: Record<string, string>;
+  // Correção POR VENDA (por `lot_id`): fixa artista/álbum de uma venda específica, aplicada
+  // ANTES da derivação/agrupamento (separa os "(álbum não identificado)").
+  sales?: Record<string, SaleOverride>;
 };
 
 /** Média (arredondada) de uma lista, ignorando nulos; null quando não há número. */
@@ -167,13 +173,18 @@ type ArtistBucket = {
 export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): ArtistAgg[] {
   const artistAliases = aliases?.artists ?? {};
   const albumAliases = aliases?.albums ?? {};
+  const saleOverrides = aliases?.sales ?? {};
   const byArtist = new Map<string, ArtistBucket>();
   for (const row of rows) {
+    // Correção POR VENDA (por `lot_id`): tem precedência sobre a derivação automática. Fixa o
+    // artista e/ou o álbum desta venda específica (usada para separar os não identificados).
+    const saleOv = saleOverrides[row.lot_id];
     // Exclui do Analytics o que caiu por engano de OUTRO formato (DVD/HQ/revista/livro…),
-    // limpando também as linhas já gravadas antes deste filtro — sem precisar re-capturar.
-    if (looksNonVinylSale(`${row.title} ${row.artist}`)) continue;
-    const artist = row.artist?.trim() || UNCLASSIFIED_LABEL;
-    const album = deriveAlbum(row.title, artist);
+    // limpando também as linhas já gravadas antes deste filtro — sem precisar re-capturar. A
+    // correção manual da venda ISENTA do filtro (o usuário afirmou que é um vinil).
+    if (!saleOv && looksNonVinylSale(`${row.title} ${row.artist}`)) continue;
+    const artist = saleOv?.artist?.trim() || row.artist?.trim() || UNCLASSIFIED_LABEL;
+    const album = saleOv?.album?.trim() || deriveAlbum(row.title, artist);
     // Chave ORIGINAL do artista (antes de qualquer apelido) — guardada p/ persistir fusões.
     const rawArtistKey = normalizeForMatch(artist) || normalizeForMatch(UNCLASSIFIED_LABEL);
     // Apelido de artista (renomear/fundir): re-chaveia pelo nome canônico escolhido.
