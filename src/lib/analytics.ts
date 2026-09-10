@@ -3,6 +3,10 @@
 // por Faixa de Classificação. A casa de leilão é irrelevante aqui.
 import { FAIXAS, faixaFromScore } from "@/lib/grading";
 import {
+  ANALYTICS_COMPILATION_LABEL,
+  isCompilation,
+  isDiscBundle,
+  isVariousArtists,
   LOTE_LABEL,
   looksNonVinylSale,
   normalizeForMatch,
@@ -132,8 +136,9 @@ function faixasFor(sales: SaleRow[]): FaixaAgg[] {
 }
 
 function artistRank(artist: string): number {
-  if (artist === UNCLASSIFIED_LABEL) return 2;
-  if (artist === LOTE_LABEL) return 1;
+  if (artist === UNCLASSIFIED_LABEL) return 3;
+  if (artist === LOTE_LABEL) return 2;
+  if (artist === ANALYTICS_COMPILATION_LABEL) return 1;
   return 0;
 }
 
@@ -183,7 +188,20 @@ export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): Art
     // limpando também as linhas já gravadas antes deste filtro — sem precisar re-capturar. A
     // correção manual da venda ISENTA do filtro (o usuário afirmou que é um vinil).
     if (!saleOv && looksNonVinylSale(`${row.title} ${row.artist}`)) continue;
-    const artist = saleOv?.artist?.trim() || row.artist?.trim() || UNCLASSIFIED_LABEL;
+    // Oculta LOTES confirmados (conjunto de vários discos): o preço do conjunto não é preço por
+    // álbum e polui as estatísticas. A correção manual da venda (saleOv) ISENTA — o usuário pode
+    // afirmar que aquela venda é um disco específico. Não deleta nada; só some da leitura. A IA de
+    // identificação ainda garimpa artistas/coletâneas de dentro do lote (reescreve o título a
+    // partir do `orig_text`) — quando encontra, o título deixa de ser lote e a venda reaparece.
+    if (!saleOv && isDiscBundle(row.title)) continue;
+    // Coletâneas/novelas → balaio "Coletâneas, Novela e etc" (a menos de correção manual). Casa a
+    // dica no TÍTULO (coletânea/sucessos/trilha/novela) e o "artista" que é de vários intérpretes.
+    const rawArtist = row.artist?.trim() || "";
+    const isComp = !saleOv && (isVariousArtists(rawArtist) || isCompilation(row.title));
+    const artist =
+      saleOv?.artist?.trim() ||
+      (isComp ? ANALYTICS_COMPILATION_LABEL : rawArtist) ||
+      UNCLASSIFIED_LABEL;
     const album = saleOv?.album?.trim() || deriveAlbum(row.title, artist);
     // Chave ORIGINAL do artista (antes de qualquer apelido) — guardada p/ persistir fusões.
     const rawArtistKey = normalizeForMatch(artist) || normalizeForMatch(UNCLASSIFIED_LABEL);

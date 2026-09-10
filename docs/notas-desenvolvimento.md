@@ -340,6 +340,26 @@ Visão de mercado por obra, independente da casa de leilão, sobre o histórico 
   Por grupo, só grava os SUCESSOS em `lot_ident` (não rebaixa uma identificação a nulo). Server fn
   `reidentifySales` aceita `lotIds` (cap maior, chamada única — a UI não roda em laço no modo por
   grupo, evitando reprocessar eternamente os sem solução); ao terminar, invalida `["vinyl-sales"]`.
+- **Lotes ocultos + balaio de coletâneas/novelas (v0.45.0):** limpeza dos balaios-lixo do
+  Analytics ("Lote", códigos de casa tipo "Discos5"/"Discos 6", "Proposta de Lote Para Leilão").
+  Aplicado na **leitura** (`buildAnalytics`, sobre o histórico já gravado, sem re-capturar nem
+  deletar):
+  - **Lotes confirmados somem:** venda cujo TÍTULO é um conjunto de discos (`isDiscBundle`) é
+    **ocultada** (preço de conjunto não é preço por álbum). A **correção manual por venda**
+    (`analytics_sale_overrides`) ISENTA. Nada é apagado do banco — a captura **continua gravando**
+    os lotes (com `orig_text`), que é o que permite a IA garimpar artista/coletânea de dentro do
+    lote; quando a IA reescreve o título para "Artista - Álbum", ele deixa de ser lote e a venda
+    **reaparece** no lugar certo.
+  - **Coletâneas e novelas → balaio `ANALYTICS_COMPILATION_LABEL` = "Coletâneas, Novela e etc"**
+    (`vinyl-parse.ts`): quando o TÍTULO indica coletânea/sucessos/trilha/novela (`isCompilation`)
+    ou o "artista" é de vários intérpretes (`isVariousArtists`). O nome casa (por
+    `normalizeForMatch`) com o balaio que o usuário já criou na curadoria → funde no MESMO grupo.
+    Ordena junto dos especiais (`artistRank`: reais → coletâneas → Lote → não classificados).
+  - **`isGenericArtist` reconhece os balaios-lixo** (`Discos\d+`, "proposta de lote"/"lote para
+    leilao") além de "lote": assim a IA de identificação (captura + botões por grupo) passa a
+    **mirá-los** para desvendar o artista/coletânea real. Os balaios continuam **visíveis** até a
+    IA rodar (o usuário clica "IA" em cada um); confirmando-se lote, o filtro de `isDiscBundle`
+    oculta.
 
 ## Valores do lote: atual / próximo / meu lance
 
@@ -806,6 +826,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.32.1        | **Fix da segmentação do catálogo** — cada lote repete o link `peca.asp?ID=` no card (imagem + título), então o "pedaço" do lote passou a ir até o 1º link de um id **diferente** (o próximo card), não até o próximo link. Antes ficava truncado ANTES do "Valor de venda"/"Lote vendido"/descritivo → capturava 0 vendas e estado vazio. `?step=sales&reset=1` (`clearSalesCaptured`) re-captura após o ajuste                                                                                                                                                             | —       |
 | v0.32.0        | **Estado (Disco/Capa) nos cards PRÉ-leilão** (`lot_condition`) — `enrichConditions` busca o catálogo (1 req/leilão) e parseia o descritivo do tooltip, cacheando por lote (`source` catalog/title/indefinido; re-avalia por `title_hash`); cron `step=condition` + `refresh.yml`; `getLotCondition` e o resolver `conditionFor` no `index.tsx` passam a **priorizar o cache** (fallback ao título). Nova tabela `lot_condition` (migration+setup+types). **Diagnóstico** `step=salesdebug` (`debugSales`) para sinais crus do catálogo quando `sales` volta 0                                                                                          | —       |
 | v0.44.2        | **Roadmap de novos provedores de IA** (só doc): avaliação do proxy local `freellmapi` (descartado) + lista ranqueada de provedores a acrescentar à camada plugável (OpenRouter/Groq/Mistral + menções) e a alavanca do adaptador OpenAI-compatible genérico                                                                                                                                                                                                                                                          | #127    |
+| v0.45.0        | **Analytics: oculta lotes + balaio de coletâneas/novelas** — na leitura (`buildAnalytics`, sobre o histórico já gravado, sem re-capturar/deletar): venda cujo título é conjunto de discos (`isDiscBundle`) é **ocultada** (correção manual por venda ISENTA; captura continua gravando p/ a IA garimpar dentro do lote); coletâneas/novelas (`isCompilation`/`isVariousArtists`) vão para o balaio **"Coletâneas, Novela e etc"** (`ANALYTICS_COMPILATION_LABEL`, funde por `normalizeForMatch` com o balaio criado na curadoria); `isGenericArtist` passa a reconhecer `Discos\d+`/"proposta de lote" → a IA de identificação mira esses balaios | —       |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.

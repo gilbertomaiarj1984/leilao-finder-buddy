@@ -190,6 +190,19 @@ export const LOTE_LABEL = "Lote";
 /** Rótulo/sentinela do "artista" para coletâneas (vários artistas, sucessos, trilhas). */
 export const COMPILATION_LABEL = "Coletâneas";
 
+/**
+ * Balaio do Vinil Analytics para onde vão coletâneas e novelas (curadoria do usuário). O nome
+ * casa com o balaio criado à mão via curadoria — como o agrupamento é por `normalizeForMatch`,
+ * pequenas diferenças de grafia caem no MESMO grupo.
+ */
+export const ANALYTICS_COMPILATION_LABEL = "Coletâneas, Novela e etc";
+
+// "Artistas" que na verdade são um balaio de LOTE/lixo de catálogo (não um nome real): o próprio
+// "Lote", códigos de casa tipo "Discos5"/"Discos 6" e placeholders de pregão ("Proposta de Lote
+// Para Leilão"). Já normalizados (sem acento/caixa/pontuação). Alvo da IA de identificação.
+const JUNK_ARTIST_RE = /^discos?\s*\d+$/;
+const LOTE_PLACEHOLDER_HINTS = ["proposta de lote", "lote para leilao"];
+
 // Sinais no TÍTULO de que o disco é uma coletânea (vários artistas / sucessos / trilha /
 // novela), e não o álbum de um artista específico. Normalizados (sem acento, minúsculo).
 const COMPILATION_HINTS = [
@@ -401,6 +414,8 @@ export function isGenericArtist(artist: string | null | undefined): boolean {
   if (!a) return true; // vazio → agrupa em "não classificados"
   if (a.includes("|")) return true; // resto de "X | Código"
   if (GENERIC_ARTISTS.has(a)) return true;
+  if (JUNK_ARTIST_RE.test(a)) return true; // "Discos5", "Discos 6" (código de casa, não artista)
+  if (LOTE_PLACEHOLDER_HINTS.some((hint) => a.includes(hint))) return true; // placeholder de lote
   // Rótulo/dica de coletânea como o texto inteiro (não um nome de artista).
   if (UNCLASSIFIED_HINTS.some((hint) => a === hint)) return true;
   return false;
