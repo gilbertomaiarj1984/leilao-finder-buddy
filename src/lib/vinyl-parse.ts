@@ -310,7 +310,10 @@ export function extractArtist(title: string): string {
 
   const normCandidate = normalize(candidate);
   if (!normCandidate) return "";
-  if (normCandidate.length < 3) return "";
+  // Nomes muito curtos são ruído (siglas, "lp", "cd"…) — MAS aceita os curtos com dígito, que são
+  // artistas reais ("U2", "U4", "B52"): 1 caractere nunca; 2 caracteres só quando há um dígito.
+  if (normCandidate.length < 2) return "";
+  if (normCandidate.length < 3 && !/\d/.test(normCandidate)) return "";
   if (normCandidate.split(" ").length > 5) return "";
   if (/^\d+$/.test(normCandidate)) return "";
   // Títulos no formato "LP: Artista: X | Album: Y" deixam o rótulo "Artista"/"Álbum"
