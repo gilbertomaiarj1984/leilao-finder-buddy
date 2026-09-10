@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { BidStatBadges, HouseStatBadges } from "@/components/vinyl/badges";
+import { AuctionStatusInline, BidStatBadges, HouseStatBadges } from "@/components/vinyl/badges";
 import { BidHouseSections, type BidCard } from "@/components/vinyl/bid-house-sections";
 import { ArtistFilter, PriceFilter } from "@/components/vinyl/filters";
 import {
@@ -45,6 +45,7 @@ import {
   groupByHouse,
   groupWatchedByHouse,
   houseAnchor,
+  houseAuctionInfo,
   matchesPriceRange,
   watchedDateToKey,
   watchedMatchesSearch,
@@ -1417,63 +1418,80 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                       </p>
                     ) : (
                       <div className="space-y-8">
-                        {watchedByHouse.map((houseGroup) => (
-                          <section key={houseGroup.house} className="space-y-3">
-                            <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
-                              <h2 className="text-xl font-semibold tracking-tight text-foreground">
-                                {houseGroup.house}
-                              </h2>
-                              <Badge variant="secondary">{houseGroup.lots.length} lote(s)</Badge>
-                              <HouseStatBadges
-                                stats={computeHouseStats(
-                                  houseGroup.lots,
-                                  watchedIds,
-                                  bidStatusById,
-                                )}
-                              />
-                              <a
-                                className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                href={houseGroup.houseUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                site da casa <ExternalLink className="h-3 w-3" />
-                              </a>
-                            </div>
-                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                              {houseGroup.lots.map((lot) => (
-                                <LotCard
-                                  key={lot.id}
-                                  lot={{
-                                    ...lot,
-                                    dayKey: lot.date,
-                                    watched: true,
-                                    myBid: myBidById.get(lot.idPeca),
-                                    nextBid: nextBidById.get(lot.idPeca),
-                                  }}
-                                  busy={pending === lot.idPeca}
-                                  ai={aiFor(lot)}
-                                  market={marketFor(lot)}
-                                  album={albumFor(lot)}
-                                  condition={conditionFor(lot)}
-                                  demand={demandFor(lot)}
-                                  owned={ownedFor(lot)}
-                                  onOpenOwned={() => setOwnedPanelLot(lot)}
-                                  onEditTags={editTags(lot.id)}
-                                  bidStatus={bidStatusById.get(lot.idPeca)}
-                                  onToggle={() =>
-                                    toggle.mutate({
-                                      idPeca: lot.idPeca,
-                                      idLeilao: lot.idLeilao,
-                                      base: lot.base,
-                                      watch: false,
-                                    })
-                                  }
+                        {watchedByHouse.map((houseGroup) => {
+                          const auctionInfo = houseAuctionInfo(day, houseGroup.lots[0]);
+                          return (
+                            <section key={houseGroup.house} className="space-y-3">
+                              <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
+                                <h2 className="text-xl font-semibold tracking-tight text-foreground">
+                                  {houseGroup.house}
+                                </h2>
+                                <Badge variant="secondary">{houseGroup.lots.length} lote(s)</Badge>
+                                <HouseStatBadges
+                                  stats={computeHouseStats(
+                                    houseGroup.lots,
+                                    watchedIds,
+                                    bidStatusById,
+                                  )}
                                 />
-                              ))}
-                            </div>
-                          </section>
-                        ))}
+                                <AuctionStatusInline info={auctionInfo} />
+                                <div className="ml-auto flex flex-wrap items-center gap-3">
+                                  {auctionInfo?.presencialUrl ? (
+                                    <a
+                                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                      href={auctionInfo.presencialUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      title="Acompanhar o pregão presencial desta casa"
+                                    >
+                                      <Radio className="h-3 w-3" /> pregão presencial
+                                    </a>
+                                  ) : null}
+                                  <a
+                                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                    href={houseGroup.houseUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    site da casa <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                </div>
+                              </div>
+                              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                {houseGroup.lots.map((lot) => (
+                                  <LotCard
+                                    key={lot.id}
+                                    lot={{
+                                      ...lot,
+                                      dayKey: lot.date,
+                                      watched: true,
+                                      myBid: myBidById.get(lot.idPeca),
+                                      nextBid: nextBidById.get(lot.idPeca),
+                                    }}
+                                    busy={pending === lot.idPeca}
+                                    ai={aiFor(lot)}
+                                    market={marketFor(lot)}
+                                    album={albumFor(lot)}
+                                    condition={conditionFor(lot)}
+                                    demand={demandFor(lot)}
+                                    owned={ownedFor(lot)}
+                                    onOpenOwned={() => setOwnedPanelLot(lot)}
+                                    onEditTags={editTags(lot.id)}
+                                    bidStatus={bidStatusById.get(lot.idPeca)}
+                                    onToggle={() =>
+                                      toggle.mutate({
+                                        idPeca: lot.idPeca,
+                                        idLeilao: lot.idLeilao,
+                                        base: lot.base,
+                                        watch: false,
+                                      })
+                                    }
+                                  />
+                                ))}
+                              </div>
+                            </section>
+                          );
+                        })}
                       </div>
                     )
                   ) : isBidsView ? (
@@ -1837,64 +1855,81 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                 {dayLots.length} lote(s) vigiado(s) em {houses.length} casa(s)
                               </span>
                             </div>
-                            {houses.map((houseGroup) => (
-                              <section key={houseGroup.house} className="space-y-3">
-                                <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
-                                  <h2 className="text-xl font-semibold tracking-tight text-foreground">
-                                    {houseGroup.house}
-                                  </h2>
-                                  <Badge variant="secondary">
-                                    {houseGroup.lots.length} lote(s)
-                                  </Badge>
-                                  <HouseStatBadges
-                                    stats={computeHouseStats(
-                                      houseGroup.lots,
-                                      watchedIds,
-                                      bidStatusById,
-                                    )}
-                                  />
-                                  <a
-                                    className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                    href={houseGroup.houseUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    site da casa <ExternalLink className="h-3 w-3" />
-                                  </a>
-                                </div>
-                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                  {houseGroup.lots.map((lot) => (
-                                    <LotCard
-                                      key={lot.id}
-                                      lot={{
-                                        ...lot,
-                                        dayKey: lot.date,
-                                        watched: true,
-                                        myBid: myBidById.get(lot.idPeca),
-                                      }}
-                                      busy={pending === lot.idPeca}
-                                      ai={aiFor(lot)}
-                                      market={marketFor(lot)}
-                                      album={albumFor(lot)}
-                                      condition={conditionFor(lot)}
-                                      demand={demandFor(lot)}
-                                      owned={ownedFor(lot)}
-                                      onOpenOwned={() => setOwnedPanelLot(lot)}
-                                      onEditTags={editTags(lot.id)}
-                                      bidStatus={bidStatusById.get(lot.idPeca)}
-                                      onToggle={() =>
-                                        toggle.mutate({
-                                          idPeca: lot.idPeca,
-                                          idLeilao: lot.idLeilao,
-                                          base: lot.base,
-                                          watch: false,
-                                        })
-                                      }
+                            {houses.map((houseGroup) => {
+                              const auctionInfo = houseAuctionInfo(dayKey, houseGroup.lots[0]);
+                              return (
+                                <section key={houseGroup.house} className="space-y-3">
+                                  <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
+                                    <h2 className="text-xl font-semibold tracking-tight text-foreground">
+                                      {houseGroup.house}
+                                    </h2>
+                                    <Badge variant="secondary">
+                                      {houseGroup.lots.length} lote(s)
+                                    </Badge>
+                                    <HouseStatBadges
+                                      stats={computeHouseStats(
+                                        houseGroup.lots,
+                                        watchedIds,
+                                        bidStatusById,
+                                      )}
                                     />
-                                  ))}
-                                </div>
-                              </section>
-                            ))}
+                                    <AuctionStatusInline info={auctionInfo} />
+                                    <div className="ml-auto flex flex-wrap items-center gap-3">
+                                      {auctionInfo?.presencialUrl ? (
+                                        <a
+                                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                          href={auctionInfo.presencialUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          title="Acompanhar o pregão presencial desta casa"
+                                        >
+                                          <Radio className="h-3 w-3" /> pregão presencial
+                                        </a>
+                                      ) : null}
+                                      <a
+                                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                        href={houseGroup.houseUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                      >
+                                        site da casa <ExternalLink className="h-3 w-3" />
+                                      </a>
+                                    </div>
+                                  </div>
+                                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                    {houseGroup.lots.map((lot) => (
+                                      <LotCard
+                                        key={lot.id}
+                                        lot={{
+                                          ...lot,
+                                          dayKey: lot.date,
+                                          watched: true,
+                                          myBid: myBidById.get(lot.idPeca),
+                                        }}
+                                        busy={pending === lot.idPeca}
+                                        ai={aiFor(lot)}
+                                        market={marketFor(lot)}
+                                        album={albumFor(lot)}
+                                        condition={conditionFor(lot)}
+                                        demand={demandFor(lot)}
+                                        owned={ownedFor(lot)}
+                                        onOpenOwned={() => setOwnedPanelLot(lot)}
+                                        onEditTags={editTags(lot.id)}
+                                        bidStatus={bidStatusById.get(lot.idPeca)}
+                                        onToggle={() =>
+                                          toggle.mutate({
+                                            idPeca: lot.idPeca,
+                                            idLeilao: lot.idLeilao,
+                                            base: lot.base,
+                                            watch: false,
+                                          })
+                                        }
+                                      />
+                                    ))}
+                                  </div>
+                                </section>
+                              );
+                            })}
                           </section>
                         );
                       })}

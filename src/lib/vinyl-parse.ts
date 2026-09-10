@@ -607,6 +607,33 @@ export function auctionFinished(
   return start !== null && now - start >= graceHours * 60 * 60 * 1000;
 }
 
+/**
+ * Extrai domínio da casa + idLeilao do link do lote
+ * (`abre_catalogo.asp?t=1|<domínio>|<idLeilao>|<idPeca>`). Fonte única — usada tanto no
+ * catálogo (servidor, nº do lote/vendas) quanto no link do pregão presencial (cliente).
+ */
+export function parseAuctionRef(url: string): { domain: string; idLeilao: string } | null {
+  const m = url.match(/abre_catalogo\.asp\?t=\d+\|([^|]+)\|(\d+)\|(\d+)/i);
+  if (!m) return null;
+  let domain = (m[1] ?? "").trim();
+  if (!domain) return null;
+  if (!/^https?:/i.test(domain)) domain = `http://${domain}`;
+  return { domain: domain.replace(/\/+$/, ""), idLeilao: m[2]! };
+}
+
+/**
+ * URL do pregão presencial da casa a partir do link do lote:
+ * `<domínio>/presencial/presencial.asp?Num=<idLeilao>`. `null` para casas fora do padrão
+ * LeilõesBR (o link não casa `parseAuctionRef`).
+ */
+export function presencialUrlFrom(entryUrl: string | null | undefined): string | null {
+  if (!entryUrl) return null;
+  const ref = parseAuctionRef(entryUrl);
+  if (!ref) return null;
+  const domain = ref.domain.replace(/^http:/i, "https:");
+  return `${domain}/presencial/presencial.asp?Num=${ref.idLeilao}`;
+}
+
 // --- Base de nomes conhecidos (reforço da classificação de artista) ---
 
 /** Normalização para casar nomes: remove acentos e pontuação, baixa a caixa. */

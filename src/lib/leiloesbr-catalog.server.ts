@@ -11,15 +11,11 @@ import { decodeHtmlEntities } from "./vinyl-parse";
  * O MESMO catálogo, DEPOIS do leilão, traz o **valor de venda** de cada lote — então
  * a captura de vendas (histórico) reaproveita esta varredura por leilão, sem ir lote a
  * lote na `peca.asp`. Ver `parseCatalogData`/`fetchCatalogData` abaixo.
+ *
+ * `parseAuctionRef` mora em `vinyl-parse.ts` (puro/client-safe) — também usado pelo
+ * cliente para montar o link do pregão presencial ao lado da casa em Vigiados.
  */
-export function parseAuctionRef(url: string): { domain: string; idLeilao: string } | null {
-  const m = url.match(/abre_catalogo\.asp\?t=\d+\|([^|]+)\|(\d+)\|(\d+)/i);
-  if (!m) return null;
-  let domain = (m[1] ?? "").trim();
-  if (!domain) return null;
-  if (!/^https?:/i.test(domain)) domain = `http://${domain}`;
-  return { domain: domain.replace(/\/+$/, ""), idLeilao: m[2]! };
-}
+export { parseAuctionRef } from "./vinyl-parse";
 
 /**
  * Categoria "Disco de Vinil" da plataforma LeilõesBR (o filtro que aparece na tela do catálogo
