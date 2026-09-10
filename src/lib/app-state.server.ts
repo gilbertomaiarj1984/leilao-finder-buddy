@@ -23,6 +23,8 @@ const SALES_CAPTURED_KEY = "sales_captured";
 const ANALYTICS_ARTIST_ALIASES_KEY = "analytics_artist_aliases";
 const ANALYTICS_ALBUM_ALIASES_KEY = "analytics_album_aliases";
 const ANALYTICS_SALE_OVERRIDES_KEY = "analytics_sale_overrides";
+const ANALYTICS_EXCLUDED_SALES_KEY = "analytics_excluded_sales";
+const ANALYTICS_EXCLUDED_ARTISTS_KEY = "analytics_excluded_artists";
 
 /**
  * Casas de leilão marcadas como "verificadas" (chaves `${dia}|${casa}`). Global, um
@@ -291,6 +293,11 @@ export type AnalyticsAliases = {
   // usada para separar os "(álbum não identificado)" — vale por cima do agrupamento automático,
   // e os apelidos por nome ainda aplicam depois. Ver `buildAnalytics`.
   sales: Record<string, SaleOverride>;
+  // EXCLUSÕES (ocultar do Analytics, sem deletar do banco): `excludedSales` por `lot_id`,
+  // `excludedArtists` por CHAVE de artista (chave final + `sourceKeys`). O valor é um rótulo
+  // amigável (nome do artista / "artista — álbum") só para a UI listar os "Ocultos" e reincluir.
+  excludedSales: Record<string, string>;
+  excludedArtists: Record<string, string>;
 };
 
 function toStringMap(value: unknown): Record<string, string> {
@@ -334,22 +341,64 @@ async function readSaleOverrides(): Promise<Record<string, SaleOverride>> {
   return out;
 }
 
-/** Lê os apelidos de artista/álbum e as correções por venda do Analytics. Best-effort. */
+/** Lê os apelidos de artista/álbum, correções por venda e exclusões do Analytics. Best-effort. */
 export async function getAnalyticsAliases(): Promise<AnalyticsAliases> {
   try {
-    const [artists, albums, sales] = await Promise.all([
+    const [artists, albums, sales, excludedSales, excludedArtists] = await Promise.all([
       readStringMap(ANALYTICS_ARTIST_ALIASES_KEY),
       readStringMap(ANALYTICS_ALBUM_ALIASES_KEY),
       readSaleOverrides(),
+      readStringMap(ANALYTICS_EXCLUDED_SALES_KEY),
+      readStringMap(ANALYTICS_EXCLUDED_ARTISTS_KEY),
     ]);
-    return { artists, albums, sales };
+    return { artists, albums, sales, excludedSales, excludedArtists };
   } catch (error) {
     console.error(
       "[app-state] não foi possível ler os apelidos do Analytics (usando vazio)",
       error,
     );
-    return { artists: {}, albums: {}, sales: {} };
+    return { artists: {}, albums: {}, sales: {}, excludedSales: {}, excludedArtists: {} };
   }
+}
+
+/**
+ * Exclui/reinclui UMA venda do Analytics (`lotId`). `label` é um rótulo amigável só para a UI de
+ * "Ocultos"; `excluded=false` remove a exclusão (reinclui). Read-modify-write.
+ */
+export async function setAnalyticsExcludedSale(
+  lotId: string,
+  excluded: boolean,
+  label = "",
+): Promise<{ savedAt: string }> {
+  const id = typeof lotId === "string" ? lotId.trim() : "";
+  if (!id) return { savedAt: new Date().toISOString() };
+  const map = await readStringMap(ANALYTICS_EXCLUDED_SALES_KEY).catch(
+    (): Record<string, string> => ({}),
+  );
+  if (excluded) map[id] = label.trim() || id;
+  else delete map[id];
+  return saveStringMap(ANALYTICS_EXCLUDED_SALES_KEY, map);
+}
+
+/**
+ * Exclui/reinclui um ARTISTA inteiro do Analytics. `keys` são as chaves do grupo (a `key` final e
+ * as `sourceKeys`); `label` é o nome exibido. `excluded=false` reinclui. Read-modify-write.
+ */
+export async function setAnalyticsExcludedArtist(
+  keys: string[],
+  excluded: boolean,
+  label = "",
+): Promise<{ savedAt: string }> {
+  const list = [...new Set(keys.filter((k) => typeof k === "string" && k))];
+  if (!list.length) return { savedAt: new Date().toISOString() };
+  const map = await readStringMap(ANALYTICS_EXCLUDED_ARTISTS_KEY).catch(
+    (): Record<string, string> => ({}),
+  );
+  for (const k of list) {
+    if (excluded) map[k] = label.trim() || k;
+    else delete map[k];
+  }
+  return saveStringMap(ANALYTICS_EXCLUDED_ARTISTS_KEY, map);
 }
 
 /**
