@@ -7,7 +7,7 @@ import {
   LOTE_LABEL,
   normalizeForMatch,
   parsePrice,
-  presencialUrlFrom,
+  presencialUrlFromLot,
   UNCLASSIFIED_LABEL,
   type VinylLot,
 } from "@/lib/vinyl-parse";
@@ -253,7 +253,7 @@ export type HouseAuctionInfo = {
  */
 export function houseAuctionInfo(
   dayKey: string,
-  lot: { time: string; url: string } | undefined,
+  lot: { idLeilao: string; time: string; url: string } | undefined,
   now: number = Date.now(),
 ): HouseAuctionInfo | null {
   if (!lot) return null;
@@ -265,7 +265,7 @@ export function houseAuctionInfo(
           ? "live"
           : "upcoming"
       : null;
-  return { time: lot.time, status, presencialUrl: presencialUrlFrom(lot.url) };
+  return { time: lot.time, status, presencialUrl: presencialUrlFromLot(lot) };
 }
 
 /** Agrupa vigiados por casa de leilão e ordena os lotes pelo nº do lote. */

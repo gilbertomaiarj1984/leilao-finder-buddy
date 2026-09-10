@@ -634,6 +634,38 @@ export function presencialUrlFrom(entryUrl: string | null | undefined): string |
   return `${domain}/presencial/presencial.asp?Num=${ref.idLeilao}`;
 }
 
+/**
+ * Domínio (origin) da casa a partir do link do lote — cobre os DOIS formatos do site:
+ * listagem geral (`abre_catalogo.asp?t=1|<domínio>|<idLeilao>|<idPeca>`, via `parseAuctionRef`)
+ * e páginas de conta — vigiados/lances (`<domínio>/peca.asp?ID=<idPeca>`, já no domínio da
+ * casa, SEM o idLeilao embutido). Mesma extração usada em `leiloesbr-lot-details.server.ts`
+ * (`pecaUrl`) para montar a URL da `peca.asp`.
+ */
+export function auctionHouseDomain(lotUrl: string): string | null {
+  const ref = parseAuctionRef(lotUrl);
+  if (ref) return ref.domain;
+  if (!/peca\.asp/i.test(lotUrl)) return null;
+  try {
+    const abs = /^https?:/i.test(lotUrl) ? lotUrl : `https://${lotUrl.replace(/^\/+/, "")}`;
+    const u = new URL(abs);
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * URL do pregão presencial a partir de um lote das páginas de conta (vigiados/lances):
+ * `idLeilao` vem à parte (não está embutido no link `peca.asp`, ao contrário do link da
+ * listagem geral) — usar junto do domínio extraído por `auctionHouseDomain`.
+ */
+export function presencialUrlFromLot(lot: { idLeilao: string; url: string }): string | null {
+  if (!lot.idLeilao) return null;
+  const domain = auctionHouseDomain(lot.url);
+  if (!domain) return null;
+  return `${domain.replace(/^http:/i, "https:")}/presencial/presencial.asp?Num=${lot.idLeilao}`;
+}
+
 // --- Base de nomes conhecidos (reforço da classificação de artista) ---
 
 /** Normalização para casar nomes: remove acentos e pontuação, baixa a caixa. */
