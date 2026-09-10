@@ -565,20 +565,31 @@ export const captureSales = createServerFn({ method: "POST" })
   });
 
 /**
- * Reidentificação por IA de TODO o histórico de vendas (mesma rotina do cron `step=reident`):
- * ajusta artista/álbum (título+descrição → IA) e padroniza a grafia dos nomes. Usa o provedor
- * de IA PADRÃO (o selecionado no topo do site). O cliente pode chamar em laço até `done`.
+ * Reidentificação por IA das vendas (mesma rotina do cron `step=reident`): ajusta artista/álbum
+ * (texto original/título → IA) e padroniza a grafia dos nomes. Usa o provedor de IA PADRÃO (o
+ * selecionado no topo do site).
+ * - Sem `lotIds`: roda em TODO o histórico; o cliente chama em laço até `done`.
+ * - Com `lotIds` (por ARTISTA ou por ÁLBUM): roda só nessas vendas, RETENTANDO as ainda não
+ *   identificadas (chamada única — cap maior para cobrir o grupo).
  */
 export const reidentifySales = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { max?: number } | undefined) => ({
-    max: Math.min(Math.max(Number(input?.max) || 25, 1), 50),
-  }))
+  .inputValidator((input: { max?: number; lotIds?: unknown } | undefined) => {
+    const lotIds = Array.isArray(input?.lotIds)
+      ? input.lotIds.filter((k): k is string => typeof k === "string" && !!k).slice(0, 500)
+      : [];
+    // Por grupo: cap maior (cobre o grupo numa chamada). Global: 25–50 por rodada (laço).
+    const cap = lotIds.length ? 100 : 50;
+    return { max: Math.min(Math.max(Number(input?.max) || 25, 1), cap), lotIds };
+  })
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { reidentifyAllSales } = await import("./lot-sales.server");
-    return await reidentifyAllSales(data.max);
+    return await reidentifyAllSales(
+      data.max,
+      data.lotIds.length ? { lotIds: data.lotIds } : undefined,
+    );
   });
 
 /**

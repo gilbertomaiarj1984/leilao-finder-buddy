@@ -504,7 +504,10 @@ const REIDENT_CAP = 25;
  * Sem provedor de IA configurado, o passo (1) é no-op e só a padronização (2) roda. Chame em
  * laço até `done` para cobrir todo o backlog de identificação.
  */
-export async function reidentifyAllSales(max = REIDENT_CAP): Promise<{
+export async function reidentifyAllSales(
+  max = REIDENT_CAP,
+  opts?: { lotIds?: string[] },
+): Promise<{
   identified: number;
   applied: number;
   processed: number;
@@ -515,42 +518,67 @@ export async function reidentifyAllSales(max = REIDENT_CAP): Promise<{
   const { aiConfigured, identLotsSync, resolveAiProvider, titleHash } =
     await import("./ai-eval.server");
 
-  const [sales, identRows] = await Promise.all([
+  const [allSales, identRows] = await Promise.all([
     getAllLotSales(),
     getAllLotIdent().catch(() => []),
   ]);
+
+  // Escopo POR GRUPO (artista/álbum): restringe às vendas dos `lotIds` informados. Sem escopo,
+  // roda em TODO o histórico (como o botão global).
+  const scope = opts?.lotIds?.length ? new Set(opts.lotIds) : null;
+  const sales = scope ? allSales.filter((s) => scope.has(s.lot_id)) : allSales;
 
   const attempted = new Set(identRows.map((r) => r.id));
   const albumById = new Map<string, string>();
   for (const r of identRows) if (r.album) albumById.set(r.id, r.album);
 
-  // 1) IA nos que nunca foram identificados (sem linha em `lot_ident`) e têm texto.
-  const needAi = sales.filter((s) => !attempted.has(s.lot_id) && s.title.trim());
+  // Texto que a IA lê: prefere o descritivo ORIGINAL do catálogo (`orig_text`) — mais fiel que o
+  // `title`, que a reidentificação pode já ter reescrito. Cai no título quando não há.
+  const aiInput = (s: LotSaleRow): string => (s.orig_text?.trim() || s.title || "").trim();
+
+  // 1) Alvo da IA:
+  //  - GLOBAL: vendas que NUNCA foram tentadas (sem linha em `lot_ident`) — checkpoint durável
+  //    que faz o laço até `done` sem reprocessar.
+  //  - POR GRUPO: vendas ainda NÃO identificadas com sucesso (álbum nulo/sem linha), RETENTANDO
+  //    as que falharam antes. O alvo encolhe conforme identifica, então uma nova execução avança
+  //    (a UI não roda em laço no modo por grupo — evita reprocessar eternamente as sem solução).
+  const needAi = scope
+    ? sales.filter((s) => !albumById.has(s.lot_id) && aiInput(s))
+    : sales.filter((s) => !attempted.has(s.lot_id) && aiInput(s));
   const batch = needAi.slice(0, Math.max(1, max));
   let identified = 0;
   if (aiConfigured() && batch.length) {
     const provider = await resolveAiProvider();
     const results = await identLotsSync(
-      batch.map((s) => ({ id: s.lot_id, title: s.title, price: "", house: s.house, image: null })),
+      batch.map((s) => ({
+        id: s.lot_id,
+        title: aiInput(s),
+        price: "",
+        house: s.house,
+        image: null,
+      })),
       false,
       provider,
     );
     const byId = new Map(results.map((r) => [r.id, r]));
-    // Grava lot_ident para TODOS os processados (álbum nulo quando a IA não achou) → marca
-    // "já tentado" para não reprocessar nas próximas rodadas.
-    const identNew = batch.map((s) => {
-      const r = byId.get(s.lot_id);
-      return {
-        id: s.lot_id,
-        title_hash: titleHash(s.title),
-        album: r?.album ?? null,
-        year: r?.year ?? null,
-        confidence: r?.confidence ?? null,
-        source: "title" as const,
-        model: null,
-      };
-    });
-    await upsertLotIdent(identNew);
+    // GLOBAL grava lot_ident para TODOS os processados (álbum nulo → marca "já tentado", não
+    // reprocessa). POR GRUPO só grava os SUCESSOS (não rebaixa uma identificação a nulo numa
+    // retentativa que a IA não resolveu).
+    const identNew = batch
+      .map((s) => {
+        const r = byId.get(s.lot_id);
+        return {
+          id: s.lot_id,
+          title_hash: titleHash(s.title),
+          album: r?.album ?? null,
+          year: r?.year ?? null,
+          confidence: r?.confidence ?? null,
+          source: "title" as const,
+          model: null,
+        };
+      })
+      .filter((row) => (scope ? row.album != null : true));
+    if (identNew.length) await upsertLotIdent(identNew);
     for (const r of identNew) {
       attempted.add(r.id);
       if (r.album) {

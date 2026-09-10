@@ -97,6 +97,7 @@ type ArtistSort = "count" | "alpha";
 type AlbumSort = "count" | "alpha";
 type Suggestions = { artists: string[]; albums: string[] };
 type ApplySaleOverride = (lotId: string, value: { artist: string; album: string } | null) => void;
+type ReidentGroup = (lotIds: string[]) => Promise<void>;
 
 function VinilAnalyticsPage() {
   const queryClient = useQueryClient();
@@ -258,6 +259,30 @@ function VinilAnalyticsPage() {
     })();
   };
 
+  // Reidentifica pela IA só as vendas de um GRUPO (artista ou álbum). Chamada única (o servidor
+  // retenta os ainda não identificados do grupo); revalida a lista ao terminar.
+  const reidentifyGroupSales = async (lotIds: string[]) => {
+    if (!lotIds.length) return;
+    try {
+      const res = await runReident({ data: { lotIds, max: Math.min(lotIds.length, 100) } });
+      await queryClient.invalidateQueries({ queryKey: ["vinyl-sales"] });
+      await sales.refetch();
+      if (res.identified > 0) {
+        toast.success(
+          `IA: ${res.identified} identificado(s)${
+            res.remaining ? ` · ${res.remaining} restante(s) — clique de novo` : ""
+          }`,
+        );
+      } else if (res.remaining > 0) {
+        toast.info(`Nada novo pela IA · ${res.remaining} venda(s) sem identificação`);
+      } else {
+        toast.success("Nada a identificar neste grupo");
+      }
+    } catch (error) {
+      toast.error((error as Error)?.message || "Não foi possível reidentificar o grupo");
+    }
+  };
+
   const rows = useMemo(() => (sales.data ?? []) as SaleRow[], [sales.data]);
   const analytics = useMemo(
     () => buildAnalytics(rows, aliasesQuery.data),
@@ -398,6 +423,7 @@ function VinilAnalyticsPage() {
                 onClearArtist={() => clearArtistAlias(a)}
                 onApplyAlbum={applyAlbumAlias}
                 onApplySaleOverride={applySaleOverride}
+                onReidentGroup={reidentifyGroupSales}
               />
             ))}
           </div>
@@ -463,6 +489,37 @@ function EmptyState() {
   );
 }
 
+/** Botão "rodar a IA" num escopo (artista/álbum): identifica pela IA só as vendas de `lotIds`. */
+function IaButton({
+  lotIds,
+  onReident,
+  title,
+}: {
+  lotIds: string[];
+  onReident: ReidentGroup;
+  title: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const run = (e: { stopPropagation: () => void }) => {
+    e.stopPropagation();
+    if (busy || !lotIds.length) return;
+    setBusy(true);
+    void onReident(lotIds).finally(() => setBusy(false));
+  };
+  return (
+    <button
+      type="button"
+      onClick={run}
+      disabled={busy || !lotIds.length}
+      title={title}
+      aria-label={title}
+      className="shrink-0 rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+    >
+      <Sparkles className={`h-4 w-4 ${busy ? "animate-pulse" : ""}`} />
+    </button>
+  );
+}
+
 function ArtistRow({
   artist,
   allArtists,
@@ -471,6 +528,7 @@ function ArtistRow({
   onClearArtist,
   onApplyAlbum,
   onApplySaleOverride,
+  onReidentGroup,
 }: {
   artist: ArtistAgg;
   allArtists: ArtistAgg[];
@@ -479,6 +537,7 @@ function ArtistRow({
   onClearArtist: () => void;
   onApplyAlbum: (keys: string[], name: string) => void;
   onApplySaleOverride: ApplySaleOverride;
+  onReidentGroup: ReidentGroup;
 }) {
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(false);
@@ -490,6 +549,12 @@ function ArtistRow({
     else list.sort((a, b) => b.count - a.count || (b.avgPrice ?? 0) - (a.avgPrice ?? 0));
     return list;
   }, [artist.albums, albumSort]);
+
+  // Todos os `lot_id`s do artista (para rodar a IA no artista inteiro).
+  const artistLotIds = useMemo(
+    () => artist.albums.flatMap((al) => al.sales.map((s) => s.lot_id)),
+    [artist.albums],
+  );
 
   return (
     <section className="overflow-hidden rounded-md border border-border bg-card">
@@ -513,6 +578,11 @@ function ArtistRow({
             {money(artist.avgPrice)}
           </span>
         </button>
+        <IaButton
+          lotIds={artistLotIds}
+          onReident={onReidentGroup}
+          title="Rodar a IA neste artista (identifica as vendas ainda sem álbum)"
+        />
         <button
           type="button"
           onClick={() => setEdit(true)}
@@ -547,6 +617,7 @@ function ArtistRow({
                 suggestions={suggestions}
                 onApplyAlbum={onApplyAlbum}
                 onApplySaleOverride={onApplySaleOverride}
+                onReidentGroup={onReidentGroup}
               />
             ))}
           </div>
@@ -572,6 +643,7 @@ function AlbumRow({
   suggestions,
   onApplyAlbum,
   onApplySaleOverride,
+  onReidentGroup,
 }: {
   album: AlbumAgg;
   artistKey: string;
@@ -580,10 +652,12 @@ function AlbumRow({
   suggestions: Suggestions;
   onApplyAlbum: (keys: string[], name: string) => void;
   onApplySaleOverride: ApplySaleOverride;
+  onReidentGroup: ReidentGroup;
 }) {
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState(false);
   const [edit, setEdit] = useState(false);
+  const albumLotIds = useMemo(() => album.sales.map((s) => s.lot_id), [album.sales]);
   // Faixas do agregador vêm melhor→pior (ordem de FAIXAS). O eixo dos cards abaixo é
   // pior→melhor (esquerda = pior), então mostramos os chips no MESMO racional (pior→melhor).
   const faixasAsc = useMemo(() => [...album.faixas].reverse(), [album.faixas]);
@@ -608,6 +682,11 @@ function AlbumRow({
         >
           {album.album}
         </button>
+        <IaButton
+          lotIds={albumLotIds}
+          onReident={onReidentGroup}
+          title="Rodar a IA neste álbum (identifica as vendas ainda sem álbum)"
+        />
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
