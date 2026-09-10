@@ -787,6 +787,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.30.0        | **Captura de vendas pós-leilão** (`lot_sales`) — varredura do **catálogo da casa** (`catalogo.asp`, 1 req/leilão, NÃO lote a lote): `parseCatalogData`/`fetchCatalogData` estendem o parser do nº do lote p/ ler **valor de venda** + texto (estado inline via `parseConditionFromText`). `captureFinishedSales` varre `seen_auctions` (durável) dos leilões terminados ainda não capturados (cursor `app_state.sales_captured`), com **backfill** do que já está na base; cron `step=sales` + `refresh.yml`. `sold_date` = **data do leilão**. Fail-closed (sem valor claro não grava). Server fns `getVinylSales`/`captureSales`                                                    | —       |
 | v0.31.0        | **Página Vinil Analytics** (`/vinil-analytics`, link no header) — preços de venda por **artista → álbum** sobre `lot_sales` (casa irrelevante). Agregação pura `analytics.ts` (`buildAnalytics`/`deriveAlbum`): preço médio, min/max, **contagem na base**, **médias por Faixa** e vendas ordenadas **pior→melhor** conservação. UI: artistas/álbuns expansíveis (padrão manual), **eixo horizontal** de marcadores (score/estado/valor), chips de faixa e **Dialog de detalhe** (tabela data/estado/score/valor/lote)                                                                                                                                                | —       |
 | v0.31.1        | **Calibração do catálogo (Discos Esquecidos)** — o descritivo completo vem no **tooltip** do card (atributo `title`/`alt`/`data-*`): `longestAttr` pega o texto mais longo → **estado rico** (`CAPA VG+ - DISCO VG+/NM`) direto do catálogo, sem `peca.asp`. Valor lido do rótulo **"Valor de venda: R$ …"** + marcador "vendido"/"arrematado" (fail-closed). `detectInsert` **conservador** (ignora o boilerplate "se o LP possuir encarte…"). `deriveAlbum` corta em "- CAPA/DISCO `<grau>`". Nº do lote ganha fallback "LOTE N"                                                                                                                            | —       |
+| v0.44.1        | **Notas: limpeza de pendências** — os 4 itens de "Produto / código" (lance pelo app, foto em massa, peso da sondagem na nota, imagem pelo CDN do catálogo) foram **cancelados/descartados** e as **validações em produção** marcadas como **confirmadas**. Só documentação                                                                                                                                                                                                                                                                                                                       | —       |
 | v0.44.0        | **Analytics: rodar a IA por artista e por álbum** — botão `IaButton` (Sparkles) em cada artista e álbum roda a reidentificação da IA **só nas vendas daquele grupo**. `reidentifyAllSales(max, {lotIds})` ganhou escopo: filtra por `lotIds`, **retenta os ainda não identificados** do grupo (ao contrário do global, que pula o que já tem linha em `lot_ident`), usa o **texto original** (`orig_text || title`) como entrada e só grava sucessos (não rebaixa a nulo). Server fn `reidentifySales` aceita `lotIds` (chamada única, cap maior); invalida `["vinyl-sales"]` ao fim. Typecheck/lint/build OK                                                                                                                                                                                                      | —       |
 | v0.43.0        | **Analytics: resolver não identificados por venda + texto original** — (1) nova coluna **`lot_sales.orig_text`** (migração `20260909150000_lot_sales_orig_text.sql` + `setup.sql`; ⚠️ aplicar à mão) guarda o descritivo COMPLETO do card do catálogo, preservado após a reidentificação por IA; `lot-sales.server.ts` grava e tolera a coluna ausente (`isMissingColumn`). (2) **Correção POR VENDA** (`app_state.analytics_sale_overrides`, `Record<lotId,{artist?,album?}>`), aplicada em `buildAnalytics` ANTES de derivar (precede a derivação; apelidos por nome aplicam por cima), para SEPARAR os discos de um mesmo balaio "(álbum não identificado)". Server `setAnalyticsSaleOverride`; `getAnalyticsAliases` devolve também `sales`. UI: clique no mini card abre `SaleDetailDialog` (texto original + todos os campos + link + Artista/Álbum só desta venda com `<datalist>`); `SaleMarker` usa `PopoverAnchor` (hover=preview, clique=detalhe) e o preview mostra o texto original. Typecheck/lint/build OK                                                                                                                  | —       |
 | v0.42.0        | **Analytics: curadoria com aprendizado + refinos** — (1) **renomear/fundir artistas e álbuns** manualmente, com **aprendizado durável**: apelidos em `app_state` (`analytics_artist_aliases` `Record<artistKey,nome>` e `analytics_album_aliases` `Record<"${artistKey}\|${albumKey}",nome>`), aplicados em `buildAnalytics(rows, aliases)` ANTES de agregar (re-chaveia pelo nome canônico; renomear e fundir são o mesmo mecanismo). `ArtistAgg`/`AlbumAgg` expõem `key`/`sourceKeys`; server `getAnalyticsAliases`/`setAnalyticsArtistAlias`/`setAnalyticsAlbumAlias`/`clearAnalyticsAlias` (`app-state.server.ts` + server fns). UI: lápis no artista (`ArtistEditDialog`) e clique no NOME do álbum (`AlbumEditDialog`), escrita otimista em `["analytics-aliases"]`. (2) Refinos: removido o "Preço médio" global; **ordenação** de artistas (A→Z / nº de álbuns) e de álbuns (A→Z / nº na base); mini card com **valor em cima e nota embaixo** (invertidos); chips de **médias por Faixa invertidos p/ pior→melhor**; **colunas ordenáveis** em Detalhes; **preview no hover** do mini card (`Popover` portalizado; sem imagem por ora). Typecheck/lint/build OK                                                                | —       |
@@ -812,39 +813,18 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 
 **Produto / código (em aberto)**
 
-1. **Lance pelo app (leiloesbr):** avaliar/implementar dar lance pelo app (regra do usuário:
-   sempre o próximo menor valor; após lançar, verificar em segundos se foi coberto e relançar).
-   **Bloqueio:** falta o **endpoint de lance** e a **regra de incremento** do leiloesbr — o
-   usuário precisa **capturar** (F12 → Network, lote barato) a requisição de lance. Considerar
-   que o site talvez já tenha "lance automático" nativo; ToS/edital costumam proibir automação
-   (risco/decisão do usuário).
-2. **Upload de foto EM MASSA:** a importação em massa cria discos **sem foto** — a foto é
-   adicionada depois, por disco, no `EditDialog` (com "Tirar foto"/câmera). Um fluxo de foto em
-   lote (tirar/anexar e casar com os recém-importados) segue em aberto.
-3. **Sondagem não pesa na nota** — hoje é só destaque + filtro. Dar peso real (bônus no ranking
-   ou mandar a lista ao prompt) segue em aberto; ao importar o rascunho real, conferir 🎯/tooltip
-   e o filtro "Só sondagem" e ajustar `WANT_MATCH_THRESHOLD`/pesos em `wantlist-match.ts`.
-4. **Imagem pelo CDN do catálogo (ADIADO):** o JSON traz a **base** do CDN
-   (`URLCOMMON`/`CLOUD_LINK`), mas o exemplo (santavelharia) **não** trouxe o **nome do arquivo**
-   da imagem por lote — sem ele não dá para montar a URL. Pegar (F12 → resposta do
-   `catalogocontentload.asp`) o campo/arquivo de imagem; então adicionar `image` ao
-   `CatalogLot`/`lot_sales` e miniatura no Analytics.
+- _Nenhuma pendência em aberto._ (Os itens anteriores — lance pelo app, upload de foto em massa,
+  peso da sondagem na nota e imagem pelo CDN do catálogo — foram **cancelados/descartados**.)
 
-**Validar em produção (não dá para testar daqui)**
+**Validar em produção**
 
-- **`setup.sql` aplicado** para as tabelas/colunas mais recentes (idempotente) e
-  `ANTHROPIC_API_KEY`/`GEMINI_API_KEY`/`DISCOGS_TOKEN` **só nas env da Vercel** (Production) — são
-  lidos pelo servidor, inclusive no cron; **não** são secrets do GitHub (o `refresh.yml` só usa
-  `APP_URL` + `CRON_TOKEN`). Após mudar env, **Redeploy**.
-- **Cron `refresh.yml`** (Actions → Run workflow): conferir cada passo, incluindo os novos
-  `condition`, `sales` e **`reident`** (reidentifica/padroniza o histórico — `identified`/
-  `applied`), e o `market` (inclui lotes só identificados).
-- **v0.41.0:** confirmar que o **seletor do topo** comanda toda IA (síncrona e cron); rodar
-  **"Reidentificar (IA)"** no Analytics com o Gemini selecionado e ver artistas antes duplicados
-  se fundirem; conferir o header **sticky** (desktop e mobile). Validar o **failover** do Gemini
-  (deixar um provedor sem crédito e conferir o toast + a troca) e a **visão** (capa) no Gemini.
-- **Custo Gemini:** `gemini-flash-latest` ≈ US$0,75/US$3,75 por 1M tok in/out (mais barato que o
-  Haiku 4.5); o alias `-latest` acompanha o Flash mais novo — para fixar, usar `GEMINI_MODEL`.
+- ✅ **Validações confirmadas** — `setup.sql` aplicado (tabelas/colunas mais recentes), env da
+  Vercel (`ANTHROPIC_API_KEY`/`GEMINI_API_KEY`/`DISCOGS_TOKEN`) e cron `refresh.yml` (incl.
+  `condition`, `sales`, `reident`, `market`) conferidos em produção; v0.41.0 (seletor de IA,
+  "Reidentificar (IA)", header sticky, failover do Gemini e visão/capa) verificada.
+- **Custo Gemini (referência):** `gemini-flash-latest` ≈ US$0,75/US$3,75 por 1M tok in/out (mais
+  barato que o Haiku 4.5); o alias `-latest` acompanha o Flash mais novo — para fixar, usar
+  `GEMINI_MODEL`.
 
 > ⚠️ **Lição (evitar regressão):** módulo **`*.server.ts` NÃO deve importar de módulo
 > client-safe** (nem `import type`). No v0.24.0, `app-state.server.ts` importava um tipo de
