@@ -4,6 +4,7 @@
 import { FAIXAS, faixaFromScore } from "@/lib/grading";
 import {
   ANALYTICS_COMPILATION_LABEL,
+  extractArtist,
   isCompilation,
   isDiscBundle,
   isGenericArtist,
@@ -213,7 +214,19 @@ export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): Art
     // genérico/desconhecido — um "Grandes Sucessos" de um artista JÁ IDENTIFICADO (ex.: "João
     // Bosco - Os Grandes Sucessos") é uma coletânea DAQUELE artista, não uma "various artists":
     // sem essa condição, a venda ficava presa em "Coletâneas" mesmo já sabendo o artista certo.
-    const rawArtist = row.artist?.trim() || "";
+    // O artista GRAVADO foi calculado na captura por uma versão mais ingênua de `extractArtist`
+    // (desistia cedo demais em títulos com "sucessos"/"melhores"/etc mesmo com "Artista - Álbum"
+    // claro, ou "Sucessos de <Artista>" sem traço). Rederiva ao vivo do TÍTULO quando o valor
+    // salvo ainda está genérico/vazio — mesmo padrão das outras checagens desta função (recomputa
+    // na LEITURA, sem re-capturar nem rodar IA): corrige a base inteira já na próxima renderização.
+    // `isVariousArtists` NUNCA é rederivado: é um sinal FORTE e já correto (ex.: "Various
+    // Artists" vindo do catálogo) — tentar adivinhar do título por cima dele já trocou "Various
+    // Artists" por um "artista" inventado a partir de uma frase de coletânea sem "-"/"de X".
+    const storedArtist = row.artist?.trim() || "";
+    const rawArtist =
+      storedArtist && (isVariousArtists(storedArtist) || !isGenericArtist(storedArtist))
+        ? storedArtist
+        : extractArtist(row.title) || storedArtist;
     const isComp =
       !saleOv &&
       (isVariousArtists(rawArtist) || (isGenericArtist(rawArtist) && isCompilation(row.title)));
