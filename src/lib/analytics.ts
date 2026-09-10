@@ -75,6 +75,12 @@ export type AnalyticsAliases = {
   // Correção POR VENDA (por `lot_id`): fixa artista/álbum de uma venda específica, aplicada
   // ANTES da derivação/agrupamento (separa os "(álbum não identificado)").
   sales?: Record<string, SaleOverride>;
+  // EXCLUSÕES (ocultar do Analytics, sem deletar do banco): `excludedSales` por `lot_id` e
+  // `excludedArtists` por CHAVE de artista (a `key` final e/ou as `sourceKeys`). O valor guardado
+  // é um rótulo amigável (nome do artista / "artista — álbum" da venda) só para a lista de
+  // "Ocultos" poder mostrar e reincluir; o agrupamento só usa as CHAVES.
+  excludedSales?: Record<string, string>;
+  excludedArtists?: Record<string, string>;
 };
 
 /** Média (arredondada) de uma lista, ignorando nulos; null quando não há número. */
@@ -179,8 +185,12 @@ export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): Art
   const artistAliases = aliases?.artists ?? {};
   const albumAliases = aliases?.albums ?? {};
   const saleOverrides = aliases?.sales ?? {};
+  const excludedSales = new Set(Object.keys(aliases?.excludedSales ?? {}));
+  const excludedArtists = new Set(Object.keys(aliases?.excludedArtists ?? {}));
   const byArtist = new Map<string, ArtistBucket>();
   for (const row of rows) {
+    // EXCLUSÃO manual da VENDA (por `lot_id`): oculta por completo (não conta em nenhum grupo).
+    if (excludedSales.has(row.lot_id)) continue;
     // Correção POR VENDA (por `lot_id`): tem precedência sobre a derivação automática. Fixa o
     // artista e/ou o álbum desta venda específica (usada para separar os não identificados).
     const saleOv = saleOverrides[row.lot_id];
@@ -210,6 +220,10 @@ export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): Art
     const artistKey = artistOverride
       ? normalizeForMatch(artistOverride) || rawArtistKey
       : rawArtistKey;
+
+    // EXCLUSÃO manual do ARTISTA: oculta o grupo inteiro. Casa pela chave FINAL (o grupo exibido)
+    // ou pela chave ORIGINAL (robusto a mudanças de apelido/fusão).
+    if (excludedArtists.has(artistKey) || excludedArtists.has(rawArtistKey)) continue;
 
     const rawAlbumKey = normalizeForMatch(album) || album;
     // Apelido de álbum: chave no escopo do artista FINAL (pós-alias), acompanhando fusões.

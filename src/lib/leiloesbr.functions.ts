@@ -606,7 +606,7 @@ export const getAnalyticsAliases = createServerFn({ method: "GET" })
       return await read();
     } catch (error) {
       console.error("[analytics] não foi possível ler os apelidos", error);
-      return { artists: {}, albums: {}, sales: {} };
+      return { artists: {}, albums: {}, sales: {}, excludedSales: {}, excludedArtists: {} };
     }
   });
 
@@ -677,6 +677,38 @@ export const setAnalyticsSaleOverride = createServerFn({ method: "POST" })
     const { setAnalyticsSaleOverride: save } = await import("./app-state.server");
     const value = data.clear ? null : { artist: data.artist, album: data.album };
     return await save(data.lotId, value);
+  });
+
+/** Excluir/reincluir uma VENDA do Analytics (oculta por `lot_id`, sem deletar do banco). */
+export const setAnalyticsExcludedSale = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { lotId?: unknown; excluded?: unknown; label?: unknown }) => ({
+    lotId: typeof input?.lotId === "string" ? input.lotId : "",
+    excluded: input?.excluded !== false,
+    label: typeof input?.label === "string" ? input.label : "",
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setAnalyticsExcludedSale: save } = await import("./app-state.server");
+    return await save(data.lotId, data.excluded, data.label);
+  });
+
+/** Excluir/reincluir um ARTISTA inteiro do Analytics (oculta por chave, sem deletar do banco). */
+export const setAnalyticsExcludedArtist = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { keys?: unknown; excluded?: unknown; label?: unknown }) => ({
+    keys: Array.isArray(input?.keys)
+      ? input.keys.filter((k): k is string => typeof k === "string" && !!k)
+      : [],
+    excluded: input?.excluded !== false,
+    label: typeof input?.label === "string" ? input.label : "",
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setAnalyticsExcludedArtist: save } = await import("./app-state.server");
+    return await save(data.keys, data.excluded, data.label);
   });
 
 /** Âncora de mercado do Discogs por lote (preço/demanda). Best-effort: [] em erro. */

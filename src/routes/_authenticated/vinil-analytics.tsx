@@ -11,9 +11,11 @@ import {
   ChevronDown,
   ChevronRight,
   Disc3,
+  EyeOff,
   ExternalLink,
   Pencil,
   RefreshCw,
+  RotateCcw,
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -44,6 +46,8 @@ import {
   setAiProvider,
   setAnalyticsAlbumAlias,
   setAnalyticsArtistAlias,
+  setAnalyticsExcludedArtist,
+  setAnalyticsExcludedSale,
   setAnalyticsSaleOverride,
 } from "@/lib/leiloesbr.functions";
 import { normalizeForMatch } from "@/lib/vinyl-parse";
@@ -98,6 +102,8 @@ type AlbumSort = "count" | "alpha";
 type Suggestions = { artists: string[]; albums: string[] };
 type ApplySaleOverride = (lotId: string, value: { artist: string; album: string } | null) => void;
 type ReidentGroup = (lotIds: string[]) => Promise<void>;
+type ExcludeSale = (sale: SaleRow, label: string) => void;
+type ExcludeArtist = (artist: ArtistAgg) => void;
 
 function VinilAnalyticsPage() {
   const queryClient = useQueryClient();
@@ -110,6 +116,8 @@ function VinilAnalyticsPage() {
   const runSetAlbumAlias = useServerFn(setAnalyticsAlbumAlias);
   const runClearAlias = useServerFn(clearAnalyticsAlias);
   const runSetSaleOverride = useServerFn(setAnalyticsSaleOverride);
+  const runExcludeSale = useServerFn(setAnalyticsExcludedSale);
+  const runExcludeArtist = useServerFn(setAnalyticsExcludedArtist);
   const sales = useQuery({
     queryKey: ["vinyl-sales"] as const,
     queryFn: () => fetchSales(),
@@ -152,6 +160,8 @@ function VinilAnalyticsPage() {
       artists: { ...(prev?.artists ?? {}) },
       albums: { ...(prev?.albums ?? {}) },
       sales: { ...(prev?.sales ?? {}) },
+      excludedSales: { ...(prev?.excludedSales ?? {}) },
+      excludedArtists: { ...(prev?.excludedArtists ?? {}) },
     };
   };
   const revertAliases = (prev: AnalyticsAliases | undefined) =>
@@ -229,6 +239,44 @@ function VinilAnalyticsPage() {
         toast.error((error as Error)?.message || "Não foi possível corrigir a venda");
       });
   };
+
+  // EXCLUIR/REINCLUIR uma VENDA (oculta do Analytics, sem apagar do banco). Update otimista.
+  const setSaleExcluded = (lotId: string, excluded: boolean, label = "") => {
+    const prev = aliasesQuery.data;
+    const next = cloneAliases();
+    if (excluded) next.excludedSales![lotId] = label.trim() || lotId;
+    else delete next.excludedSales![lotId];
+    queryClient.setQueryData(["analytics-aliases"], next);
+    void runExcludeSale({ data: { lotId, excluded, label } })
+      .then(() => toast.success(excluded ? "Venda ocultada do Analytics" : "Venda reincluída"))
+      .catch((error: unknown) => {
+        revertAliases(prev);
+        toast.error((error as Error)?.message || "Não foi possível ocultar a venda");
+      });
+  };
+
+  // EXCLUIR/REINCLUIR um ARTISTA inteiro (oculta o grupo do Analytics, sem apagar do banco). As
+  // chaves ocultadas são a `key` final + as `sourceKeys` (robusto a fusões/apelidos).
+  const setArtistExcluded = (artist: ArtistAgg, excluded: boolean) => {
+    const keys = [...new Set([artist.key, ...artist.sourceKeys])];
+    const prev = aliasesQuery.data;
+    const next = cloneAliases();
+    for (const k of keys) {
+      if (excluded) next.excludedArtists![k] = artist.artist;
+      else delete next.excludedArtists![k];
+    }
+    queryClient.setQueryData(["analytics-aliases"], next);
+    void runExcludeArtist({ data: { keys, excluded, label: artist.artist } })
+      .then(() =>
+        toast.success(excluded ? `Artista ocultado: ${artist.artist}` : "Artista reincluído"),
+      )
+      .catch((error: unknown) => {
+        revertAliases(prev);
+        toast.error((error as Error)?.message || "Não foi possível ocultar o artista");
+      });
+  };
+  const excludeSale: ExcludeSale = (sale, label) => setSaleExcluded(sale.lot_id, true, label);
+  const excludeArtist: ExcludeArtist = (artist) => setArtistExcluded(artist, true);
 
   // Reidentifica TODO o histórico pela IA (título+descrição → artista/álbum) e padroniza os
   // nomes. Roda em laço até `done`, então revalida a lista. Usa o provedor selecionado no topo.
@@ -424,12 +472,120 @@ function VinilAnalyticsPage() {
                 onApplyAlbum={applyAlbumAlias}
                 onApplySaleOverride={applySaleOverride}
                 onReidentGroup={reidentifyGroupSales}
+                onExcludeArtist={excludeArtist}
+                onExcludeSale={excludeSale}
               />
             ))}
           </div>
         )}
+
+        <HiddenPanel
+          aliases={aliasesQuery.data}
+          onRestoreSale={(lotId) => setSaleExcluded(lotId, false)}
+          onRestoreArtist={(key) => {
+            // Reincluir remove a chave (e as chaves-irmãs que compartilham o mesmo rótulo, para
+            // desfazer também as sourceKeys gravadas junto).
+            const map = aliasesQuery.data?.excludedArtists ?? {};
+            const label = map[key];
+            const keys = Object.keys(map).filter((k) => k === key || map[k] === label);
+            setArtistExcluded({ key, sourceKeys: keys, artist: label ?? key } as ArtistAgg, false);
+          }}
+        />
       </div>
     </main>
+  );
+}
+
+/** Painel "Ocultos": lista artistas e vendas excluídos do Analytics, com ação de reincluir. */
+function HiddenPanel({
+  aliases,
+  onRestoreSale,
+  onRestoreArtist,
+}: {
+  aliases: AnalyticsAliases | undefined;
+  onRestoreSale: (lotId: string) => void;
+  onRestoreArtist: (key: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  // Artistas: de-dup por RÓTULO (guardamos key final + sourceKeys com o mesmo nome) — mostra um
+  // item por artista, guardando uma chave representativa para reincluir.
+  const artistItems = useMemo(() => {
+    const byLabel = new Map<string, string>();
+    for (const [key, label] of Object.entries(aliases?.excludedArtists ?? {})) {
+      if (!byLabel.has(label)) byLabel.set(label, key);
+    }
+    return [...byLabel.entries()].map(([label, key]) => ({ label, key }));
+  }, [aliases?.excludedArtists]);
+  const saleItems = useMemo(
+    () => Object.entries(aliases?.excludedSales ?? {}),
+    [aliases?.excludedSales],
+  );
+  const total = artistItems.length + saleItems.length;
+  if (!total) return null;
+
+  return (
+    <section className="mt-4 overflow-hidden rounded-md border border-dashed border-border bg-card/60">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left hover:opacity-80"
+      >
+        {open ? (
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        )}
+        <EyeOff className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="flex-1 text-sm font-medium text-foreground">Ocultos do Analytics</span>
+        <span className="text-xs text-muted-foreground">
+          {artistItems.length} artista(s) · {saleItems.length} venda(s)
+        </span>
+      </button>
+      {open ? (
+        <div className="flex flex-col gap-3 border-t border-border p-3">
+          {artistItems.length ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Artistas
+              </span>
+              {artistItems.map((it) => (
+                <div
+                  key={it.key}
+                  className="flex items-center gap-2 rounded border border-border bg-background px-3 py-2 text-sm"
+                >
+                  <span className="flex-1 truncate text-foreground">{it.label}</span>
+                  <Button variant="ghost" size="sm" onClick={() => onRestoreArtist(it.key)}>
+                    <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                    Reincluir
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {saleItems.length ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Vendas
+              </span>
+              {saleItems.map(([lotId, label]) => (
+                <div
+                  key={lotId}
+                  className="flex items-center gap-2 rounded border border-border bg-background px-3 py-2 text-sm"
+                >
+                  <span className="flex-1 truncate text-foreground" title={lotId}>
+                    {label || lotId}
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={() => onRestoreSale(lotId)}>
+                    <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                    Reincluir
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -529,6 +685,8 @@ function ArtistRow({
   onApplyAlbum,
   onApplySaleOverride,
   onReidentGroup,
+  onExcludeArtist,
+  onExcludeSale,
 }: {
   artist: ArtistAgg;
   allArtists: ArtistAgg[];
@@ -538,6 +696,8 @@ function ArtistRow({
   onApplyAlbum: (keys: string[], name: string) => void;
   onApplySaleOverride: ApplySaleOverride;
   onReidentGroup: ReidentGroup;
+  onExcludeArtist: ExcludeArtist;
+  onExcludeSale: ExcludeSale;
 }) {
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(false);
@@ -618,6 +778,7 @@ function ArtistRow({
                 onApplyAlbum={onApplyAlbum}
                 onApplySaleOverride={onApplySaleOverride}
                 onReidentGroup={onReidentGroup}
+                onExcludeSale={onExcludeSale}
               />
             ))}
           </div>
@@ -630,6 +791,7 @@ function ArtistRow({
         onClose={() => setEdit(false)}
         onApply={onApplyArtist}
         onClear={onClearArtist}
+        onExclude={() => onExcludeArtist(artist)}
       />
     </section>
   );
@@ -644,6 +806,7 @@ function AlbumRow({
   onApplyAlbum,
   onApplySaleOverride,
   onReidentGroup,
+  onExcludeSale,
 }: {
   album: AlbumAgg;
   artistKey: string;
@@ -653,6 +816,7 @@ function AlbumRow({
   onApplyAlbum: (keys: string[], name: string) => void;
   onApplySaleOverride: ApplySaleOverride;
   onReidentGroup: ReidentGroup;
+  onExcludeSale: ExcludeSale;
 }) {
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState(false);
@@ -732,6 +896,7 @@ function AlbumRow({
                 artistName={artistName}
                 suggestions={suggestions}
                 onApplySaleOverride={onApplySaleOverride}
+                onExcludeSale={onExcludeSale}
               />
             ))}
           </div>
@@ -768,12 +933,14 @@ function SaleMarker({
   artistName,
   suggestions,
   onApplySaleOverride,
+  onExcludeSale,
 }: {
   sale: SaleRow;
   albumName: string;
   artistName: string;
   suggestions: Suggestions;
   onApplySaleOverride: ApplySaleOverride;
+  onExcludeSale: ExcludeSale;
 }) {
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState(false);
@@ -846,6 +1013,7 @@ function SaleMarker({
         open={detail}
         onClose={() => setDetail(false)}
         onApply={onApplySaleOverride}
+        onExclude={(label) => onExcludeSale(sale, label)}
       />
     </>
   );
@@ -929,6 +1097,7 @@ function SaleDetailDialog({
   open,
   onClose,
   onApply,
+  onExclude,
 }: {
   sale: SaleRow;
   albumName: string;
@@ -938,6 +1107,7 @@ function SaleDetailDialog({
   open: boolean;
   onClose: () => void;
   onApply: ApplySaleOverride;
+  onExclude: (label: string) => void;
 }) {
   const [artist, setArtist] = useState(artistName);
   const [album, setAlbum] = useState(albumName);
@@ -959,6 +1129,12 @@ function SaleDetailDialog({
   };
   const reset = () => {
     onApply(sale.lot_id, null);
+    onClose();
+  };
+  const exclude = () => {
+    // Rótulo amigável para a lista de "Ocultos" (artista — álbum, ou o título como fallback).
+    const label = [artistName, albumName].filter(Boolean).join(" — ") || sale.title;
+    onExclude(label);
     onClose();
   };
 
@@ -1068,15 +1244,27 @@ function SaleDetailDialog({
             </datalist>
           </div>
 
-          <div className="flex items-center justify-between gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={reset}
-              title="Remover a correção manual desta venda"
-            >
-              Voltar ao automático
-            </Button>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={reset}
+                title="Remover a correção manual desta venda"
+              >
+                Voltar ao automático
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={exclude}
+                title="Ocultar esta venda do Analytics (não apaga do banco; dá para reincluir em 'Ocultos')"
+                className="text-destructive hover:text-destructive"
+              >
+                <EyeOff className="mr-1 h-3.5 w-3.5" />
+                Excluir do Analytics
+              </Button>
+            </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={onClose}>
                 Cancelar
@@ -1100,6 +1288,7 @@ function ArtistEditDialog({
   onClose,
   onApply,
   onClear,
+  onExclude,
 }: {
   artist: ArtistAgg;
   allArtists: ArtistAgg[];
@@ -1107,6 +1296,7 @@ function ArtistEditDialog({
   onClose: () => void;
   onApply: (sourceKeys: string[], name: string) => void;
   onClear: () => void;
+  onExclude: () => void;
 }) {
   const [name, setName] = useState(artist.artist);
   const [filter, setFilter] = useState("");
@@ -1207,15 +1397,30 @@ function ArtistEditDialog({
             </p>
           </div>
 
-          <div className="flex items-center justify-between gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onClear}
-              title="Voltar ao agrupamento automático"
-            >
-              Desfazer curadoria
-            </Button>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClear}
+                title="Voltar ao agrupamento automático"
+              >
+                Desfazer curadoria
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  onExclude();
+                  onClose();
+                }}
+                title="Ocultar este artista do Analytics (não apaga do banco; dá para reincluir em 'Ocultos')"
+                className="text-destructive hover:text-destructive"
+              >
+                <EyeOff className="mr-1 h-3.5 w-3.5" />
+                Excluir artista
+              </Button>
+            </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={onClose}>
                 Cancelar
