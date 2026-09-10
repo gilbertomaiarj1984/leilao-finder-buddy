@@ -41,23 +41,45 @@ export type LotSaleRow = {
   bids: number | null; // nº de lances (demanda)
   fee_pct: number | null; // comissão do leiloeiro em % (custo real = venda × (1 + taxa/100))
   initial_price: number | null; // valor inicial/contratado (p/ desconto/ágio vs. venda)
+  orig_text: string; // descritivo COMPLETO do card do catálogo (texto original; NÃO reescrito
+  // pela reidentificação por IA, que só ajusta title/artist)
 };
 
 const PAGE = 1000;
-const SALE_COLUMNS =
+// Colunas base (sempre presentes) e a coluna `orig_text`, adicionada depois (setup.sql/migração).
+// A leitura/escrita toleram a ausência de `orig_text` (banco sem a migração ainda) — ver
+// `isMissingColumn`.
+const BASE_SALE_COLUMNS =
   "lot_id, id_leilao, id_peca, artist, title, sold_price, sold_price_raw, sold_date, house, uf, media, sleeve, score, faixa, insert_state, source_url, views, bids, fee_pct, initial_price";
+const SALE_COLUMNS = `${BASE_SALE_COLUMNS}, orig_text`;
 
-/** Lê todo o histórico de vendas (single-user; paginado). Best-effort. */
+/** Erro do Postgres/PostgREST de coluna inexistente (antes de aplicar a migração `orig_text`). */
+function isMissingColumn(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === "42703" || error.code === "PGRST204") return true;
+  return (error.message ?? "").includes("orig_text");
+}
+
+/** Lê todo o histórico de vendas (single-user; paginado). Best-effort. Tolera `orig_text` ausente. */
 export async function getAllLotSales(): Promise<LotSaleRow[]> {
+  let withOrig = true;
   const rows: LotSaleRow[] = [];
   for (let from = 0; ; from += PAGE) {
+    const cols = withOrig ? SALE_COLUMNS : BASE_SALE_COLUMNS;
     const { data, error } = await supabaseAdmin
       .from("lot_sales")
-      .select(SALE_COLUMNS)
+      .select(cols)
       .range(from, from + PAGE - 1);
-    if (error) throw error;
-    const batch = (data as LotSaleRow[] | null) ?? [];
-    rows.push(...batch);
+    if (error) {
+      if (withOrig && isMissingColumn(error)) {
+        withOrig = false;
+        from -= PAGE; // repete esta página sem `orig_text`
+        continue;
+      }
+      throw error;
+    }
+    const batch = (data ?? []) as unknown as Record<string, unknown>[];
+    for (const r of batch) rows.push({ orig_text: "", ...r } as unknown as LotSaleRow);
     if (batch.length < PAGE) break;
   }
   return rows;
@@ -70,6 +92,16 @@ export async function upsertLotSales(rows: LotSaleRow[]): Promise<number> {
   const payload = rows.map((r) => ({ ...r, captured_at: capturedAt }));
   const { error } = await supabaseAdmin.from("lot_sales").upsert(payload, { onConflict: "lot_id" });
   if (error) {
+    // Banco ainda sem a coluna `orig_text` (migração não aplicada): grava sem ela em vez de 500.
+    if (isMissingColumn(error)) {
+      const slim = payload.map(({ orig_text, ...base }) => base);
+      const retry = await supabaseAdmin.from("lot_sales").upsert(slim, { onConflict: "lot_id" });
+      if (retry.error) {
+        console.error("[lot-sales] falha ao gravar vendas (sem orig_text)", retry.error);
+        throw new Error(`Não foi possível gravar as vendas: ${retry.error.message}`);
+      }
+      return payload.length;
+    }
     console.error("[lot-sales] falha ao gravar vendas", error);
     throw new Error(`Não foi possível gravar as vendas: ${error.message}`);
   }
@@ -210,6 +242,9 @@ function salesRowsFromCatalog(
       bids: data.bids ?? null,
       fee_pct: data.feePct ?? null,
       initial_price: data.initialPrice ?? null,
+      // Texto original = descritivo completo do card (o mesmo que alimenta o estado). Preservado
+      // mesmo depois que a reidentificação por IA reescreve `title`.
+      orig_text: data.text ?? "",
     });
   }
   return rows;

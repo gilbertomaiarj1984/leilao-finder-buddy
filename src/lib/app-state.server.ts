@@ -22,6 +22,7 @@ const COLLECTION_FEEDBACK_KEY = "collection_feedback";
 const SALES_CAPTURED_KEY = "sales_captured";
 const ANALYTICS_ARTIST_ALIASES_KEY = "analytics_artist_aliases";
 const ANALYTICS_ALBUM_ALIASES_KEY = "analytics_album_aliases";
+const ANALYTICS_SALE_OVERRIDES_KEY = "analytics_sale_overrides";
 
 /**
  * Casas de leilão marcadas como "verificadas" (chaves `${dia}|${casa}`). Global, um
@@ -281,9 +282,15 @@ export async function markSalesCaptured(idLeiloes: string[]): Promise<void> {
  * - **`analytics_album_aliases`** (`Record<"${artistKey}|${albumKey}", nomeCanônico>`):
  *   renomear/fundir álbuns no escopo do artista (chave já com o `artistKey` FINAL, pós-alias).
  */
+export type SaleOverride = { artist?: string; album?: string };
+
 export type AnalyticsAliases = {
   artists: Record<string, string>;
   albums: Record<string, string>;
+  // Correção POR VENDA (aprendizado por `lot_id`): define artista/álbum de UMA venda específica,
+  // usada para separar os "(álbum não identificado)" — vale por cima do agrupamento automático,
+  // e os apelidos por nome ainda aplicam depois. Ver `buildAnalytics`.
+  sales: Record<string, SaleOverride>;
 };
 
 function toStringMap(value: unknown): Record<string, string> {
@@ -305,21 +312,74 @@ async function readStringMap(key: string): Promise<Record<string, string>> {
   return toStringMap(data?.value);
 }
 
-/** Lê os apelidos de artista e álbum do Analytics. Best-effort ({} em erro). */
+/** Lê o mapa de correções POR VENDA (`Record<lotId, {artist?, album?}>`). */
+async function readSaleOverrides(): Promise<Record<string, SaleOverride>> {
+  const { data, error } = await supabaseAdmin
+    .from("app_state")
+    .select("value")
+    .eq("key", ANALYTICS_SALE_OVERRIDES_KEY)
+    .maybeSingle();
+  if (error) throw error;
+  const value = data?.value;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, SaleOverride> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (!v || typeof v !== "object" || Array.isArray(v)) continue;
+    const o = v as Record<string, unknown>;
+    const entry: SaleOverride = {};
+    if (typeof o["artist"] === "string" && o["artist"].trim()) entry.artist = o["artist"];
+    if (typeof o["album"] === "string" && o["album"].trim()) entry.album = o["album"];
+    if (entry.artist || entry.album) out[k] = entry;
+  }
+  return out;
+}
+
+/** Lê os apelidos de artista/álbum e as correções por venda do Analytics. Best-effort. */
 export async function getAnalyticsAliases(): Promise<AnalyticsAliases> {
   try {
-    const [artists, albums] = await Promise.all([
+    const [artists, albums, sales] = await Promise.all([
       readStringMap(ANALYTICS_ARTIST_ALIASES_KEY),
       readStringMap(ANALYTICS_ALBUM_ALIASES_KEY),
+      readSaleOverrides(),
     ]);
-    return { artists, albums };
+    return { artists, albums, sales };
   } catch (error) {
     console.error(
       "[app-state] não foi possível ler os apelidos do Analytics (usando vazio)",
       error,
     );
-    return { artists: {}, albums: {} };
+    return { artists: {}, albums: {}, sales: {} };
   }
+}
+
+/**
+ * Define/limpa a correção de UMA venda (`lotId`): grava `{artist?, album?}` ou remove a chave
+ * quando `value` é null (volta ao automático). Read-modify-write.
+ */
+export async function setAnalyticsSaleOverride(
+  lotId: string,
+  value: SaleOverride | null,
+): Promise<{ savedAt: string }> {
+  const id = typeof lotId === "string" ? lotId.trim() : "";
+  if (!id) return { savedAt: new Date().toISOString() };
+  const map = await readSaleOverrides().catch((): Record<string, SaleOverride> => ({}));
+  const entry: SaleOverride = {};
+  if (value?.artist && value.artist.trim()) entry.artist = value.artist.trim();
+  if (value?.album && value.album.trim()) entry.album = value.album.trim();
+  if (!entry.artist && !entry.album) delete map[id];
+  else map[id] = entry;
+  const savedAt = new Date().toISOString();
+  const { error } = await supabaseAdmin.from("app_state").upsert(
+    { key: ANALYTICS_SALE_OVERRIDES_KEY, value: map, updated_at: savedAt },
+    {
+      onConflict: "key",
+    },
+  );
+  if (error) {
+    console.error("[app-state] não foi possível gravar a correção da venda", error);
+    throw new Error(`Não foi possível gravar a correção da venda: ${error.message}`);
+  }
+  return { savedAt };
 }
 
 async function saveStringMap(

@@ -241,6 +241,7 @@ export type Database = {
           insert_state: string
           lot_id: string
           media: string
+          orig_text: string
           score: number | null
           sleeve: string
           sold_date: string | null
@@ -264,6 +265,7 @@ export type Database = {
           insert_state?: string
           lot_id: string
           media?: string
+          orig_text?: string
           score?: number | null
           sleeve?: string
           sold_date?: string | null
@@ -287,6 +289,7 @@ export type Database = {
           insert_state?: string
           lot_id?: string
           media?: string
+          orig_text?: string
           score?: number | null
           sleeve?: string
           sold_date?: string | null

@@ -21,13 +21,19 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { AiProviderSelect } from "@/components/vinyl/ai-provider-controls";
 import { scoreTone } from "@/components/vinyl/ai-score-utils";
 import { fmtMoney } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
-import { type AlbumAgg, type ArtistAgg, buildAnalytics, type SaleRow } from "@/lib/analytics";
+import {
+  type AlbumAgg,
+  type AnalyticsAliases,
+  type ArtistAgg,
+  buildAnalytics,
+  type SaleRow,
+} from "@/lib/analytics";
 import { type Condition, EMPTY_CONDITION, normalizeGrade, scoreCondition } from "@/lib/grading";
 import {
   clearAnalyticsAlias,
@@ -38,6 +44,7 @@ import {
   setAiProvider,
   setAnalyticsAlbumAlias,
   setAnalyticsArtistAlias,
+  setAnalyticsSaleOverride,
 } from "@/lib/leiloesbr.functions";
 import { normalizeForMatch } from "@/lib/vinyl-parse";
 
@@ -88,6 +95,8 @@ function conditionFromSale(s: SaleRow): Condition {
 
 type ArtistSort = "count" | "alpha";
 type AlbumSort = "count" | "alpha";
+type Suggestions = { artists: string[]; albums: string[] };
+type ApplySaleOverride = (lotId: string, value: { artist: string; album: string } | null) => void;
 
 function VinilAnalyticsPage() {
   const queryClient = useQueryClient();
@@ -99,6 +108,7 @@ function VinilAnalyticsPage() {
   const runSetArtistAlias = useServerFn(setAnalyticsArtistAlias);
   const runSetAlbumAlias = useServerFn(setAnalyticsAlbumAlias);
   const runClearAlias = useServerFn(clearAnalyticsAlias);
+  const runSetSaleOverride = useServerFn(setAnalyticsSaleOverride);
   const sales = useQuery({
     queryKey: ["vinyl-sales"] as const,
     queryFn: () => fetchSales(),
@@ -134,20 +144,29 @@ function VinilAnalyticsPage() {
       });
   };
 
+  // Clona o cache de apelidos (com os 3 mapas) para o update otimista.
+  const cloneAliases = (): AnalyticsAliases => {
+    const prev = aliasesQuery.data;
+    return {
+      artists: { ...(prev?.artists ?? {}) },
+      albums: { ...(prev?.albums ?? {}) },
+      sales: { ...(prev?.sales ?? {}) },
+    };
+  };
+  const revertAliases = (prev: AnalyticsAliases | undefined) =>
+    queryClient.setQueryData(["analytics-aliases"], prev);
+
   // Grava um apelido de ARTISTA (renomear/fundir). Update otimista no cache dos apelidos → o
   // `useMemo` de `buildAnalytics` recomputa na hora; em erro, reverte.
   const applyArtistAlias = (sourceKeys: string[], name: string) => {
     const prev = aliasesQuery.data;
-    const next = {
-      artists: { ...(prev?.artists ?? {}) },
-      albums: { ...(prev?.albums ?? {}) },
-    };
-    for (const k of sourceKeys) next.artists[k] = name;
+    const next = cloneAliases();
+    for (const k of sourceKeys) next.artists![k] = name;
     queryClient.setQueryData(["analytics-aliases"], next);
     void runSetArtistAlias({ data: { sourceKeys, name } })
       .then(() => toast.success(`Artista atualizado: ${name}`))
       .catch((error: unknown) => {
-        queryClient.setQueryData(["analytics-aliases"], prev);
+        revertAliases(prev);
         toast.error((error as Error)?.message || "Não foi possível salvar o artista");
       });
   };
@@ -155,16 +174,13 @@ function VinilAnalyticsPage() {
   // Grava um apelido de ÁLBUM (renomear/fundir no escopo do artista).
   const applyAlbumAlias = (keys: string[], name: string) => {
     const prev = aliasesQuery.data;
-    const next = {
-      artists: { ...(prev?.artists ?? {}) },
-      albums: { ...(prev?.albums ?? {}) },
-    };
-    for (const k of keys) next.albums[k] = name;
+    const next = cloneAliases();
+    for (const k of keys) next.albums![k] = name;
     queryClient.setQueryData(["analytics-aliases"], next);
     void runSetAlbumAlias({ data: { keys, name } })
       .then(() => toast.success(`Álbum atualizado: ${name}`))
       .catch((error: unknown) => {
-        queryClient.setQueryData(["analytics-aliases"], prev);
+        revertAliases(prev);
         toast.error((error as Error)?.message || "Não foi possível salvar o álbum");
       });
   };
@@ -172,19 +188,44 @@ function VinilAnalyticsPage() {
   // Desfaz os apelidos de um artista (remove suas chaves dos dois mapas). Volta ao automático.
   const clearArtistAlias = (artist: ArtistAgg) => {
     const prev = aliasesQuery.data;
-    const next = {
-      artists: { ...(prev?.artists ?? {}) },
-      albums: { ...(prev?.albums ?? {}) },
-    };
-    for (const k of artist.sourceKeys) delete next.artists[k];
+    const next = cloneAliases();
+    for (const k of artist.sourceKeys) delete next.artists![k];
     queryClient.setQueryData(["analytics-aliases"], next);
     void Promise.all(
       artist.sourceKeys.map((key) => runClearAlias({ data: { kind: "artist", key } })),
     )
       .then(() => toast.success("Curadoria do artista desfeita"))
       .catch((error: unknown) => {
-        queryClient.setQueryData(["analytics-aliases"], prev);
+        revertAliases(prev);
         toast.error((error as Error)?.message || "Não foi possível desfazer");
+      });
+  };
+
+  // Correção POR VENDA (por `lot_id`): define/limpa artista+álbum de uma venda; separa os não
+  // identificados. `clear` volta ao automático. Update otimista no mapa `sales`.
+  const applySaleOverride = (lotId: string, value: { artist: string; album: string } | null) => {
+    const prev = aliasesQuery.data;
+    const next = cloneAliases();
+    if (!value || (!value.artist.trim() && !value.album.trim())) delete next.sales![lotId];
+    else {
+      const entry: { artist?: string; album?: string } = {};
+      if (value.artist.trim()) entry.artist = value.artist.trim();
+      if (value.album.trim()) entry.album = value.album.trim();
+      next.sales![lotId] = entry;
+    }
+    queryClient.setQueryData(["analytics-aliases"], next);
+    void runSetSaleOverride({
+      data: {
+        lotId,
+        artist: value?.artist ?? "",
+        album: value?.album ?? "",
+        clear: !value,
+      },
+    })
+      .then(() => toast.success(value ? "Venda corrigida" : "Correção da venda desfeita"))
+      .catch((error: unknown) => {
+        revertAliases(prev);
+        toast.error((error as Error)?.message || "Não foi possível corrigir a venda");
       });
   };
 
@@ -250,6 +291,18 @@ function VinilAnalyticsPage() {
     () => ({ sales: rows.length, artists: analytics.length }),
     [rows, analytics],
   );
+
+  // Sugestões (nomes já existentes) para a correção por venda — datalist de artistas/álbuns.
+  const suggestions = useMemo(() => {
+    const artistsSet = new Set<string>();
+    const albumsSet = new Set<string>();
+    for (const a of analytics) {
+      artistsSet.add(a.artist);
+      for (const al of a.albums) albumsSet.add(al.album);
+    }
+    const sort = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    return { artists: sort(artistsSet), albums: sort(albumsSet) };
+  }, [analytics]);
 
   return (
     <main className="min-h-screen bg-background">
@@ -340,9 +393,11 @@ function VinilAnalyticsPage() {
                 key={a.key}
                 artist={a}
                 allArtists={analytics}
+                suggestions={suggestions}
                 onApplyArtist={applyArtistAlias}
                 onClearArtist={() => clearArtistAlias(a)}
                 onApplyAlbum={applyAlbumAlias}
+                onApplySaleOverride={applySaleOverride}
               />
             ))}
           </div>
@@ -411,15 +466,19 @@ function EmptyState() {
 function ArtistRow({
   artist,
   allArtists,
+  suggestions,
   onApplyArtist,
   onClearArtist,
   onApplyAlbum,
+  onApplySaleOverride,
 }: {
   artist: ArtistAgg;
   allArtists: ArtistAgg[];
+  suggestions: Suggestions;
   onApplyArtist: (sourceKeys: string[], name: string) => void;
   onClearArtist: () => void;
   onApplyAlbum: (keys: string[], name: string) => void;
+  onApplySaleOverride: ApplySaleOverride;
 }) {
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(false);
@@ -483,8 +542,11 @@ function ArtistRow({
                 key={al.key}
                 album={al}
                 artistKey={artist.key}
+                artistName={artist.artist}
                 siblings={artist.albums}
+                suggestions={suggestions}
                 onApplyAlbum={onApplyAlbum}
+                onApplySaleOverride={onApplySaleOverride}
               />
             ))}
           </div>
@@ -505,13 +567,19 @@ function ArtistRow({
 function AlbumRow({
   album,
   artistKey,
+  artistName,
   siblings,
+  suggestions,
   onApplyAlbum,
+  onApplySaleOverride,
 }: {
   album: AlbumAgg;
   artistKey: string;
+  artistName: string;
   siblings: AlbumAgg[];
+  suggestions: Suggestions;
   onApplyAlbum: (keys: string[], name: string) => void;
+  onApplySaleOverride: ApplySaleOverride;
 }) {
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState(false);
@@ -578,7 +646,14 @@ function AlbumRow({
           </div>
           <div className="flex gap-2 overflow-x-auto pb-2">
             {album.sales.map((s) => (
-              <SaleMarker key={s.lot_id} sale={s} albumName={album.album} />
+              <SaleMarker
+                key={s.lot_id}
+                sale={s}
+                albumName={album.album}
+                artistName={artistName}
+                suggestions={suggestions}
+                onApplySaleOverride={onApplySaleOverride}
+              />
             ))}
           </div>
 
@@ -606,9 +681,23 @@ function AlbumRow({
 }
 
 /** Mini card horizontal: VALOR em cima, estado no meio, NOTA (score) embaixo. Ao passar o
- *  mouse, mostra um preview compacto (Popover portalizado → não é cortado pelo scroll). */
-function SaleMarker({ sale, albumName }: { sale: SaleRow; albumName: string }) {
+ *  mouse, mostra um preview compacto (Popover portalizado → não é cortado pelo scroll); ao
+ *  CLICAR, abre o detalhe da venda (texto original + correção por venda). */
+function SaleMarker({
+  sale,
+  albumName,
+  artistName,
+  suggestions,
+  onApplySaleOverride,
+}: {
+  sale: SaleRow;
+  albumName: string;
+  artistName: string;
+  suggestions: Suggestions;
+  onApplySaleOverride: ApplySaleOverride;
+}) {
   const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cond = useMemo(() => conditionFromSale(sale), [sale]);
   const grade =
@@ -626,49 +715,64 @@ function SaleMarker({ sale, albumName }: { sale: SaleRow; albumName: string }) {
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <div
-          onMouseEnter={() => {
-            cancelClose();
-            setOpen(true);
-          }}
-          onMouseLeave={scheduleClose}
-          className="flex w-24 shrink-0 cursor-default flex-col items-center gap-1 rounded border border-border bg-card p-2 text-center"
-        >
-          {/* VALOR (antes era a nota que ficava aqui em cima) */}
-          <span className="w-full truncate text-xs font-semibold text-foreground">
-            {money(sale.sold_price)}
-          </span>
-          <span className="w-full truncate text-[10px] text-muted-foreground" title={grade}>
-            {grade}
-          </span>
-          {/* NOTA/score (invertida com o valor) */}
-          <span
-            className={`w-full truncate rounded px-1 py-0.5 text-[11px] font-semibold ${scoreTone(sale.score)}`}
-            title={`Disco ${sale.media || "—"} · Capa ${sale.sleeve || "—"}${
-              sale.score !== null ? ` · Score ${sale.score}` : ""
-            }`}
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverAnchor asChild>
+          <button
+            type="button"
+            onMouseEnter={() => {
+              cancelClose();
+              setOpen(true);
+            }}
+            onMouseLeave={scheduleClose}
+            onClick={() => setDetail(true)}
+            title="Abrir detalhe / corrigir"
+            className="flex w-24 shrink-0 cursor-pointer flex-col items-center gap-1 rounded border border-border bg-card p-2 text-center hover:border-primary/60"
           >
-            {sale.score !== null ? sale.score : "—"}
-          </span>
-        </div>
-      </PopoverTrigger>
-      <PopoverContent
-        align="center"
-        side="top"
-        className="w-64 p-3"
-        onMouseEnter={cancelClose}
-        onMouseLeave={scheduleClose}
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <SalePreview sale={sale} albumName={albumName} condition={cond} />
-      </PopoverContent>
-    </Popover>
+            {/* VALOR (antes era a nota que ficava aqui em cima) */}
+            <span className="w-full truncate text-xs font-semibold text-foreground">
+              {money(sale.sold_price)}
+            </span>
+            <span className="w-full truncate text-[10px] text-muted-foreground" title={grade}>
+              {grade}
+            </span>
+            {/* NOTA/score (invertida com o valor) */}
+            <span
+              className={`w-full truncate rounded px-1 py-0.5 text-[11px] font-semibold ${scoreTone(sale.score)}`}
+              title={`Disco ${sale.media || "—"} · Capa ${sale.sleeve || "—"}${
+                sale.score !== null ? ` · Score ${sale.score}` : ""
+              }`}
+            >
+              {sale.score !== null ? sale.score : "—"}
+            </span>
+          </button>
+        </PopoverAnchor>
+        <PopoverContent
+          align="center"
+          side="top"
+          className="w-64 p-3"
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <SalePreview sale={sale} albumName={albumName} condition={cond} />
+        </PopoverContent>
+      </Popover>
+      <SaleDetailDialog
+        sale={sale}
+        albumName={albumName}
+        artistName={artistName}
+        condition={cond}
+        suggestions={suggestions}
+        open={detail}
+        onClose={() => setDetail(false)}
+        onApply={onApplySaleOverride}
+      />
+    </>
   );
 }
 
-/** Preview compacto do lote (sem imagem por ora — o histórico não guarda a URL da imagem). */
+/** Preview compacto do lote (hover). Mostra artista, álbum, TEXTO ORIGINAL e mais campos. */
 function SalePreview({
   sale,
   albumName,
@@ -679,6 +783,7 @@ function SalePreview({
   condition: Condition;
 }) {
   const img = (sale as SaleRow & { image?: string | null }).image ?? null;
+  const orig = (sale.orig_text || sale.title || "").trim();
   return (
     <div className="flex flex-col gap-2">
       {img ? (
@@ -687,8 +792,12 @@ function SalePreview({
         </div>
       ) : null}
       <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">{albumName}</p>
-      {sale.title && normalizeForMatch(sale.title) !== normalizeForMatch(albumName) ? (
-        <p className="line-clamp-2 text-xs leading-snug text-muted-foreground">{sale.title}</p>
+      {/* Texto original do lote (descritivo do catálogo, ou o título quando não há) — com rolagem
+          quando é longo, para os casos não identificados. */}
+      {orig ? (
+        <div className="max-h-20 overflow-y-auto rounded bg-secondary/50 p-1.5 text-xs leading-snug text-muted-foreground">
+          {orig}
+        </div>
       ) : null}
       <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
         <ConditionBadges condition={condition} />
@@ -723,7 +832,184 @@ function SalePreview({
           </a>
         ) : null}
       </div>
+      <p className="text-[10px] italic text-muted-foreground">
+        Clique no card para abrir / corrigir
+      </p>
     </div>
+  );
+}
+
+/** Detalhe da venda (clique no mini card): texto ORIGINAL completo + todos os campos + link, e
+ *  correção POR VENDA (define artista/álbum só desta venda) para separar os não identificados. */
+function SaleDetailDialog({
+  sale,
+  albumName,
+  artistName,
+  condition,
+  suggestions,
+  open,
+  onClose,
+  onApply,
+}: {
+  sale: SaleRow;
+  albumName: string;
+  artistName: string;
+  condition: Condition;
+  suggestions: Suggestions;
+  open: boolean;
+  onClose: () => void;
+  onApply: ApplySaleOverride;
+}) {
+  const [artist, setArtist] = useState(artistName);
+  const [album, setAlbum] = useState(albumName);
+  const listId = `sale-${sale.lot_id}`;
+
+  // Reinicia os campos ao (re)abrir para esta venda, com os valores atuais do grupo.
+  const openedFor = useRef<string | null>(null);
+  if (open && openedFor.current !== sale.lot_id) {
+    openedFor.current = sale.lot_id;
+    setArtist(artistName);
+    setAlbum(albumName);
+  }
+  if (!open && openedFor.current !== null) openedFor.current = null;
+
+  const orig = (sale.orig_text || "").trim();
+  const save = () => {
+    onApply(sale.lot_id, { artist, album });
+    onClose();
+  };
+  const reset = () => {
+    onApply(sale.lot_id, null);
+    onClose();
+  };
+
+  const Field = ({ label, value }: { label: string; value: string }) => (
+    <div className="flex justify-between gap-3 border-b border-border/60 py-1">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="text-right text-foreground">{value || "—"}</span>
+    </div>
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="truncate">Detalhe da venda</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          {/* Texto ORIGINAL completo do lote — o que o card do catálogo trazia. */}
+          <div>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">Texto original do lote</p>
+            <div className="max-h-40 overflow-y-auto rounded border border-border bg-secondary/40 p-2 text-sm leading-snug text-foreground">
+              {orig || sale.title || "—"}
+              {!orig && sale.title ? (
+                <span className="mt-1 block text-[10px] italic text-muted-foreground">
+                  (descritivo completo não guardado nesta venda — texto acima é o título; abra o
+                  lote para ver tudo)
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Todos os campos da venda. */}
+          <div className="text-xs">
+            <Field label="Artista (atual)" value={artistName} />
+            <Field label="Álbum (atual)" value={albumName} />
+            <Field label="Título armazenado" value={sale.title} />
+            <Field
+              label="Estado"
+              value={`Disco ${sale.media || "—"} · Capa ${sale.sleeve || "—"}`}
+            />
+            <Field
+              label="Score / Faixa"
+              value={`${sale.score ?? "—"}${sale.faixa ? ` · ${sale.faixa}` : ""}`}
+            />
+            <Field label="Valor" value={money(sale.sold_price)} />
+            <Field
+              label="Inicial / c/ taxa"
+              value={`${sale.initial_price != null ? money(sale.initial_price) : "—"} / ${
+                netCost(sale) != null ? money(netCost(sale)) : "—"
+              }`}
+            />
+            <Field label="Demanda" value={demandLabel(sale)} />
+            <Field
+              label="Casa / UF"
+              value={`${sale.house || "—"}${sale.uf ? ` · ${sale.uf}` : ""}`}
+            />
+            <Field label="Data" value={sale.sold_date ?? "—"} />
+            <Field label="Lote (id)" value={sale.lot_id} />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <ConditionBadges condition={condition} />
+            {sale.source_url ? (
+              <a
+                href={sale.source_url}
+                target="_blank"
+                rel="noreferrer"
+                className="ml-auto inline-flex items-center gap-1 text-primary hover:underline"
+              >
+                Abrir lote no leiloeiro <ExternalLink className="h-3 w-3" />
+              </a>
+            ) : null}
+          </div>
+
+          {/* Correção POR VENDA: separa este disco do balaio, atribuindo artista/álbum SÓ dele. */}
+          <div className="flex flex-col gap-2 rounded border border-border p-3">
+            <span className="text-sm font-medium text-foreground">Corrigir esta venda</span>
+            <span className="text-xs text-muted-foreground">
+              Define o artista e o álbum SÓ deste disco — útil para tirar os não identificados do
+              balaio. Pode escolher um nome existente ou digitar um novo.
+            </span>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">Artista</span>
+              <Input
+                value={artist}
+                onChange={(e) => setArtist(e.target.value)}
+                list={`${listId}-artists`}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">Álbum</span>
+              <Input
+                value={album}
+                onChange={(e) => setAlbum(e.target.value)}
+                list={`${listId}-albums`}
+              />
+            </label>
+            <datalist id={`${listId}-artists`}>
+              {suggestions.artists.map((a) => (
+                <option key={a} value={a} />
+              ))}
+            </datalist>
+            <datalist id={`${listId}-albums`}>
+              {suggestions.albums.map((a) => (
+                <option key={a} value={a} />
+              ))}
+            </datalist>
+          </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={reset}
+              title="Remover a correção manual desta venda"
+            >
+              Voltar ao automático
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={onClose}>
+                Cancelar
+              </Button>
+              <Button size="sm" onClick={save}>
+                Salvar
+              </Button>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
