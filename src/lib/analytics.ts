@@ -4,6 +4,7 @@
 import { FAIXAS, faixaFromScore } from "@/lib/grading";
 import {
   ANALYTICS_COMPILATION_LABEL,
+  canonicalizeCollapsedArtist,
   extractArtist,
   isCompilation,
   isDiscBundle,
@@ -223,10 +224,15 @@ export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): Art
     // Artists" vindo do catálogo) — tentar adivinhar do título por cima dele já trocou "Various
     // Artists" por um "artista" inventado a partir de uma frase de coletânea sem "-"/"de X".
     const storedArtist = row.artist?.trim() || "";
-    const rawArtist =
+    // Canonicaliza bandas conhecidas por aparecer ora coladas ("ACDC"), ora com separador
+    // ("AC/DC", "AC DC") — sem isso, cada grafia gravada em `lot_sales` virava seu próprio
+    // balaio de artista (a chave de agrupamento só une as formas COM separador). Casamento
+    // exato contra o bundle de nomes conhecidos, então não arrisca fundir artistas diferentes.
+    const rawArtist = canonicalizeCollapsedArtist(
       storedArtist && (isVariousArtists(storedArtist) || !isGenericArtist(storedArtist))
         ? storedArtist
-        : extractArtist(row.title) || storedArtist;
+        : extractArtist(row.title) || storedArtist,
+    );
     const isComp =
       !saleOv &&
       (isVariousArtists(rawArtist) || (isGenericArtist(rawArtist) && isCompilation(row.title)));
