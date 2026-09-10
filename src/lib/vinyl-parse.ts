@@ -1,3 +1,5 @@
+import { KNOWN_ARTISTS_SEED } from "./known-artists-seed";
+
 export type VinylLot = {
   id: string;
   idPeca: string;
@@ -405,7 +407,9 @@ export function extractArtist(title: string): string {
   let candidate = (parts[0] ?? "").trim();
 
   // Cut trailing sentences / album names / parentheses: "Artista. Produto original..."
-  candidate = candidate.split(/["“”([/]/)[0]!;
+  // NÃO corta em "/": bandas reais usam a barra no PRÓPRIO nome ("AC/DC") — cortar ali truncava
+  // pra "AC" e o candidato morria no filtro de tamanho mínimo abaixo, ficando sempre sem artista.
+  candidate = candidate.split(/["“”(]/)[0]!;
   candidate = candidate.split(/\.\s+|,\s+|;\s+/)[0]!;
   candidate = candidate
     .replace(/[(),.;:]+$/g, "")
@@ -432,7 +436,9 @@ export function extractArtist(title: string): string {
   // Mpb"), inclusive sobrescrevendo um `isVariousArtists` já correto ao rederivar na leitura.
   if (COMPILATION_HINTS.some((hint) => normCandidate.includes(hint))) return "";
 
-  return titleCase(candidate);
+  // "ACDC" (casa digitou colado) → "AC/DC" (grafia canônica do bundle) — une com "AC DC"/
+  // "AC-DC"/"AC/DC", que já caem na mesma chave via `normalizeForMatch` (separador vira espaço).
+  return canonicalizeCollapsedArtist(titleCase(candidate));
 }
 
 const LOWER_WORDS = new Set([
@@ -612,6 +618,38 @@ export function normalizeForMatch(value: string): string {
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
+}
+
+// Índice preguiçoso: forma COLADA (só letras/números, sem espaço nem pontuação) de cada nome
+// conhecido com separador interno → nome canônico do bundle. Ex.: "AC/DC" normaliza por token
+// pra "ac dc" (2 palavras, já une "AC/DC"/"AC DC"/"AC-DC"), mas "ACDC" (casas digitam colado,
+// sem separador nenhum) normaliza pra "acdc" — 1 palavra DIFERENTE, escapando dessa união. Só
+// nomes com mais de uma palavra entram (nome de 1 palavra não tem essa ambiguidade).
+let collapsedKnownArtistIndex: Map<string, string> | null = null;
+function getCollapsedKnownArtistIndex(): Map<string, string> {
+  if (collapsedKnownArtistIndex) return collapsedKnownArtistIndex;
+  const map = new Map<string, string>();
+  for (const name of KNOWN_ARTISTS_SEED) {
+    const spaced = normalizeForMatch(name);
+    if (!spaced.includes(" ")) continue;
+    const collapsed = spaced.replace(/\s+/g, "");
+    if (collapsed.length < 3 || map.has(collapsed)) continue;
+    map.set(collapsed, name);
+  }
+  collapsedKnownArtistIndex = map;
+  return map;
+}
+
+/**
+ * Canonicaliza um nome de artista conhecido por aparecer ora COLADO ("ACDC"), ora com
+ * separador ("AC/DC", "AC DC", "AC-DC") — casa contra o bundle de nomes conhecidos pela forma
+ * colada e devolve a grafia canônica; sem bater, devolve o nome original inalterado. Casamento
+ * é por EXATO (nunca aproximado), então não corre risco de fundir artistas diferentes.
+ */
+export function canonicalizeCollapsedArtist(name: string): string {
+  const collapsed = normalizeForMatch(name).replace(/\s+/g, "");
+  if (collapsed.length < 3) return name;
+  return getCollapsedKnownArtistIndex().get(collapsed) ?? name;
 }
 
 /** Quantidade de acentos numa string (desempate de grafia — mais acentuada é a "correta"). */
