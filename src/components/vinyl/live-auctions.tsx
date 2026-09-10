@@ -32,32 +32,27 @@ export function LiveAuctions() {
           {auctions.length} leilão(ões) com vinil já iniciados
         </span>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {auctions.map((auction) => (
           <a
             key={auction.idLeilao}
-            href={auction.entryUrl ?? auction.houseUrl ?? "#"}
+            href={auction.presencialUrl ?? auction.entryUrl ?? auction.houseUrl ?? "#"}
             target="_blank"
             rel="noreferrer"
-            className="group rounded-md border border-border bg-card p-3 transition hover:border-primary"
+            title="Acompanhar o pregão presencial desta casa"
+            className="group flex flex-col justify-center gap-0.5 rounded-md border border-border bg-card px-3 py-2 transition hover:border-primary"
           >
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-sm font-semibold text-foreground">{auction.house}</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="truncate text-sm font-semibold text-foreground">{auction.house}</p>
               <Radio className="h-4 w-4 shrink-0 text-primary" />
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Início {auction.time}
-              {auction.uf ? ` · ${auction.uf}` : ""} · {auction.lotCount} lote(s) de vinil
+            <p className="flex items-center gap-1 text-xs text-muted-foreground">
+              <span className="truncate">
+                Início {auction.time}
+                {auction.uf ? ` · ${auction.uf}` : ""} · {auction.lotCount} lote(s)
+              </span>
+              <ExternalLink className="ml-auto h-3 w-3 shrink-0 text-primary opacity-0 transition-opacity group-hover:opacity-100" />
             </p>
-            {auction.sampleTitles.length ? (
-              <p className="mt-2 line-clamp-2 text-xs text-muted-foreground/80">
-                {auction.sampleTitles.join(" · ")}
-              </p>
-            ) : null}
-            <span className="mt-2 inline-flex items-center text-xs font-medium text-primary group-hover:underline">
-              Entrar no leilão ao vivo
-              <ExternalLink className="ml-1 h-3 w-3" />
-            </span>
           </a>
         ))}
       </div>

@@ -15,6 +15,7 @@ import {
   LogOut,
   Radio,
   RefreshCw,
+  Search as SearchIcon,
   Sparkles,
 } from "lucide-react";
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -246,6 +247,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const [tab, setTab] = useState<string>("day-0");
   const [artistFilter, setArtistFilter] = useState<string>("");
   const [search, setSearch] = useState<string>("");
+  // A busca só roda ao confirmar (Enter/botão) — evita filtrar a lista a cada tecla.
+  const [searchDraft, setSearchDraft] = useState<string>("");
   const [watchedViewDay, setWatchedViewDay] = useState<string | null>(null);
   const [bidsViewDay, setBidsViewDay] = useState<string | null>(null);
   const [showFinishedDays, setShowFinishedDays] = useState<Set<string>>(new Set());
@@ -1039,15 +1042,26 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   return (
     <main className="min-h-screen bg-background">
       <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-3 px-4 py-3 sm:gap-4 sm:py-6">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-3 px-4 py-2 sm:gap-4 sm:py-3">
           <div>
+            <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="truncate">{email}</span>
+              <button
+                type="button"
+                onClick={() => void onSignOut()}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <LogOut className="h-3 w-3" />
+                Sair
+              </button>
+            </div>
             <p className="hidden text-xs uppercase tracking-[0.35em] text-primary sm:block">
               LeilõesBR
             </p>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:mt-2 sm:text-4xl">
+            <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
               Garimpo de Vinil
             </h1>
-            <p className="mt-2 hidden max-w-xl text-sm text-muted-foreground sm:block">
+            <p className="mt-1 hidden max-w-xl text-sm text-muted-foreground sm:block">
               LPs, compactos e bolachões que vão a leilão nos próximos 5 dias, agrupados por dia,
               casa de leilão e artista. A vigia é sincronizada com a sua conta do LeilõesBR.
             </p>
@@ -1125,11 +1139,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 </span>
               ) : null}
             </div>
-            <span className="text-xs text-muted-foreground">{email}</span>
-            <Button variant="ghost" size="sm" onClick={() => void onSignOut()}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Sair
-            </Button>
           </div>
         </div>
       </header>
@@ -1158,13 +1167,30 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           >
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Buscar por título, artista, casa ou nº do lote…"
+                value={searchDraft}
+                onChange={(event) => setSearchDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    setSearch(searchDraft);
+                  }
+                }}
+                placeholder="Buscar por título, artista, casa ou nº do lote… (Enter para pesquisar)"
                 className="w-full sm:max-w-md"
               />
-              {search ? (
-                <Button variant="ghost" size="sm" onClick={() => setSearch("")}>
+              <Button size="sm" onClick={() => setSearch(searchDraft)}>
+                <SearchIcon className="mr-2 h-4 w-4" />
+                Pesquisar
+              </Button>
+              {search || searchDraft ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSearch("");
+                    setSearchDraft("");
+                  }}
+                >
                   Limpar busca
                 </Button>
               ) : null}
@@ -1595,6 +1621,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                             matchesPriceRange(lot.price, perPrice),
                           );
                         const artistGroups = groupByArtist(houseLots);
+                        const auctionInfo = houseAuctionInfo(day, group.lots[0]);
 
                         return (
                           <section
@@ -1660,19 +1687,28 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                 <HouseStatBadges
                                   stats={computeHouseStats(houseLots, watchedIds, bidStatusById)}
                                 />
-                                {group.time ? (
-                                  <span className="text-sm text-muted-foreground">
-                                    às {group.time}
-                                  </span>
-                                ) : null}
-                                <a
-                                  className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                  href={group.houseUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  site da casa <ExternalLink className="h-3 w-3" />
-                                </a>
+                                <AuctionStatusInline info={auctionInfo} />
+                                <div className="ml-auto flex flex-wrap items-center gap-3">
+                                  {auctionInfo?.presencialUrl ? (
+                                    <a
+                                      className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                                      href={auctionInfo.presencialUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      title="Acompanhar o pregão presencial desta casa"
+                                    >
+                                      <Radio className="h-3 w-3" /> pregão presencial
+                                    </a>
+                                  ) : null}
+                                  <a
+                                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                    href={group.houseUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    site da casa <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                </div>
                               </div>
                               {isOpen ? (
                                 <div className="flex flex-wrap items-center gap-2">
