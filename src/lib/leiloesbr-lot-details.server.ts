@@ -1,5 +1,5 @@
 import { publicFetch } from "./leiloesbr-auth.server";
-import { parseAuctionRef } from "./leiloesbr-catalog.server";
+import { auctionHouseDomain } from "./vinyl-parse";
 
 /**
  * Próximo lance (o valor mínimo do próximo lance) NÃO existe na listagem geral nem
@@ -13,20 +13,8 @@ import { parseAuctionRef } from "./leiloesbr-catalog.server";
 /** Monta a URL do `peca.asp` no domínio da casa a partir da URL do lote + idPeca. */
 function pecaUrl(lotUrl: string, idPeca: string): string | null {
   if (!idPeca) return null;
-  // A URL já pode ser a da peça (stretched-link das páginas de conta).
-  if (/peca\.asp/i.test(lotUrl)) {
-    try {
-      const abs = /^https?:/i.test(lotUrl) ? lotUrl : `https://${lotUrl.replace(/^\/+/, "")}`;
-      const u = new URL(abs);
-      return `${u.protocol}//${u.host}/peca.asp?id=${idPeca}`;
-    } catch {
-      /* cai no parseAuctionRef abaixo */
-    }
-  }
-  // Listagem geral: abre_catalogo.asp?t=1|<domínio>|<idLeilao>|<idPeca>.
-  const ref = parseAuctionRef(lotUrl);
-  if (ref) return `${ref.domain}/peca.asp?id=${idPeca}`;
-  return null;
+  const domain = auctionHouseDomain(lotUrl);
+  return domain ? `${domain}/peca.asp?id=${idPeca}` : null;
 }
 
 /** Extrai o próximo lance (NOVO_VALOR) do HTML da peça e formata em BRL. */
