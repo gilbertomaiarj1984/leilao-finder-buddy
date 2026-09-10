@@ -57,6 +57,15 @@ function toAuction(row: Row): LiveAuction {
   };
 }
 
+/** `toAuction` + status derivado do horário + URL do pregão presencial. */
+function toPresencialAuction(row: Row, now: number): PresencialAuction {
+  const auction = toAuction(row);
+  const finished = auctionFinished(auction.dayKey, auction.time, now);
+  const started = auctionStarted(auction.dayKey, auction.time, now);
+  const status: PresencialAuction["status"] = finished ? "ended" : started ? "live" : "upcoming";
+  return { ...auction, presencialUrl: presencialUrlFrom(auction.entryUrl), status };
+}
+
 /** Stores every auction seen in a scrape so it stays reachable after it goes live. */
 export async function recordAuctions(lots: VinylLot[]): Promise<void> {
   if (!lots.length) return;
@@ -99,7 +108,7 @@ export async function recordAuctions(lots: VinylLot[]): Promise<void> {
  * O site não informa a hora de término, então usamos a janela de horas como
  * regra de finalização (checagem por lote vendido foi removida temporariamente).
  */
-export async function listLiveAuctions(windowHours = 3): Promise<LiveAuction[]> {
+export async function listLiveAuctions(windowHours = 3): Promise<PresencialAuction[]> {
   try {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const now = Date.now();
@@ -114,7 +123,7 @@ export async function listLiveAuctions(windowHours = 3): Promise<LiveAuction[]> 
       .lte("starts_at", new Date(now).toISOString())
       .order("starts_at", { ascending: false });
     if (error) throw error;
-    return (data as Row[] | null)?.map(toAuction) ?? [];
+    return (data as Row[] | null)?.map((row) => toPresencialAuction(row, now)) ?? [];
   } catch (error) {
     console.error("[leiloesbr] falha ao listar leilões ao vivo", error);
     return [];
@@ -144,23 +153,7 @@ export async function listTodayAuctions(): Promise<PresencialAuction[]> {
       .order("starts_at", { ascending: true });
     if (error) throw error;
     const now = Date.now();
-    return (
-      (data as Row[] | null)?.map((row) => {
-        const auction = toAuction(row);
-        const finished = auctionFinished(auction.dayKey, auction.time, now);
-        const started = auctionStarted(auction.dayKey, auction.time, now);
-        const status: PresencialAuction["status"] = finished
-          ? "ended"
-          : started
-            ? "live"
-            : "upcoming";
-        return {
-          ...auction,
-          presencialUrl: presencialUrlFrom(auction.entryUrl),
-          status,
-        };
-      }) ?? []
-    );
+    return (data as Row[] | null)?.map((row) => toPresencialAuction(row, now)) ?? [];
   } catch (error) {
     console.error("[leiloesbr] falha ao listar leilões do dia", error);
     return [];

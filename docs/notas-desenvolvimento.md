@@ -154,6 +154,10 @@ feedback, id)` → `none|rejected|linked|auto|suggested`. Confirmar grava feedba
   IA + artista + título; `extra` = casa + nº do lote. **Com busca ativa**, a listagem do dia
   vira **lista única ordenada por relevância** (não agrupa por casa). Vigiados/Lances usam
   casamento contíguo (`watchedMatchesSearch`/`bidMatchesSearch`), sem ranqueamento.
+  - **Busca só roda ao confirmar (v0.48.0):** o `Input` de busca escreve num estado de rascunho
+    (`searchDraft`, tecla a tecla) separado do estado usado para filtrar (`search`/`searchNorm`);
+    `search` só é atualizado no **Enter** ou no botão **Pesquisar**, evitando refiltrar a
+    listagem a cada tecla digitada. "Limpar busca" zera os dois.
 
 ## Grading de estado — Disco × Capa (`grading.ts`, v0.29.0)
 
@@ -686,6 +690,10 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   descrição/tagline some (`hidden sm:block`) e a barra de ações rola na **horizontal** numa única
   linha (`overflow-x-auto`, volta a `flex-wrap` no `sm+`) — para o header baixo não atrapalhar. O
   rodapé fixo é `z-40`; header `z-30` (diálogos/toasts do Radix ficam acima, `z-50`).
+  - **Barra menor + e-mail/Sair no topo esquerdo (v0.48.0, `index.tsx`):** o padding vertical do
+    header encolheu (`py-3 sm:py-6` → `py-2 sm:py-3`) e o título perdeu um degrau de tamanho
+    (`sm:text-4xl` → `sm:text-2xl`); e-mail + botão **Sair** saíram do fim da barra de ações
+    (direita) e viraram uma linha compacta **acima do título**, no canto superior esquerdo.
 - **`index.tsx` (site principal):** cards por **dia → casa → artista**. `LotCard` mostra nota
   da IA no canto **direito** (`ScoreCorner`), nº do lote no canto **esquerdo**, e o `album` da
   IA ("Artista — Álbum (Ano)", `formatAiAlbum`) **acima** do título. Álbum resolvido por lote =
@@ -725,6 +733,17 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
     `presencialUrlFromLot({idLeilao, url})` combina esse domínio com o `idLeilao` que o
     `WatchedLot` já traz à parte (do `data-watch`). `houseAuctionInfo` passa a exigir `idLeilao`
     no lote.
+  - **Extensão à lista principal do dia + "Acontecendo agora" (v0.48.0):** o mesmo
+    `AuctionStatusInline`/`houseAuctionInfo` (antes só em Vigiados) passa a aparecer também no
+    cabeçalho de casa da **lista principal por dia** (`index.tsx`, seção não-Vigiados/Lances),
+    usando `group.lots[0]` (`VinylLot`, já tem `idLeilao`/`url`) — substitui o antigo `às
+    {group.time}` solto; link **"pregão presencial"** ao lado de "site da casa". A seção
+    **"Acontecendo agora"** (`live-auctions.tsx`) vira **cartão de 2 linhas** (casa+ícone /
+    horário+UF+lotes, sem título de amostra nem CTA separado) e o cartão INTEIRO linka pro
+    **presencial** (`auction.presencialUrl ?? entryUrl ?? houseUrl`); `listLiveAuctions`
+    (`leiloesbr-auctions.server.ts`) passa a devolver `PresencialAuction[]` (antes só
+    `LiveAuction[]`, sem `presencialUrl`) — novo helper interno `toPresencialAuction` (status +
+    presencial) compartilhado com `listTodayAuctions`, elimina a duplicação do cálculo de status.
   - **Abrir JÁ LOGADO (proxy autenticado):** o iframe/nova aba não aponta mais direto para a casa
     (o navegador não teria o cookie do domínio dela → deslogado). Agora passa pelo **proxy reverso**
     `/api/live/<b64-origem>/<caminho>` (`leiloesbr-live.server.ts`, tratado no `server.ts` fora das
@@ -877,6 +896,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.46.6        | **Fix: "AC/DC" espalhado em 3 grupos (2 bugs)** — (1) a limpeza do candidato em `extractArtist` cortava em `/` (pensado pra parênteses/aspas), truncando "AC/DC" pra "AC", que morria no filtro de tamanho mínimo → artista SEMPRE vazio para essa grafia; removido `/` do corte (bandas usam a barra no próprio nome). (2) mesmo corrigido, "ACDC" (casa digita colado, sem separador) normaliza pra chave `acdc` — diferente de "AC DC"/"AC-DC"/"AC/DC" (todas viram `ac dc`, separador vira espaço) — ficando em grupo à parte. Novo `canonicalizeCollapsedArtist` (índice preguiçoso sobre `KNOWN_ARTISTS_SEED`: forma colada → grafia canônica do bundle, casamento EXATO) une as 4 grafias em "AC/DC"; aplicado no fim de `extractArtist` (novas capturas) E em `buildAnalytics` sobre o `rawArtist` já gravado (corrige a base JÁ GRAVADA na LEITURA, sem re-capturar) | —       |
 | v0.47.0        | **Horário/status/link do pregão presencial ao lado da casa em Vigiados** — em "Vigiados do dia" e na aba **Vigiados** (global), o cabeçalho de cada casa ganha horário do leilão, status (**em breve/ao vivo agora/encerrado**, mesma regra de `auctionStarted`/`auctionFinished` da página "Ao vivo") e link do **pregão presencial** (quando a casa é da plataforma LeilõesBR). `parseAuctionRef`/`presencialUrlFrom` migraram para `vinyl-parse.ts` (puro/client-safe, fonte única — `leiloesbr-catalog.server.ts` e `leiloesbr-auctions.server.ts` passam a reexportar/importar de lá); novo `houseAuctionInfo` (`grouping.ts`) deriva `{time, status, presencialUrl}` do primeiro lote do grupo; `AuctionStatusInline` (`badges.tsx`) é a UI | —       |
 | v0.47.1        | **Fix: link do presencial não aparecia em NENHUMA casa em Vigiados** — `presencialUrlFrom` (v0.47.0) só casava o link da listagem geral (`abre_catalogo.asp?...`), mas o `url` de `WatchedLot`/lances (páginas de conta `l=8`/`l=4`) já vem como `<domínio>/peca.asp?ID=<idPeca>`, sem o idLeilao embutido. Novo `auctionHouseDomain` (`vinyl-parse.ts`, cobre os dois formatos, reusado também por `leiloesbr-lot-details.server.ts`) + `presencialUrlFromLot({idLeilao, url})` (combina o domínio extraído com o `idLeilao` que o `WatchedLot` já traz à parte) | —       |
+| v0.48.0        | **Alerta "ao vivo" + link do presencial na lista principal; "Acontecendo agora" em 2 linhas e clicável; busca só ao confirmar; header menor** — (1) cabeçalho de casa da lista principal por dia ganha `AuctionStatusInline`/link "pregão presencial" (mesmo mecanismo de Vigiados, via `group.lots[0]`), substituindo o "às HH:MM" solto; (2) a seção "Acontecendo agora" (`live-auctions.tsx`) virou cartão compacto de 2 linhas, clicável para o **presencial** (`listLiveAuctions` agora devolve `PresencialAuction[]` com `presencialUrl`, helper `toPresencialAuction` compartilhado com `listTodayAuctions`); (3) a busca principal só filtra ao apertar Enter/clicar **Pesquisar** (`searchDraft` vs `search`), não mais a cada tecla; (4) header mais baixo (`py-2 sm:py-3`, título menor) com e-mail + **Sair** movidos para uma linha compacta no topo esquerdo (acima do título), saindo do fim da barra de ações | —       |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
