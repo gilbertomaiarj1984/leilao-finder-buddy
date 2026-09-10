@@ -805,6 +805,7 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.32.2        | **Captura de vendas só de VINIL + identidade limpa** — o `catalogo.asp` da casa lista TODAS as categorias (livros, DVDs, medalhas…); `captureFinishedSales` agora só grava lotes cujo id está no nosso vinil (`scrapeVinylLots`), e usa o **nosso** título/artista (não o texto ruidoso do catálogo). Descritivo do card limpo de fragmentos de href (`&ctd=…`). Ordem **mais recente primeiro** (catálogo vivo). `debugSales(num)` sonda um leilão específico                                                                                                                                                                             | —       |
 | v0.32.1        | **Fix da segmentação do catálogo** — cada lote repete o link `peca.asp?ID=` no card (imagem + título), então o "pedaço" do lote passou a ir até o 1º link de um id **diferente** (o próximo card), não até o próximo link. Antes ficava truncado ANTES do "Valor de venda"/"Lote vendido"/descritivo → capturava 0 vendas e estado vazio. `?step=sales&reset=1` (`clearSalesCaptured`) re-captura após o ajuste                                                                                                                                                             | —       |
 | v0.32.0        | **Estado (Disco/Capa) nos cards PRÉ-leilão** (`lot_condition`) — `enrichConditions` busca o catálogo (1 req/leilão) e parseia o descritivo do tooltip, cacheando por lote (`source` catalog/title/indefinido; re-avalia por `title_hash`); cron `step=condition` + `refresh.yml`; `getLotCondition` e o resolver `conditionFor` no `index.tsx` passam a **priorizar o cache** (fallback ao título). Nova tabela `lot_condition` (migration+setup+types). **Diagnóstico** `step=salesdebug` (`debugSales`) para sinais crus do catálogo quando `sales` volta 0                                                                                          | —       |
+| v0.44.2        | **Roadmap de novos provedores de IA** (só doc): avaliação do proxy local `freellmapi` (descartado) + lista ranqueada de provedores a acrescentar à camada plugável (OpenRouter/Groq/Mistral + menções) e a alavanca do adaptador OpenAI-compatible genérico                                                                                                                                                                                                                                                          | #127    |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
@@ -815,6 +816,37 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 
 - _Nenhuma pendência em aberto._ (Os itens anteriores — lance pelo app, upload de foto em massa,
   peso da sondagem na nota e imagem pelo CDN do catálogo — foram **cancelados/descartados**.)
+
+**Roadmap — novos provedores de IA (avaliado, não iniciado)**
+
+Avaliamos o repo `tashfeenahmed/freellmapi` (proxy **local** `localhost:3001`, OpenAI-compatible,
+declaradamente *"not production"*) e **descartamos integrá-lo**: o app roda server-side em
+nuvem/CI (cron), a camada de `ai-provider.server.ts` já faz o failover que ele promete, e passar
+por um proxy local perderia a **Batches API** da Anthropic (~50% mais barata) do cron. O caminho
+aderente é **acrescentar provedores à camada plugável que já existe** (`runText` + `AiProvider`).
+
+- **Requisitos de um bom candidato** (da seção "IA"): (1) **API HTTPS direta** (sem proxy/
+  localhost, roda no cron/Vercel); (2) **visão** — mandamos a capa (`image`) para identificar o
+  disco; (3) **JSON mode** (`responseMimeType`/`response_format`); (4) **barato/free tier**
+  (padrão hoje = Haiku/Flash); (5) **encaixe fácil** — REST simples (como o Gemini) ou
+  OpenAI-compatible; (6) **bônus: Batch API** (hoje só a Anthropic; corta ~50% do custo do cron).
+- ⭐ **Alavanca de arquitetura:** em vez de um adaptador por provedor, criar **UM adaptador
+  "OpenAI-compatible" genérico** (base URL + key + model por env). Destrava Groq / OpenRouter /
+  DeepSeek / Together / Cerebras de uma vez, mantendo o espírito plugável do `runText` — cada novo
+  provedor vira "mais uma entrada de config", não código novo.
+- **Opções ranqueadas:**
+  1. **OpenRouter** — agregador **hospedado** (um key → muitos modelos, inclui `:free`),
+     OpenAI-compatible, com modelos de visão. É a versão "usável em produção" da ideia do
+     freellmapi; melhor jogada de **resiliência**. Con: modelos free instáveis, **sem batch**.
+  2. **Groq** — OpenAI-compatible, **muito rápido**, free tier generoso; visão via Llama 4 /
+     Llama 3.2; JSON mode. Melhor **failover gratuito** do dia a dia. Con: rate limit no free,
+     catálogo de modelos muda.
+  3. **Mistral (La Plateforme)** — REST nativo (igual ao padrão do Gemini), **Pixtral** (visão),
+     JSON mode, **e Batch API (~50% off)** → único que replica o modelo de custo do cron da
+     Anthropic. Melhor encaixe **"custo + batch"**.
+  4. **Menções honrosas:** DeepSeek (barato, JSON, off-peak; visão fraca na API principal → mais
+     texto), Together AI (muitos modelos open + visão + batch), Cloudflare Workers AI (free tier,
+     visão via LLaVA, REST).
 
 **Validar em produção**
 
