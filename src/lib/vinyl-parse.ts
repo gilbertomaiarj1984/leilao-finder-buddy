@@ -256,19 +256,77 @@ export function isVariousArtists(name: string): boolean {
 // ("diversos", "coleção de") para só classificar como lote quando há contexto de disco.
 const DISC_WORD = /\b(lps?|discos?|vinis|vinil|compactos?|bolach[aã]o|bolachoes|long play)\b/;
 
+// Quantidade por extenso ("cinco LPs", "dez discos") — casas descrevem o lote em prosa, sem
+// dígito. Mapeado (sem acento) para o número; abaixo de 3 nunca conta como lote (duplo/triplo
+// de um mesmo álbum). Cobre até "vinte", o suficiente para os lotes reais observados.
+const NUM_WORDS: Record<string, number> = {
+  dois: 2,
+  duas: 2,
+  tres: 3,
+  quatro: 4,
+  cinco: 5,
+  seis: 6,
+  sete: 7,
+  oito: 8,
+  nove: 9,
+  dez: 10,
+  onze: 11,
+  doze: 12,
+  treze: 13,
+  quatorze: 14,
+  catorze: 14,
+  quinze: 15,
+  dezesseis: 16,
+  dezessete: 17,
+  dezoito: 18,
+  dezenove: 19,
+  vinte: 20,
+};
+const NUM_WORD_RE = Object.keys(NUM_WORDS).join("|");
+
+// Rótulo de NUMERAÇÃO do lote no início do título ("Lote 45 - ...", "Lote 09 vinil único...",
+// "Lote nº 12: ..."), que NÃO indica conjunto de discos — é só o número do item no leilão
+// (todo item tem um "lote"). Exige um NÚMERO ou um separador logo após "lote" para ser
+// considerado rótulo — "lote surpresa de vinis" (sem número/separador) NÃO é rótulo de
+// numeração e segue para a checagem genérica de "lote" abaixo. Removido ANTES de toda checagem
+// para não confundir "Lote 45 - LP raro"/"Lote 09 vinil único..." (um disco só, número do
+// lote colado no formato) com um lote de VÁRIOS discos.
+const LOTE_NUMBER_PREFIX = /^lote\s*(?:n?[ºo°]?\s*\d+\s*[-:–,.]?|[-:–,.])\s*/;
+
 /**
  * true quando o título representa um LOTE de discos (conjunto de vários discos vendidos
- * juntos), e não um álbum específico. Sinais: "lote com/de ...", "kit com/de ...",
- * "coleção de discos", quantidade (3+) de discos ("20 LPs") ou "diversos/vários" + disco.
- * Discos duplos/triplos de um mesmo álbum (ex.: "2 LPs") NÃO contam como lote.
+ * juntos), e não um álbum específico. Sinais: "lote com/de/composto por/formado por/contendo
+ * ...", "kit com/de ...", "coleção de discos", quantidade (3+) de discos em dígito ("20 LPs")
+ * OU por extenso ("cinco LPs"), "diversos/vários" + disco, ou a palavra "lote" (fora do rótulo
+ * de numeração do início) em qualquer lugar do título junto de uma palavra de disco — cobre
+ * frases não previstas nos padrões específicos acima. Discos duplos/triplos de um mesmo álbum
+ * (ex.: "2 LPs") NÃO contam como lote.
  */
 export function isDiscBundle(title: string): boolean {
-  const t = normalize(title);
-  if (/\b(lote|kit)\s+(com|de)\b/.test(t)) return true;
+  const raw = normalize(title);
+  // Remove o RÓTULO de numeração do início ("Lote 45 - ...", "Lote 09 vinil único...") ANTES
+  // de qualquer checagem: senão o número do lote (ex.: "09") cola no disc word seguinte
+  // ("vinil") e o padrão de QUANTIDADE abaixo interpreta erroneamente "09 vinil" como "9 vinis"
+  // — um item de UM disco só virava lote por coincidência de o nº do lote vir logo antes do
+  // formato. A partir daqui `t` nunca mais vê esse número/rótulo.
+  const t = raw.replace(LOTE_NUMBER_PREFIX, "");
+  if (/\b(lote|kit)\s+(com|de|composto\s+(de|por)|formado\s+(de|por)|contendo)\b/.test(t))
+    return true;
   if (/\bcolecao de\b/.test(t) && DISC_WORD.test(t)) return true;
-  const qty = t.match(/\b(\d+)\s*(lps?|discos?|vinis|vinil|compactos?|bolach[aã]o|bolachoes)\b/);
-  if (qty && Number(qty[1]) >= 3) return true;
+  const qty = t.match(
+    new RegExp(
+      `\\b(\\d+|${NUM_WORD_RE})\\s*(lps?|discos?|vinis|vinil|compactos?|bolach[aã]o|bolachoes)\\b`,
+    ),
+  );
+  if (qty) {
+    const rawQty = qty[1]!;
+    const n = /^\d+$/.test(rawQty) ? Number(rawQty) : NUM_WORDS[rawQty];
+    if (n != null && n >= 3) return true;
+  }
   if (/\b(diversos|varios|varias)\b/.test(t) && DISC_WORD.test(t)) return true;
+  // "lote" sobrando em qualquer lugar (fora do rótulo já removido) + palavra de disco: cobre
+  // frases não previstas acima (ex.: "grande lote de discos", "lote surpresa de vinis").
+  if (/\blote\b/.test(t) && DISC_WORD.test(t)) return true;
   return false;
 }
 
