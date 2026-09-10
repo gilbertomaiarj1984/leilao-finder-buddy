@@ -1,10 +1,13 @@
 // Helpers puros de agrupamento/ordenação e tipos compartilhados pela listagem de
 // vinil. Sem JSX — a UI que consome isto vive nos componentes ao lado.
 import {
+  auctionFinished,
+  auctionStarted,
   bidIsWinning,
   LOTE_LABEL,
   normalizeForMatch,
   parsePrice,
+  presencialUrlFrom,
   UNCLASSIFIED_LABEL,
   type VinylLot,
 } from "@/lib/vinyl-parse";
@@ -232,6 +235,37 @@ export function bidMatchesSearch(
       `${bid.title} ${bid.house} ${bid.lote} ${bid.status} ${album ?? ""}`,
     ).includes(searchNorm)
   );
+}
+
+export type AuctionStatus = "upcoming" | "live" | "ended";
+
+export type HouseAuctionInfo = {
+  time: string;
+  status: AuctionStatus | null;
+  presencialUrl: string | null;
+};
+
+/**
+ * Horário, status (em breve/ao vivo/encerrado) e link do pregão presencial de uma casa, a
+ * partir de um lote do grupo (mesma casa = mesmo leilão/horário). Mesma regra de status da
+ * página "Ao vivo" (`auctionStarted`/`auctionFinished`). Usada ao lado do nome da casa em
+ * "Vigiados do dia" e na aba "Vigiados" (global).
+ */
+export function houseAuctionInfo(
+  dayKey: string,
+  lot: { time: string; url: string } | undefined,
+  now: number = Date.now(),
+): HouseAuctionInfo | null {
+  if (!lot) return null;
+  const status: AuctionStatus | null =
+    dayKey && lot.time
+      ? auctionFinished(dayKey, lot.time, now)
+        ? "ended"
+        : auctionStarted(dayKey, lot.time, now)
+          ? "live"
+          : "upcoming"
+      : null;
+  return { time: lot.time, status, presencialUrl: presencialUrlFrom(lot.url) };
 }
 
 /** Agrupa vigiados por casa de leilão e ordena os lotes pelo nº do lote. */

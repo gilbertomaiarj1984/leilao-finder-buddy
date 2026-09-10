@@ -1,4 +1,4 @@
-import { auctionFinished, auctionStarted, type VinylLot } from "./vinyl-parse";
+import { auctionFinished, auctionStarted, presencialUrlFrom, type VinylLot } from "./vinyl-parse";
 
 export type LiveAuction = {
   idLeilao: string;
@@ -127,22 +127,6 @@ function todayDayKey(): string {
 }
 
 /**
- * Monta a URL do pregão presencial da casa a partir do `entry_url` do lote
- * (abre_catalogo.asp?t=1|<dominio>|<idLeilao>|...): `<dominio>/presencial/presencial.asp?Num=<idLeilao>`.
- * `null` quando o link não casa o padrão (casas fora da plataforma LeilõesBR).
- */
-function presencialUrlFrom(
-  entryUrl: string | null,
-  parseAuctionRef: (url: string) => { domain: string; idLeilao: string } | null,
-): string | null {
-  if (!entryUrl) return null;
-  const ref = parseAuctionRef(entryUrl);
-  if (!ref) return null;
-  const domain = ref.domain.replace(/^http:/i, "https:");
-  return `${domain}/presencial/presencial.asp?Num=${ref.idLeilao}`;
-}
-
-/**
  * Todos os leilões de vinil do DIA (data de hoje em São Paulo), com o link do
  * pregão presencial de cada casa e o status (em breve / ao vivo / encerrado),
  * derivado do horário de início. Best-effort: [] em erro.
@@ -150,7 +134,6 @@ function presencialUrlFrom(
 export async function listTodayAuctions(): Promise<PresencialAuction[]> {
   try {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { parseAuctionRef } = await import("./leiloesbr-catalog.server");
     const today = todayDayKey();
     const { data, error } = await supabaseAdmin
       .from("seen_auctions")
@@ -173,7 +156,7 @@ export async function listTodayAuctions(): Promise<PresencialAuction[]> {
             : "upcoming";
         return {
           ...auction,
-          presencialUrl: presencialUrlFrom(auction.entryUrl, parseAuctionRef),
+          presencialUrl: presencialUrlFrom(auction.entryUrl),
           status,
         };
       }) ?? []
