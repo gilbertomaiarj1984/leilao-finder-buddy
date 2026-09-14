@@ -811,6 +811,33 @@ ESLint/Prettier.)
   após a migração. Dados migrados via `pg_restore --data-only` (usuários do `auth` **não**
   migrados — login refeito com Google).
 
+## Infra — economia / saída dos free tiers (avaliado v0.48.1, NÃO iniciado)
+
+Planos completos em **`docs/economia-migracao.md`** (índice + decisão), com as duas fases em
+`docs/economia-fase-1-faxina-e-medicao.md` e `docs/economia-fase-2-vps-unico.md`. Resumo:
+
+- **O risco real não é a plataforma, é faxina.** `supabase/setup.sql` não tem **nenhum**
+  `REFERENCES` nem `ON DELETE CASCADE`. `lots` é podada por janela (`pruneOutOfWindow`,
+  `leiloesbr-scrape.server.ts:195`), mas `lot_ai`/`lot_ident`/`lot_market`/`lot_condition` são
+  caches com chave de lote que **nunca** são podados → órfãos permanentes. `lot_sales`
+  (com `orig_text`, o descritivo completo do catálogo) e `seen_auctions` também só crescem.
+  Verificado: os 4 caches são independentes de `lot_sales`, então podá-los **não perde
+  histórico de vendas**. ⚠️ **Nunca** cascatear `lot_sales` → `lots`.
+- **Netlify descartado:** timeout de **10 s** em functions (Free e Pro) mata os steps do cron
+  e o proxy `/api/live`; na Vercel o teto é 60 s. Free tier virou crédito em 2026 (~15 GB de
+  banda contra 100 GB da Vercel).
+- **Neon descartado (sozinho):** free tem **0,5 GB por projeto** — mesmo teto do Supabase, e
+  pior: passando do limite a **escrita falha**. Entrega só Postgres, deixando Auth e Storage
+  para resolver, além das 76 chamadas PostgREST para reescrever.
+- **Fase 1 (custo zero, fazer primeiro):** steps `usage` e `prune` no `/api/cron` + FK com
+  `CASCADE` dos 4 caches para `lots`, para o `pruneOutOfWindow` que já existe limpá-los sozinho.
+- **Fase 2 (~US$4/mês, só se a Fase 1 mostrar que precisa):** VPS único (Netcup/Contabo — a
+  Hetzner saiu do orçamento em 2026) com Caddy + Node + Postgres. `vite.config.ts:9` **já honra
+  `SERVER_PRESET`**, então trocar de host é uma variável de ambiente (`node-server`), não código.
+- **Fica como está:** cron no GitHub Actions (gratuito), IA (já pay-per-use com Batches +
+  failover) e Vercel Hobby (para 1 usuário os tetos estão longe; atenção só ao limite de 60 s
+  por função — se der timeout, diminuir `size`/`max` dos chunks, não trocar de plataforma).
+
 ## Histórico de versões
 
 Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`. Bump em todo PR.
@@ -897,6 +924,8 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.47.0        | **Horário/status/link do pregão presencial ao lado da casa em Vigiados** — em "Vigiados do dia" e na aba **Vigiados** (global), o cabeçalho de cada casa ganha horário do leilão, status (**em breve/ao vivo agora/encerrado**, mesma regra de `auctionStarted`/`auctionFinished` da página "Ao vivo") e link do **pregão presencial** (quando a casa é da plataforma LeilõesBR). `parseAuctionRef`/`presencialUrlFrom` migraram para `vinyl-parse.ts` (puro/client-safe, fonte única — `leiloesbr-catalog.server.ts` e `leiloesbr-auctions.server.ts` passam a reexportar/importar de lá); novo `houseAuctionInfo` (`grouping.ts`) deriva `{time, status, presencialUrl}` do primeiro lote do grupo; `AuctionStatusInline` (`badges.tsx`) é a UI | —       |
 | v0.47.1        | **Fix: link do presencial não aparecia em NENHUMA casa em Vigiados** — `presencialUrlFrom` (v0.47.0) só casava o link da listagem geral (`abre_catalogo.asp?...`), mas o `url` de `WatchedLot`/lances (páginas de conta `l=8`/`l=4`) já vem como `<domínio>/peca.asp?ID=<idPeca>`, sem o idLeilao embutido. Novo `auctionHouseDomain` (`vinyl-parse.ts`, cobre os dois formatos, reusado também por `leiloesbr-lot-details.server.ts`) + `presencialUrlFromLot({idLeilao, url})` (combina o domínio extraído com o `idLeilao` que o `WatchedLot` já traz à parte) | —       |
 | v0.48.0        | **Alerta "ao vivo" + link do presencial na lista principal; "Acontecendo agora" em 2 linhas e clicável; busca só ao confirmar; header menor** — (1) cabeçalho de casa da lista principal por dia ganha `AuctionStatusInline`/link "pregão presencial" (mesmo mecanismo de Vigiados, via `group.lots[0]`), substituindo o "às HH:MM" solto; (2) a seção "Acontecendo agora" (`live-auctions.tsx`) virou cartão compacto de 2 linhas, clicável para o **presencial** (`listLiveAuctions` agora devolve `PresencialAuction[]` com `presencialUrl`, helper `toPresencialAuction` compartilhado com `listTodayAuctions`); (3) a busca principal só filtra ao apertar Enter/clicar **Pesquisar** (`searchDraft` vs `search`), não mais a cada tecla; (4) header mais baixo (`py-2 sm:py-3`, título menor) com e-mail + **Sair** movidos para uma linha compacta no topo esquerdo (acima do título), saindo do fim da barra de ações | —       |
+
+| v0.48.1        | **Plano de economia de infraestrutura (só documentação, sem mudança de código)** — investigação sobre sair dos free tiers de Supabase/Vercel, registrada em `docs/economia-migracao.md` (índice) + dois planos de fase. Achado principal: o risco ao limite de 500 MB do Supabase **não vem da plataforma, e sim de linhas órfãs** — `lots` já é podada por janela (`pruneOutOfWindow`), mas `lot_ai`/`lot_ident`/`lot_market`/`lot_condition` não têm FK nem `CASCADE` e nunca são limpas; `lot_sales.orig_text` também cresce sem teto. Netlify e Neon foram **descartados** (ver seção "Infra — economia"). Fase 1 (faxina + medição, custo zero) e Fase 2 (VPS único, ~US$4/mês, só se a Fase 1 exigir) ficam documentadas e **não iniciadas** | —       |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.

@@ -7,6 +7,9 @@ com **Supabase** como backend e deploy na **Vercel**.
 > continuidade entre sessões (arquitetura, mecânica do scraping, baseline do painel,
 > nº de lote, cores, pendências). Este arquivo é só o resumo.
 
+> **Trabalho de infraestrutura/custo pendente:** ver `docs/economia-migracao.md` (índice) e
+> os dois planos de fase que ele aponta. Ainda não iniciados.
+
 ## Visão geral
 
 - Auth: Supabase Auth nativo (OAuth Google, fluxo PKCE) — ver `src/routes/auth.tsx`
