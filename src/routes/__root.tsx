@@ -8,10 +8,12 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
+import { Provider as ReduxProvider } from "react-redux";
 
 import { Footer } from "@/components/Footer";
 import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
+import type { AppStore } from "@/store";
 
 import appCss from "../styles.css?url";
 
@@ -72,7 +74,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
-export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+export const Route = createRootRouteWithContext<{ queryClient: QueryClient; store: AppStore }>()({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -113,7 +115,7 @@ function RootShell({ children }: { children: ReactNode }) {
 }
 
 function RootComponent() {
-  const { queryClient } = Route.useRouteContext();
+  const { queryClient, store } = Route.useRouteContext();
   const router = useRouter();
 
   useEffect(() => {
@@ -126,16 +128,18 @@ function RootComponent() {
   }, [router, queryClient]);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      {/* pb-12 reserva espaço para o rodapé fixo (Footer é `position: fixed`). */}
-      <div className="flex min-h-screen flex-col pb-12">
-        <div className="flex-1">
-          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-          <Outlet />
+    <ReduxProvider store={store}>
+      <QueryClientProvider client={queryClient}>
+        {/* pb-12 reserva espaço para o rodapé fixo (Footer é `position: fixed`). */}
+        <div className="flex min-h-screen flex-col pb-12">
+          <div className="flex-1">
+            {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+            <Outlet />
+          </div>
         </div>
-      </div>
-      <Footer />
-      <Toaster richColors />
-    </QueryClientProvider>
+        <Footer />
+        <Toaster richColors />
+      </QueryClientProvider>
+    </ReduxProvider>
   );
 }
