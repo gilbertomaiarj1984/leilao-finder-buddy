@@ -244,6 +244,22 @@ function formatUpdatedAt(iso: string | null | undefined): string {
 }
 
 function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
+  // Altura real do header sticky (header + barra de busca/abas), medida ao vivo — as barras
+  // sticky internas (dia/casas, seções de Vigiados/Lances) usam esse valor como `top` para
+  // colar logo abaixo dele, em vez de ficarem escondidas atrás (ambos ficariam em top:0).
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setHeaderHeight(entry.contentRect.height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const stickyBelowHeader = { top: headerHeight };
+
   const [tab, setTab] = useState<string>("day-0");
   const [artistFilter, setArtistFilter] = useState<string>("");
   const [search, setSearch] = useState<string>("");
@@ -1048,7 +1064,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           setArtistFilter("");
         }}
       >
-        <div className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+        <div
+          ref={headerRef}
+          className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60"
+        >
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-1.5">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="truncate">{email}</span>
@@ -1280,7 +1299,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
 
                 return (
                   <TabsContent key={day} value={`day-${index}`} className="space-y-6">
-                    <div className="sticky top-0 z-20 -mx-4 mb-2 space-y-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
+                    <div
+                      style={stickyBelowHeader}
+                      className="sticky z-20 -mx-4 mb-2 space-y-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur"
+                    >
                       <div className="flex flex-wrap items-center gap-3">
                         <span className="text-sm font-semibold text-foreground">
                           {dayLabel(day, index)}
@@ -1900,7 +1922,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                           const houses = groupWatchedByHouse(dayLots);
                           return (
                             <section key={dayKey || "sem-data"} className="space-y-6">
-                              <div className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
+                              <div
+                                style={stickyBelowHeader}
+                                className="sticky z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur"
+                              >
                                 <span className="text-sm font-semibold text-foreground">
                                   {label}
                                 </span>
@@ -2040,7 +2065,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                           const houses = groupWatchedByHouse(dayBids);
                           return (
                             <section key={dayKey || "sem-data"} className="space-y-6">
-                              <div className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
+                              <div
+                                style={stickyBelowHeader}
+                                className="sticky z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur"
+                              >
                                 <span className="text-sm font-semibold text-foreground">
                                   {label}
                                 </span>
