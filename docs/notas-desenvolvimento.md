@@ -724,6 +724,12 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
     `presencialUrlFromLot({idLeilao, url})` combina esse domínio com o `idLeilao` que o
     `WatchedLot` já traz à parte (do `data-watch`). `houseAuctionInfo` passa a exigir `idLeilao`
     no lote.
+  - **Cards abertos sobem para o topo (v0.49.3):** ao clicar "Abrir aqui" (iframe), o card sobe
+    para o início da grade — `openOrder` (estado no `AoVivoPage`, lista de `idLeilao` na ordem em
+    que foram abertos, mais recente primeiro) reordena `orderedAuctions` via `useMemo`; o `key`
+    (`idLeilao`) não muda, então o estado local do card (`frameUrl`/`showFrame`) sobrevive à
+    reordenação. Fechar o iframe não tira o card do topo (mantém agrupado, só sai se outro for
+    aberto por cima). "Entrar ao vivo" (nova aba) não reordena.
   - **Extensão à lista principal do dia + "Acontecendo agora" (v0.48.0):** o mesmo
     `AuctionStatusInline`/`houseAuctionInfo` (antes só em Vigiados) passa a aparecer também no
     cabeçalho de casa da **lista principal por dia** (`index.tsx`, seção não-Vigiados/Lances),
@@ -897,6 +903,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.48.3 | Header/barra de filtros fixos (home e Coleção) |
 | v0.48.4 | Fase 1 do plano de economia: RPC de anti-join, laço do cron encolhido, `lot_sales.bundle` — ver `docs/economia-fase-1-egress-e-cpu.md` |
 | v0.49.1 | Otimização dos `.md` do repo (só documentação): remove duplicação de convenções entre `AGENTS.md`/`CLAUDE.md`/notas (fonte única em `AGENTS.md`), remove telemetria repetida (fonte única em `economia-migracao.md`) e comprime o Histórico de versões para 1 linha/versão — a mecânica detalhada de cada área já vive nas seções acima |
+| v0.49.3 | Ao vivo: card sobe para o topo da grade ao abrir "Abrir aqui" (agrupa os pregões abertos) |
 
 ## Pendências
 

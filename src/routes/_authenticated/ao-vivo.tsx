@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { ArrowLeft, ExternalLink, LogIn, Radio, RefreshCw, X } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,13 @@ function LiveDot() {
   );
 }
 
-function AuctionCard({ auction }: { auction: PresencialAuction }) {
+function AuctionCard({
+  auction,
+  onOpen,
+}: {
+  auction: PresencialAuction;
+  onOpen: (idLeilao: string) => void;
+}) {
   const openLive = useServerFn(openLiveAuction);
   const [showFrame, setShowFrame] = useState(false);
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
@@ -50,12 +56,14 @@ function AuctionCard({ auction }: { auction: PresencialAuction }) {
     return proxyUrl;
   }
 
-  // "Abrir aqui": iframe já logado (via proxy no nosso domínio).
+  // "Abrir aqui": iframe já logado (via proxy no nosso domínio). Ao abrir, o card
+  // sobe para o início da lista, deixando os leilões abertos agrupados.
   async function toggleFrame() {
     if (showFrame) {
       setShowFrame(false);
       return;
     }
+    onOpen(auction.idLeilao);
     setError(null);
     setLoading("frame");
     try {
@@ -193,8 +201,25 @@ function AoVivoPage() {
     refetchOnWindowFocus: true,
   });
 
-  const auctions = query.data ?? [];
-  const liveCount = auctions.filter((a) => a.status === "live").length;
+  const auctions = query.data;
+  const liveCount = (auctions ?? []).filter((a) => a.status === "live").length;
+
+  // Ordem dos leilões abertos com "Abrir aqui" (mais recente primeiro), para
+  // agrupá-los no início da lista e melhorar a visualização.
+  const [openOrder, setOpenOrder] = useState<string[]>([]);
+  const handleOpen = (idLeilao: string) =>
+    setOpenOrder((prev) => [idLeilao, ...prev.filter((id) => id !== idLeilao)]);
+
+  const orderedAuctions = useMemo(() => {
+    const list = auctions ?? [];
+    if (!openOrder.length) return list;
+    const rank = new Map(openOrder.map((id, i) => [id, i]));
+    return [...list].sort((a, b) => {
+      const ra = rank.get(a.idLeilao) ?? Infinity;
+      const rb = rank.get(b.idLeilao) ?? Infinity;
+      return ra - rb;
+    });
+  }, [auctions, openOrder]);
 
   return (
     <main className="min-h-screen bg-background">
@@ -239,10 +264,10 @@ function AoVivoPage() {
               <Skeleton key={i} className="h-40 w-full" />
             ))}
           </div>
-        ) : auctions.length ? (
+        ) : orderedAuctions.length ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {auctions.map((auction) => (
-              <AuctionCard key={auction.idLeilao} auction={auction} />
+            {orderedAuctions.map((auction) => (
+              <AuctionCard key={auction.idLeilao} auction={auction} onOpen={handleOpen} />
             ))}
           </div>
         ) : (
