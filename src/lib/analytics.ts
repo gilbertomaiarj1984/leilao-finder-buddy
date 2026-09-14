@@ -39,7 +39,9 @@ export type SaleRow = {
   bids?: number | null; // demanda (lances)
   fee_pct?: number | null; // taxa do leiloeiro (%)
   initial_price?: number | null; // valor inicial (p/ desconto/ágio)
-  orig_text?: string | null; // descritivo completo do catálogo (texto original do lote)
+  orig_text?: string | null; // descritivo completo do catálogo (texto original do lote) — normalmente
+  // NÃO vem em `getVinylSales` (coluna pesada); use `bundle` para o filtro de lote/kit.
+  bundle?: boolean; // lote/kit com vários discos (preço do CONJUNTO), calculado na captura
 };
 
 export type FaixaAgg = { label: string; count: number; avgPrice: number | null };
@@ -202,13 +204,13 @@ export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): Art
     // correção manual da venda ISENTA do filtro (o usuário afirmou que é um vinil).
     if (!saleOv && looksNonVinylSale(`${row.title} ${row.artist}`)) continue;
     // Oculta LOTES confirmados (conjunto de vários discos): o preço do conjunto não é preço por
-    // álbum e polui as estatísticas. Checa o TÍTULO atual e o `orig_text` (descritivo bruto do
-    // catálogo, preservado mesmo quando a reidentificação por IA reescreve o título) — sem isso,
-    // uma venda que a IA "garimpou" um artista de dentro do lote reaparecia com o preço do
-    // CONJUNTO inteiro atribuído a um único álbum. A correção manual da venda (saleOv) ISENTA —
-    // o usuário pode afirmar que aquela venda é um disco específico. Não deleta nada; só some da
-    // leitura.
-    if (!saleOv && (isDiscBundle(row.title) || isDiscBundle(row.orig_text ?? ""))) continue;
+    // álbum e polui as estatísticas. Checa o TÍTULO atual e `bundle` (calculado na captura a
+    // partir do descritivo bruto do catálogo, preservado mesmo quando a reidentificação por IA
+    // reescreve o título) — sem isso, uma venda que a IA "garimpou" um artista de dentro do lote
+    // reaparecia com o preço do CONJUNTO inteiro atribuído a um único álbum. A correção manual da
+    // venda (saleOv) ISENTA — o usuário pode afirmar que aquela venda é um disco específico. Não
+    // deleta nada; só some da leitura.
+    if (!saleOv && (isDiscBundle(row.title) || row.bundle)) continue;
     // Coletâneas/novelas → balaio "Coletâneas, Novela e etc" (a menos de correção manual). O
     // "artista" que é de vários intérpretes (isVariousArtists) SEMPRE cai no balaio. A dica no
     // TÍTULO ("sucessos"/"grandes sucessos"/"trilha sonora"…) só conta quando o ARTISTA ainda é

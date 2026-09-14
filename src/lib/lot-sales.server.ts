@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 import { type Condition, parseConditionFromText, scoreCondition } from "./grading";
+import type { LotIdentRow } from "./lot-ident.server";
 import {
   auctionFinished,
   extractArtist,
@@ -44,14 +45,16 @@ export type LotSaleRow = {
   initial_price: number | null; // valor inicial/contratado (p/ desconto/ágio vs. venda)
   orig_text: string; // descritivo COMPLETO do card do catálogo (texto original; NÃO reescrito
   // pela reidentificação por IA, que só ajusta title/artist)
+  bundle: boolean; // lote/kit com vários discos (preço do CONJUNTO) — calculado na captura a
+  // partir de `orig_text`, persistido para o Vinil Analytics filtrar sem reler `orig_text`.
 };
 
 const PAGE = 1000;
-// Colunas base (sempre presentes) e a coluna `orig_text`, adicionada depois (setup.sql/migração).
-// A leitura/escrita toleram a ausência de `orig_text` (banco sem a migração ainda) — ver
-// `isMissingColumn`.
+// Colunas base (sempre presentes, incl. `bundle`) e a coluna `orig_text` — a mais pesada por
+// linha —, pedida à parte (`withOrig`). A leitura/escrita toleram a ausência de `orig_text`
+// (banco sem a migração da coluna ainda) — ver `isMissingColumn`.
 const BASE_SALE_COLUMNS =
-  "lot_id, id_leilao, id_peca, artist, title, sold_price, sold_price_raw, sold_date, house, uf, media, sleeve, score, faixa, insert_state, source_url, views, bids, fee_pct, initial_price";
+  "lot_id, id_leilao, id_peca, artist, title, sold_price, sold_price_raw, sold_date, house, uf, media, sleeve, score, faixa, insert_state, source_url, views, bids, fee_pct, initial_price, bundle";
 const SALE_COLUMNS = `${BASE_SALE_COLUMNS}, orig_text`;
 
 /** Erro do Postgres/PostgREST de coluna inexistente (antes de aplicar a migração `orig_text`). */
@@ -61,10 +64,43 @@ function isMissingColumn(error: { code?: string; message?: string } | null): boo
   return (error.message ?? "").includes("orig_text");
 }
 
-/** Lê todo o histórico de vendas (single-user; paginado). Best-effort. Tolera `orig_text` ausente. */
-export async function getAllLotSales(): Promise<LotSaleRow[]> {
-  let withOrig = true;
+/**
+ * Lê vendas de `lot_sales` (single-user; paginado). Best-effort. Tolera `orig_text` ausente
+ * (banco sem a migração da coluna).
+ *
+ * - `ids`: busca só esse conjunto (já limitado pelo chamador, ex. até 500) — 1 requisição, sem
+ *   paginação. Sem `ids`, lê a TABELA INTEIRA (usar com cuidado — é o padrão caro que o Fase 1
+ *   corrigiu em `reidentifyAllSales`; prefira `ids` ou a RPC `getUnidentifiedLotSales` quando der).
+ * - `withOrig` (padrão `true`): quando `false`, NÃO pede `orig_text` — a coluna mais pesada por
+ *   linha — para quem só precisa de artista/título/preço (ex. padronização de grafia).
+ */
+export async function getAllLotSales(opts?: {
+  withOrig?: boolean;
+  ids?: string[];
+}): Promise<LotSaleRow[]> {
+  const ids = opts?.ids;
+  if (ids && !ids.length) return [];
+  let withOrig = opts?.withOrig ?? true;
   const rows: LotSaleRow[] = [];
+
+  if (ids) {
+    for (;;) {
+      const cols = withOrig ? SALE_COLUMNS : BASE_SALE_COLUMNS;
+      const { data, error } = await supabaseAdmin.from("lot_sales").select(cols).in("lot_id", ids);
+      if (error) {
+        if (withOrig && isMissingColumn(error)) {
+          withOrig = false;
+          continue;
+        }
+        throw error;
+      }
+      const batch = (data ?? []) as unknown as Record<string, unknown>[];
+      for (const r of batch)
+        rows.push({ orig_text: "", bundle: false, ...r } as unknown as LotSaleRow);
+      return rows;
+    }
+  }
+
   for (let from = 0; ; from += PAGE) {
     const cols = withOrig ? SALE_COLUMNS : BASE_SALE_COLUMNS;
     const { data, error } = await supabaseAdmin
@@ -80,14 +116,38 @@ export async function getAllLotSales(): Promise<LotSaleRow[]> {
       throw error;
     }
     const batch = (data ?? []) as unknown as Record<string, unknown>[];
-    for (const r of batch) rows.push({ orig_text: "", ...r } as unknown as LotSaleRow);
+    for (const r of batch)
+      rows.push({ orig_text: "", bundle: false, ...r } as unknown as LotSaleRow);
     if (batch.length < PAGE) break;
   }
   return rows;
 }
 
-/** Grava/atualiza vendas (upsert por `lot_id`). Só chamamos com linhas já vendidas. */
-export async function upsertLotSales(rows: LotSaleRow[]): Promise<number> {
+/**
+ * Anti-join no banco (RPC `get_unidentified_lot_sales`): só as vendas de `lot_sales` que AINDA
+ * não têm linha em `lot_ident`, até `limit`. Substitui, em `reidentifyAllSales`, o padrão antigo
+ * de baixar as duas tabelas INTEIRAS (com `orig_text`) a cada chamada só para achar o que falta
+ * identificar — a causa raiz do egress do Supabase (ver docs/economia-fase-1-egress-e-cpu.md).
+ * Requer a migration `20260914000000_reident_egress_fixes.sql`.
+ */
+export async function getUnidentifiedLotSales(limit: number): Promise<LotSaleRow[]> {
+  const { data, error } = await supabaseAdmin.rpc("get_unidentified_lot_sales", {
+    p_limit: limit,
+  });
+  if (error) throw error;
+  const batch = (data ?? []) as unknown as Record<string, unknown>[];
+  return batch.map((r) => ({ orig_text: "", bundle: false, ...r }) as unknown as LotSaleRow);
+}
+
+/**
+ * Grava/atualiza vendas (upsert por `lot_id`). Só chamamos com linhas já vendidas.
+ * `orig_text` é OPCIONAL na entrada: quando ausente (ex. regravação vinda de uma leitura magra,
+ * sem essa coluna), a chave nem entra no payload do upsert — PostgREST só sobrescreve as colunas
+ * presentes no corpo, então o valor já gravado no banco fica intacto (não é apagado por "").
+ */
+export async function upsertLotSales(
+  rows: (Omit<LotSaleRow, "orig_text"> & { orig_text?: string })[],
+): Promise<number> {
   if (!rows.length) return 0;
   const capturedAt = new Date().toISOString();
   const payload = rows.map((r) => ({ ...r, captured_at: capturedAt }));
@@ -107,6 +167,25 @@ export async function upsertLotSales(rows: LotSaleRow[]): Promise<number> {
     throw new Error(`Não foi possível gravar as vendas: ${error.message}`);
   }
   return payload.length;
+}
+
+/**
+ * Backfill ÚNICO de `bundle` para vendas gravadas ANTES dessa coluna existir. Lê `orig_text`
+ * (custo de egress concentrado numa chamada, não repetido) e regrava só as linhas cujo `bundle`
+ * calculado agora diverge do gravado. Rode manualmente (uma vez) após aplicar a migration —
+ * depois disso, `getVinylSales`/`reidentifyAllSales` nunca mais precisam ler `orig_text` em massa.
+ */
+export async function backfillBundleFlag(
+  max = 1000,
+): Promise<{ scanned: number; updated: number }> {
+  const all = await getAllLotSales({ withOrig: true });
+  const toFix = all
+    .filter((s) => isDiscBundle(s.orig_text ?? "") !== s.bundle)
+    .slice(0, Math.max(1, max));
+  if (!toFix.length) return { scanned: all.length, updated: 0 };
+  const rows = toFix.map((s) => ({ ...s, bundle: isDiscBundle(s.orig_text ?? "") }));
+  const updated = await upsertLotSales(rows);
+  return { scanned: all.length, updated };
 }
 
 type SeenAuctionRow = {
@@ -246,6 +325,9 @@ function salesRowsFromCatalog(
       // Texto original = descritivo completo do card (o mesmo que alimenta o estado). Preservado
       // mesmo depois que a reidentificação por IA reescreve `title`.
       orig_text: data.text ?? "",
+      // Lote/kit com vários discos (preço do CONJUNTO) — calculado UMA vez aqui a partir do
+      // texto original, para o Vinil Analytics filtrar sem reler `orig_text` depois.
+      bundle: isDiscBundle(data.text ?? ""),
     });
   }
   return rows;
@@ -507,6 +589,13 @@ const REIDENT_CAP = 25;
  *
  * Sem provedor de IA configurado, o passo (1) é no-op e só a padronização (2) roda. Chame em
  * laço até `done` para cobrir todo o backlog de identificação.
+ *
+ * **Egress (Fase 1)**: no modo GLOBAL, o alvo da IA vem de uma RPC de anti-join no banco
+ * (`getUnidentifiedLotSales`) em vez de baixar `lot_sales`+`lot_ident` inteiras a cada chamada —
+ * essa era a causa raiz do egress do Supabase e do Active CPU da Vercel (ver
+ * docs/economia-fase-1-egress-e-cpu.md). A padronização (2) ainda lê o histórico inteiro (precisa
+ * comparar grafias de TODAS as vendas), mas sem `orig_text` — a coluna mais pesada por linha, que
+ * essa etapa não usa.
  */
 export async function reidentifyAllSales(
   max = REIDENT_CAP,
@@ -522,73 +611,136 @@ export async function reidentifyAllSales(
   const { aiConfigured, identLotsSync, resolveAiProvider, titleHash } =
     await import("./ai-eval.server");
 
-  const [allSales, identRows] = await Promise.all([
-    getAllLotSales(),
-    getAllLotIdent().catch(() => []),
-  ]);
-
-  // Escopo POR GRUPO (artista/álbum): restringe às vendas dos `lotIds` informados. Sem escopo,
-  // roda em TODO o histórico (como o botão global).
-  const scope = opts?.lotIds?.length ? new Set(opts.lotIds) : null;
-  const sales = scope ? allSales.filter((s) => scope.has(s.lot_id)) : allSales;
-
-  const attempted = new Set(identRows.map((r) => r.id));
+  const identRows = await getAllLotIdent().catch(() => []);
   const albumById = new Map<string, string>();
   for (const r of identRows) if (r.album) albumById.set(r.id, r.album);
 
   // Texto que a IA lê: prefere o descritivo ORIGINAL do catálogo (`orig_text`) — mais fiel que o
   // `title`, que a reidentificação pode já ter reescrito. Cai no título quando não há.
   const aiInput = (s: LotSaleRow): string => (s.orig_text?.trim() || s.title || "").trim();
+  const cap = Math.max(1, max);
+  const scope = opts?.lotIds?.length ? new Set(opts.lotIds) : null;
 
-  // 1) Alvo da IA:
-  //  - GLOBAL: vendas que NUNCA foram tentadas (sem linha em `lot_ident`) — checkpoint durável
-  //    que faz o laço até `done` sem reprocessar.
-  //  - POR GRUPO: vendas ainda NÃO identificadas com sucesso (álbum nulo/sem linha), RETENTANDO
-  //    as que falharam antes. O alvo encolhe conforme identifica, então uma nova execução avança
-  //    (a UI não roda em laço no modo por grupo — evita reprocessar eternamente as sem solução).
-  //  EXCLUI lotes CONFIRMADOS (`isDiscBundle` no texto original): o valor vendido é do CONJUNTO,
-  //  então "achar" um artista/álbum dentro do texto reescreveria a venda com o preço do lote
-  //  inteiro, reaparecendo no Analytics com um preço que não é o do álbum. Ficam com artista
-  //  "Lote" e seguem ocultos (`buildAnalytics`).
-  const needAi = scope
-    ? sales.filter((s) => !albumById.has(s.lot_id) && aiInput(s) && !isDiscBundle(aiInput(s)))
-    : sales.filter((s) => !attempted.has(s.lot_id) && aiInput(s) && !isDiscBundle(aiInput(s)));
-  const batch = needAi.slice(0, Math.max(1, max));
   let identified = 0;
-  if (aiConfigured() && batch.length) {
-    const provider = await resolveAiProvider();
-    const results = await identLotsSync(
-      batch.map((s) => ({
-        id: s.lot_id,
-        title: aiInput(s),
-        price: "",
-        house: s.house,
-        image: null,
-      })),
-      false,
-      provider,
+  let processed = 0;
+  let moreAiPending = false;
+  let scopedSales: LotSaleRow[] | null = null;
+
+  if (scope) {
+    // POR GRUPO: conjunto já bounded pelo chamador (≤500 ids) — busca SÓ esses, com `orig_text`
+    // (a IA precisa do texto). RETENTA os ainda não identificados com sucesso (álbum nulo/sem
+    // linha); não rebaixa uma identificação a nulo numa retentativa que a IA não resolveu.
+    scopedSales = await getAllLotSales({ ids: [...scope] });
+    const needAi = scopedSales.filter(
+      (s) => !albumById.has(s.lot_id) && aiInput(s) && !isDiscBundle(aiInput(s)),
     );
-    const byId = new Map(results.map((r) => [r.id, r]));
-    // GLOBAL grava lot_ident para TODOS os processados (álbum nulo → marca "já tentado", não
-    // reprocessa). POR GRUPO só grava os SUCESSOS (não rebaixa uma identificação a nulo numa
-    // retentativa que a IA não resolveu).
-    const identNew = batch
-      .map((s) => {
-        const r = byId.get(s.lot_id);
-        return {
+    const batch = needAi.slice(0, cap);
+    processed = batch.length;
+    moreAiPending = needAi.length > batch.length;
+    if (aiConfigured() && batch.length) {
+      const provider = await resolveAiProvider();
+      const results = await identLotsSync(
+        batch.map((s) => ({
+          id: s.lot_id,
+          title: aiInput(s),
+          price: "",
+          house: s.house,
+          image: null,
+        })),
+        false,
+        provider,
+      );
+      const byId = new Map(results.map((r) => [r.id, r]));
+      const identNew = batch
+        .map((s) => {
+          const r = byId.get(s.lot_id);
+          return {
+            id: s.lot_id,
+            title_hash: titleHash(s.title),
+            album: r?.album ?? null,
+            year: r?.year ?? null,
+            confidence: r?.confidence ?? null,
+            source: "title" as const,
+            model: null,
+          };
+        })
+        .filter((row) => row.album != null);
+      if (identNew.length) await upsertLotIdent(identNew);
+      for (const r of identNew) {
+        if (r.album) {
+          albumById.set(r.id, r.album);
+          identified += 1;
+        }
+      }
+    }
+  } else {
+    // GLOBAL: pede ao banco só as vendas SEM linha em `lot_ident` (anti-join), numa JANELA maior
+    // que `cap` — cobre os lotes que a janela vai marcar como "tentado" sem gastar IA neles
+    // (sem texto, ou `isDiscBundle`: o valor vendido é do CONJUNTO, então "achar" um artista/álbum
+    // ali reescreveria a venda com o preço do lote inteiro — ficam com artista "Lote" e seguem
+    // ocultos em `buildAnalytics`). Sem marcar esses como tentados, eles voltariam a ocupar a
+    // janela em TODA chamada seguinte e o laço nunca chegaria a `done`.
+    const windowSize = Math.max(cap * 4, 200);
+    const probe = await getUnidentifiedLotSales(windowSize + 1);
+    moreAiPending = probe.length > windowSize;
+    const window = probe.slice(0, windowSize);
+
+    const skipMarks: LotIdentRow[] = [];
+    const candidates: LotSaleRow[] = [];
+    for (const s of window) {
+      const text = aiInput(s);
+      if (!text || isDiscBundle(text)) {
+        skipMarks.push({
           id: s.lot_id,
           title_hash: titleHash(s.title),
-          album: r?.album ?? null,
-          year: r?.year ?? null,
-          confidence: r?.confidence ?? null,
-          source: "title" as const,
+          album: null,
+          year: null,
+          confidence: null,
+          source: "title",
           model: null,
-        };
-      })
-      .filter((row) => (scope ? row.album != null : true));
+        });
+        continue;
+      }
+      candidates.push(s);
+    }
+    const batch = candidates.slice(0, cap);
+    processed = batch.length + skipMarks.length;
+    moreAiPending = moreAiPending || candidates.length > batch.length;
+
+    let identNew: LotIdentRow[] = skipMarks;
+    if (aiConfigured() && batch.length) {
+      const provider = await resolveAiProvider();
+      const results = await identLotsSync(
+        batch.map((s) => ({
+          id: s.lot_id,
+          title: aiInput(s),
+          price: "",
+          house: s.house,
+          image: null,
+        })),
+        false,
+        provider,
+      );
+      const byId = new Map(results.map((r) => [r.id, r]));
+      // GLOBAL grava lot_ident para TODOS os processados (álbum nulo → marca "já tentado", não
+      // reprocessa).
+      identNew = identNew.concat(
+        batch.map((s) => {
+          const r = byId.get(s.lot_id);
+          return {
+            id: s.lot_id,
+            title_hash: titleHash(s.title),
+            album: r?.album ?? null,
+            year: r?.year ?? null,
+            confidence: r?.confidence ?? null,
+            source: "title" as const,
+            model: null,
+          };
+        }),
+      );
+    }
     if (identNew.length) await upsertLotIdent(identNew);
     for (const r of identNew) {
-      attempted.add(r.id);
       if (r.album) {
         albumById.set(r.id, r.album);
         identified += 1;
@@ -597,6 +749,8 @@ export async function reidentifyAllSales(
   }
 
   // 2) Padronização: artista-alvo de cada venda (da identificação quando houver, senão o atual).
+  // GLOBAL lê o histórico inteiro, mas SEM `orig_text` — essa etapa só usa artista/título.
+  const sales = scope ? scopedSales! : await getAllLotSales({ withOrig: false });
   const targetArtist = (s: LotSaleRow): string => {
     const album = albumById.get(s.lot_id);
     return (album ? extractArtist(album) : s.artist)?.trim() || "";
@@ -616,19 +770,26 @@ export async function reidentifyAllSales(
     return variants?.length ? pickCanonical(variants) : a;
   };
 
-  // Regrava só as vendas que mudam (título/artista canonizados).
-  const changed: LotSaleRow[] = [];
+  // Regrava só as vendas que mudam (título/artista canonizados). SEM `orig_text` na leitura
+  // GLOBAL (slim) — omite a chave do payload em vez de mandar "" (que apagaria o texto original
+  // já gravado; ver `upsertLotSales`).
+  const changed: (Omit<LotSaleRow, "orig_text"> & { orig_text?: string })[] = [];
   for (const s of sales) {
     const album = albumById.get(s.lot_id);
     const newTitle = album || s.title;
     const rawArtist = (album ? extractArtist(album) : s.artist)?.trim() || s.artist;
     const newArtist = canonicalArtist(rawArtist);
     if (newArtist !== s.artist || newTitle !== s.title) {
-      changed.push({ ...s, artist: newArtist, title: newTitle });
+      const { orig_text: _origText, ...base } = s;
+      changed.push(
+        scope
+          ? { ...s, artist: newArtist, title: newTitle }
+          : { ...base, artist: newArtist, title: newTitle },
+      );
     }
   }
   const applied = changed.length ? await upsertLotSales(changed) : 0;
 
-  const remaining = Math.max(0, needAi.length - batch.length);
-  return { identified, applied, processed: batch.length, remaining, done: remaining === 0 };
+  const remaining = moreAiPending ? 1 : 0;
+  return { identified, applied, processed, remaining, done: remaining === 0 };
 }

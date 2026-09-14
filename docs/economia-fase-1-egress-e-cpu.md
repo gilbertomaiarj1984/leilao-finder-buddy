@@ -1,7 +1,8 @@
 # Fase 1 — Cortar egress do Supabase e Active CPU da Vercel
 
-> **Status: não iniciada.** Documento de execução autossuficiente. Custo: US$ 0.
-> Contexto e alternativas descartadas: `docs/economia-migracao.md`.
+> **Status: itens 1–4 implementados em v0.48.4 (código); falta aplicar no Supabase e
+> reconferir os painéis — ver "Estado da implementação" no fim.** Documento de execução
+> autossuficiente. Custo: US$ 0. Contexto e alternativas descartadas: `docs/economia-migracao.md`.
 >
 > ⚠️ Este documento foi **reescrito em v0.48.2** depois que a telemetria real chegou. A versão
 > anterior (v0.48.1) mirava o tamanho do banco — alvo errado, ver "O que mudou" no fim.
@@ -142,6 +143,34 @@ que os medidores apertados são outros (egress do Supabase, já estourado; Activ
 
 Lição: a conclusão anterior veio de ler o schema sem olhar a telemetria. Schema explica o que
 *pode* crescer; só a medição diz o que *está* doendo.
+
+## Estado da implementação (v0.48.4)
+
+Itens 1–4 implementados em código:
+
+1. **Filtrar no banco**: RPC `get_unidentified_lot_sales` (anti-join) — `reidentifyAllSales`
+   (modo GLOBAL) não baixa mais as duas tabelas inteiras. Lotes sem texto/`isDiscBundle` são
+   marcados "tentado" em `lot_ident` (álbum nulo) para o laço convergir sem reler as mesmas linhas.
+2. **Não baixar a tabela à toa**: coberto pelo item 1 — a RPC já devolve vazio/pequeno quando não
+   há trabalho, sem varrer a tabela inteira antes.
+3. **Encolher o laço**: `reident` no `refresh.yml` caiu de 60 para 15 iterações.
+4. **Vinil Analytics**: nova coluna `lot_sales.bundle` (calculada na captura) substitui a checagem
+   `isDiscBundle(orig_text)`; `getVinylSales` não pede mais `orig_text` ao navegador.
+
+Também corrigido no caminho: a padronização de grafia (item 1, passo 2) lê o histórico sem
+`orig_text`, e a regravação das linhas que mudam agora **omite** `orig_text` do upsert em vez de
+mandar `""` — sem isso, apagaria o texto original já gravado no banco.
+
+**Pendente (fora do código, precisa do usuário):**
+
+- [ ] Aplicar `supabase/migrations/20260914000000_reident_egress_fixes.sql` no Supabase (SQL
+      Editor) — cria a RPC e a coluna `bundle`. **Sem isso o deploy quebra** (`reidentifyAllSales`
+      e `getVinylSales` dependem dela).
+- [ ] Rodar `GET /api/cron?step=backfillbundle` (com o header `x-cron-token`) **uma vez**, depois
+      da migration, para calcular `bundle` nas vendas já gravadas (as capturadas depois já vêm com
+      o valor certo). Repetir com `&max=` maior se `scanned` bater no teto antes de zerar `updated`.
+- [ ] Passo 5 do plano: reconferir egress do Supabase e Active CPU da Vercel depois de ~1 semana
+      rodando com a correção.
 
 ## Lembretes do projeto (AGENTS.md)
 

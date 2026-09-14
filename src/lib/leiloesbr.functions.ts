@@ -532,7 +532,11 @@ export const getLotCondition = createServerFn({ method: "GET" })
     }
   });
 
-/** Histórico de vendas (`lot_sales`, base do Vinil Analytics). Best-effort: [] em erro. */
+/**
+ * Histórico de vendas (`lot_sales`, base do Vinil Analytics). Best-effort: [] em erro.
+ * Não pede `orig_text` (a coluna mais pesada por linha) — o navegador não precisa do descritivo
+ * bruto do catálogo, só de `bundle` (já calculado na captura) para o mesmo filtro de lote/kit.
+ */
 export const getVinylSales = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -540,7 +544,7 @@ export const getVinylSales = createServerFn({ method: "GET" })
     assertAllowed(context.claims?.["email"] as string | undefined);
     try {
       const { getAllLotSales } = await import("./lot-sales.server");
-      return await getAllLotSales();
+      return await getAllLotSales({ withOrig: false });
     } catch (error) {
       console.error("[lot-sales] não foi possível ler o histórico de vendas", error);
       return [];
