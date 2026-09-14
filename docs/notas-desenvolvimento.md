@@ -811,6 +811,43 @@ ESLint/Prettier.)
   após a migração. Dados migrados via `pg_restore --data-only` (usuários do `auth` **não**
   migrados — login refeito com Google).
 
+## Infra — economia / saída dos free tiers (v0.48.2, NÃO iniciado)
+
+Planos em **`docs/economia-migracao.md`** (índice + telemetria), com as fases em
+`docs/economia-fase-1-egress-e-cpu.md` e `docs/economia-fase-2-vps-unico.md`.
+
+**Telemetria real (30 dias, set/2026) — o que dói:**
+
+| Medidor | Uso |
+| --- | --- |
+| Supabase **Egress** | **9,14 / 5 GB** 🔴 já estourado |
+| Vercel **Fluid Active CPU** | **3h09 / 4h** 🟠 79% |
+| Vercel Fast Origin Transfer | 6,34 / 10 GB |
+| Supabase **Database size** | **49 / 500 MB** 🟢 folgado |
+| Vercel Edge Requests / Invocations | ~4% |
+
+- **Causa raiz:** `reidentifyAllSales()` (`lot-sales.server.ts:511`) carrega `lot_sales` INTEIRA
+  (com `orig_text`) + `lot_ident` INTEIRA a cada chamada, para processar 25 linhas — e o workflow
+  chama isso em laço de até **60×** por execução, 4×/dia (`refresh.yml:120`). Leitura
+  O(tabela) para O(25) de trabalho. Mesmo sem venda nova, a 1ª chamada baixa tudo só para
+  descobrir que não há o que fazer. Isso é o egress do Supabase E o Active CPU da Vercel.
+- **Secundário:** `getVinylSales` (`leiloesbr.functions.ts:542`) devolve o histórico inteiro ao
+  browser a cada abertura do Vinil Analytics.
+- **Correção (Fase 1, custo zero):** filtrar no banco (anti-join via RPC, `limit(max)`) em vez de
+  baixar tudo e filtrar em memória; não pedir `orig_text` em quem não usa (o flag `withOrig` já
+  existe); short-circuit quando não há trabalho; encolher os laços do workflow.
+- **Netlify e Neon descartados.** Netlify: timeout de 10 s mata os steps do cron e o `/api/live`
+  (confirmado — o projeto conectado ao repo falha o deploy em todo PR). Neon: o gargalo é egress,
+  não storage, e o Neon cobra CU-horas que o mesmo padrão queima igual.
+- **Fase 2 (~US$4/mês, VPS único) só se a Fase 1 não bastar.** Migrar antes leva o desperdício
+  junto. `vite.config.ts:9` já honra `SERVER_PRESET`, então trocar de host é env var, não código.
+- **Órfãos (rebaixado a item secundário):** o schema não tem FK nem `CASCADE`, então
+  `lot_ai`/`lot_ident`/`lot_market`/`lot_condition` acumulam órfãos quando `lots` é podada. Com
+  49/500 MB não é urgente, mas órfã em `lot_ident` é linha lida à toa pelo anti-join.
+  ⚠️ **Nunca** cascatear `lot_sales` → `lots`.
+- **Lição:** a v0.48.1 planejou a partir do schema e mirou o tamanho do banco — alvo errado.
+  Schema mostra o que *pode* crescer; só telemetria mostra o que *está* doendo.
+
 ## Histórico de versões
 
 Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`. Bump em todo PR.
@@ -899,6 +936,10 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 | v0.48.0        | **Alerta "ao vivo" + link do presencial na lista principal; "Acontecendo agora" em 2 linhas e clicável; busca só ao confirmar; header menor** — (1) cabeçalho de casa da lista principal por dia ganha `AuctionStatusInline`/link "pregão presencial" (mesmo mecanismo de Vigiados, via `group.lots[0]`), substituindo o "às HH:MM" solto; (2) a seção "Acontecendo agora" (`live-auctions.tsx`) virou cartão compacto de 2 linhas, clicável para o **presencial** (`listLiveAuctions` agora devolve `PresencialAuction[]` com `presencialUrl`, helper `toPresencialAuction` compartilhado com `listTodayAuctions`); (3) a busca principal só filtra ao apertar Enter/clicar **Pesquisar** (`searchDraft` vs `search`), não mais a cada tecla; (4) header mais baixo (`py-2 sm:py-3`, título menor) com e-mail + **Sair** movidos para uma linha compacta no topo esquerdo (acima do título), saindo do fim da barra de ações | —       |
 | v0.48.1        | **Home: header enxuto + barra de filtros/dias fixa; Coleção: filtro/seletor de visão fixos** — (1) home: removido o bloco "LeilõesBR / Garimpo de Vinil / descrição" do header (fica só e-mail+Sair e as ações existentes numa única linha fina); a barra de busca + abas de dias/Vigiados/Lances passou a viver dentro do MESMO `<Tabs>` que o conteúdo e ficou **fixa logo abaixo do header** (um único wrapper `sticky top-0`, header e barra de filtros colam juntos sem precisar calcular a altura um do outro); reduzido o espaço em branco entre a barra de dias e a barra de ações do dia (`py-8`→`pt-3 pb-8` no container do conteúdo). (2) Coleção: filtro de artista/busca e o seletor **Cards/Títulos** (`TabsList`) movidos para dentro do header sticky (mesma técnica — `<Tabs>` engloba header+filtro+conteúdo), ficando fixos ao rolar a página | —       |
 | v0.48.2        | **Home: barra "Vigiados do dia/Lances do dia" + botões das casas também fixos sob o header** — essas barras já eram `sticky top-0`, só que no MESMO `top:0` do header (z-30) → ficavam escondidas atrás dele (dois sticky empilhados sem offset). Como a altura do header (header+filtros, v0.48.1) é dinâmica (quebra de linha da busca/abas conforme a tela), o offset não dá pra cravar em CSS: `headerRef`+`ResizeObserver` mede a altura real ao vivo (`headerHeight` em estado) e `stickyBelowHeader = {top: headerHeight}` é aplicado via `style` (no lugar da classe `top-0`) nas 3 barras que colam sob o header — a do dia (Vigiados do dia/Lances do dia/**botões de casa** já viviam nela) e as duas seções por dia dentro das abas globais **Vigiados**/**Lances** | —       |
+
+| v0.48.1        | **Plano de economia de infraestrutura (só documentação, sem mudança de código)** — investigação sobre sair dos free tiers de Supabase/Vercel, registrada em `docs/economia-migracao.md` (índice) + dois planos de fase. Achado principal: o risco ao limite de 500 MB do Supabase **não vem da plataforma, e sim de linhas órfãs** — `lots` já é podada por janela (`pruneOutOfWindow`), mas `lot_ai`/`lot_ident`/`lot_market`/`lot_condition` não têm FK nem `CASCADE` e nunca são limpas; `lot_sales.orig_text` também cresce sem teto. Netlify e Neon foram **descartados** (ver seção "Infra — economia"). Fase 1 (faxina + medição, custo zero) e Fase 2 (VPS único, ~US$4/mês, só se a Fase 1 exigir) ficam documentadas e **não iniciadas** | —       |
+
+| v0.48.2        | **Correção de rota do plano de economia (só documentação)** — chegou a telemetria real e ela contradiz a v0.48.1: o banco está em **49/500 MB** (folgado), mas o **egress do Supabase já estourou (9,14/5 GB)** e o **Active CPU da Vercel está em 79% (3h09/4h)**. Causa raiz identificada: `reidentifyAllSales()` carrega `lot_sales` + `lot_ident` INTEIRAS a cada chamada para processar 25 linhas, em laço de até 60× por execução do cron. A Fase 1 foi reescrita (`economia-fase-1-faxina-e-medicao.md` → `economia-fase-1-egress-e-cpu.md`) para atacar egress/CPU; a faxina de órfãos virou item secundário | —       |
 
 > Observação: PRs #63/#64/#66 foram mesclados via API **sem** bump; a versão foi consolidada
 > depois. O `version-bump.yml` só barra merge pela UI — reforça a convenção de sempre bumpar.
