@@ -225,6 +225,7 @@ CREATE TABLE IF NOT EXISTS public.lot_sales (
   fee_pct        numeric,
   initial_price  numeric,
   orig_text      text NOT NULL DEFAULT '',        -- descritivo completo do catálogo (texto original)
+  bundle         boolean NOT NULL DEFAULT false,  -- lote/kit com vários discos (preço do CONJUNTO)
   captured_at    timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS lot_sales_artist_idx ON public.lot_sales (artist);
@@ -236,6 +237,29 @@ ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS fee_pct       numeric;
 ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS initial_price numeric;
 -- Texto original completo do card do catálogo (preservado após a reidentificação por IA).
 ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS orig_text     text NOT NULL DEFAULT '';
+-- Sinal de lote/kit (vários discos no mesmo preço), calculado na captura a partir de `orig_text`
+-- — evita reler `orig_text` (coluna mais pesada) só para filtrar lotes no Vinil Analytics.
+ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS bundle        boolean NOT NULL DEFAULT false;
+
+-- ---------------------------------------------------------------------
+-- get_unidentified_lot_sales — anti-join (lot_sales sem linha em lot_ident), limitado.
+-- Usado por `reidentifyAllSales` para não baixar as duas tabelas inteiras a cada chamada.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.get_unidentified_lot_sales(p_limit integer)
+RETURNS SETOF public.lot_sales
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+  SELECT ls.*
+  FROM public.lot_sales ls
+  WHERE NOT EXISTS (SELECT 1 FROM public.lot_ident li WHERE li.id = ls.lot_id)
+  ORDER BY ls.lot_id
+  LIMIT p_limit;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_unidentified_lot_sales(integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_unidentified_lot_sales(integer) TO service_role;
 
 -- ---------------------------------------------------------------------
 -- collection_items

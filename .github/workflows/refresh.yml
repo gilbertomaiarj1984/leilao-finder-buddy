@@ -114,10 +114,12 @@ jobs:
 
           echo "== Reidentificação por IA de TODO o histórico (artista/álbum + padronização) =="
           # Passa a IA (título + descrição → "Artista - Álbum") pelas vendas ainda não
-          # identificadas e PADRONIZA a grafia dos nomes (evita registros duplicados por
-          # diferenças mínimas). Chunked: repetimos até done=true; o resto completa nas
-          # execuções seguintes. Sem provedor de IA, só a padronização roda.
-          for i in $(seq 1 60); do
+          # identificadas (via RPC de anti-join no banco, não baixa mais as tabelas inteiras) e
+          # PADRONIZA a grafia dos nomes (evita registros duplicados por diferenças mínimas).
+          # Chunked: repetimos até done=true; o resto completa nas execuções seguintes. Em regime
+          # (sem backlog grande) converge em 1-2 chamadas — 15 é folga, não o caminho comum. Sem
+          # provedor de IA, só a padronização roda.
+          for i in $(seq 1 15); do
             res="$(call "/api/cron?step=reident&max=25")"
             echo "reident $i: $res"
             if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
