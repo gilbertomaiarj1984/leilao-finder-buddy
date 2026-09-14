@@ -1041,10 +1041,16 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
 
   return (
     <main className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-3 px-4 py-2 sm:gap-4 sm:py-3">
-          <div>
-            <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
+      <Tabs
+        value={tab}
+        onValueChange={(value) => {
+          setTab(value);
+          setArtistFilter("");
+        }}
+      >
+        <div className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-1.5">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="truncate">{email}</span>
               <button
                 type="button"
@@ -1055,1003 +1061,1017 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 Sair
               </button>
             </div>
-            <p className="hidden text-xs uppercase tracking-[0.35em] text-primary sm:block">
-              LeilõesBR
-            </p>
-            <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-              Garimpo de Vinil
-            </h1>
-            <p className="mt-1 hidden max-w-xl text-sm text-muted-foreground sm:block">
-              LPs, compactos e bolachões que vão a leilão nos próximos 5 dias, agrupados por dia,
-              casa de leilão e artista. A vigia é sincronizada com a sua conta do LeilõesBR.
-            </p>
-          </div>
-          {/* No mobile a barra de ações rola na horizontal (uma linha), para o header sticky
+            {/* No mobile a barra de ações rola na horizontal (uma linha), para o header sticky
               ficar baixo e não atrapalhar; no desktop volta a quebrar em linhas (flex-wrap). */}
-          <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible sm:pb-0">
-            <Button variant="outline" size="sm" asChild title="Leilões ao vivo (pregão presencial)">
-              <Link to="/ao-vivo">
-                <Radio className="mr-2 h-4 w-4" />
-                Ao vivo
-              </Link>
-            </Button>
-            <Button variant="outline" size="sm" asChild title="Análise de lotes com IA">
-              <Link to="/analise">
-                <Sparkles className="mr-2 h-4 w-4" />
-                Análise
-              </Link>
-            </Button>
-            <Button variant="outline" size="sm" asChild title="Minha coleção de vinil">
-              <Link to="/colecao">
-                <Library className="mr-2 h-4 w-4" />
-                Coleção
-              </Link>
-            </Button>
-            <Button variant="outline" size="sm" asChild title="Preços de venda por artista e álbum">
-              <Link to="/vinil-analytics">
-                <BarChart3 className="mr-2 h-4 w-4" />
-                Analytics
-              </Link>
-            </Button>
-            <div
-              className="flex items-center gap-1.5"
-              title="Modo da avaliação automática por IA (controla o gasto de créditos). A análise sob demanda, pelos botões nos dias/casas, funciona em qualquer modo."
-            >
-              <Sparkles className="h-4 w-4 shrink-0 text-primary" />
-              <Select
-                value={aiMode}
-                onValueChange={(value) => changeAiMode(value as "off" | "all" | "watched")}
-              >
-                <SelectTrigger className="h-8 w-[176px] text-xs" aria-label="Modo da IA">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="off">IA: desligada</SelectItem>
-                  <SelectItem value="all">IA: tudo</SelectItem>
-                  <SelectItem value="watched">IA: vigiados + lances</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <AiProviderSelect value={aiProvider} onChange={changeAiProvider} />
-            <div className="flex flex-col items-start gap-0.5 sm:items-end">
+            <div className="flex w-full items-center gap-2 overflow-x-auto sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={refreshAll}
-                disabled={refreshingAll || lots.isFetching}
-                title="Forçar atualização geral da lista"
+                asChild
+                title="Leilões ao vivo (pregão presencial)"
               >
-                {refreshingAll ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                )}
-                {refreshingAll && refreshPct !== null
-                  ? `Atualizando… ${refreshPct}%`
-                  : "Atualizar tudo"}
+                <Link to="/ao-vivo">
+                  <Radio className="mr-2 h-4 w-4" />
+                  Ao vivo
+                </Link>
               </Button>
-              {lots.data?.updatedAt ? (
-                <span
-                  className="text-[11px] text-muted-foreground"
-                  title="Última atualização da lista"
+              <Button variant="outline" size="sm" asChild title="Análise de lotes com IA">
+                <Link to="/analise">
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Análise
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild title="Minha coleção de vinil">
+                <Link to="/colecao">
+                  <Library className="mr-2 h-4 w-4" />
+                  Coleção
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                asChild
+                title="Preços de venda por artista e álbum"
+              >
+                <Link to="/vinil-analytics">
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  Analytics
+                </Link>
+              </Button>
+              <div
+                className="flex items-center gap-1.5"
+                title="Modo da avaliação automática por IA (controla o gasto de créditos). A análise sob demanda, pelos botões nos dias/casas, funciona em qualquer modo."
+              >
+                <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+                <Select
+                  value={aiMode}
+                  onValueChange={(value) => changeAiMode(value as "off" | "all" | "watched")}
                 >
-                  Atualizado: {formatUpdatedAt(lots.data.updatedAt)}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-6xl px-4 py-8">
-        <LiveAuctions />
-
-        {lots.isError ? (
-          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-foreground">
-            Não foi possível ler o LeilõesBR agora: {(lots.error as Error).message}
-          </p>
-        ) : lots.isLoading ? (
-          <div className="space-y-4">
-            <Skeleton className="h-10 w-full max-w-md" />
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-40 w-full" />
-            ))}
-          </div>
-        ) : (
-          <Tabs
-            value={tab}
-            onValueChange={(value) => {
-              setTab(value);
-              setArtistFilter("");
-            }}
-          >
-            <div className="mb-4 flex flex-wrap items-center gap-2">
-              <Input
-                value={searchDraft}
-                onChange={(event) => setSearchDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    setSearch(searchDraft);
-                  }
-                }}
-                placeholder="Buscar por título, artista, casa ou nº do lote… (Enter para pesquisar)"
-                className="w-full sm:max-w-md"
-              />
-              <Button size="sm" onClick={() => setSearch(searchDraft)}>
-                <SearchIcon className="mr-2 h-4 w-4" />
-                Pesquisar
-              </Button>
-              {search || searchDraft ? (
+                  <SelectTrigger className="h-8 w-[176px] text-xs" aria-label="Modo da IA">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="off">IA: desligada</SelectItem>
+                    <SelectItem value="all">IA: tudo</SelectItem>
+                    <SelectItem value="watched">IA: vigiados + lances</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <AiProviderSelect value={aiProvider} onChange={changeAiProvider} />
+              <div className="flex flex-col items-start gap-0.5 sm:items-end">
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  onClick={() => {
-                    setSearch("");
-                    setSearchDraft("");
-                  }}
+                  onClick={refreshAll}
+                  disabled={refreshingAll || lots.isFetching}
+                  title="Forçar atualização geral da lista"
                 >
-                  Limpar busca
+                  {refreshingAll ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  {refreshingAll && refreshPct !== null
+                    ? `Atualizando… ${refreshPct}%`
+                    : "Atualizar tudo"}
                 </Button>
-              ) : null}
+                {lots.data?.updatedAt ? (
+                  <span
+                    className="text-[11px] text-muted-foreground"
+                    title="Última atualização da lista"
+                  >
+                    Atualizado: {formatUpdatedAt(lots.data.updatedAt)}
+                  </span>
+                ) : null}
+              </div>
             </div>
-            <TabsList className="mb-6 flex h-auto flex-wrap justify-start gap-1 bg-secondary">
-              {days.map((day, index) => (
-                <TabsTrigger key={day} value={`day-${index}`}>
-                  {dayLabel(day, index)}
+          </div>
+
+          {!lots.isError && !lots.isLoading ? (
+            <div className="mx-auto max-w-6xl px-4 pb-2">
+              <div className="flex flex-wrap items-center gap-2 pt-2">
+                <Input
+                  value={searchDraft}
+                  onChange={(event) => setSearchDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      setSearch(searchDraft);
+                    }
+                  }}
+                  placeholder="Buscar por título, artista, casa ou nº do lote… (Enter para pesquisar)"
+                  className="w-full sm:max-w-md"
+                />
+                <Button size="sm" onClick={() => setSearch(searchDraft)}>
+                  <SearchIcon className="mr-2 h-4 w-4" />
+                  Pesquisar
+                </Button>
+                {search || searchDraft ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSearch("");
+                      setSearchDraft("");
+                    }}
+                  >
+                    Limpar busca
+                  </Button>
+                ) : null}
+              </div>
+              <TabsList className="mt-2 flex h-auto flex-wrap justify-start gap-1 bg-secondary">
+                {days.map((day, index) => (
+                  <TabsTrigger key={day} value={`day-${index}`}>
+                    {dayLabel(day, index)}
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {lots.data?.lots.filter(
+                        (lot) =>
+                          lot.dayKey === day &&
+                          !auctionFinished(lot.dayKey, lot.time) &&
+                          matchesSearch(lot),
+                      ).length ?? 0}
+                    </span>
+                  </TabsTrigger>
+                ))}
+                <TabsTrigger value="watched">
+                  Vigiados
                   <span className="ml-2 text-xs text-muted-foreground">
-                    {lots.data?.lots.filter(
-                      (lot) =>
-                        lot.dayKey === day &&
-                        !auctionFinished(lot.dayKey, lot.time) &&
-                        matchesSearch(lot),
-                    ).length ?? 0}
+                    {
+                      (watched.data ?? []).filter((lot) =>
+                        watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
+                      ).length
+                    }
                   </span>
                 </TabsTrigger>
+                <TabsTrigger value="bids">
+                  Lances
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {
+                      (bids.data ?? []).filter((bid) =>
+                        bidMatchesSearch(bid, searchNorm, albumFor(bid)),
+                      ).length
+                    }
+                  </span>
+                </TabsTrigger>
+              </TabsList>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mx-auto max-w-6xl px-4 pt-3 pb-8">
+          <LiveAuctions />
+
+          {lots.isError ? (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-foreground">
+              Não foi possível ler o LeilõesBR agora: {(lots.error as Error).message}
+            </p>
+          ) : lots.isLoading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-10 w-full max-w-md" />
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-40 w-full" />
               ))}
-              <TabsTrigger value="watched">
-                Vigiados
-                <span className="ml-2 text-xs text-muted-foreground">
-                  {
-                    (watched.data ?? []).filter((lot) =>
-                      watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
-                    ).length
-                  }
-                </span>
-              </TabsTrigger>
-              <TabsTrigger value="bids">
-                Lances
-                <span className="ml-2 text-xs text-muted-foreground">
-                  {
-                    (bids.data ?? []).filter((bid) =>
-                      bidMatchesSearch(bid, searchNorm, albumFor(bid)),
-                    ).length
-                  }
-                </span>
-              </TabsTrigger>
-            </TabsList>
+            </div>
+          ) : (
+            <>
+              {days.map((day, index) => {
+                const rawDay = (lots.data?.lots ?? [])
+                  .map((lot) => ({
+                    ...lot,
+                    watched: watchedIds.size ? watchedIds.has(lot.idPeca) : lot.watched,
+                    // Prioriza o artista identificado pela IA no agrupamento/filtro por artista.
+                    artist: effectiveArtist(lot),
+                  }))
+                  .filter((lot) => lot.dayKey === day);
+                const finishedCount = rawDay.filter((lot) =>
+                  auctionFinished(lot.dayKey, lot.time),
+                ).length;
+                const showFinished = showFinishedDays.has(day);
+                // Por padrão esconde os finalizados (3h após o início); o usuário pode incluí-los.
+                // A busca geral (searchNorm) filtra por título/artista/casa/nº do lote.
+                const dayLots = (
+                  showFinished
+                    ? rawDay
+                    : rawDay.filter((lot) => !auctionFinished(lot.dayKey, lot.time))
+                ).filter(matchesSearch);
+                const artists = artistOptions(dayLots);
+                const globalActive = artistFilter !== "";
+                const visibleLots = globalActive
+                  ? dayLots.filter((lot) => (lot.artist || UNCLASSIFIED_LABEL) === artistFilter)
+                  : dayLots;
+                const groups = groupByHouse(visibleLots);
+                const isWatchedView = watchedViewDay === day;
+                // Vigiados do dia: a busca principal também filtra aqui.
+                const watchedForDay = (watched.data ?? []).filter(
+                  (lot) =>
+                    watchedDateToKey(lot.date) === day &&
+                    watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
+                );
+                // Vigiados do dia agrupados por casa e ordenados por nº do lote.
+                const watchedByHouse = groupWatchedByHouse(watchedForDay);
+                const isBidsView = bidsViewDay === day;
+                // Lances do dia: a busca principal também filtra aqui.
+                const bidsForDay = bidsWithHouseUrl.filter(
+                  (bid) =>
+                    bidDayKey(bid) === day && bidMatchesSearch(bid, searchNorm, albumFor(bid)),
+                );
+                // Lances do dia agrupados por casa e ordenados por nº do lote.
+                const bidsByHouse = groupWatchedByHouse(bidsForDay);
 
-            {days.map((day, index) => {
-              const rawDay = (lots.data?.lots ?? [])
-                .map((lot) => ({
-                  ...lot,
-                  watched: watchedIds.size ? watchedIds.has(lot.idPeca) : lot.watched,
-                  // Prioriza o artista identificado pela IA no agrupamento/filtro por artista.
-                  artist: effectiveArtist(lot),
-                }))
-                .filter((lot) => lot.dayKey === day);
-              const finishedCount = rawDay.filter((lot) =>
-                auctionFinished(lot.dayKey, lot.time),
-              ).length;
-              const showFinished = showFinishedDays.has(day);
-              // Por padrão esconde os finalizados (3h após o início); o usuário pode incluí-los.
-              // A busca geral (searchNorm) filtra por título/artista/casa/nº do lote.
-              const dayLots = (
-                showFinished
-                  ? rawDay
-                  : rawDay.filter((lot) => !auctionFinished(lot.dayKey, lot.time))
-              ).filter(matchesSearch);
-              const artists = artistOptions(dayLots);
-              const globalActive = artistFilter !== "";
-              const visibleLots = globalActive
-                ? dayLots.filter((lot) => (lot.artist || UNCLASSIFIED_LABEL) === artistFilter)
-                : dayLots;
-              const groups = groupByHouse(visibleLots);
-              const isWatchedView = watchedViewDay === day;
-              // Vigiados do dia: a busca principal também filtra aqui.
-              const watchedForDay = (watched.data ?? []).filter(
-                (lot) =>
-                  watchedDateToKey(lot.date) === day &&
-                  watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
-              );
-              // Vigiados do dia agrupados por casa e ordenados por nº do lote.
-              const watchedByHouse = groupWatchedByHouse(watchedForDay);
-              const isBidsView = bidsViewDay === day;
-              // Lances do dia: a busca principal também filtra aqui.
-              const bidsForDay = bidsWithHouseUrl.filter(
-                (bid) => bidDayKey(bid) === day && bidMatchesSearch(bid, searchNorm, albumFor(bid)),
-              );
-              // Lances do dia agrupados por casa e ordenados por nº do lote.
-              const bidsByHouse = groupWatchedByHouse(bidsForDay);
-
-              return (
-                <TabsContent key={day} value={`day-${index}`} className="space-y-6">
-                  <div className="sticky top-0 z-20 -mx-4 mb-2 space-y-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <span className="text-sm font-semibold text-foreground">
-                        {dayLabel(day, index)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => refreshDay(day)}
-                        disabled={refreshingDay === day}
-                        title="Forçar atualização deste dia"
-                        aria-label={`Forçar atualização de ${dayLabel(day, index)}`}
-                        className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
-                      >
-                        {refreshingDay === day ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setBidsViewDay(null);
-                          setWatchedViewDay((cur) => (cur === day ? null : day));
-                        }}
-                        title="Ver vigiados deste dia"
-                        aria-label={`Ver vigiados de ${dayLabel(day, index)}`}
-                        aria-pressed={isWatchedView}
-                        className={
-                          isWatchedView
-                            ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
-                            : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
-                        }
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                        Vigiados do dia
-                        {watchedForDay.length ? (
-                          <span className="ml-0.5 text-muted-foreground">
-                            {watchedForDay.length}
-                          </span>
-                        ) : null}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setWatchedViewDay(null);
-                          setBidsViewDay((cur) => (cur === day ? null : day));
-                        }}
-                        title="Ver lances deste dia"
-                        aria-label={`Ver lances de ${dayLabel(day, index)}`}
-                        aria-pressed={isBidsView}
-                        className={
-                          isBidsView
-                            ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
-                            : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
-                        }
-                      >
-                        <Gavel className="h-3.5 w-3.5" />
-                        Lances do dia
-                        {bidsForDay.length ? (
-                          <span className="ml-0.5 text-muted-foreground">{bidsForDay.length}</span>
-                        ) : null}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => analyzeScope({ day })}
-                        disabled={analyzing !== null}
-                        title="Analisar com IA os lotes ainda não avaliados deste dia (sob demanda)"
-                        aria-label={`Analisar com IA ${dayLabel(day, index)}`}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
-                      >
-                        {analyzing === day ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Sparkles className="h-3.5 w-3.5" />
-                        )}
-                        Analisar dia
-                      </button>
-                      {!isWatchedView && !isBidsView ? (
-                        <>
-                          <ArtistFilter
-                            artists={artists}
-                            value={artistFilter}
-                            onChange={setArtistFilter}
-                          />
-                          {artistFilter ? (
-                            <Button variant="ghost" size="sm" onClick={() => setArtistFilter("")}>
-                              Limpar filtro
-                            </Button>
+                return (
+                  <TabsContent key={day} value={`day-${index}`} className="space-y-6">
+                    <div className="sticky top-0 z-20 -mx-4 mb-2 space-y-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="text-sm font-semibold text-foreground">
+                          {dayLabel(day, index)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => refreshDay(day)}
+                          disabled={refreshingDay === day}
+                          title="Forçar atualização deste dia"
+                          aria-label={`Forçar atualização de ${dayLabel(day, index)}`}
+                          className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                        >
+                          {refreshingDay === day ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBidsViewDay(null);
+                            setWatchedViewDay((cur) => (cur === day ? null : day));
+                          }}
+                          title="Ver vigiados deste dia"
+                          aria-label={`Ver vigiados de ${dayLabel(day, index)}`}
+                          aria-pressed={isWatchedView}
+                          className={
+                            isWatchedView
+                              ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
+                              : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
+                          }
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          Vigiados do dia
+                          {watchedForDay.length ? (
+                            <span className="ml-0.5 text-muted-foreground">
+                              {watchedForDay.length}
+                            </span>
                           ) : null}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWatchedViewDay(null);
+                            setBidsViewDay((cur) => (cur === day ? null : day));
+                          }}
+                          title="Ver lances deste dia"
+                          aria-label={`Ver lances de ${dayLabel(day, index)}`}
+                          aria-pressed={isBidsView}
+                          className={
+                            isBidsView
+                              ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
+                              : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
+                          }
+                        >
+                          <Gavel className="h-3.5 w-3.5" />
+                          Lances do dia
+                          {bidsForDay.length ? (
+                            <span className="ml-0.5 text-muted-foreground">
+                              {bidsForDay.length}
+                            </span>
+                          ) : null}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => analyzeScope({ day })}
+                          disabled={analyzing !== null}
+                          title="Analisar com IA os lotes ainda não avaliados deste dia (sob demanda)"
+                          aria-label={`Analisar com IA ${dayLabel(day, index)}`}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                        >
+                          {analyzing === day ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3.5 w-3.5" />
+                          )}
+                          Analisar dia
+                        </button>
+                        {!isWatchedView && !isBidsView ? (
+                          <>
+                            <ArtistFilter
+                              artists={artists}
+                              value={artistFilter}
+                              onChange={setArtistFilter}
+                            />
+                            {artistFilter ? (
+                              <Button variant="ghost" size="sm" onClick={() => setArtistFilter("")}>
+                                Limpar filtro
+                              </Button>
+                            ) : null}
+                            <span className="text-xs text-muted-foreground">
+                              {visibleLots.length} lote(s) em {groups.length} casa(s)
+                            </span>
+                            {finishedCount > 0 ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => toggleShowFinished(day)}
+                              >
+                                {showFinished
+                                  ? `Ocultar finalizados (${finishedCount})`
+                                  : `Incluir finalizados (${finishedCount})`}
+                              </Button>
+                            ) : null}
+                          </>
+                        ) : isWatchedView ? (
                           <span className="text-xs text-muted-foreground">
-                            {visibleLots.length} lote(s) em {groups.length} casa(s)
+                            {watchedForDay.length} lote(s) vigiado(s) neste dia
                           </span>
-                          {finishedCount > 0 ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => toggleShowFinished(day)}
-                            >
-                              {showFinished
-                                ? `Ocultar finalizados (${finishedCount})`
-                                : `Incluir finalizados (${finishedCount})`}
-                            </Button>
-                          ) : null}
-                        </>
-                      ) : isWatchedView ? (
-                        <span className="text-xs text-muted-foreground">
-                          {watchedForDay.length} lote(s) vigiado(s) neste dia
-                        </span>
-                      ) : (
-                        <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          {bidsForDay.length} lance(s) neste dia
-                          <BidStatBadges stats={computeBidStats(bidsForDay)} />
-                        </span>
-                      )}
-                    </div>
-                    {!isWatchedView && !isBidsView && groups.length > 0 ? (
-                      <nav className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
-                        {groups.map((group) => {
-                          const houseKey = `${day}|${group.house}`;
-                          const isOpen = openHouses.has(houseKey);
-                          return (
-                            <button
-                              key={group.house}
-                              type="button"
-                              aria-expanded={isOpen}
-                              onClick={() => {
-                                const willOpen = !openHouses.has(houseKey);
-                                toggleHouse(houseKey);
-                                if (willOpen) {
-                                  requestAnimationFrame(() =>
-                                    document
-                                      .getElementById(houseAnchor(group.house, index))
-                                      ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-                                  );
+                        ) : (
+                          <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            {bidsForDay.length} lance(s) neste dia
+                            <BidStatBadges stats={computeBidStats(bidsForDay)} />
+                          </span>
+                        )}
+                      </div>
+                      {!isWatchedView && !isBidsView && groups.length > 0 ? (
+                        <nav className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
+                          {groups.map((group) => {
+                            const houseKey = `${day}|${group.house}`;
+                            const isOpen = openHouses.has(houseKey);
+                            return (
+                              <button
+                                key={group.house}
+                                type="button"
+                                aria-expanded={isOpen}
+                                onClick={() => {
+                                  const willOpen = !openHouses.has(houseKey);
+                                  toggleHouse(houseKey);
+                                  if (willOpen) {
+                                    requestAnimationFrame(() =>
+                                      document
+                                        .getElementById(houseAnchor(group.house, index))
+                                        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                                    );
+                                  }
+                                }}
+                                className={
+                                  isOpen
+                                    ? "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
+                                    : "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
                                 }
-                              }}
-                              className={
-                                isOpen
-                                  ? "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
-                                  : "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
-                              }
-                            >
-                              {isOpen ? (
-                                <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                              ) : (
-                                <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                              )}
-                              {group.house}
-                              <span className="text-muted-foreground">{group.count}</span>
-                              <HouseStatBadges
-                                stats={computeHouseStats(group.lots, watchedIds, bidStatusById)}
-                              />
-                            </button>
-                          );
-                        })}
-                      </nav>
-                    ) : null}
-                  </div>
-                  {isWatchedView ? (
-                    watched.isLoading ? (
-                      <Skeleton className="h-40 w-full" />
-                    ) : watchedForDay.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        Nenhum lote vigiado neste dia.
-                      </p>
-                    ) : (
-                      <div className="space-y-8">
-                        {watchedByHouse.map((houseGroup) => {
-                          const auctionInfo = houseAuctionInfo(day, houseGroup.lots[0]);
-                          return (
-                            <section key={houseGroup.house} className="space-y-3">
-                              <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
-                                <h2 className="text-xl font-semibold tracking-tight text-foreground">
-                                  {houseGroup.house}
-                                </h2>
-                                <Badge variant="secondary">{houseGroup.lots.length} lote(s)</Badge>
+                              >
+                                {isOpen ? (
+                                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                                ) : (
+                                  <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                                )}
+                                {group.house}
+                                <span className="text-muted-foreground">{group.count}</span>
                                 <HouseStatBadges
-                                  stats={computeHouseStats(
-                                    houseGroup.lots,
-                                    watchedIds,
-                                    bidStatusById,
-                                  )}
+                                  stats={computeHouseStats(group.lots, watchedIds, bidStatusById)}
                                 />
-                                <AuctionStatusInline info={auctionInfo} />
-                                <div className="ml-auto flex flex-wrap items-center gap-3">
-                                  {auctionInfo?.presencialUrl ? (
+                              </button>
+                            );
+                          })}
+                        </nav>
+                      ) : null}
+                    </div>
+                    {isWatchedView ? (
+                      watched.isLoading ? (
+                        <Skeleton className="h-40 w-full" />
+                      ) : watchedForDay.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          Nenhum lote vigiado neste dia.
+                        </p>
+                      ) : (
+                        <div className="space-y-8">
+                          {watchedByHouse.map((houseGroup) => {
+                            const auctionInfo = houseAuctionInfo(day, houseGroup.lots[0]);
+                            return (
+                              <section key={houseGroup.house} className="space-y-3">
+                                <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
+                                  <h2 className="text-xl font-semibold tracking-tight text-foreground">
+                                    {houseGroup.house}
+                                  </h2>
+                                  <Badge variant="secondary">
+                                    {houseGroup.lots.length} lote(s)
+                                  </Badge>
+                                  <HouseStatBadges
+                                    stats={computeHouseStats(
+                                      houseGroup.lots,
+                                      watchedIds,
+                                      bidStatusById,
+                                    )}
+                                  />
+                                  <AuctionStatusInline info={auctionInfo} />
+                                  <div className="ml-auto flex flex-wrap items-center gap-3">
+                                    {auctionInfo?.presencialUrl ? (
+                                      <a
+                                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                        href={auctionInfo.presencialUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        title="Acompanhar o pregão presencial desta casa"
+                                      >
+                                        <Radio className="h-3 w-3" /> pregão presencial
+                                      </a>
+                                    ) : null}
                                     <a
                                       className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                      href={auctionInfo.presencialUrl}
+                                      href={houseGroup.houseUrl}
                                       target="_blank"
                                       rel="noreferrer"
-                                      title="Acompanhar o pregão presencial desta casa"
                                     >
-                                      <Radio className="h-3 w-3" /> pregão presencial
+                                      site da casa <ExternalLink className="h-3 w-3" />
                                     </a>
-                                  ) : null}
-                                  <a
-                                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                    href={houseGroup.houseUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    site da casa <ExternalLink className="h-3 w-3" />
-                                  </a>
+                                  </div>
                                 </div>
-                              </div>
-                              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                {houseGroup.lots.map((lot) => (
-                                  <LotCard
-                                    key={lot.id}
-                                    lot={{
-                                      ...lot,
-                                      dayKey: lot.date,
-                                      watched: true,
-                                      myBid: myBidById.get(lot.idPeca),
-                                      nextBid: nextBidById.get(lot.idPeca),
-                                    }}
-                                    busy={pending === lot.idPeca}
-                                    ai={aiFor(lot)}
-                                    market={marketFor(lot)}
-                                    album={albumFor(lot)}
-                                    condition={conditionFor(lot)}
-                                    demand={demandFor(lot)}
-                                    owned={ownedFor(lot)}
-                                    onOpenOwned={() => setOwnedPanelLot(lot)}
-                                    onEditTags={editTags(lot.id)}
-                                    bidStatus={bidStatusById.get(lot.idPeca)}
-                                    onToggle={() =>
-                                      toggle.mutate({
-                                        idPeca: lot.idPeca,
-                                        idLeilao: lot.idLeilao,
-                                        base: lot.base,
-                                        watch: false,
-                                      })
+                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                  {houseGroup.lots.map((lot) => (
+                                    <LotCard
+                                      key={lot.id}
+                                      lot={{
+                                        ...lot,
+                                        dayKey: lot.date,
+                                        watched: true,
+                                        myBid: myBidById.get(lot.idPeca),
+                                        nextBid: nextBidById.get(lot.idPeca),
+                                      }}
+                                      busy={pending === lot.idPeca}
+                                      ai={aiFor(lot)}
+                                      market={marketFor(lot)}
+                                      album={albumFor(lot)}
+                                      condition={conditionFor(lot)}
+                                      demand={demandFor(lot)}
+                                      owned={ownedFor(lot)}
+                                      onOpenOwned={() => setOwnedPanelLot(lot)}
+                                      onEditTags={editTags(lot.id)}
+                                      bidStatus={bidStatusById.get(lot.idPeca)}
+                                      onToggle={() =>
+                                        toggle.mutate({
+                                          idPeca: lot.idPeca,
+                                          idLeilao: lot.idLeilao,
+                                          base: lot.base,
+                                          watch: false,
+                                        })
+                                      }
+                                    />
+                                  ))}
+                                </div>
+                              </section>
+                            );
+                          })}
+                        </div>
+                      )
+                    ) : isBidsView ? (
+                      bids.isLoading ? (
+                        <Skeleton className="h-40 w-full" />
+                      ) : bidsForDay.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">Nenhum lance neste dia.</p>
+                      ) : (
+                        <BidHouseSections
+                          houses={bidsByHouse}
+                          pending={pending}
+                          loteById={loteById}
+                          priceById={priceById}
+                          nextBidById={nextBidById}
+                          albumById={albumById}
+                          ownedFor={ownedFor}
+                          onOpenOwned={(bid) => setOwnedPanelLot(bid)}
+                          onToggle={(bid) => toggle.mutate(bid)}
+                        />
+                      )
+                    ) : groups.length === 0 ? (
+                      <div className="space-y-3">
+                        <p className="text-sm text-muted-foreground">
+                          {searchNorm
+                            ? "Nenhum lote corresponde à busca neste dia."
+                            : artistFilter
+                              ? "Nenhum lote deste artista neste dia."
+                              : rawDay.length === 0
+                                ? "Nenhum disco de vinil na varredura para este dia. Leilões que já estão ao vivo somem da listagem pública — tente “Atualizar tudo”."
+                                : `Todos os ${finishedCount} leilão(ões) deste dia já começaram há mais de 3h.`}
+                        </p>
+                        {!artistFilter && rawDay.length > 0 && !showFinished ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => toggleShowFinished(day)}
+                          >
+                            Mostrar finalizados ({finishedCount})
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : searchNorm ? (
+                      // Busca ativa: lista única ordenada por relevância (mais exato →
+                      // parecido), em vez do agrupamento por casa, para o topo bater com o
+                      // que foi digitado.
+                      (() => {
+                        const ranked = [...visibleLots].sort(
+                          (a, b) => searchScore(b) - searchScore(a),
+                        );
+                        return (
+                          <div className="space-y-4">
+                            <p className="text-sm text-muted-foreground">
+                              {ranked.length} resultado(s) para “{search.trim()}”, dos mais
+                              parecidos aos menos.
+                            </p>
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                              {ranked.map((lot) => (
+                                <LotCard
+                                  key={lot.id}
+                                  lot={{
+                                    ...lot,
+                                    lote: lot.lote || loteById.get(lot.idPeca) || "",
+                                    myBid: myBidById.get(lot.idPeca),
+                                    nextBid: nextBidById.get(lot.idPeca),
+                                  }}
+                                  busy={pending === lot.idPeca}
+                                  ai={aiFor(lot)}
+                                  market={marketFor(lot)}
+                                  album={albumFor(lot)}
+                                  condition={conditionFor(lot)}
+                                  demand={demandFor(lot)}
+                                  owned={ownedFor(lot)}
+                                  onOpenOwned={() => setOwnedPanelLot(lot)}
+                                  onEditTags={editTags(lot.id)}
+                                  bidStatus={bidStatusById.get(lot.idPeca)}
+                                  onToggle={() =>
+                                    toggle.mutate({
+                                      idPeca: lot.idPeca,
+                                      idLeilao: lot.idLeilao,
+                                      base: lot.base,
+                                      watch: !lot.watched,
+                                    })
+                                  }
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      (() => {
+                        const renderHouse = (group: HouseGroup) => {
+                          const houseKey = `${day}|${group.house}`;
+                          const isOpen = openHouses.has(houseKey);
+                          const isVerified = verifiedHouses.has(houseKey);
+                          const perArtist = globalActive ? "" : (houseArtist[houseKey] ?? "");
+                          const perPrice = housePrice[houseKey] ?? "";
+                          let houseLots = group.lots;
+                          if (perArtist)
+                            houseLots = houseLots.filter(
+                              (lot) => (lot.artist || UNCLASSIFIED_LABEL) === perArtist,
+                            );
+                          if (perPrice)
+                            houseLots = houseLots.filter((lot) =>
+                              matchesPriceRange(lot.price, perPrice),
+                            );
+                          const artistGroups = groupByArtist(houseLots);
+                          const auctionInfo = houseAuctionInfo(day, group.lots[0]);
+
+                          return (
+                            <section
+                              key={group.house}
+                              id={houseAnchor(group.house, index)}
+                              className="scroll-mt-32 space-y-4"
+                            >
+                              <div className="space-y-3 border-b border-border pb-2">
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleVerified(houseKey)}
+                                    aria-pressed={isVerified}
+                                    title={
+                                      isVerified
+                                        ? "Casa verificada — clique para desmarcar"
+                                        : "Marcar casa como verificada"
                                     }
+                                    aria-label={
+                                      isVerified
+                                        ? `Desmarcar ${group.house} como verificada`
+                                        : `Marcar ${group.house} como verificada`
+                                    }
+                                    className={
+                                      isVerified
+                                        ? "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-green-600 bg-green-600 text-white"
+                                        : "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:border-green-600 hover:text-green-600"
+                                    }
+                                  >
+                                    <Check className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => analyzeScope({ day, house: group.house })}
+                                    disabled={analyzing !== null}
+                                    title="Analisar com IA os lotes ainda não avaliados desta casa (sob demanda)"
+                                    aria-label={`Analisar com IA ${group.house}`}
+                                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                                  >
+                                    {analyzing === houseKey ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Sparkles className="h-3.5 w-3.5" />
+                                    )}
+                                    Analisar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleHouse(houseKey)}
+                                    aria-expanded={isOpen}
+                                    className="flex items-center gap-2 text-left"
+                                  >
+                                    {isOpen ? (
+                                      <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
+                                    ) : (
+                                      <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+                                    )}
+                                    <span className="text-2xl font-semibold tracking-tight text-foreground">
+                                      {group.house}
+                                    </span>
+                                  </button>
+                                  <Badge variant="secondary">{houseLots.length} lotes</Badge>
+                                  <HouseStatBadges
+                                    stats={computeHouseStats(houseLots, watchedIds, bidStatusById)}
                                   />
-                                ))}
+                                  <AuctionStatusInline info={auctionInfo} />
+                                  <div className="ml-auto flex flex-wrap items-center gap-3">
+                                    {auctionInfo?.presencialUrl ? (
+                                      <a
+                                        className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                                        href={auctionInfo.presencialUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        title="Acompanhar o pregão presencial desta casa"
+                                      >
+                                        <Radio className="h-3 w-3" /> pregão presencial
+                                      </a>
+                                    ) : null}
+                                    <a
+                                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                      href={group.houseUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      site da casa <ExternalLink className="h-3 w-3" />
+                                    </a>
+                                  </div>
+                                </div>
+                                {isOpen ? (
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <ArtistFilter
+                                      artists={artistOptions(group.lots)}
+                                      value={perArtist}
+                                      onChange={(next) => setHouseArtistFor(houseKey, next)}
+                                      disabled={globalActive}
+                                    />
+                                    <PriceFilter
+                                      value={perPrice}
+                                      onChange={(next) => setHousePriceFor(houseKey, next)}
+                                    />
+                                    {globalActive ? (
+                                      <span className="text-xs text-muted-foreground">
+                                        filtro de artista global ativo
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                ) : null}
                               </div>
+
+                              {isOpen ? (
+                                <>
+                                  {artistGroups.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground">
+                                      Nenhum lote com esses filtros nesta casa.
+                                    </p>
+                                  ) : (
+                                    artistGroups.map((artistGroup) => (
+                                      <div key={artistGroup.artist} className="space-y-3">
+                                        <h3
+                                          className={
+                                            artistGroup.artist === UNCLASSIFIED_LABEL
+                                              ? "text-sm font-medium uppercase tracking-wider text-muted-foreground"
+                                              : "text-sm font-semibold uppercase tracking-wider text-primary"
+                                          }
+                                        >
+                                          {artistGroup.artist}
+                                          <span className="ml-2 font-normal normal-case tracking-normal text-muted-foreground">
+                                            {artistGroup.lots.length}
+                                          </span>
+                                        </h3>
+                                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                          {artistGroup.lots.map((lot) => (
+                                            <LotCard
+                                              key={lot.id}
+                                              lot={{
+                                                ...lot,
+                                                lote: lot.lote || loteById.get(lot.idPeca) || "",
+                                                myBid: myBidById.get(lot.idPeca),
+                                                nextBid: nextBidById.get(lot.idPeca),
+                                              }}
+                                              busy={pending === lot.idPeca}
+                                              ai={aiFor(lot)}
+                                              market={marketFor(lot)}
+                                              album={albumFor(lot)}
+                                              condition={conditionFor(lot)}
+                                              demand={demandFor(lot)}
+                                              owned={ownedFor(lot)}
+                                              onOpenOwned={() => setOwnedPanelLot(lot)}
+                                              onEditTags={editTags(lot.id)}
+                                              bidStatus={bidStatusById.get(lot.idPeca)}
+                                              onToggle={() =>
+                                                toggle.mutate({
+                                                  idPeca: lot.idPeca,
+                                                  idLeilao: lot.idLeilao,
+                                                  base: lot.base,
+                                                  watch: !lot.watched,
+                                                })
+                                              }
+                                            />
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ))
+                                  )}
+                                  <div className="pt-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        toggleHouse(houseKey);
+                                        requestAnimationFrame(() =>
+                                          document
+                                            .getElementById(houseAnchor(group.house, index))
+                                            ?.scrollIntoView({
+                                              behavior: "smooth",
+                                              block: "start",
+                                            }),
+                                        );
+                                      }}
+                                      className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                                    >
+                                      <ChevronUp className="h-4 w-4" />
+                                      Fechar {group.house}
+                                    </button>
+                                  </div>
+                                </>
+                              ) : null}
+                            </section>
+                          );
+                        };
+                        const verifiedGroups = groups.filter((group) =>
+                          verifiedHouses.has(`${day}|${group.house}`),
+                        );
+                        const unverifiedGroups = groups.filter(
+                          (group) => !verifiedHouses.has(`${day}|${group.house}`),
+                        );
+                        return (
+                          <>
+                            {unverifiedGroups.map(renderHouse)}
+                            {verifiedGroups.length ? (
+                              <div className="space-y-6 pt-4">
+                                <h2 className="flex items-center gap-2 border-b border-border pb-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                                  <Check className="h-4 w-4 text-green-600" />
+                                  Já verificadas
+                                  <span className="font-normal normal-case tracking-normal">
+                                    {verifiedGroups.length} casa(s)
+                                  </span>
+                                </h2>
+                                {verifiedGroups.map(renderHouse)}
+                              </div>
+                            ) : null}
+                          </>
+                        );
+                      })()
+                    )}
+                  </TabsContent>
+                );
+              })}
+
+              <TabsContent value="watched" className="space-y-4">
+                {watched.isLoading ? (
+                  <Skeleton className="h-40 w-full" />
+                ) : watched.isError ? (
+                  <p className="text-sm text-destructive">
+                    Não foi possível ler os vigiados: {(watched.error as Error).message}
+                  </p>
+                ) : (watched.data ?? []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Você ainda não está vigiando nenhum lote.
+                  </p>
+                ) : (
+                  (() => {
+                    // A busca principal filtra os vigiados; o resultado é apresentado
+                    // separado por dia e casa de leilão, igual às abas de dia.
+                    const filtered = (watched.data ?? []).filter((lot) =>
+                      watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
+                    );
+                    if (filtered.length === 0) {
+                      return (
+                        <p className="text-sm text-muted-foreground">
+                          Nenhum lote vigiado corresponde à busca.
+                        </p>
+                      );
+                    }
+                    const byDay = new Map<string, typeof filtered>();
+                    for (const lot of filtered) {
+                      const key = watchedDateToKey(lot.date) || lot.date || "";
+                      const list = byDay.get(key) ?? [];
+                      list.push(lot);
+                      byDay.set(key, list);
+                    }
+                    // Dias sem data ("") vão para o fim; os demais em ordem crescente.
+                    const dayKeys = [...byDay.keys()].sort((a, b) => {
+                      if (!a) return 1;
+                      if (!b) return -1;
+                      return a.localeCompare(b);
+                    });
+
+                    return (
+                      <div className="space-y-10">
+                        {dayKeys.map((dayKey) => {
+                          const dayLots = byDay.get(dayKey) ?? [];
+                          const idx = days.indexOf(dayKey);
+                          const label = dayKey ? dayLabel(dayKey, idx >= 0 ? idx : 99) : "Sem data";
+                          const houses = groupWatchedByHouse(dayLots);
+                          return (
+                            <section key={dayKey || "sem-data"} className="space-y-6">
+                              <div className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
+                                <span className="text-sm font-semibold text-foreground">
+                                  {label}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {dayLots.length} lote(s) vigiado(s) em {houses.length} casa(s)
+                                </span>
+                              </div>
+                              {houses.map((houseGroup) => {
+                                const auctionInfo = houseAuctionInfo(dayKey, houseGroup.lots[0]);
+                                return (
+                                  <section key={houseGroup.house} className="space-y-3">
+                                    <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
+                                      <h2 className="text-xl font-semibold tracking-tight text-foreground">
+                                        {houseGroup.house}
+                                      </h2>
+                                      <Badge variant="secondary">
+                                        {houseGroup.lots.length} lote(s)
+                                      </Badge>
+                                      <HouseStatBadges
+                                        stats={computeHouseStats(
+                                          houseGroup.lots,
+                                          watchedIds,
+                                          bidStatusById,
+                                        )}
+                                      />
+                                      <AuctionStatusInline info={auctionInfo} />
+                                      <div className="ml-auto flex flex-wrap items-center gap-3">
+                                        {auctionInfo?.presencialUrl ? (
+                                          <a
+                                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                            href={auctionInfo.presencialUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            title="Acompanhar o pregão presencial desta casa"
+                                          >
+                                            <Radio className="h-3 w-3" /> pregão presencial
+                                          </a>
+                                        ) : null}
+                                        <a
+                                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                          href={houseGroup.houseUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                        >
+                                          site da casa <ExternalLink className="h-3 w-3" />
+                                        </a>
+                                      </div>
+                                    </div>
+                                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                      {houseGroup.lots.map((lot) => (
+                                        <LotCard
+                                          key={lot.id}
+                                          lot={{
+                                            ...lot,
+                                            dayKey: lot.date,
+                                            watched: true,
+                                            myBid: myBidById.get(lot.idPeca),
+                                          }}
+                                          busy={pending === lot.idPeca}
+                                          ai={aiFor(lot)}
+                                          market={marketFor(lot)}
+                                          album={albumFor(lot)}
+                                          condition={conditionFor(lot)}
+                                          demand={demandFor(lot)}
+                                          owned={ownedFor(lot)}
+                                          onOpenOwned={() => setOwnedPanelLot(lot)}
+                                          onEditTags={editTags(lot.id)}
+                                          bidStatus={bidStatusById.get(lot.idPeca)}
+                                          onToggle={() =>
+                                            toggle.mutate({
+                                              idPeca: lot.idPeca,
+                                              idLeilao: lot.idLeilao,
+                                              base: lot.base,
+                                              watch: false,
+                                            })
+                                          }
+                                        />
+                                      ))}
+                                    </div>
+                                  </section>
+                                );
+                              })}
                             </section>
                           );
                         })}
                       </div>
-                    )
-                  ) : isBidsView ? (
-                    bids.isLoading ? (
-                      <Skeleton className="h-40 w-full" />
-                    ) : bidsForDay.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">Nenhum lance neste dia.</p>
-                    ) : (
-                      <BidHouseSections
-                        houses={bidsByHouse}
-                        pending={pending}
-                        loteById={loteById}
-                        priceById={priceById}
-                        nextBidById={nextBidById}
-                        albumById={albumById}
-                        ownedFor={ownedFor}
-                        onOpenOwned={(bid) => setOwnedPanelLot(bid)}
-                        onToggle={(bid) => toggle.mutate(bid)}
-                      />
-                    )
-                  ) : groups.length === 0 ? (
-                    <div className="space-y-3">
-                      <p className="text-sm text-muted-foreground">
-                        {searchNorm
-                          ? "Nenhum lote corresponde à busca neste dia."
-                          : artistFilter
-                            ? "Nenhum lote deste artista neste dia."
-                            : rawDay.length === 0
-                              ? "Nenhum disco de vinil na varredura para este dia. Leilões que já estão ao vivo somem da listagem pública — tente “Atualizar tudo”."
-                              : `Todos os ${finishedCount} leilão(ões) deste dia já começaram há mais de 3h.`}
-                      </p>
-                      {!artistFilter && rawDay.length > 0 && !showFinished ? (
-                        <Button variant="outline" size="sm" onClick={() => toggleShowFinished(day)}>
-                          Mostrar finalizados ({finishedCount})
-                        </Button>
-                      ) : null}
-                    </div>
-                  ) : searchNorm ? (
-                    // Busca ativa: lista única ordenada por relevância (mais exato →
-                    // parecido), em vez do agrupamento por casa, para o topo bater com o
-                    // que foi digitado.
-                    (() => {
-                      const ranked = [...visibleLots].sort(
-                        (a, b) => searchScore(b) - searchScore(a),
-                      );
-                      return (
-                        <div className="space-y-4">
-                          <p className="text-sm text-muted-foreground">
-                            {ranked.length} resultado(s) para “{search.trim()}”, dos mais parecidos
-                            aos menos.
-                          </p>
-                          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                            {ranked.map((lot) => (
-                              <LotCard
-                                key={lot.id}
-                                lot={{
-                                  ...lot,
-                                  lote: lot.lote || loteById.get(lot.idPeca) || "",
-                                  myBid: myBidById.get(lot.idPeca),
-                                  nextBid: nextBidById.get(lot.idPeca),
-                                }}
-                                busy={pending === lot.idPeca}
-                                ai={aiFor(lot)}
-                                market={marketFor(lot)}
-                                album={albumFor(lot)}
-                                condition={conditionFor(lot)}
-                                demand={demandFor(lot)}
-                                owned={ownedFor(lot)}
-                                onOpenOwned={() => setOwnedPanelLot(lot)}
-                                onEditTags={editTags(lot.id)}
-                                bidStatus={bidStatusById.get(lot.idPeca)}
-                                onToggle={() =>
-                                  toggle.mutate({
-                                    idPeca: lot.idPeca,
-                                    idLeilao: lot.idLeilao,
-                                    base: lot.base,
-                                    watch: !lot.watched,
-                                  })
-                                }
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })()
-                  ) : (
-                    (() => {
-                      const renderHouse = (group: HouseGroup) => {
-                        const houseKey = `${day}|${group.house}`;
-                        const isOpen = openHouses.has(houseKey);
-                        const isVerified = verifiedHouses.has(houseKey);
-                        const perArtist = globalActive ? "" : (houseArtist[houseKey] ?? "");
-                        const perPrice = housePrice[houseKey] ?? "";
-                        let houseLots = group.lots;
-                        if (perArtist)
-                          houseLots = houseLots.filter(
-                            (lot) => (lot.artist || UNCLASSIFIED_LABEL) === perArtist,
-                          );
-                        if (perPrice)
-                          houseLots = houseLots.filter((lot) =>
-                            matchesPriceRange(lot.price, perPrice),
-                          );
-                        const artistGroups = groupByArtist(houseLots);
-                        const auctionInfo = houseAuctionInfo(day, group.lots[0]);
+                    );
+                  })()
+                )}
+              </TabsContent>
 
-                        return (
-                          <section
-                            key={group.house}
-                            id={houseAnchor(group.house, index)}
-                            className="scroll-mt-32 space-y-4"
-                          >
-                            <div className="space-y-3 border-b border-border pb-2">
-                              <div className="flex flex-wrap items-center gap-3">
-                                <button
-                                  type="button"
-                                  onClick={() => toggleVerified(houseKey)}
-                                  aria-pressed={isVerified}
-                                  title={
-                                    isVerified
-                                      ? "Casa verificada — clique para desmarcar"
-                                      : "Marcar casa como verificada"
-                                  }
-                                  aria-label={
-                                    isVerified
-                                      ? `Desmarcar ${group.house} como verificada`
-                                      : `Marcar ${group.house} como verificada`
-                                  }
-                                  className={
-                                    isVerified
-                                      ? "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-green-600 bg-green-600 text-white"
-                                      : "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:border-green-600 hover:text-green-600"
-                                  }
-                                >
-                                  <Check className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => analyzeScope({ day, house: group.house })}
-                                  disabled={analyzing !== null}
-                                  title="Analisar com IA os lotes ainda não avaliados desta casa (sob demanda)"
-                                  aria-label={`Analisar com IA ${group.house}`}
-                                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
-                                >
-                                  {analyzing === houseKey ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  ) : (
-                                    <Sparkles className="h-3.5 w-3.5" />
-                                  )}
-                                  Analisar
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => toggleHouse(houseKey)}
-                                  aria-expanded={isOpen}
-                                  className="flex items-center gap-2 text-left"
-                                >
-                                  {isOpen ? (
-                                    <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
-                                  ) : (
-                                    <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-                                  )}
-                                  <span className="text-2xl font-semibold tracking-tight text-foreground">
-                                    {group.house}
-                                  </span>
-                                </button>
-                                <Badge variant="secondary">{houseLots.length} lotes</Badge>
-                                <HouseStatBadges
-                                  stats={computeHouseStats(houseLots, watchedIds, bidStatusById)}
-                                />
-                                <AuctionStatusInline info={auctionInfo} />
-                                <div className="ml-auto flex flex-wrap items-center gap-3">
-                                  {auctionInfo?.presencialUrl ? (
-                                    <a
-                                      className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                                      href={auctionInfo.presencialUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      title="Acompanhar o pregão presencial desta casa"
-                                    >
-                                      <Radio className="h-3 w-3" /> pregão presencial
-                                    </a>
-                                  ) : null}
-                                  <a
-                                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                    href={group.houseUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    site da casa <ExternalLink className="h-3 w-3" />
-                                  </a>
-                                </div>
-                              </div>
-                              {isOpen ? (
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <ArtistFilter
-                                    artists={artistOptions(group.lots)}
-                                    value={perArtist}
-                                    onChange={(next) => setHouseArtistFor(houseKey, next)}
-                                    disabled={globalActive}
-                                  />
-                                  <PriceFilter
-                                    value={perPrice}
-                                    onChange={(next) => setHousePriceFor(houseKey, next)}
-                                  />
-                                  {globalActive ? (
-                                    <span className="text-xs text-muted-foreground">
-                                      filtro de artista global ativo
-                                    </span>
-                                  ) : null}
-                                </div>
-                              ) : null}
-                            </div>
-
-                            {isOpen ? (
-                              <>
-                                {artistGroups.length === 0 ? (
-                                  <p className="text-sm text-muted-foreground">
-                                    Nenhum lote com esses filtros nesta casa.
-                                  </p>
-                                ) : (
-                                  artistGroups.map((artistGroup) => (
-                                    <div key={artistGroup.artist} className="space-y-3">
-                                      <h3
-                                        className={
-                                          artistGroup.artist === UNCLASSIFIED_LABEL
-                                            ? "text-sm font-medium uppercase tracking-wider text-muted-foreground"
-                                            : "text-sm font-semibold uppercase tracking-wider text-primary"
-                                        }
-                                      >
-                                        {artistGroup.artist}
-                                        <span className="ml-2 font-normal normal-case tracking-normal text-muted-foreground">
-                                          {artistGroup.lots.length}
-                                        </span>
-                                      </h3>
-                                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                        {artistGroup.lots.map((lot) => (
-                                          <LotCard
-                                            key={lot.id}
-                                            lot={{
-                                              ...lot,
-                                              lote: lot.lote || loteById.get(lot.idPeca) || "",
-                                              myBid: myBidById.get(lot.idPeca),
-                                              nextBid: nextBidById.get(lot.idPeca),
-                                            }}
-                                            busy={pending === lot.idPeca}
-                                            ai={aiFor(lot)}
-                                            market={marketFor(lot)}
-                                            album={albumFor(lot)}
-                                            condition={conditionFor(lot)}
-                                            demand={demandFor(lot)}
-                                            owned={ownedFor(lot)}
-                                            onOpenOwned={() => setOwnedPanelLot(lot)}
-                                            onEditTags={editTags(lot.id)}
-                                            bidStatus={bidStatusById.get(lot.idPeca)}
-                                            onToggle={() =>
-                                              toggle.mutate({
-                                                idPeca: lot.idPeca,
-                                                idLeilao: lot.idLeilao,
-                                                base: lot.base,
-                                                watch: !lot.watched,
-                                              })
-                                            }
-                                          />
-                                        ))}
-                                      </div>
-                                    </div>
-                                  ))
-                                )}
-                                <div className="pt-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      toggleHouse(houseKey);
-                                      requestAnimationFrame(() =>
-                                        document
-                                          .getElementById(houseAnchor(group.house, index))
-                                          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-                                      );
-                                    }}
-                                    className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-                                  >
-                                    <ChevronUp className="h-4 w-4" />
-                                    Fechar {group.house}
-                                  </button>
-                                </div>
-                              </>
-                            ) : null}
-                          </section>
-                        );
-                      };
-                      const verifiedGroups = groups.filter((group) =>
-                        verifiedHouses.has(`${day}|${group.house}`),
-                      );
-                      const unverifiedGroups = groups.filter(
-                        (group) => !verifiedHouses.has(`${day}|${group.house}`),
-                      );
+              <TabsContent value="bids" className="space-y-4">
+                {bids.isLoading ? (
+                  <Skeleton className="h-40 w-full" />
+                ) : bids.isError ? (
+                  <p className="text-sm text-destructive">
+                    Não foi possível ler os lances: {(bids.error as Error).message}
+                  </p>
+                ) : (bids.data ?? []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Você ainda não deu lance em nenhum lote.
+                  </p>
+                ) : (
+                  (() => {
+                    // A busca principal filtra os lances; o resultado é apresentado
+                    // separado por dia e casa de leilão, igual às abas de dia e vigiados.
+                    const filtered = bidsWithHouseUrl.filter((bid) =>
+                      bidMatchesSearch(bid, searchNorm, albumFor(bid)),
+                    );
+                    if (filtered.length === 0) {
                       return (
-                        <>
-                          {unverifiedGroups.map(renderHouse)}
-                          {verifiedGroups.length ? (
-                            <div className="space-y-6 pt-4">
-                              <h2 className="flex items-center gap-2 border-b border-border pb-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                                <Check className="h-4 w-4 text-green-600" />
-                                Já verificadas
-                                <span className="font-normal normal-case tracking-normal">
-                                  {verifiedGroups.length} casa(s)
+                        <p className="text-sm text-muted-foreground">
+                          Nenhum lance corresponde à busca.
+                        </p>
+                      );
+                    }
+                    const byDay = new Map<string, BidCard[]>();
+                    for (const bid of filtered) {
+                      const key = bidDayKey(bid);
+                      const list = byDay.get(key) ?? [];
+                      list.push(bid);
+                      byDay.set(key, list);
+                    }
+                    // Dias sem data ("") vão para o fim; os demais em ordem crescente.
+                    const dayKeys = [...byDay.keys()].sort((a, b) => {
+                      if (!a) return 1;
+                      if (!b) return -1;
+                      return a.localeCompare(b);
+                    });
+
+                    return (
+                      <div className="space-y-10">
+                        {dayKeys.map((dayKey) => {
+                          const dayBids = byDay.get(dayKey) ?? [];
+                          const idx = days.indexOf(dayKey);
+                          const label = dayKey ? dayLabel(dayKey, idx >= 0 ? idx : 99) : "Sem data";
+                          const houses = groupWatchedByHouse(dayBids);
+                          return (
+                            <section key={dayKey || "sem-data"} className="space-y-6">
+                              <div className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
+                                <span className="text-sm font-semibold text-foreground">
+                                  {label}
                                 </span>
-                              </h2>
-                              {verifiedGroups.map(renderHouse)}
-                            </div>
-                          ) : null}
-                        </>
-                      );
-                    })()
-                  )}
-                </TabsContent>
-              );
-            })}
-
-            <TabsContent value="watched" className="space-y-4">
-              {watched.isLoading ? (
-                <Skeleton className="h-40 w-full" />
-              ) : watched.isError ? (
-                <p className="text-sm text-destructive">
-                  Não foi possível ler os vigiados: {(watched.error as Error).message}
-                </p>
-              ) : (watched.data ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Você ainda não está vigiando nenhum lote.
-                </p>
-              ) : (
-                (() => {
-                  // A busca principal filtra os vigiados; o resultado é apresentado
-                  // separado por dia e casa de leilão, igual às abas de dia.
-                  const filtered = (watched.data ?? []).filter((lot) =>
-                    watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
-                  );
-                  if (filtered.length === 0) {
-                    return (
-                      <p className="text-sm text-muted-foreground">
-                        Nenhum lote vigiado corresponde à busca.
-                      </p>
+                                <span className="text-xs text-muted-foreground">
+                                  {dayBids.length} lance(s) em {houses.length} casa(s)
+                                </span>
+                                <BidStatBadges stats={computeBidStats(dayBids)} />
+                              </div>
+                              <BidHouseSections
+                                houses={houses}
+                                pending={pending}
+                                loteById={loteById}
+                                priceById={priceById}
+                                nextBidById={nextBidById}
+                                albumById={albumById}
+                                ownedFor={ownedFor}
+                                onOpenOwned={(bid) => setOwnedPanelLot(bid)}
+                                onToggle={(bid) => toggle.mutate(bid)}
+                              />
+                            </section>
+                          );
+                        })}
+                      </div>
                     );
-                  }
-                  const byDay = new Map<string, typeof filtered>();
-                  for (const lot of filtered) {
-                    const key = watchedDateToKey(lot.date) || lot.date || "";
-                    const list = byDay.get(key) ?? [];
-                    list.push(lot);
-                    byDay.set(key, list);
-                  }
-                  // Dias sem data ("") vão para o fim; os demais em ordem crescente.
-                  const dayKeys = [...byDay.keys()].sort((a, b) => {
-                    if (!a) return 1;
-                    if (!b) return -1;
-                    return a.localeCompare(b);
-                  });
-
-                  return (
-                    <div className="space-y-10">
-                      {dayKeys.map((dayKey) => {
-                        const dayLots = byDay.get(dayKey) ?? [];
-                        const idx = days.indexOf(dayKey);
-                        const label = dayKey ? dayLabel(dayKey, idx >= 0 ? idx : 99) : "Sem data";
-                        const houses = groupWatchedByHouse(dayLots);
-                        return (
-                          <section key={dayKey || "sem-data"} className="space-y-6">
-                            <div className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
-                              <span className="text-sm font-semibold text-foreground">{label}</span>
-                              <span className="text-xs text-muted-foreground">
-                                {dayLots.length} lote(s) vigiado(s) em {houses.length} casa(s)
-                              </span>
-                            </div>
-                            {houses.map((houseGroup) => {
-                              const auctionInfo = houseAuctionInfo(dayKey, houseGroup.lots[0]);
-                              return (
-                                <section key={houseGroup.house} className="space-y-3">
-                                  <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
-                                    <h2 className="text-xl font-semibold tracking-tight text-foreground">
-                                      {houseGroup.house}
-                                    </h2>
-                                    <Badge variant="secondary">
-                                      {houseGroup.lots.length} lote(s)
-                                    </Badge>
-                                    <HouseStatBadges
-                                      stats={computeHouseStats(
-                                        houseGroup.lots,
-                                        watchedIds,
-                                        bidStatusById,
-                                      )}
-                                    />
-                                    <AuctionStatusInline info={auctionInfo} />
-                                    <div className="ml-auto flex flex-wrap items-center gap-3">
-                                      {auctionInfo?.presencialUrl ? (
-                                        <a
-                                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                          href={auctionInfo.presencialUrl}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          title="Acompanhar o pregão presencial desta casa"
-                                        >
-                                          <Radio className="h-3 w-3" /> pregão presencial
-                                        </a>
-                                      ) : null}
-                                      <a
-                                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                        href={houseGroup.houseUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                      >
-                                        site da casa <ExternalLink className="h-3 w-3" />
-                                      </a>
-                                    </div>
-                                  </div>
-                                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                    {houseGroup.lots.map((lot) => (
-                                      <LotCard
-                                        key={lot.id}
-                                        lot={{
-                                          ...lot,
-                                          dayKey: lot.date,
-                                          watched: true,
-                                          myBid: myBidById.get(lot.idPeca),
-                                        }}
-                                        busy={pending === lot.idPeca}
-                                        ai={aiFor(lot)}
-                                        market={marketFor(lot)}
-                                        album={albumFor(lot)}
-                                        condition={conditionFor(lot)}
-                                        demand={demandFor(lot)}
-                                        owned={ownedFor(lot)}
-                                        onOpenOwned={() => setOwnedPanelLot(lot)}
-                                        onEditTags={editTags(lot.id)}
-                                        bidStatus={bidStatusById.get(lot.idPeca)}
-                                        onToggle={() =>
-                                          toggle.mutate({
-                                            idPeca: lot.idPeca,
-                                            idLeilao: lot.idLeilao,
-                                            base: lot.base,
-                                            watch: false,
-                                          })
-                                        }
-                                      />
-                                    ))}
-                                  </div>
-                                </section>
-                              );
-                            })}
-                          </section>
-                        );
-                      })}
-                    </div>
-                  );
-                })()
-              )}
-            </TabsContent>
-
-            <TabsContent value="bids" className="space-y-4">
-              {bids.isLoading ? (
-                <Skeleton className="h-40 w-full" />
-              ) : bids.isError ? (
-                <p className="text-sm text-destructive">
-                  Não foi possível ler os lances: {(bids.error as Error).message}
-                </p>
-              ) : (bids.data ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Você ainda não deu lance em nenhum lote.
-                </p>
-              ) : (
-                (() => {
-                  // A busca principal filtra os lances; o resultado é apresentado
-                  // separado por dia e casa de leilão, igual às abas de dia e vigiados.
-                  const filtered = bidsWithHouseUrl.filter((bid) =>
-                    bidMatchesSearch(bid, searchNorm, albumFor(bid)),
-                  );
-                  if (filtered.length === 0) {
-                    return (
-                      <p className="text-sm text-muted-foreground">
-                        Nenhum lance corresponde à busca.
-                      </p>
-                    );
-                  }
-                  const byDay = new Map<string, BidCard[]>();
-                  for (const bid of filtered) {
-                    const key = bidDayKey(bid);
-                    const list = byDay.get(key) ?? [];
-                    list.push(bid);
-                    byDay.set(key, list);
-                  }
-                  // Dias sem data ("") vão para o fim; os demais em ordem crescente.
-                  const dayKeys = [...byDay.keys()].sort((a, b) => {
-                    if (!a) return 1;
-                    if (!b) return -1;
-                    return a.localeCompare(b);
-                  });
-
-                  return (
-                    <div className="space-y-10">
-                      {dayKeys.map((dayKey) => {
-                        const dayBids = byDay.get(dayKey) ?? [];
-                        const idx = days.indexOf(dayKey);
-                        const label = dayKey ? dayLabel(dayKey, idx >= 0 ? idx : 99) : "Sem data";
-                        const houses = groupWatchedByHouse(dayBids);
-                        return (
-                          <section key={dayKey || "sem-data"} className="space-y-6">
-                            <div className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
-                              <span className="text-sm font-semibold text-foreground">{label}</span>
-                              <span className="text-xs text-muted-foreground">
-                                {dayBids.length} lance(s) em {houses.length} casa(s)
-                              </span>
-                              <BidStatBadges stats={computeBidStats(dayBids)} />
-                            </div>
-                            <BidHouseSections
-                              houses={houses}
-                              pending={pending}
-                              loteById={loteById}
-                              priceById={priceById}
-                              nextBidById={nextBidById}
-                              albumById={albumById}
-                              ownedFor={ownedFor}
-                              onOpenOwned={(bid) => setOwnedPanelLot(bid)}
-                              onToggle={(bid) => toggle.mutate(bid)}
-                            />
-                          </section>
-                        );
-                      })}
-                    </div>
-                  );
-                })()
-              )}
-            </TabsContent>
-          </Tabs>
-        )}
-      </div>
+                  })()
+                )}
+              </TabsContent>
+            </>
+          )}
+        </div>
+      </Tabs>
       {ownedPanelLot
         ? (() => {
             const lot = ownedPanelLot;
