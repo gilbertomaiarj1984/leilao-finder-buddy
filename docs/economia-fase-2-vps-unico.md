@@ -1,17 +1,22 @@
 # Fase 2 — Escape hatch: um VPS único (~US$ 4/mês)
 
-> **Status: não iniciada — e só deve começar se a Fase 1 provar que precisa.**
-> Pré-requisito: `docs/economia-fase-1-faxina-e-medicao.md` executada e o `step=usage`
-> mostrando crescimento que a faxina não segura.
+> **Status: não iniciada — e só deve começar se a Fase 1 não bastar.**
+> Pré-requisito: `docs/economia-fase-1-egress-e-cpu.md` executada e, depois de ~1 semana
+> rodando, o egress do Supabase e o Active CPU da Vercel **ainda** perto dos limites.
 >
-> Contexto e alternativas descartadas: `docs/economia-migracao.md`.
+> Contexto, telemetria e alternativas descartadas: `docs/economia-migracao.md`.
+>
+> ⚠️ Migrar **antes** da Fase 1 é erro: o gargalo hoje é ler os mesmos dados muitas vezes
+> (49 MB de banco gerando 9,14 GB de egress). Levar esse padrão para outro lugar só troca
+> quem cobra a conta — num VPS ele vira CPU e I/O da sua própria máquina.
 
 ## Por que assim (e não Neon/Netlify)
 
 Sair do Supabase custa reescrever a camada de dados **de qualquer jeito** — o Neon entrega só
-Postgres, com o mesmo teto de 0,5 GB, e ainda deixa Auth e Storage para resolver. Se o custo
-da reescrita é inevitável, vale pôr o banco no servidor que você já está pagando: teto fixo,
-sem egress medido, sem pausa por inatividade, sem cláusula de uso comercial. Uma conta só.
+Postgres e ainda deixa Auth e Storage para resolver, e cobra por CU-horas, que o padrão de
+leitura repetida queima igual. Se o custo da reescrita é inevitável, vale pôr o banco no
+servidor que você já está pagando: teto fixo, **sem egress medido**, sem pausa por inatividade,
+sem cláusula de uso comercial. Uma conta só.
 
 ## A boa notícia
 
