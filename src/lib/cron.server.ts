@@ -369,6 +369,15 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await reidentifyAllSales(max));
     }
 
+    // ÚNICA VEZ (não faz parte do laço do cron): calcula `bundle` para as vendas já gravadas
+    // ANTES dessa coluna existir (backfill). Lê `orig_text` (custo de egress ÚNICO, não repetido)
+    // e grava só as que mudam. Depois disso, `getVinylSales` nunca mais precisa de `orig_text`.
+    if (step === "backfillbundle") {
+      const { backfillBundleFlag } = await import("./lot-sales.server");
+      const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 1000, 1), 5000);
+      return json(await backfillBundleFlag(max));
+    }
+
     // Diagnóstico da captura de vendas: sinais crus do catálogo dos leilões terminados
     // (não grava, não marca). Útil quando `sales` volta 0 — confirma se é legítimo.
     if (step === "salesdebug") {
@@ -421,7 +430,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     return json(
       {
         error:
-          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|salesdebug|catdebug)",
+          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|backfillbundle|salesdebug|catdebug)",
       },
       400,
     );

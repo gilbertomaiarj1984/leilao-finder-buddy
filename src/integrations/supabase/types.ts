@@ -231,6 +231,7 @@ export type Database = {
         Row: {
           artist: string
           bids: number | null
+          bundle: boolean
           captured_at: string
           faixa: string
           fee_pct: number | null
@@ -255,6 +256,7 @@ export type Database = {
         Insert: {
           artist?: string
           bids?: number | null
+          bundle?: boolean
           captured_at?: string
           faixa?: string
           fee_pct?: number | null
@@ -279,6 +281,7 @@ export type Database = {
         Update: {
           artist?: string
           bids?: number | null
+          bundle?: boolean
           captured_at?: string
           faixa?: string
           fee_pct?: number | null
@@ -532,7 +535,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_unidentified_lot_sales: {
+        Args: { p_limit: number }
+        Returns: Database["public"]["Tables"]["lot_sales"]["Row"][]
+      }
     }
     Enums: {
       [_ in never]: never
