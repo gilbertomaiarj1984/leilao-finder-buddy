@@ -42,23 +42,9 @@ produção.
 
 ## Convenções de trabalho
 
-- **Responder em português** ao interagir com o usuário.
-- Recriar a branch de trabalho a partir de `origin/main` antes de cada tarefa (a `main` recebe
-  commits de outras sessões/PRs). Fluxo: branch → PR → merge.
-- **Atualizar `docs/notas-desenvolvimento.md` antes de mesclar QUALQUER PR**: mudança de
-  arquitetura/mecânica na seção certa, uma linha no histórico de versões, pendências resolvidas
-  saem da lista. Como o arquivo já vive na `main`, faça fetch de `origin/main` e edite a partir
-  dele para evitar conflito.
-- **Bump de versão obrigatório em todo PR**: `APP_VERSION` em `src/lib/version.ts` **e**
-  `version` no `package.json`, seguindo semver (PATCH=correção, MINOR=nova função,
-  MAJOR=quebra). É o número exibido no rodapé em produção. O CI `.github/workflows/version-bump.yml`
-  falha o PR se a versão não subir (merge via API do GitHub não bloqueia — não confiar só no
-  CI). Colocar a versão no título do PR (ex.: `v0.2.0 — filtro por casa`).
-- Não colar páginas HTML inteiras no chat (consomem contexto) — pedir só o bloco relevante.
-- Migrações `.sql` em `supabase/migrations/` **não são auto-aplicadas**: o schema é
-  (re)criado via `supabase/setup.sql` (SQL Editor ou `psql -f`, idempotente, tudo
-  `IF NOT EXISTS`). Ao criar tabela/coluna, editar `setup.sql` **e**
-  `src/integrations/supabase/types.ts` à mão.
+Ver `AGENTS.md` (fonte única — responder em PT, branch a partir de `origin/main`, bump de
+versão obrigatório em todo PR, atualizar `docs/notas-desenvolvimento.md` antes de mesclar,
+migrações `.sql` não auto-aplicadas).
 
 ## Arquitetura
 

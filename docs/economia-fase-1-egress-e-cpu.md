@@ -9,21 +9,12 @@
 
 ## Por que
 
-Telemetria de 30 dias (set/2026):
+Telemetria completa (30 dias, set/2026) em `docs/economia-migracao.md`. Resumo: Supabase
+Egress **9,14/5 GB** 🔴 já estourado; Vercel Fluid Active CPU **3h09/4h** 🟠 79%; banco
+**49/500 MB** 🟢 folgado.
 
-| Medidor | Uso | Situação |
-| --- | --- | --- |
-| **Supabase — Egress** | **9,14 / 5 GB** | 🔴 **já estourado (183%)** |
-| **Vercel — Fluid Active CPU** | **3h09 / 4h** | 🟠 79% |
-| Vercel — Fast Origin Transfer | 6,34 / 10 GB | 63% |
-| Vercel — Provisioned Memory | 111 / 360 GB-Hrs | 31% |
-| Supabase — Database size | **49 / 500 MB** | 🟢 10% |
-| Supabase — MAU | 1 / 50.000 | 🟢 |
-| Supabase — File storage | 0 / 1 GB | 🟢 |
-| Vercel — Edge Requests / Invocations / Data Transfer | 44K/1M · 41K/1M · 4,18/100 GB | 🟢 ~4% |
-
-Ou seja: **o banco não é o problema — o padrão de leitura é.** 49 MB de dados gerando 9 GB de
-saída significa que os mesmos bytes saem do Postgres cerca de 190 vezes por mês.
+**O banco não é o problema — o padrão de leitura é.** 49 MB de dados gerando 9 GB de saída
+significa que os mesmos bytes saem do Postgres cerca de 190 vezes por mês.
 
 ## A causa raiz (uma só, explica os dois medidores vermelhos)
 
