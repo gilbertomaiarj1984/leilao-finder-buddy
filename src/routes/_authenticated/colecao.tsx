@@ -511,196 +511,201 @@ function ColecaoPage() {
 
   const groups = useMemo(() => groupByArtist(filtered), [filtered]);
   const busy = saveMut.isPending || removeMut.isPending;
+  const showViewTabs = !query.isLoading && items.length > 0 && filtered.length > 0;
 
   return (
     <main className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:py-5">
-          <div>
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Voltar
-                </Link>
-              </Button>
-              <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
-                <Library className="h-5 w-5 text-primary" />
-                Coleção
-              </h1>
+      <Tabs defaultValue="cards">
+        <div className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:py-5">
+            <div>
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Voltar
+                  </Link>
+                </Button>
+                <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
+                  <Library className="h-5 w-5 text-primary" />
+                  Coleção
+                </h1>
+              </div>
+              <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
+                Seus vinis, agrupados por artista. A varredura de "Minhas compras" acrescenta os
+                lotes de vinil arrematados; cada disco é editável.
+              </p>
             </div>
-            <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
-              Seus vinis, agrupados por artista. A varredura de "Minhas compras" acrescenta os lotes
-              de vinil arrematados; cada disco é editável.
-            </p>
-          </div>
-          <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:overflow-visible sm:pb-0">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setDraft({ ...EMPTY_DRAFT })}
-              title="Adicionar um disco manualmente"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Adicionar disco
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setBulkOpen(true)}
-              title="Importar vários discos de uma vez colando texto (JSON gerado por IA)"
-            >
-              <ClipboardPaste className="mr-2 h-4 w-4" />
-              Adicionar em massa
-            </Button>
-            {items.length > 0 ? (
+            <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:overflow-visible sm:pb-0">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => void runIdentify()}
-                disabled={identifying}
-                title="Identificar pela IA só os discos ainda sem artista/álbum (só texto, nunca a capa). Barato — pula os já identificados. Para refazer um disco específico, use o botão de reprocessar no card."
+                onClick={() => setDraft({ ...EMPTY_DRAFT })}
+                title="Adicionar um disco manualmente"
               >
-                <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
-                {identifying ? "Identificando…" : "Identificar novos (IA)"}
+                <Plus className="mr-2 h-4 w-4" />
+                Adicionar disco
               </Button>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => debugMut.mutate()}
-              disabled={debugMut.isPending}
-              title="Diagnosticar a varredura (não grava nada) — mostra o que o servidor lê do site"
-            >
-              {debugMut.isPending ? "Diagnosticando…" : "Diagnóstico"}
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => scanMut.mutate()}
-              disabled={scanMut.isPending}
-              title="Varrer 'Minhas compras' (leilões vencidos) e atualizar a coleção"
-            >
-              <RefreshCw className={`mr-2 h-4 w-4 ${scanMut.isPending ? "animate-spin" : ""}`} />
-              {scanMut.isPending ? "Atualizando…" : "Atualizar coleção"}
-            </Button>
-            <AiProviderSelect
-              value={aiProvider}
-              onChange={changeAiProvider}
-              disabled={identifying}
-            />
-          </div>
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-6xl px-4 py-6">
-        {debug ? (
-          <div className="mb-4 rounded-md border border-border bg-card p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-semibold text-foreground">
-                Diagnóstico da varredura
-              </span>
-              <Button size="sm" variant="ghost" onClick={() => setDebug(null)}>
-                Fechar
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBulkOpen(true)}
+                title="Importar vários discos de uma vez colando texto (JSON gerado por IA)"
+              >
+                <ClipboardPaste className="mr-2 h-4 w-4" />
+                Adicionar em massa
               </Button>
+              {items.length > 0 ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void runIdentify()}
+                  disabled={identifying}
+                  title="Identificar pela IA só os discos ainda sem artista/álbum (só texto, nunca a capa). Barato — pula os já identificados. Para refazer um disco específico, use o botão de reprocessar no card."
+                >
+                  <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
+                  {identifying ? "Identificando…" : "Identificar novos (IA)"}
+                </Button>
+              ) : null}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => debugMut.mutate()}
+                disabled={debugMut.isPending}
+                title="Diagnosticar a varredura (não grava nada) — mostra o que o servidor lê do site"
+              >
+                {debugMut.isPending ? "Diagnosticando…" : "Diagnóstico"}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => scanMut.mutate()}
+                disabled={scanMut.isPending}
+                title="Varrer 'Minhas compras' (leilões vencidos) e atualizar a coleção"
+              >
+                <RefreshCw className={`mr-2 h-4 w-4 ${scanMut.isPending ? "animate-spin" : ""}`} />
+                {scanMut.isPending ? "Atualizando…" : "Atualizar coleção"}
+              </Button>
+              <AiProviderSelect
+                value={aiProvider}
+                onChange={changeAiProvider}
+                disabled={identifying}
+              />
             </div>
-            <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all text-xs text-muted-foreground">
-              {debug}
-            </pre>
           </div>
-        ) : null}
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <ArtistFilter artists={artists} value={artist} onChange={setArtist} />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por artista ou título…"
-            className="w-full sm:w-72"
-          />
-          <span className="text-xs text-muted-foreground">
-            {filtered.length} de {items.length} disco(s)
-          </span>
+
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2 px-4 pb-3">
+            <ArtistFilter artists={artists} value={artist} onChange={setArtist} />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por artista ou título…"
+              className="w-full sm:w-72"
+            />
+            <span className="text-xs text-muted-foreground">
+              {filtered.length} de {items.length} disco(s)
+            </span>
+            {showViewTabs ? (
+              <TabsList>
+                <TabsTrigger value="cards">Cards</TabsTrigger>
+                <TabsTrigger value="titles">Títulos</TabsTrigger>
+              </TabsList>
+            ) : null}
+          </div>
         </div>
 
-        {query.isLoading ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-64 w-full" />
-            ))}
-          </div>
-        ) : items.length === 0 ? (
-          <EmptyState onScan={() => scanMut.mutate()} scanning={scanMut.isPending} />
-        ) : filtered.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-border bg-card/40 px-4 py-16 text-center text-sm text-muted-foreground">
-            Nenhum disco corresponde ao filtro.
-          </p>
-        ) : (
-          <Tabs defaultValue="cards">
-            <TabsList className="mb-4">
-              <TabsTrigger value="cards">Cards</TabsTrigger>
-              <TabsTrigger value="titles">Títulos</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="cards">
-              <div className="space-y-8">
-                {groups.map((group) => (
-                  <section key={group.artist}>
-                    <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-                      <Disc3 className="h-4 w-4 text-primary" />
-                      {group.artist}
-                      <span className="text-xs font-normal text-muted-foreground">
-                        ({group.items.length})
-                      </span>
-                    </h2>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {group.items.map((item) => (
-                        <CollectionCard
-                          key={item.id}
-                          item={item}
-                          busy={busy}
-                          reprocessing={
-                            reprocessMut.isPending && reprocessMut.variables?.id === item.id
-                          }
-                          onEdit={() => setDraft(toDraft(item))}
-                          onRemove={() => removeMut.mutate(item.id)}
-                          onReprocess={() => startReprocess(item.id)}
-                          onTagsChange={(next) => tagsMut.mutate({ id: item.id, tags: next })}
-                        />
-                      ))}
-                    </div>
-                  </section>
-                ))}
+        <div className="mx-auto max-w-6xl px-4 py-6">
+          {debug ? (
+            <div className="mb-4 rounded-md border border-border bg-card p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-semibold text-foreground">
+                  Diagnóstico da varredura
+                </span>
+                <Button size="sm" variant="ghost" onClick={() => setDebug(null)}>
+                  Fechar
+                </Button>
               </div>
-            </TabsContent>
+              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all text-xs text-muted-foreground">
+                {debug}
+              </pre>
+            </div>
+          ) : null}
 
-            <TabsContent value="titles">
-              <div className="space-y-6">
-                {groups.map((group) => (
-                  <section key={group.artist}>
-                    <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
-                      <Disc3 className="h-4 w-4 text-primary" />
-                      {group.artist}
-                      <span className="text-xs font-normal text-muted-foreground">
-                        ({group.items.length})
-                      </span>
-                    </h2>
-                    <ul className="divide-y divide-border rounded-md border border-border">
-                      {group.items.map((item) => (
-                        <TitleRow
-                          key={item.id}
-                          item={item}
-                          busy={busy}
-                          onEdit={() => setDraft(toDraft(item))}
-                          onRemove={() => removeMut.mutate(item.id)}
-                        />
-                      ))}
-                    </ul>
-                  </section>
-                ))}
-              </div>
-            </TabsContent>
-          </Tabs>
-        )}
-      </div>
+          {query.isLoading ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-64 w-full" />
+              ))}
+            </div>
+          ) : items.length === 0 ? (
+            <EmptyState onScan={() => scanMut.mutate()} scanning={scanMut.isPending} />
+          ) : filtered.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-border bg-card/40 px-4 py-16 text-center text-sm text-muted-foreground">
+              Nenhum disco corresponde ao filtro.
+            </p>
+          ) : (
+            <>
+              <TabsContent value="cards">
+                <div className="space-y-8">
+                  {groups.map((group) => (
+                    <section key={group.artist}>
+                      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                        <Disc3 className="h-4 w-4 text-primary" />
+                        {group.artist}
+                        <span className="text-xs font-normal text-muted-foreground">
+                          ({group.items.length})
+                        </span>
+                      </h2>
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {group.items.map((item) => (
+                          <CollectionCard
+                            key={item.id}
+                            item={item}
+                            busy={busy}
+                            reprocessing={
+                              reprocessMut.isPending && reprocessMut.variables?.id === item.id
+                            }
+                            onEdit={() => setDraft(toDraft(item))}
+                            onRemove={() => removeMut.mutate(item.id)}
+                            onReprocess={() => startReprocess(item.id)}
+                            onTagsChange={(next) => tagsMut.mutate({ id: item.id, tags: next })}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="titles">
+                <div className="space-y-6">
+                  {groups.map((group) => (
+                    <section key={group.artist}>
+                      <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+                        <Disc3 className="h-4 w-4 text-primary" />
+                        {group.artist}
+                        <span className="text-xs font-normal text-muted-foreground">
+                          ({group.items.length})
+                        </span>
+                      </h2>
+                      <ul className="divide-y divide-border rounded-md border border-border">
+                        {group.items.map((item) => (
+                          <TitleRow
+                            key={item.id}
+                            item={item}
+                            busy={busy}
+                            onEdit={() => setDraft(toDraft(item))}
+                            onRemove={() => removeMut.mutate(item.id)}
+                          />
+                        ))}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
+              </TabsContent>
+            </>
+          )}
+        </div>
+      </Tabs>
 
       <EditDialog
         draft={draft}
