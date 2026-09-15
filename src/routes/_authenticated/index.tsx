@@ -260,6 +260,11 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   // Altura real do header sticky (header + barra de busca/abas), medida ao vivo — as barras
   // sticky internas (dia/casas, seções de Vigiados/Lances) usam esse valor como `top` para
   // colar logo abaixo dele, em vez de ficarem escondidas atrás (ambos ficariam em top:0).
+  // A `ref` fica no CONTEÚDO do header (altura natural estável), não no wrapper que
+  // esconde/mostra (HideableBar) — senão o ResizeObserver ficaria medindo a própria
+  // transição de altura dele, causando um vaivém de re-renders (barras piscando/pulando
+  // de posição ao rolar). O colapso do header vira `top: 0` combinando a altura estável
+  // com `barsHidden` diretamente, em vez de esperar a medição "seguir" o colapso.
   const barsHidden = useHideOnScroll();
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -272,7 +277,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const stickyBelowHeader = { top: headerHeight };
+  const stickyBelowHeader = { top: barsHidden ? 0 : headerHeight };
 
   const [tab, setTab] = useState<string>("day-0");
   const [artistFilter, setArtistFilter] = useState<string>("");
@@ -1200,8 +1205,11 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           setArtistFilter("");
         }}
       >
-        <HideableBar ref={headerRef} hidden={barsHidden} className="top-0 z-30">
-          <div className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+        <HideableBar hidden={barsHidden} className="top-0 z-30">
+          <div
+            ref={headerRef}
+            className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60"
+          >
             <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-1 sm:py-1.5">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="truncate">{email}</span>

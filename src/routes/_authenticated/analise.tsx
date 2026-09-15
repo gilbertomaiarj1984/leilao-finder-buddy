@@ -603,7 +603,11 @@ function AnalisePage() {
   const barsHidden = useHideOnScroll();
   // Altura real do header sticky, medida ao vivo — o nav sticky de "ir para casa" (por dia)
   // usa esse valor como `top` para colar logo abaixo dele, em vez de ficar escondido atrás
-  // (ambos ficariam em top:0).
+  // (ambos ficariam em top:0). A `ref` fica no CONTEÚDO do header (altura natural estável),
+  // não no wrapper que esconde/mostra (HideableBar) — senão o ResizeObserver mediria a
+  // própria transição de altura dele, causando um vaivém de re-renders (barras
+  // piscando/pulando de posição ao rolar). `top: 0` no colapso combina a altura estável
+  // com `barsHidden` diretamente, em vez de esperar a medição "seguir" o colapso.
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
   useEffect(() => {
@@ -615,7 +619,7 @@ function AnalisePage() {
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const stickyBelowHeader = { top: headerHeight };
+  const stickyBelowHeader = { top: barsHidden ? 0 : headerHeight };
 
   const queryClient = useQueryClient();
   const fetchLots = useServerFn(getVinylLots);
@@ -1029,8 +1033,11 @@ function AnalisePage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <HideableBar ref={headerRef} hidden={barsHidden} className="top-0 z-30">
-        <header className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+      <HideableBar hidden={barsHidden} className="top-0 z-30">
+        <header
+          ref={headerRef}
+          className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60"
+        >
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">
             <div>
               <div className="flex items-center gap-3">
