@@ -257,31 +257,39 @@ function formatUpdatedAt(iso: string | null | undefined): string {
   return fmt.format(date).replace(", ", " às ");
 }
 
-function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
-  // Esconder/mostrar o topo (header + barras sticky aninhadas) é MANUAL — botão
-  // `MobileTopToggle`, só no mobile — desde que a versão anterior por scroll
-  // (`useHideOnScroll`) ficava piscando (recálculo de altura de um `sticky`
-  // durante a transição realimentava a lógica de direção do scroll).
-  const [barsHidden, setBarsHidden] = useState(false);
-  // Altura real do header sticky (header + barra de busca/abas), medida ao vivo — as barras
-  // sticky internas (dia/casas, seções de Vigiados/Lances) usam esse valor como `top` para
-  // colar logo abaixo dele, em vez de ficarem escondidas atrás (ambos ficariam em top:0).
-  // A `ref` fica no CONTEÚDO do header (altura natural estável), não no wrapper que
-  // esconde/mostra (HideableBar) — senão o ResizeObserver ficaria medindo a própria
-  // transição de altura dele. O colapso do header vira `top: 0` combinando a altura
-  // estável com `barsHidden` diretamente, em vez de esperar a medição "seguir" o colapso.
-  const headerRef = useRef<HTMLDivElement>(null);
-  const [headerHeight, setHeaderHeight] = useState(0);
+// Mede a altura de um elemento ao vivo via `ResizeObserver`, reanexando sozinho quando o nó
+// muda (cobre conteúdo condicional, ex.: só monta depois que `lots` carrega).
+function useMeasuredHeight() {
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const [height, setHeight] = useState(0);
   useEffect(() => {
-    const el = headerRef.current;
-    if (!el) return;
+    if (!node) return;
     const observer = new ResizeObserver(([entry]) => {
-      if (entry) setHeaderHeight(entry.contentRect.height);
+      if (entry) setHeight(entry.contentRect.height);
     });
-    observer.observe(el);
+    observer.observe(node);
     return () => observer.disconnect();
-  }, []);
-  const stickyBelowHeader = { top: barsHidden ? 0 : headerHeight };
+  }, [node]);
+  return [setNode, height] as const;
+}
+
+function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
+  // Esconder/mostrar o topo é MANUAL — botão `MobileTopToggle` (agora visível também no
+  // desktop) — desde que a versão anterior por scroll (`useHideOnScroll`) ficava piscando
+  // (recálculo de altura de um `sticky` durante a transição realimentava a lógica de
+  // direção do scroll). No desktop, esconder recolhe tudo MENOS a lista de dias/abas
+  // (`TabsList`) — ela fica de fora do `HideableBar` colapsável, sempre visível, pra sempre
+  // dar pra trocar de dia/Vigiados/Lances mesmo com o resto escondido.
+  const [barsHidden, setBarsHidden] = useState(false);
+  // Altura real de cada parte do header sticky, medida ao vivo — as barras sticky internas
+  // (dia/casas, seções de Vigiados/Lances) usam a soma como `top` para colar logo abaixo do
+  // que estiver visível no momento, em vez de ficarem escondidas atrás. A `ref` fica no
+  // CONTEÚDO de cada parte (altura natural estável), não no wrapper que esconde/mostra
+  // (`HideableBar`) — senão o ResizeObserver ficaria medindo a própria transição de altura
+  // dele.
+  const [headerRef, headerHeight] = useMeasuredHeight();
+  const [tabsBarRef, tabsBarHeight] = useMeasuredHeight();
+  const stickyBelowHeader = { top: tabsBarHeight + (barsHidden ? 0 : headerHeight) };
 
   const [tab, setTab] = useState<string>("day-0");
   // Alvo (via portal) para a barra de controles do dia (Vigiados/Lances/Analisar/casas),
@@ -1211,7 +1219,11 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
 
   return (
     <main className="min-h-screen bg-background">
-      <MobileTopToggle collapsed={barsHidden} onToggle={() => setBarsHidden((c) => !c)} />
+      <MobileTopToggle
+        collapsed={barsHidden}
+        onToggle={() => setBarsHidden((c) => !c)}
+        alwaysVisible
+      />
       <Tabs
         value={tab}
         onValueChange={(value) => {
@@ -1219,140 +1231,148 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           setArtistFilter("");
         }}
       >
-        <HideableBar hidden={barsHidden} className="top-0 z-30">
-          <div
-            ref={headerRef}
-            className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60"
-          >
-            <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-1 sm:py-1.5">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="truncate">{email}</span>
-                <button
-                  type="button"
-                  onClick={() => void onSignOut()}
-                  className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  <LogOut className="h-3 w-3" />
-                  Sair
-                </button>
-              </div>
-              {/* No mobile a barra de ações rola na horizontal (uma linha), para o header sticky
+        <div className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+          {/* Colapsa com o botão do topo (`MobileTopToggle`) — também no desktop agora.
+          A lista de dias/abas (`TabsList`, logo abaixo) fica DE FORA, sempre visível, pra
+          sempre dar pra trocar de dia/Vigiados/Lances mesmo com o resto escondido. */}
+          <HideableBar hidden={barsHidden} collapseOnDesktop>
+            <div ref={headerRef}>
+              <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-1 sm:py-1.5">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="truncate">{email}</span>
+                  <button
+                    type="button"
+                    onClick={() => void onSignOut()}
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <LogOut className="h-3 w-3" />
+                    Sair
+                  </button>
+                </div>
+                {/* No mobile a barra de ações rola na horizontal (uma linha), para o header sticky
               ficar baixo e não atrapalhar; no desktop volta a quebrar em linhas (flex-wrap). */}
-              <div className="flex w-full items-center gap-2 overflow-x-auto sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  asChild
-                  title="Leilões ao vivo (pregão presencial)"
-                >
-                  <Link to="/ao-vivo">
-                    <Radio className="mr-2 h-4 w-4" />
-                    Ao vivo
-                  </Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild title="Análise de lotes com IA">
-                  <Link to="/analise">
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    Análise
-                  </Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild title="Minha coleção de vinil">
-                  <Link to="/colecao">
-                    <Library className="mr-2 h-4 w-4" />
-                    Coleção
-                  </Link>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  asChild
-                  title="Preços de venda por artista e álbum"
-                >
-                  <Link to="/vinil-analytics">
-                    <BarChart3 className="mr-2 h-4 w-4" />
-                    Analytics
-                  </Link>
-                </Button>
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={searchDraft}
-                    onChange={(event) => setSearchDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        setSearch(searchDraft);
-                      }
-                    }}
-                    placeholder="Buscar por título, artista, casa ou nº do lote… (Enter para pesquisar)"
-                    className="h-8 w-[220px] text-xs sm:w-64"
-                  />
-                  <Button size="sm" onClick={() => setSearch(searchDraft)}>
-                    <SearchIcon className="mr-2 h-4 w-4" />
-                    Pesquisar
+                <div className="flex w-full items-center gap-2 overflow-x-auto sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    asChild
+                    title="Leilões ao vivo (pregão presencial)"
+                  >
+                    <Link to="/ao-vivo">
+                      <Radio className="mr-2 h-4 w-4" />
+                      Ao vivo
+                    </Link>
                   </Button>
-                  {search || searchDraft ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setSearch("");
-                        setSearchDraft("");
+                  <Button variant="outline" size="sm" asChild title="Análise de lotes com IA">
+                    <Link to="/analise">
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Análise
+                    </Link>
+                  </Button>
+                  <Button variant="outline" size="sm" asChild title="Minha coleção de vinil">
+                    <Link to="/colecao">
+                      <Library className="mr-2 h-4 w-4" />
+                      Coleção
+                    </Link>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    asChild
+                    title="Preços de venda por artista e álbum"
+                  >
+                    <Link to="/vinil-analytics">
+                      <BarChart3 className="mr-2 h-4 w-4" />
+                      Analytics
+                    </Link>
+                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={searchDraft}
+                      onChange={(event) => setSearchDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          setSearch(searchDraft);
+                        }
                       }}
-                    >
-                      Limpar busca
+                      placeholder="Buscar por título, artista, casa ou nº do lote… (Enter para pesquisar)"
+                      className="h-8 w-[220px] text-xs sm:w-64"
+                    />
+                    <Button size="sm" onClick={() => setSearch(searchDraft)}>
+                      <SearchIcon className="mr-2 h-4 w-4" />
+                      Pesquisar
                     </Button>
-                  ) : null}
+                    {search || searchDraft ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSearch("");
+                          setSearchDraft("");
+                        }}
+                      >
+                        Limpar busca
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {!lots.isError && !lots.isLoading ? (
-              <div className="mx-auto max-w-6xl px-4 pb-1.5 sm:pb-2">
-                {/* Alvo da barra de controles do dia (portal) — renderizada aqui, acima da
+              {!lots.isError && !lots.isLoading ? (
+                <div className="mx-auto max-w-6xl px-4 pb-1.5 sm:pb-2">
+                  {/* Alvo da barra de controles do dia (portal) — renderizada aqui, acima da
                 lista de dias, em vez de sticky abaixo do header (ver dayBarHost). */}
-                <div ref={setDayBarHost} />
-                {/* No mobile a lista de dias rola na horizontal (uma linha), evitando que o
-                header sticky cresça por causa da quebra de linha; no desktop volta a
-                quebrar em linhas (flex-wrap). */}
-                <TabsList className="mt-1.5 flex h-auto flex-nowrap justify-start gap-1 overflow-x-auto bg-secondary sm:mt-2 sm:flex-wrap sm:overflow-visible">
-                  {days.map((day, index) => (
-                    <TabsTrigger key={day} value={`day-${index}`} className="shrink-0">
-                      {dayLabel(day, index)}
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {lots.data?.lots.filter(
-                          (lot) =>
-                            lot.dayKey === day &&
-                            !auctionFinished(lot.dayKey, lot.time) &&
-                            matchesSearch(lot),
-                        ).length ?? 0}
-                      </span>
-                    </TabsTrigger>
-                  ))}
-                  <TabsTrigger value="watched" className="shrink-0">
-                    Vigiados
+                  <div ref={setDayBarHost} />
+                </div>
+              ) : null}
+            </div>
+          </HideableBar>
+
+          {!lots.isError && !lots.isLoading ? (
+            <div ref={tabsBarRef} className="mx-auto max-w-6xl px-4 pb-1.5 sm:pb-2">
+              {/* No mobile a lista de dias rola na horizontal (uma linha), evitando que o
+              header sticky cresça por causa da quebra de linha; no desktop volta a
+              quebrar em linhas (flex-wrap). Fica sempre visível (fora do HideableBar acima) —
+              nunca esconde, mesmo com o resto do topo recolhido. */}
+              <TabsList className="flex h-auto flex-nowrap justify-start gap-1 overflow-x-auto bg-secondary sm:flex-wrap sm:overflow-visible">
+                {days.map((day, index) => (
+                  <TabsTrigger key={day} value={`day-${index}`} className="shrink-0">
+                    {dayLabel(day, index)}
                     <span className="ml-2 text-xs text-muted-foreground">
-                      {
-                        (watched.data ?? []).filter((lot) =>
-                          watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
-                        ).length
-                      }
+                      {lots.data?.lots.filter(
+                        (lot) =>
+                          lot.dayKey === day &&
+                          !auctionFinished(lot.dayKey, lot.time) &&
+                          matchesSearch(lot),
+                      ).length ?? 0}
                     </span>
                   </TabsTrigger>
-                  <TabsTrigger value="bids" className="shrink-0">
-                    Lances
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      {
-                        (bids.data ?? []).filter((bid) =>
-                          bidMatchesSearch(bid, searchNorm, albumFor(bid)),
-                        ).length
-                      }
-                    </span>
-                  </TabsTrigger>
-                </TabsList>
-              </div>
-            ) : null}
-          </div>
-        </HideableBar>
+                ))}
+                <TabsTrigger value="watched" className="shrink-0">
+                  Vigiados
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {
+                      (watched.data ?? []).filter((lot) =>
+                        watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
+                      ).length
+                    }
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger value="bids" className="shrink-0">
+                  Lances
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {
+                      (bids.data ?? []).filter((bid) =>
+                        bidMatchesSearch(bid, searchNorm, albumFor(bid)),
+                      ).length
+                    }
+                  </span>
+                </TabsTrigger>
+              </TabsList>
+            </div>
+          ) : null}
+        </div>
 
         <div className="mx-auto max-w-6xl px-4 pt-3 pb-8">
           <LiveAuctions />
