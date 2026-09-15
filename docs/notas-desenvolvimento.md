@@ -178,6 +178,19 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
     pelo próprio vigiado/lance) — colisão nesse composto exigiria as DUAS casas coincidirem em
     `idLeilao` E `idPeca` ao mesmo tempo, praticamente impossível. `lotIdByPeca` foi removido
     (não é mais necessário).
+    ⚠️ **Fix v0.51.7 — tarja ainda errada mesmo com o `id` composto correto**: mesmo indexado
+    certinho, `sold`/`bidStatus` podem estar errados na ORIGEM (ex.: a própria casa reaproveita
+    `idLeilao` ao longo do tempo para uma "sala"/categoria recorrente, ou um card de "lotes
+    relacionados" embutido na página cola o resultado de outro lote) — casos difíceis de
+    descartar por análise estática sem acesso ao site real. Em vez de perseguir a origem exata,
+    `LotCard` (`lot-card.tsx`) ganhou uma guarda de INVARIANTE: um leilão que **ainda não
+    começou** (`auctionStarted(dayKey, time)` de `vinyl-parse.ts`, false) não pode ter lote
+    vendido, ponto — a tarja nunca aparece nesse caso, seja qual for a fonte do `sold`/
+    `bidStatus`. Só aplica quando o card tem `dayKey` (formato `yyyy-mm-dd`) **e** `time`; sem
+    os dois (ex.: cards de lance, que não trazem `time`), não bloqueia — mantém o comportamento
+    anterior, já que dar um lance pressupõe leilão aberto. Os vigiados (`index.tsx`, dd/mm/yyyy
+    em `WatchedLot.date`) passaram a normalizar para `yyyy-mm-dd` (`watchedDateToKey`) ao montar
+    o `dayKey` do card, senão a guarda nunca teria dado match nesse caminho.
   - **Refresh — automático ao abrir a tela + manual (v0.51.0-3):** as duas queries de status
     (`["lot-details", …]`/`["sold-lots", …]`) têm `refetchOnMount: "always"` — sempre rechecam
     ao montar a tela, sem esperar o `staleTime` (3min); como o alvo já é só vigiados+lances
@@ -225,6 +238,21 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
     `leilao-finder:watched-accum:v1`/`leilao-finder:bids-accum:v1`) — gravado a cada merge do
     `queryFn` e a cada remoção explícita (desvigiar). Best-effort (SSR, aba anônima ou
     `localStorage` indisponível/cheio caem para `Map` vazio/silencioso, nunca quebram a tela).
+    ⚠️ **Fix v0.51.7 — sumia de novo ao navegar entre `/` e `/analise`**: a rota `/analise`
+    (`analise.tsx`) tem sua PRÓPRIA `useQuery` para vigiados/lances, mas lendo a MESMA chave de
+    query (`["vinyl-watched"]`/`["vinyl-my-bids"]`) — o `QueryClient` é único para o app inteiro,
+    então as duas rotas compartilham o mesmo cache por chave. A versão de `analise.tsx` só
+    fazia `fetchWatched()`/`fetchBids()` puro (sem mesclar no acumulador), então visitar
+    `/analise` SUBSTITUÍA o cache pelo retorno cru da conta (sem os lotes de leilões já
+    encerrados que a conta já não lista mais) — ao voltar para `/`, com o `staleTime` de 5min
+    ainda válido, a tela mostrava esse conjunto reduzido até o próximo refetch, mesmo com o
+    `localStorage` intacto. Fix: a lógica de merge/poda/persistência saiu de `index.tsx` para
+    `src/lib/watched-accum.ts` (`mergeWatchedAccum`, `loadAccum`, `saveAccum`, constantes de
+    janela/chave) e as DUAS rotas passaram a usá-la — cada uma com seu próprio `useRef` do
+    acumulador (recarregado do MESMO `localStorage`), mas a mesma função de merge, então
+    nenhuma das duas mais substitui o que a outra acumulou. `analise.tsx#toggle.onSuccess`
+    também ganhou a remoção explícita do acumulador ao desvigiar (espelhando `index.tsx`), que
+    antes faltava ali.
 - **Ícone roxo "já tenho na Coleção"** (`LotCard`, só na **home** `index.tsx`): disco `Disc3`
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
@@ -1054,6 +1082,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.51.4      | Fix: vigiados/lances somem da tela ao leilão terminar (conta para de trazê-los) — `watched`/`bids` passam a MESCLAR (nunca substituir) num acumulador local, poda só pela janela de dias/desvigia explícita; docs: endpoints de catálogo/peça documentados como fonte de verdade prioritária                                            |
 | v0.51.5      | Mobile: header sticky mais compacto (padding menor, lista de dias/abas sem quebrar linha) nas 5 páginas autenticadas; fix do nav "ir para casa" da Análise, que ficava escondido atrás do header                                                                                                                                        |
 | v0.51.6      | Fix: tarja "Vendido" errada em vigiados de leilão futuro — `getLotDetails`/`soldById`/`nextBidById` indexavam por `idPeca` sozinho (só único DENTRO de uma casa; casas parceiras são instalações independentes e reaproveitam os mesmos números), misturando o resultado de venda de um lote de uma casa com outro só coincidente no número; passam a indexar por `id` (`${idLeilao}-${idPeca}`). Fix: vigiados/lances do dia sumiam depois de um tempo mesmo sem desvigiar — o acumulador local (v0.51.4) vivia só num `useRef` em memória e se perdia a cada reload/fechar aba; agora persiste em `localStorage` (`loadAccum`/`saveAccum`)                                                                                                                                        |
+| v0.51.7      | Fix: tarja "Vendido" ainda aparecia em vigiados de leilão FUTURO mesmo após v0.51.6 — `LotCard` agora bloqueia a tarja quando o leilão ainda não começou (`auctionStarted`), fail-closed contra qualquer fonte de `sold`/`bidStatus` errada (ex.: `idLeilao`/`idPeca` reaproveitados ao longo do tempo pela mesma casa). Fix: vigiados/lances somem ao navegar entre `/` e `/analise` — as duas rotas liam a MESMA chave de query (`["vinyl-watched"]`/`["vinyl-my-bids"]`) mas só `index.tsx` mesclava no acumulador (v0.51.4/6); a versão de `analise.tsx` SUBSTITUÍA, apagando o acumulado ao navegar; acumulador extraído para `@/lib/watched-accum` (`mergeWatchedAccum`), usado pelas duas rotas                                                                            |
 
 ## Pendências
 

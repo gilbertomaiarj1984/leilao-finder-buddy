@@ -6,7 +6,7 @@ import { LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
 import { formatAiAlbum, type LotAi, type LotMarket } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import type { Condition } from "@/lib/grading";
-import { bidIsSold, bidIsWinning, decodeHtmlEntities } from "@/lib/vinyl-parse";
+import { auctionStarted, bidIsSold, bidIsWinning, decodeHtmlEntities } from "@/lib/vinyl-parse";
 import { OWNED_CONFIDENT_MIN, type OwnedHit } from "@/lib/wantlist-match";
 
 export type CardLot = {
@@ -92,7 +92,16 @@ export function LotCard({
   // encerrado-com-venda ("Coberto e Vendido"/"Vendido"/"Vencedor"/"Arrematado") — este
   // último é MAIS RÁPIDO (a página "Meus lances" atualiza na hora; `lot_sales` só depois
   // do cron varrer o catálogo). Fail-closed: "Não vendido" nunca marca.
-  const soldLabel = sold || (hasBid && bidIsSold(bidStatus as string) ? "Vendido" : undefined);
+  // Guarda adicional: um leilão que AINDA NÃO COMEÇOU não pode ter lote vendido — protege
+  // contra `sold`/`bidStatus` errados por colisão de id (`idLeilao`/`idPeca` reaproveitados
+  // por outro leilão da mesma casa ao longo do tempo) que atribuiriam a um vigiado futuro o
+  // resultado de venda de um leilão antigo já encerrado. Só aplica quando temos data+hora
+  // (`dayKey` no formato yyyy-mm-dd + `time`) para decidir; sem isso (ex.: lances, sem
+  // `time`), não bloqueia — mantém o comportamento anterior.
+  const notStartedYet = Boolean(lot.dayKey && lot.time) && !auctionStarted(lot.dayKey, lot.time);
+  const soldLabel = notStartedYet
+    ? undefined
+    : sold || (hasBid && bidIsSold(bidStatus as string) ? "Vendido" : undefined);
   // Quando estou VENCENDO, o valor atual É o meu lance (a listagem pública traz o
   // valor defasado, anterior ao meu lance vencedor). Quando estou coberto, o valor
   // atual é o da listagem (o lance que me cobriu).

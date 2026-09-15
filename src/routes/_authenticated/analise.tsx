@@ -74,7 +74,16 @@ import {
   updateWantlistItem,
 } from "@/lib/leiloesbr.functions";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
+import type { WatchedLot } from "@/lib/leiloesbr-watch.server";
+import type { MyBid } from "@/lib/leiloesbr-bids.server";
 import { bidIsWinning, formatDayLabel, normalizeForMatch, type VinylLot } from "@/lib/vinyl-parse";
+import {
+  BIDS_ACCUM_STORAGE_KEY,
+  loadAccum,
+  mergeWatchedAccum,
+  saveAccum,
+  WATCHED_ACCUM_STORAGE_KEY,
+} from "@/lib/watched-accum";
 import {
   bestWantForLot,
   lotIdentity,
@@ -683,15 +692,32 @@ function AnalisePage() {
   });
   // Vigiados + meus lances: alimentam os filtros "Vigiando"/"Com lance", a borda colorida
   // das linhas, o status do lance e o botão de vigiar (mesma mecânica da página principal).
+  // MESMO acumulador local de `index.tsx` (`@/lib/watched-accum`, MESMA chave de `localStorage`
+  // e de query, `["vinyl-watched"]`/`["vinyl-my-bids"]`) — essas duas rotas compartilham o
+  // `QueryClient` do app inteiro, então um `queryFn` aqui que apenas SUBSTITUÍSSE (sem mesclar)
+  // sobrescreveria o acumulado da outra rota ao navegar entre elas, fazendo os vigiados
+  // "sumirem depois de um tempo" mesmo sem o usuário ter desvigiado nada.
+  const watchedAccumRef = useRef<Map<string, WatchedLot> | null>(null);
+  if (watchedAccumRef.current === null)
+    watchedAccumRef.current = loadAccum<WatchedLot>(WATCHED_ACCUM_STORAGE_KEY);
+  const bidsAccumRef = useRef<Map<string, MyBid> | null>(null);
+  if (bidsAccumRef.current === null)
+    bidsAccumRef.current = loadAccum<MyBid>(BIDS_ACCUM_STORAGE_KEY);
   const watchedQuery = useQuery({
     queryKey: ["vinyl-watched"] as const,
-    queryFn: () => fetchWatched(),
+    queryFn: async () => {
+      const fresh = await fetchWatched();
+      return mergeWatchedAccum(watchedAccumRef.current!, fresh, WATCHED_ACCUM_STORAGE_KEY);
+    },
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
   const bidsQuery = useQuery({
     queryKey: ["vinyl-my-bids"] as const,
-    queryFn: () => fetchBids(),
+    queryFn: async () => {
+      const fresh = await fetchBids();
+      return mergeWatchedAccum(bidsAccumRef.current!, fresh, BIDS_ACCUM_STORAGE_KEY);
+    },
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -752,7 +778,15 @@ function AnalisePage() {
     mutationFn: (lot: { idPeca: string; idLeilao: string; base: string; watch: boolean }) =>
       runToggle({ data: lot }),
     onMutate: (lot) => setPending(lot.idPeca),
-    onSuccess: (result: { watched: boolean }) => {
+    onSuccess: (result: { watched: boolean }, lot) => {
+      // Desvigiar é a ÚNICA saída explícita do acumulador (mesma lógica de `index.tsx`) —
+      // remove na hora, sem esperar o refetch, senão o card ficaria vigiado na tela mesmo
+      // depois do usuário desvigiar.
+      if (!result.watched) {
+        watchedAccumRef.current!.delete(`${lot.idLeilao}-${lot.idPeca}`);
+        saveAccum(WATCHED_ACCUM_STORAGE_KEY, watchedAccumRef.current!);
+        queryClient.setQueryData(["vinyl-watched"], [...watchedAccumRef.current!.values()]);
+      }
       void queryClient.invalidateQueries({ queryKey: ["vinyl-watched"] });
       toast.success(result.watched ? "Lote vigiado no LeilõesBR" : "Vigia removida no LeilõesBR");
     },
