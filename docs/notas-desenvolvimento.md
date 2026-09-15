@@ -114,40 +114,46 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
     `bidIsWinning`). Cobre "Coberto e Vendido" (perdi) e "Vencedor"/"Arrematado" (ganhei) assim
     que o leilão encerra, sem esperar o cron. `lot_sales` (com preço) tem prioridade quando as
     duas fontes concordam; sem ela, cai no rótulo genérico "Vendido".
-  - **Sinal para quem só VIGIA, sem lance (v0.51.0):** a página de vigia (`l=8`) não traz status
-    — então o único sinal rápido é o `peca.asp` do próprio lote. `leiloesbr-lot-details.server.ts`
-    virou `fetchLotDetails` (era `fetchNextBids`): a MESMA requisição que já buscava o próximo
-    lance (`NOVO_VALOR`) agora também aplica os marcadores de "vendido" do catálogo (`Valor de
-    venda: R$ …`/`Lote vendido`/`não vendido`, fail-closed) ao texto da página — **custo zero
-    adicional**, é o request que já existia, escopado a vigiados+lances (nunca mais que 100,
-    concorrência 8). Server fn renomeada `getLotDetails` (era `getNextBids`), retorna
+  - **Sinal para quem só VIGIA, sem lance (v0.51.0, corrigido em v0.51.3):** a página de vigia
+    (`l=8`) não traz status — então o sinal rápido é o `peca.asp?ID=<idPeca>` do próprio lote
+    (mesma lógica em toda casa, só o domínio muda). `leiloesbr-lot-details.server.ts`
+    (`fetchLotDetails`/`getLotDetails`, era `fetchNextBids`/`getNextBids`): a MESMA requisição
+    que já buscava o próximo lance (`NOVO_VALOR`, no JSON `loadData` embutido na página) agora
+    TAMBÉM lê `MOSTRABTN_CLASS` ('is-vendido'/'is-naovendido') e `VALOR_VENDA` do MESMO
+    `loadData` — os MESMOS campos que `leiloesbr-catalog.server.ts` já lê com sucesso do
+    catálogo para o Vinil Analytics, só que aqui vêm da página do PRÓPRIO lote em vez do
+    catálogo do leilão inteiro. **Custo zero adicional** (mesmo request que já existia,
+    escopado a vigiados+lances, nunca mais que 100, concorrência 8). ⚠️ **v0.51.3**: a extração
+    original (v0.51.0-v0.51.2) tentava marcadores de TEXTO LIVRE no HTML ("vendido"/"lote
+    vendido"/"não vendido") — um chute sem confirmação contra o site real (sem rede a partir
+    deste ambiente) — trocado pela extração por CAMPO do JSON acima, a mesma técnica (regex
+    pontual no campo) já usada e funcionando para `NOVO_VALOR`. Retorna
     `Record<idPeca, {nextBid?, sold?}>`. `index.tsx` casa `idPeca → id` (`lotIdByPeca`, dos
     próprios vigiados/lances) e mescla no `soldById` só quando `lot_sales` ainda não tem aquele
-    lote — prioridade: `lot_sales` (preço) > `peca.asp` (preço quando achável, senão "Vendido")
-    > `bidStatus` (só lotes com lance, ver acima).
-  - **Refresh manual (v0.51.0–1):** ícone `RefreshCw` ao lado de "Vigiados do dia"/"Lances do
-    dia" (`refreshWatched`/`refreshBids`, `index.tsx`) — refaz a busca da conta correspondente
-    (`watched.refetch()`/`bids.refetch()`) fora do `staleTime` de 5min, mais `lot-details`/
-    `sold-lots` (`invalidateQueries` por prefixo do `queryKey`, cobre os dois). ⚠️ **v0.51.1**:
-    usa `refetch({throwOnError:true})` das próprias queries, NÃO `queryClient.invalidateQueries`
-    — este resolve quando o refetch **termina** (sucesso OU erro), então uma falha real (ex.: o
-    500 que o site às vezes dá em `authFetch` sob carga, mais provável com o leilão **ao vivo**)
-    aparecia como toast de sucesso mesmo sem atualizar nada. NÃO reroda a varredura geral (isso
-    já é o botão "Forçar atualização deste dia"/`refreshDay`) — só a conta + os detalhes por lote
-    que dependem dela, mantendo o custo baixo (nunca a listagem inteira nem polling em segundo
-    plano).
-  - **`lot_sales` "presa" sem a venda (v0.51.2):** `captureFinishedSales` marca um leilão como
-    capturado assim que lê o catálogo com sucesso — **mesmo com 0 vendas reconhecidas** naquele
-    momento — e nunca mais o revisita (ver "Histórico de vendas" abaixo). Se o catálogo ainda
-    não tinha marcado o lote como vendido nessa 1ª leitura do cron, ele fica **capturado sem a
-    venda para sempre**, mesmo que o usuário já veja "vendido" no site depois — a tarja nunca
-    aparecia nesse caso (nem `lot_sales` nem `bidStatus`/`peca.asp` sozinhos resolviam). Fix:
-    `captureSalesForAuctions(idLeiloes)` (`lot-sales.server.ts`) **ignora o checkpoint** e força
-    uma releitura do catálogo dos leilões pedidos (upsert idempotente, nunca duplica) — chamada
-    pelo refresh manual (`checkSoldNow`, `leiloesbr.functions.ts`) com os `idLeilao` distintos
-    dos vigiados/lances recém-atualizados (até 30). `refreshWatched`/`refreshBids` chamam isso
-    ANTES de invalidar `sold-lots`, então o refresh manual agora é o jeito confiável de "forçar"
-    a tarja quando o usuário já confirmou a venda no site.
+    lote — prioridade: `lot_sales` (preço, quando o cron já capturou) > `peca.asp` (preço
+    quando achável, senão "Vendido") > `bidStatus` (só lotes com lance, ver acima).
+  - **Refresh — automático ao abrir a tela + manual (v0.51.0-3):** as duas queries de status
+    (`["lot-details", …]`/`["sold-lots", …]`) têm `refetchOnMount: "always"` — sempre rechecam
+    ao montar a tela, sem esperar o `staleTime` (3min); como o alvo já é só vigiados+lances
+    (nunca mais que 100), isso não pesa mais que o request que já existia. O ícone `RefreshCw`
+    ao lado de "Vigiados do dia"/"Lances do dia" (`refreshWatched`/`refreshBids`, `index.tsx`)
+    faz o mesmo papel, só disparado por clique: `watched.refetch()`/`bids.refetch()` (com
+    `throwOnError:true` — `queryClient.invalidateQueries` resolve quando o refetch TERMINA,
+    sucesso OU erro, então antes uma falha real de rede virava toast de sucesso; corrigido em
+    v0.51.1) + invalida `lot-details`/`sold-lots`. NÃO reroda a varredura geral (isso já é o
+    botão "Forçar atualização deste dia"/`refreshDay`) e **NUNCA** relê o catálogo do leilão
+    nem escreve em `lot_sales` — ver v0.51.2 abaixo.
+  - **v0.51.2, revertido em v0.51.3 — recaptura do catálogo pelo refresh manual:** chegamos a
+    ter `checkSoldNow`/`captureSalesForAuctions` (`lot-sales.server.ts`), que o refresh manual
+    chamava pra RELER o catálogo inteiro do leilão e regravar `lot_sales`, contornando o
+    checkpoint `sales_captured` (que `captureFinishedSales` marca assim que lê o catálogo com
+    sucesso, MESMO com 0 vendas reconhecidas naquele momento, e nunca mais revisita). **Revertido
+    a pedido**: (1) não rodava o fallback de IA (`conditionAiSync`) que `captureFinishedSales`
+    roda — uma venda com grau Disco/Capa já preenchido por IA podia voltar em branco; (2) podia
+    reverter a padronização de grafia do artista (`reidentifyAllSales`) pra aquele lote; (3)
+    custo alto — até 30 catálogos inteiros (paginados) por clique, mesma pipeline pesada do
+    cron de Analytics. O fix acima (extração por campo JSON do `peca.asp`) resolve o caso
+    original sem nenhum desses riscos, porque NUNCA escreve em `lot_sales`.
 - **Ícone roxo "já tenho na Coleção"** (`LotCard`, só na **home** `index.tsx`): disco `Disc3`
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
@@ -961,6 +967,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.51.0 | Tarja "Vendido" via `peca.asp` p/ vigiados sem lance (`getLotDetails`, sem custo extra) + refresh manual de Vigiados/Lances do dia |
 | v0.51.1 | Fix: refresh manual usava `invalidateQueries` (resolve mesmo se o refetch falhar) — troca por `refetch({throwOnError:true})` das próprias queries, toast agora reflete falha real |
 | v0.51.2 | Fix: `lot_sales` ficava "presa" sem a venda (leilão capturado com 0 vendas nunca revisitado) — `checkSoldNow`/`captureSalesForAuctions` força releitura no refresh manual de Vigiados/Lances |
+| v0.51.3 | Reverte `checkSoldNow`/`captureSalesForAuctions` (v0.51.2 — pesado e arriscava o grau Disco/Capa da IA no Analytics); tarja "Vendido" via `peca.asp` passa a ler `MOSTRABTN_CLASS`/`VALOR_VENDA` do JSON embutido (mesmos campos do Analytics) em vez de marcadores de texto livre; `refetchOnMount: "always"` nas queries de status |
 
 ## Pendências
 

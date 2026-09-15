@@ -73,7 +73,6 @@ import {
   getAiProvider,
   getCollectionFeedback,
   getCollectionLinks,
-  checkSoldNow,
   getLotAi,
   getLotCondition,
   getLotIdent,
@@ -310,7 +309,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const saveVerified = useServerFn(setVerifiedHouses);
   const fetchLotDetails = useServerFn(getLotDetails);
   const fetchSoldLots = useServerFn(getSoldLots);
-  const runCheckSoldNow = useServerFn(checkSoldNow);
   const fetchLotAi = useServerFn(getLotAi);
   const fetchLotIdent = useServerFn(getLotIdent);
   const runSaveTags = useServerFn(setLotTags);
@@ -882,20 +880,16 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   // `queryClient.invalidateQueries` resolve quando o refetch TERMINA (sucesso OU erro), não
   // quando dá certo — então usamos `refetch()` da própria query (expõe o erro de verdade) em
   // vez de `invalidateQueries` para os vigiados/lances, cujo sucesso o toast precisa refletir.
-  //
-  // Também força uma RELEITURA do catálogo dos leilões visíveis (`checkSoldNow`): o cron marca
-  // um leilão como "capturado" assim que lê o catálogo com sucesso, MESMO sem reconhecer venda
-  // naquele momento, e nunca mais revisita — então um lote que o site já mostra "vendido" pode
-  // ficar preso sem refletir em `lot_sales` até alguém pedir essa releitura (é o que o refresh
-  // manual faz). Best-effort: se falhar, os vigiados/lances já atualizaram mesmo assim.
+  // As duas queries de status "Vendido" (`lot-details`/`sold-lots`) já são leves e escopadas
+  // (peca.asp por lote + leitura de `lot_sales`, nunca o catálogo inteiro) — o botão só força
+  // essas duas a refazer a busca agora, o mesmo que `refetchOnMount: "always"` já faz sozinho
+  // ao abrir a tela.
   const refreshWatched = () => {
     void (async () => {
       setRefreshingWatched(true);
       try {
         const result = await watched.refetch({ throwOnError: true });
         if (result.error) throw result.error;
-        const idLeiloes = [...new Set((result.data ?? []).map((w) => w.idLeilao).filter(Boolean))];
-        if (idLeiloes.length) await runCheckSoldNow({ data: { idLeiloes } }).catch(() => null);
         toast.success("Vigiados atualizados");
       } catch (error) {
         toast.error((error as Error)?.message || "Não foi possível atualizar os vigiados agora");
@@ -913,8 +907,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       try {
         const result = await bids.refetch({ throwOnError: true });
         if (result.error) throw result.error;
-        const idLeiloes = [...new Set((result.data ?? []).map((b) => b.idLeilao).filter(Boolean))];
-        if (idLeiloes.length) await runCheckSoldNow({ data: { idLeiloes } }).catch(() => null);
         toast.success("Lances atualizados");
       } catch (error) {
         toast.error((error as Error)?.message || "Não foi possível atualizar os lances agora");
@@ -1092,6 +1084,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     queryFn: () => fetchLotDetails({ data: { targets: lotDetailTargets } }),
     enabled: lotDetailTargets.length > 0,
     staleTime: 3 * 60 * 1000,
+    // Sempre rechecar ao abrir a tela (o conjunto já é pequeno/escopado — vigiados+lances,
+    // nunca mais que 100 — então isso não pesa mais do que o request que já existia).
+    refetchOnMount: "always",
     refetchOnWindowFocus: false,
   });
   const nextBidById = useMemo(() => {
@@ -1122,6 +1117,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     queryFn: () => fetchSoldLots({ data: { ids: soldTargets } }),
     enabled: soldTargets.length > 0,
     staleTime: 3 * 60 * 1000,
+    refetchOnMount: "always",
     refetchOnWindowFocus: false,
   });
   const soldById = useMemo(() => {
@@ -2214,6 +2210,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                 priceById={priceById}
                                 nextBidById={nextBidById}
                                 albumById={albumById}
+                                soldById={soldById}
                                 ownedFor={ownedFor}
                                 onOpenOwned={(bid) => setOwnedPanelLot(bid)}
                                 onToggle={(bid) => toggle.mutate(bid)}

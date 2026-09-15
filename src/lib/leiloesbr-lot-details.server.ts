@@ -2,14 +2,16 @@ import { publicFetch } from "./leiloesbr-auth.server";
 import { auctionHouseDomain } from "./vinyl-parse";
 
 /**
- * Detalhes de UM lote que só existem na página individual (`peca.asp`), nunca na listagem
- * geral nem nas páginas de conta:
+ * Detalhes de UM lote que só existem na página individual (`peca.asp?ID=<idPeca>`, mesma
+ * lógica em toda casa — só o domínio muda), nunca na listagem geral nem nas páginas de conta:
  * - **Próximo lance** (`NOVO_VALOR`, JSON `loadData` embutido) — só o lote ABERTO traz isso.
- * - **Resultado da venda**, quando o leilão já terminou — mesmos marcadores de texto do
- *   catálogo (`leiloesbr-catalog.server.ts`: "Valor de venda: R$ …"/"Lote vendido"/"não
- *   vendido"), aqui aplicados ao texto corrido da página (1 lote só, sem precisar segmentar).
- *   É o sinal MAIS RÁPIDO de "vendido" para quem só VIGIA (sem lance) — a página de vigia não
- *   traz status, e `lot_sales` só é preenchida pelo cron `step=sales` bem depois.
+ * - **Resultado da venda**, quando o leilão já terminou — a MESMA página/JSON também traz
+ *   `MOSTRABTN_CLASS` ('is-vendido'|'is-naovendido') e `VALOR_VENDA`, os MESMOS campos que
+ *   `leiloesbr-catalog.server.ts` já lê com sucesso para o Vinil Analytics (lá vêm do catálogo
+ *   do leilão inteiro; aqui, da página do PRÓPRIO lote) — lidos com a mesma técnica de regex
+ *   pontual no campo já usada para `NOVO_VALOR`, não um chute de texto livre. É o sinal MAIS
+ *   RÁPIDO de "vendido" para quem só VIGIA (sem lance) — a página de vigia não traz status, e
+ *   `lot_sales` só é preenchida pelo cron `step=sales` bem depois.
  *
  * 1 requisição por lote serve os dois — usar só para conjuntos pequenos (vigiados + lances),
  * nunca para a listagem inteira.
@@ -33,23 +35,17 @@ function parseNextBid(html: string): string | null {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-// Mesmos marcadores de "vendido" do catálogo (`leiloesbr-catalog.server.ts`), aqui contra o
-// texto corrido da página do lote (um único lote, não precisa segmentar por `peca.asp?ID=`).
-const SALE_VALUE_RE = /valor\s+de\s+venda[^R$]{0,20}R\$\s*([\d.]{1,12},\d{2})/i;
-const SOLD_MARKER_RE = /lote\s+vendido|arrematad|\bvendid[oa]\b/i;
-const UNSOLD_RE = /n[ãa]o\s+vendid|n[ãa]o\s+arrematad|sem\s+lances?|retirad[oa]|deserto/i;
-const BRL_RE = /R\$\s*([\d.]{1,12},\d{2})/i;
-
-/** Fail-closed: "não vendido" nunca marca; sem marcador claro de venda, retorna `undefined`. */
+/**
+ * Mesmos campos do `loadData` que `leiloesbr-catalog.server.ts` já lê com sucesso do catálogo
+ * (`MOSTRABTN_CLASS`, `VALOR_VENDA`) — aqui embutidos na página do PRÓPRIO lote. Fail-closed:
+ * campo ausente ou `is-naovendido` → `undefined` (sem tarja por esse sinal; `lot_sales` e
+ * `bidStatus` continuam valendo como fallback).
+ */
 function parseSold(html: string): string | undefined {
-  if (UNSOLD_RE.test(html)) return undefined;
-  const labeled = html.match(SALE_VALUE_RE);
-  if (labeled) return `R$ ${labeled[1]}`;
-  if (SOLD_MARKER_RE.test(html)) {
-    const brl = html.match(BRL_RE);
-    return brl ? `R$ ${brl[1]}` : "Vendido";
-  }
-  return undefined;
+  const status = html.match(/"MOSTRABTN_CLASS":"([^"]*)"/)?.[1];
+  if (status !== "is-vendido") return undefined;
+  const valor = html.match(/"VALOR_VENDA":"([^"]*)"/)?.[1]?.trim();
+  return valor && valor !== "0" ? `R$ ${valor},00` : "Vendido";
 }
 
 async function fetchOne(target: {
