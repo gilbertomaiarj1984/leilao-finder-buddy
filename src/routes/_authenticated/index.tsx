@@ -1398,8 +1398,15 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                     artist: effectiveArtist(lot),
                   }))
                   .filter((lot) => lot.dayKey === day);
-                const finishedCount = rawDay.filter((lot) =>
-                  auctionFinished(lot.dayKey, lot.time),
+                // "Finalizado" pra fins do toggle "Mostrar finalizados" NÃO conta vigiado/com
+                // lance — esses o usuário está ativamente acompanhando (quer ver se vendeu,
+                // valor final etc.), então continuam aparecendo na grade geral mesmo depois do
+                // leilão encerrar, sem precisar abrir "Mostrar finalizados". Só o "resto" (sem
+                // relação com o usuário) some por padrão.
+                const isTracked = (lot: { idPeca: string; watched: boolean }) =>
+                  lot.watched || bidStatusById.has(lot.idPeca);
+                const finishedCount = rawDay.filter(
+                  (lot) => auctionFinished(lot.dayKey, lot.time) && !isTracked(lot),
                 ).length;
                 const showFinished = showFinishedDays.has(day);
                 // Por padrão esconde os finalizados (3h após o início); o usuário pode incluí-los.
@@ -1407,7 +1414,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 const dayLots = (
                   showFinished
                     ? rawDay
-                    : rawDay.filter((lot) => !auctionFinished(lot.dayKey, lot.time))
+                    : rawDay.filter(
+                        (lot) => isTracked(lot) || !auctionFinished(lot.dayKey, lot.time),
+                      )
                 ).filter(matchesSearch);
                 const artists = artistOptions(dayLots);
                 const globalActive = artistFilter !== "";

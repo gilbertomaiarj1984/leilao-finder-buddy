@@ -229,7 +229,17 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
     `listMyBids` continuam devolvendo só o que a conta tem AGORA — o acumulador é só no
     cliente). O "mostrar/esconder leilões finalizados" da listagem geral já existia
     (`showFinishedDays`/`toggleShowFinished`, esconde por padrão os leilões encerrados há mais
-    de 3h, com botão "Mostrar finalizados (N)") e não precisou mudar.
+    de 3h, com botão "Mostrar finalizados (N)").
+    ⚠️ **Fix v0.52.2 — vigiado ainda sumia da grade GERAL do dia**: os fixes acima garantem que
+    o vigiado não some das visões DEDICADAS ("Vigiados do dia"/aba "Vigiados"), mas o card dele
+    também vive espalhado na grade geral de cada dia (borda amarela) — e essa grade some
+    lotes de leilão encerrado há +3h por padrão (`showFinishedDays`, decisão deliberada pra não
+    poluir a tela com o que já era irrelevante). Um vigiado/lote com lance é o OPOSTO de
+    irrelevante — o usuário está de olho justamente pra ver se vendeu e por quanto —, então não
+    devia cair nesse filtro. Fix: `dayLots`/`finishedCount` (`index.tsx`) ganham um predicado
+    `isTracked` (`lot.watched || bidStatusById.has(lot.idPeca)`) que EXCLUI vigiados/lances do
+    corte por "finalizado" — eles continuam na grade geral mesmo sem abrir "Mostrar
+    finalizados"; `finishedCount`/o botão contam só o resto (sem relação com o usuário).
     ⚠️ **Fix v0.51.6 — acumulador ainda sumia depois de um tempo**: o `Map` da v0.51.4 vivia só
     num `useRef` em memória — sobrevivia a troca de aba/dia DENTRO da mesma sessão do app, mas se
     perdia a cada reload de página ou fechar/reabrir a aba (comum num app mobile/PWA), fazendo o
@@ -1099,6 +1109,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.51.6      | Fix: tarja "Vendido" errada em vigiados de leilão futuro — `getLotDetails`/`soldById`/`nextBidById` indexavam por `idPeca` sozinho (só único DENTRO de uma casa; casas parceiras são instalações independentes e reaproveitam os mesmos números), misturando o resultado de venda de um lote de uma casa com outro só coincidente no número; passam a indexar por `id` (`${idLeilao}-${idPeca}`). Fix: vigiados/lances do dia sumiam depois de um tempo mesmo sem desvigiar — o acumulador local (v0.51.4) vivia só num `useRef` em memória e se perdia a cada reload/fechar aba; agora persiste em `localStorage` (`loadAccum`/`saveAccum`)                                                                                                                                        |
 | v0.52.0      | "Atualizar coleção" passa a ser INCREMENTAL por padrão (`importWonLotsIncremental` — lê os leilões vencidos em `l=4`/`status="Vencedor"` e varre só esses via `l=6&id=<idLeilao>`, `listPurchasesForAuctions`), em vez de sempre repaginar `l=6` do zero; cai sozinho para a varredura completa (`importWonLots`) na 1ª vez (coleção ainda sem item de leilão). Novo botão "Varredura completa" (`scanCollectionFull`) para forçar o backfill irrestrito manualmente |
 | v0.52.1      | Fix: tarja "Vendido" ainda aparecia em vigiados de leilão FUTURO mesmo após v0.51.6 — `LotCard` agora bloqueia a tarja quando o leilão ainda não começou (`auctionStarted`), fail-closed contra qualquer fonte de `sold`/`bidStatus` errada (ex.: `idLeilao`/`idPeca` reaproveitados ao longo do tempo pela mesma casa). Fix: vigiados/lances somem ao navegar entre `/` e `/analise` — as duas rotas liam a MESMA chave de query (`["vinyl-watched"]`/`["vinyl-my-bids"]`) mas só `index.tsx` mesclava no acumulador (v0.51.4/6); a versão de `analise.tsx` SUBSTITUÍA, apagando o acumulado ao navegar; acumulador extraído para `@/lib/watched-accum` (`mergeWatchedAccum`), usado pelas duas rotas                                                                            |
+| v0.52.2      | Fix: vigiado/lance ainda sumia da grade GERAL do dia (fora das visões dedicadas já corrigidas em v0.51.4-7) — o filtro "esconde finalizados por padrão" (`showFinishedDays`) não distinguia lote irrelevante de vigiado/com lance; `dayLots`/`finishedCount` ganham o predicado `isTracked` que exclui vigiados/lances desse corte                                                                                                                                                                                     |
 
 ## Pendências
 
