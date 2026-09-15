@@ -267,6 +267,21 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
     `isTracked` (`lot.watched || bidStatusById.has(lot.idPeca)`) que EXCLUI vigiados/lances do
     corte por "finalizado" — eles continuam na grade geral mesmo sem abrir "Mostrar
     finalizados"; `finishedCount`/o botão contam só o resto (sem relação com o usuário).
+    ⚠️ **Fix v0.58.3 — vigiar um lote confirmava no site mas o card continuava "não vigiado"**:
+    a grade geral do dia (`rawDay`, `index.tsx`) sobrescreve `lot.watched` com `watchedIds.has
+    (lot.idPeca)` sempre que `watchedIds.size > 0` (tem prioridade sobre o campo vindo da
+    varredura geral) — e `watchedIds` deriva só de `watched.data` (a query `listWatched`, que lê
+    a conta do LeilõesBR de novo). `toggle.onSuccess` já reescrevia `lotsQuery` na hora
+    (`item.watched = result.watched`), mas só tratava o acumulador local (`watchedAccumRef`, que
+    alimenta `watchedIds`) no caminho de DESVIGIAR — vigiar dependia inteiramente do
+    `invalidateQueries`/refetch de `listWatched` pra `watchedIds` pegar o lote novo, e a conta do
+    LeilõesBR pode demorar um instante pra refletir o toggle que acabou de confirmar. Resultado:
+    o usuário vigiava, o site confirmava, mas o card no dia continuava sem a borda/ícone de
+    vigiado até o próximo refetch (nem sempre visível, dependendo do timing). Fix: `toggle.
+    onSuccess` agora trata as DUAS direções simetricamente — vigiar também escreve na hora em
+    `watchedAccumRef` (reconstruindo o `WatchedLot` a partir do lote já conhecido em
+    `lots.data.lots`, já que o retorno do toggle só traz `idPeca/idLeilao/base/watch`) e
+    `queryClient.setQueryData(watchedQuery.queryKey, …)`, igual ao que desvigiar já fazia.
     ⚠️ **Fix v0.51.6 — acumulador ainda sumia depois de um tempo**: o `Map` da v0.51.4 vivia só
     num `useRef` em memória — sobrevivia a troca de aba/dia DENTRO da mesma sessão do app, mas se
     perdia a cada reload de página ou fechar/reabrir a aba (comum num app mobile/PWA), fazendo o
@@ -1182,6 +1197,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.58.0      | Segunda via pro backfill de fotos da coleção (v0.57.0): o script standalone precisa de rede direta ao Supabase, que nem todo ambiente tem (ex.: sandboxes com allowlist restrita). Lógica extraída pra `listUncompressedCollectionImages`/`backfillCompressCollectionImage` (`collection.server.ts`), compartilhada pelo script E por um novo step `compressimages` do `/api/cron` (chunked, `max`, roda na Vercel — que já tem rede pro Supabase) |
 | v0.58.1      | Fix (INCOMPLETO — ver v0.58.2): tarja "Vendido" nunca aparecia em vigiados **sem lance** de casas do template ANTIGO (catálogo HTML server-side, ex.: Robson Gini) enquanto o leilão ainda estava "ao vivo" (v0.51.3 trocou o sinal do `peca.asp` de texto livre pro campo `MOSTRABTN_CLASS`, que só existe em casas do template NOVO). Tentativa: `parseSold` cai num fallback reaproveitando `parseSoldMarkers` (heurística de `parseCatalogData`, calibrada no CATÁLOGO) — não resolveu, ver v0.58.2 |
 | v0.58.2      | Fix de verdade pro v0.58.1: confirmado contra o HTML real da `peca.asp` (Robson Gini/Trem das 7) que `parseSoldMarkers` não servia ali — o valor vem em `<span>`s separados ("R$" e "15,00" não são texto contínuo) e o texto "Lote vendido" aparece nos Termos e Condições de TODA peça (daria falso positivo se usado como marcador). Novo `parseSoldOldTemplate` (`leiloesbr-lot-details.server.ts`) usa a classe CSS do botão de lance (`id="fazerlance" class="is-CoolBtn lotevendido"`, token que só existe nesse estado) + uma janela maior até o span `is-valor` pro preço |
+| v0.58.3      | Fix: vigiar um lote confirmava no site (LeilõesBR) mas o card na grade geral do dia continuava aparecendo "não vigiado". `watchedIds` (deriva de `listWatched`, que relê a conta do LeilõesBR) tem prioridade sobre `lot.watched` sempre que já há outros vigiados — e `toggle.onSuccess` (`index.tsx`) só atualizava o acumulador local que alimenta `watchedIds` no caminho de DESVIGIAR, não no de VIGIAR (dependia do refetch de `listWatched` pegar o lote novo, que pode atrasar). Agora vigiar também escreve na hora em `watchedAccumRef`, reconstruindo o `WatchedLot` a partir do lote já conhecido em `lots.data.lots` |
 
 ## Pendências
 

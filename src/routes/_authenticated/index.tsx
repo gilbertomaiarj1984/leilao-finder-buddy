@@ -1039,14 +1039,45 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             }
           : old,
       );
-      // Desvigiar é a ÚNICA saída explícita do acumulador de "vigiados vistos" (ver comentário
-      // acima de `watched`) — remove na hora, sem esperar o refetch, senão o card ficaria
-      // vigiado na tela mesmo depois do usuário desvigiar.
+      // O acumulador de "vigiados vistos" (ver comentário acima de `watched`) precisa refletir
+      // as DUAS direções NA HORA, sem esperar o refetch de `listWatched` (que lê a conta do
+      // LeilõesBR de novo): `watchedIds` (linha ~1091) tem PRIORIDADE sobre `lot.watched` do
+      // card sempre que `watchedIds.size > 0` — então vigiar um lote pela primeira vez (com
+      // outros já vigiados) confirmava no site mas o card no dia continuava aparecendo "não
+      // vigiado" até o próximo refetch pegar o lote novo (a conta do LeilõesBR pode demorar a
+      // refletir o toggle que acabou de fazer). Desvigiar já saía na hora (delete); vigiar
+      // precisa do mesmo tratamento (set), reconstruindo o `WatchedLot` a partir do lote já
+      // conhecido na varredura geral (`lotsQuery`) — os únicos campos que o toggle devolve são
+      // idPeca/idLeilao/base/watch.
+      const key = `${lot.idLeilao}-${lot.idPeca}`;
       if (!result.watched) {
-        watchedAccumRef.current!.delete(`${lot.idLeilao}-${lot.idPeca}`);
-        saveAccum(WATCHED_ACCUM_STORAGE_KEY, watchedAccumRef.current!);
-        queryClient.setQueryData(watchedQuery.queryKey, [...watchedAccumRef.current!.values()]);
+        watchedAccumRef.current!.delete(key);
+      } else {
+        const src = lots.data?.lots.find((item) => item.idPeca === lot.idPeca);
+        if (src) {
+          const [yyyy, mm, dd] = src.dayKey.split("-");
+          watchedAccumRef.current!.set(key, {
+            id: key,
+            idPeca: lot.idPeca,
+            idLeilao: lot.idLeilao,
+            base: lot.base,
+            lote: src.lote,
+            title: src.title,
+            url: src.url,
+            image: src.image,
+            price: src.price,
+            date: dd && mm && yyyy ? `${dd}/${mm}/${yyyy}` : "",
+            time: src.time,
+            house: src.house,
+            houseUrl: src.houseUrl,
+            uf: src.uf,
+            artist: src.artist,
+            watched: true,
+          });
+        }
       }
+      saveAccum(WATCHED_ACCUM_STORAGE_KEY, watchedAccumRef.current!);
+      queryClient.setQueryData(watchedQuery.queryKey, [...watchedAccumRef.current!.values()]);
       void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
       toast.success(result.watched ? "Lote vigiado no LeilõesBR" : "Vigia removida no LeilõesBR");
     },
