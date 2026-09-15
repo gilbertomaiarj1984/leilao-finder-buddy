@@ -902,6 +902,16 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
       colapso) e `HideableBar` ganhou `overflow-anchor: none` (desliga a compensação de scroll
       do navegador). `useHideOnScroll` também ganhou `minFlipMs` (tranca novas trocas de estado
       por 350ms após cada uma) contra alternância rápida perto do limiar.
+    - ⚠️ **Fix v0.53.2 — ainda piscava sem parar ao começar a rolar:** o `minFlipMs` do v0.53.1
+      travava um NOVO flip, mas não descartava o ruído acumulado em `lastY` durante a transição
+      — se a própria animação (header mudando de altura, `sticky` recalculando) gerasse um
+      evento de scroll "fantasma" (mesmo com `overflow-anchor:none`, o navegador ainda pode
+      gerar um resíduo), esse ruído ficava acumulado e, assim que o cadeado destravava,
+      disparava um novo flip na hora — um vaivém sem fim. Fix: virou `cooldownMs` — durante o
+      cooldown pós-flip, TODO scroll só realinha `lastY` (`lastY.current = y`) sem nunca contar
+      para a decisão de direção, descartando o ruído da própria transição em vez de acumulá-lo;
+      só depois do cooldown a próxima decisão parte de uma base limpa. Duração da transição
+      também caiu de 300ms para 200ms, para sobrar mais margem abaixo do cooldown (400ms).
 - **`index.tsx` (site principal):** cards por **dia → casa → artista**. `LotCard` mostra nota
   da IA no canto **direito** (`ScoreCorner`), nº do lote no canto **esquerdo**, e o `album` da
   IA ("Artista — Álbum (Ano)", `formatAiAlbum`) **acima** do título. Álbum resolvido por lote =
@@ -1135,6 +1145,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.52.2      | Fix: vigiado/lance ainda sumia da grade GERAL do dia (fora das visões dedicadas já corrigidas em v0.51.4-7) — o filtro "esconde finalizados por padrão" (`showFinishedDays`) não distinguia lote irrelevante de vigiado/com lance; `dayLots`/`finishedCount` ganham o predicado `isTracked` que exclui vigiados/lances desse corte                                                                                                                                                                                     |
 | v0.53.0      | Mobile: os headers/barras `sticky` (das 5 páginas autenticadas) somem ao rolar pra baixo e voltam ao rolar pra cima, ganhando espaço de tela — `useHideOnScroll` (direção do scroll da janela) + `HideableBar` (recolhe a altura via `grid-template-rows`, sem deixar vão em branco)                                                                                                                                                                                    |
 | v0.53.1      | Fix: barras piscando/pulando de posição ao rolar (v0.53.0) — `ResizeObserver` media o próprio wrapper que anima (vaivém de re-renders a cada frame, brigando com o scroll anchoring do navegador); `ref` passa para o conteúdo interno do header (altura estável), `stickyBelowHeader.top` vira `barsHidden ? 0 : headerHeight`, `HideableBar` ganha `overflow-anchor: none`, e `useHideOnScroll` trava novas trocas de estado por 350ms (`minFlipMs`)                |
+| v0.53.2      | Fix: ainda piscava sem parar ao começar a rolar (v0.53.1) — o cadeado de tempo travava um NOVO flip mas não descartava o ruído de scroll "fantasma" gerado pela própria transição, que se acumulava em `lastY` e disparava outro flip assim que o cadeado destravava (vaivém sem fim); `minFlipMs` virou `cooldownMs`, que durante o cooldown só realinha `lastY` a cada scroll (sem nunca contar pra decisão de direção) em vez de travar e deixar o ruído se acumular; transição caiu de 300ms para 200ms (mais folga abaixo do cooldown de 400ms) |
 
 ## Pendências
 
