@@ -879,6 +879,18 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
     **escondido atrás** do header (mesmo `top:0`, header com `z-30` > nav `z-10`) — passou a usar
     o mesmo padrão `headerRef`/`ResizeObserver`/`stickyBelowHeader` que `index.tsx` já usava para
     as barras sticky aninhadas, colando corretamente abaixo do header.
+  - **Somem ao rolar pra baixo (v0.53.0):** mesmo compactos, os headers/barras `sticky` (agora
+    permanentes, já que o header também é `sticky`) ainda comiam espaço útil no celular.
+    `useHideOnScroll` (`src/hooks/use-hide-on-scroll.ts`) escuta o scroll da **janela** (todas
+    as páginas rolam pelo `window`, sem container interno) e devolve `hidden` conforme a
+    direção (desce = esconde, sobe = mostra; sempre visível no topo da página). `HideableBar`
+    (`src/components/vinyl/hideable-bar.tsx`) envolve cada barra `sticky` (o `<header>` e, em
+    `index.tsx`/`analise.tsx`, as barras aninhadas com `stickyBelowHeader`) e anima a altura via
+    `grid-template-rows` (1fr↔0fr) — evita o vão em branco que um `transform: translateY`
+    deixaria, já que um elemento `sticky` continua reservando seu espaço no fluxo mesmo grudado
+    no topo. Bônus: como o header (com `ref` encaminhada por `HideableBar`) some via colapso de
+    altura (não `transform`), o `ResizeObserver` que mede `headerHeight` capta a queda pra 0 e as
+    barras `stickyBelowHeader` colam automaticamente no topo junto.
 - **`index.tsx` (site principal):** cards por **dia → casa → artista**. `LotCard` mostra nota
   da IA no canto **direito** (`ScoreCorner`), nº do lote no canto **esquerdo**, e o `album` da
   IA ("Artista — Álbum (Ano)", `formatAiAlbum`) **acima** do título. Álbum resolvido por lote =
@@ -1110,6 +1122,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.52.0      | "Atualizar coleção" passa a ser INCREMENTAL por padrão (`importWonLotsIncremental` — lê os leilões vencidos em `l=4`/`status="Vencedor"` e varre só esses via `l=6&id=<idLeilao>`, `listPurchasesForAuctions`), em vez de sempre repaginar `l=6` do zero; cai sozinho para a varredura completa (`importWonLots`) na 1ª vez (coleção ainda sem item de leilão). Novo botão "Varredura completa" (`scanCollectionFull`) para forçar o backfill irrestrito manualmente |
 | v0.52.1      | Fix: tarja "Vendido" ainda aparecia em vigiados de leilão FUTURO mesmo após v0.51.6 — `LotCard` agora bloqueia a tarja quando o leilão ainda não começou (`auctionStarted`), fail-closed contra qualquer fonte de `sold`/`bidStatus` errada (ex.: `idLeilao`/`idPeca` reaproveitados ao longo do tempo pela mesma casa). Fix: vigiados/lances somem ao navegar entre `/` e `/analise` — as duas rotas liam a MESMA chave de query (`["vinyl-watched"]`/`["vinyl-my-bids"]`) mas só `index.tsx` mesclava no acumulador (v0.51.4/6); a versão de `analise.tsx` SUBSTITUÍA, apagando o acumulado ao navegar; acumulador extraído para `@/lib/watched-accum` (`mergeWatchedAccum`), usado pelas duas rotas                                                                            |
 | v0.52.2      | Fix: vigiado/lance ainda sumia da grade GERAL do dia (fora das visões dedicadas já corrigidas em v0.51.4-7) — o filtro "esconde finalizados por padrão" (`showFinishedDays`) não distinguia lote irrelevante de vigiado/com lance; `dayLots`/`finishedCount` ganham o predicado `isTracked` que exclui vigiados/lances desse corte                                                                                                                                                                                     |
+| v0.53.0      | Mobile: os headers/barras `sticky` (das 5 páginas autenticadas) somem ao rolar pra baixo e voltam ao rolar pra cima, ganhando espaço de tela — `useHideOnScroll` (direção do scroll da janela) + `HideableBar` (recolhe a altura via `grid-template-rows`, sem deixar vão em branco)                                                                                                                                                                                    |
 
 ## Pendências
 

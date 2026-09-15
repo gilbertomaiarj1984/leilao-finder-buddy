@@ -7,6 +7,8 @@ import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { HideableBar } from "@/components/vinyl/hideable-bar";
+import { useHideOnScroll } from "@/hooks/use-hide-on-scroll";
 import type { PresencialAuction } from "@/lib/leiloesbr-auctions.server";
 import { getTodayAuctions, openLiveAuction } from "@/lib/leiloesbr.functions";
 
@@ -192,6 +194,7 @@ function AuctionCard({
 }
 
 function AoVivoPage() {
+  const barsHidden = useHideOnScroll();
   const fetchToday = useServerFn(getTodayAuctions);
   const query = useQuery({
     queryKey: ["vinyl-today-auctions"] as const,
@@ -223,39 +226,41 @@ function AoVivoPage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">
-          <div>
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Voltar
-                </Link>
-              </Button>
-              <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
-                <Radio className="h-5 w-5 text-primary" />
-                Leilões ao vivo
-              </h1>
+      <HideableBar hidden={barsHidden} className="top-0 z-30">
+        <header className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">
+            <div>
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Voltar
+                  </Link>
+                </Button>
+                <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
+                  <Radio className="h-5 w-5 text-primary" />
+                  Leilões ao vivo
+                </h1>
+              </div>
+              <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
+                Pregões de vinil de hoje, por casa. Acompanhe o pregão presencial ao vivo — mesmo os
+                que ainda não começaram.
+                {liveCount ? ` ${liveCount} acontecendo agora.` : ""}
+              </p>
             </div>
-            <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
-              Pregões de vinil de hoje, por casa. Acompanhe o pregão presencial ao vivo — mesmo os
-              que ainda não começaram.
-              {liveCount ? ` ${liveCount} acontecendo agora.` : ""}
-            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => query.refetch()}
+              disabled={query.isFetching}
+              title="Atualizar a lista de hoje"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${query.isFetching ? "animate-spin" : ""}`} />
+              Atualizar
+            </Button>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => query.refetch()}
-            disabled={query.isFetching}
-            title="Atualizar a lista de hoje"
-          >
-            <RefreshCw className={`mr-2 h-4 w-4 ${query.isFetching ? "animate-spin" : ""}`} />
-            Atualizar
-          </Button>
-        </div>
-      </header>
+        </header>
+      </HideableBar>
 
       <div className="mx-auto max-w-6xl px-4 py-6">
         {query.isLoading ? (

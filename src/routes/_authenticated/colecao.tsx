@@ -38,6 +38,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CollectionCard } from "@/components/vinyl/collection-card";
 import { collectionLabel } from "@/components/vinyl/collection-utils";
 import { ArtistFilter } from "@/components/vinyl/filters";
+import { HideableBar } from "@/components/vinyl/hideable-bar";
+import { useHideOnScroll } from "@/hooks/use-hide-on-scroll";
 import { GEMINI_IMPORT_PROMPT, parseCollectionBulkText } from "@/lib/collection-bulk";
 import { GRADE_ORDER } from "@/lib/grading";
 import { AiProviderSelect } from "@/components/vinyl/ai-provider-controls";
@@ -225,6 +227,7 @@ function toDraft(item: CollectionItem): Draft {
 }
 
 function ColecaoPage() {
+  const barsHidden = useHideOnScroll();
   const queryClient = useQueryClient();
   const fetchCollection = useServerFn(getCollection);
   const scan = useServerFn(scanCollection);
@@ -531,114 +534,118 @@ function ColecaoPage() {
   return (
     <main className="min-h-screen bg-background">
       <Tabs defaultValue="cards">
-        <div className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">
-            <div>
-              <div className="flex items-center gap-3">
-                <Button variant="ghost" size="sm" asChild>
-                  <Link to="/">
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Voltar
-                  </Link>
-                </Button>
-                <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
-                  <Library className="h-5 w-5 text-primary" />
-                  Coleção
-                </h1>
+        <HideableBar hidden={barsHidden} className="top-0 z-30">
+          <div className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+            <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">
+              <div>
+                <div className="flex items-center gap-3">
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link to="/">
+                      <ArrowLeft className="mr-2 h-4 w-4" />
+                      Voltar
+                    </Link>
+                  </Button>
+                  <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
+                    <Library className="h-5 w-5 text-primary" />
+                    Coleção
+                  </h1>
+                </div>
+                <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
+                  Seus vinis, agrupados por artista. A varredura de "Minhas compras" acrescenta os
+                  lotes de vinil arrematados; cada disco é editável.
+                </p>
               </div>
-              <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
-                Seus vinis, agrupados por artista. A varredura de "Minhas compras" acrescenta os
-                lotes de vinil arrematados; cada disco é editável.
-              </p>
-            </div>
-            <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:overflow-visible sm:pb-0">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setDraft({ ...EMPTY_DRAFT })}
-                title="Adicionar um disco manualmente"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Adicionar disco
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setBulkOpen(true)}
-                title="Importar vários discos de uma vez colando texto (JSON gerado por IA)"
-              >
-                <ClipboardPaste className="mr-2 h-4 w-4" />
-                Adicionar em massa
-              </Button>
-              {items.length > 0 ? (
+              <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:overflow-visible sm:pb-0">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => void runIdentify()}
-                  disabled={identifying}
-                  title="Identificar pela IA só os discos ainda sem artista/álbum (só texto, nunca a capa). Barato — pula os já identificados. Para refazer um disco específico, use o botão de reprocessar no card."
+                  onClick={() => setDraft({ ...EMPTY_DRAFT })}
+                  title="Adicionar um disco manualmente"
                 >
-                  <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
-                  {identifying ? "Identificando…" : "Identificar novos (IA)"}
+                  <Plus className="mr-2 h-4 w-4" />
+                  Adicionar disco
                 </Button>
-              ) : null}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => debugMut.mutate()}
-                disabled={debugMut.isPending}
-                title="Diagnosticar a varredura (não grava nada) — mostra o que o servidor lê do site"
-              >
-                {debugMut.isPending ? "Diagnosticando…" : "Diagnóstico"}
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => scanMut.mutate()}
-                disabled={scanMut.isPending}
-                title="Varrer 'Minhas compras' (leilões vencidos) e atualizar a coleção"
-              >
-                <RefreshCw className={`mr-2 h-4 w-4 ${scanMut.isPending ? "animate-spin" : ""}`} />
-                {scanMut.isPending ? "Atualizando…" : "Atualizar coleção"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => scanFullMut.mutate()}
-                disabled={scanFullMut.isPending}
-                title="Varredura completa de 'Minhas compras' (todas as páginas) — use se um leilão vencido não aparecer mais em Meus lances"
-              >
-                <RefreshCw
-                  className={`mr-2 h-4 w-4 ${scanFullMut.isPending ? "animate-spin" : ""}`}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBulkOpen(true)}
+                  title="Importar vários discos de uma vez colando texto (JSON gerado por IA)"
+                >
+                  <ClipboardPaste className="mr-2 h-4 w-4" />
+                  Adicionar em massa
+                </Button>
+                {items.length > 0 ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void runIdentify()}
+                    disabled={identifying}
+                    title="Identificar pela IA só os discos ainda sem artista/álbum (só texto, nunca a capa). Barato — pula os já identificados. Para refazer um disco específico, use o botão de reprocessar no card."
+                  >
+                    <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
+                    {identifying ? "Identificando…" : "Identificar novos (IA)"}
+                  </Button>
+                ) : null}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => debugMut.mutate()}
+                  disabled={debugMut.isPending}
+                  title="Diagnosticar a varredura (não grava nada) — mostra o que o servidor lê do site"
+                >
+                  {debugMut.isPending ? "Diagnosticando…" : "Diagnóstico"}
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => scanMut.mutate()}
+                  disabled={scanMut.isPending}
+                  title="Varrer 'Minhas compras' (leilões vencidos) e atualizar a coleção"
+                >
+                  <RefreshCw
+                    className={`mr-2 h-4 w-4 ${scanMut.isPending ? "animate-spin" : ""}`}
+                  />
+                  {scanMut.isPending ? "Atualizando…" : "Atualizar coleção"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => scanFullMut.mutate()}
+                  disabled={scanFullMut.isPending}
+                  title="Varredura completa de 'Minhas compras' (todas as páginas) — use se um leilão vencido não aparecer mais em Meus lances"
+                >
+                  <RefreshCw
+                    className={`mr-2 h-4 w-4 ${scanFullMut.isPending ? "animate-spin" : ""}`}
+                  />
+                  {scanFullMut.isPending ? "Varrendo…" : "Varredura completa"}
+                </Button>
+                <AiProviderSelect
+                  value={aiProvider}
+                  onChange={changeAiProvider}
+                  disabled={identifying}
                 />
-                {scanFullMut.isPending ? "Varrendo…" : "Varredura completa"}
-              </Button>
-              <AiProviderSelect
-                value={aiProvider}
-                onChange={changeAiProvider}
-                disabled={identifying}
+              </div>
+            </div>
+
+            <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-1.5 px-4 pb-2 sm:gap-2 sm:pb-3">
+              <ArtistFilter artists={artists} value={artist} onChange={setArtist} />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar por artista ou título…"
+                className="w-full sm:w-72"
               />
+              <span className="text-xs text-muted-foreground">
+                {filtered.length} de {items.length} disco(s)
+              </span>
+              {showViewTabs ? (
+                <TabsList>
+                  <TabsTrigger value="cards">Cards</TabsTrigger>
+                  <TabsTrigger value="titles">Títulos</TabsTrigger>
+                </TabsList>
+              ) : null}
             </div>
           </div>
-
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-1.5 px-4 pb-2 sm:gap-2 sm:pb-3">
-            <ArtistFilter artists={artists} value={artist} onChange={setArtist} />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por artista ou título…"
-              className="w-full sm:w-72"
-            />
-            <span className="text-xs text-muted-foreground">
-              {filtered.length} de {items.length} disco(s)
-            </span>
-            {showViewTabs ? (
-              <TabsList>
-                <TabsTrigger value="cards">Cards</TabsTrigger>
-                <TabsTrigger value="titles">Títulos</TabsTrigger>
-              </TabsList>
-            ) : null}
-          </div>
-        </div>
+        </HideableBar>
 
         <div className="mx-auto max-w-6xl px-4 py-6">
           {debug ? (
