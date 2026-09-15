@@ -405,17 +405,17 @@ function albumKey(artist: string, album: string): string {
  * cópia proposital). `added` = inseridos automaticamente; `scanned` = vinis lidos.
  */
 export type ScanSources = { stored: number; title: number; none: number };
-
-export async function importWonLots(): Promise<{
+export type ScanResult = {
   added: number;
   scanned: number;
   duplicates: PendingWonLot[];
   sources: ScanSources;
-}> {
-  const emptySources: ScanSources = { stored: 0, title: 0, none: 0 };
-  const { listVinylPurchases } = await import("./leiloesbr-purchases.server");
-  const won = await listVinylPurchases();
-  if (!won.length) return { added: 0, scanned: 0, duplicates: [], sources: emptySources };
+};
+
+const EMPTY_SCAN_SOURCES: ScanSources = { stored: 0, title: 0, none: 0 };
+
+async function importFromWonLots(won: WonLot[]): Promise<ScanResult> {
+  if (!won.length) return { added: 0, scanned: 0, duplicates: [], sources: EMPTY_SCAN_SOURCES };
 
   // Identificação/mercado já existentes (best-effort — pode não haver linha p/ o lote).
   const [aiRows, identRows, marketRows, existing] = await Promise.all([
@@ -470,6 +470,54 @@ export async function importWonLots(): Promise<{
     }
   }
   return { added: payload.length, scanned: won.length, duplicates, sources };
+}
+
+/**
+ * Varre "Minhas compras" (l=6) do zero (todas as páginas, `id=0`) e importa. Cara — usar só
+ * para o backfill inicial (coleção ainda sem nenhum item vindo de leilão). Uso de rotina deve
+ * ir por `importWonLotsIncremental`.
+ */
+export async function importWonLots(): Promise<ScanResult> {
+  const { listVinylPurchases } = await import("./leiloesbr-purchases.server");
+  const won = await listVinylPurchases();
+  return importFromWonLots(won);
+}
+
+/**
+ * Varre "Minhas compras" de forma INCREMENTAL: só os leilões em que o usuário venceu algum
+ * lance (`wonAuctionIdsFromBids`, lido de `l=4`), em vez de repaginar `l=6` do zero a cada
+ * clique em "Atualizar coleção" — bem mais barato e sem depender do teto de páginas do full
+ * scan. Cai para o full scan (`importWonLots`) quando a coleção ainda não tem nenhum item
+ * vindo de leilão (1ª varredura: precisamos do histórico completo, que `l=4` sozinho não
+ * garante cobrir).
+ */
+export async function importWonLotsIncremental(): Promise<
+  ScanResult & { auctionsChecked: number }
+> {
+  const existing = await getAllCollection();
+  const hasAuctionItems = existing.some((i) => i.lotId);
+  if (!hasAuctionItems) {
+    const result = await importWonLots();
+    return { ...result, auctionsChecked: -1 }; // -1 = varredura completa (backfill inicial)
+  }
+
+  const { listMyBidsFromSite, wonAuctionIdsFromBids } = await import("./leiloesbr-bids.server");
+  const { listVinylPurchasesForAuctions } = await import("./leiloesbr-purchases.server");
+  const bids = await listMyBidsFromSite().catch(() => []);
+  const auctionIds = wonAuctionIdsFromBids(bids);
+  if (!auctionIds.length) {
+    return {
+      added: 0,
+      scanned: 0,
+      duplicates: [],
+      sources: EMPTY_SCAN_SOURCES,
+      auctionsChecked: 0,
+    };
+  }
+
+  const won = await listVinylPurchasesForAuctions(auctionIds);
+  const result = await importFromWonLots(won);
+  return { ...result, auctionsChecked: auctionIds.length };
 }
 
 /** Insere um duplicado confirmado pelo usuário ("adicionar mesmo assim"). */

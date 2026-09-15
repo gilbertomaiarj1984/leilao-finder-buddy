@@ -89,8 +89,26 @@ export const getCollection = createServerFn({ method: "GET" })
     }
   });
 
-/** Varre "Minhas compras" (l=6) e acrescenta os vinis arrematados à coleção. */
+/**
+ * Varre "Minhas compras" (l=6) e acrescenta os vinis arrematados à coleção. Incremental por
+ * padrão (só os leilões vencidos segundo os lances, `l=4`) — bem mais barato que repaginar
+ * tudo; cai sozinho para a varredura completa na 1ª vez (coleção ainda sem item de leilão).
+ */
 export const scanCollection = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { importWonLotsIncremental } = await import("./collection.server");
+    return await importWonLotsIncremental();
+  });
+
+/**
+ * Varredura COMPLETA de "Minhas compras" (todas as páginas, `id=0`) — para forçar um
+ * backfill manual (ex.: leilão vencido não aparece mais em "Meus lances"). Cara; usar com
+ * moderação.
+ */
+export const scanCollectionFull = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { assertAllowed } = await import("./access.server");

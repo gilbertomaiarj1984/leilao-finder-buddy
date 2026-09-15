@@ -138,6 +138,9 @@ async function readTab(
  * `t=1` e `t=0`** (dedup por `idPeca`). O navegador do usuário mostra `t=1`, mas na sessão
  * do SERVIDOR foi o `t=0` que devolveu as compras reais no 1º teste — então lemos as duas
  * para não depender de qual o servidor popula. Best-effort.
+ *
+ * Cara (até ~100 requisições, um por página × 2 abas × teto 50). Usar só para o backfill
+ * inicial (coleção vazia) — para varreduras de rotina ver `listPurchasesForAuctions`.
  */
 export async function listPurchasesFromSite(): Promise<WonLot[]> {
   const seen = new Set<string>();
@@ -150,6 +153,58 @@ export async function listPurchasesFromSite(): Promise<WonLot[]> {
 /** Só os lotes que parecem vinil (descarta CD/DVD/K7 pelo título). */
 export async function listVinylPurchases(): Promise<WonLot[]> {
   const all = await listPurchasesFromSite();
+  return all.filter((w) => !looksNonVinyl(w.title));
+}
+
+/**
+ * Lê uma aba (`t`) de "Minhas compras" **filtrada por um leilão** (`l=6&id=<idLeilao>`,
+ * em vez do `id=0` de `readTab`). Como o resultado já vem escopado a 1 leilão, o teto de
+ * páginas é baixo (o loop para sozinho na 1ª página sem lote novo, igual `readTab`).
+ */
+async function readAuctionTab(
+  t: 0 | 1,
+  idLeilao: string,
+  seen: Set<string>,
+  out: WonLot[],
+): Promise<void> {
+  for (let page = 1; page <= 3; page++) {
+    const html = await authFetch(
+      `${BASE_URL}/conta_site.asp?l=6&t=${t}&s=0&b=0&id=${idLeilao}&p=&order=0&pag=${page}`,
+      {},
+      page === 1 ? looksAnonymous : undefined,
+    );
+    let added = 0;
+    for (const chunk of html.split('<div class="oc-item').slice(1)) {
+      const won = parsePurchaseChunk(chunk);
+      if (!won || seen.has(won.idPeca)) continue;
+      seen.add(won.idPeca);
+      out.push(won);
+      added++;
+    }
+    if (added === 0) break;
+  }
+}
+
+/**
+ * Varredura INCREMENTAL de compras: só os leilões passados em `auctionIds`
+ * (`l=6&id=<idLeilao>`, abas `t=1`/`t=0`), em vez da paginação cega de `listPurchasesFromSite`
+ * (`id=0`, até 50 páginas × 2 abas). Bem mais barata — usar quando já sabemos quais leilões o
+ * usuário pode ter vencido (ver `wonAuctionIdsFromBids` em `leiloesbr-bids.server.ts`).
+ */
+export async function listPurchasesForAuctions(auctionIds: string[]): Promise<WonLot[]> {
+  const ids = [...new Set(auctionIds.filter(Boolean))];
+  const seen = new Set<string>();
+  const out: WonLot[] = [];
+  for (const id of ids) {
+    await readAuctionTab(1, id, seen, out);
+    await readAuctionTab(0, id, seen, out);
+  }
+  return out;
+}
+
+/** Como `listPurchasesForAuctions`, só os lotes que parecem vinil. */
+export async function listVinylPurchasesForAuctions(auctionIds: string[]): Promise<WonLot[]> {
+  const all = await listPurchasesForAuctions(auctionIds);
   return all.filter((w) => !looksNonVinyl(w.title));
 }
 
