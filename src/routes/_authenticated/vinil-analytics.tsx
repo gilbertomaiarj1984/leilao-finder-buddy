@@ -28,6 +28,8 @@ import { AiProviderSelect } from "@/components/vinyl/ai-provider-controls";
 import { scoreTone } from "@/components/vinyl/ai-score-utils";
 import { fmtMoney } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
+import { HideableBar } from "@/components/vinyl/hideable-bar";
+import { useHideOnScroll } from "@/hooks/use-hide-on-scroll";
 import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
 import {
   type AlbumAgg,
@@ -106,6 +108,7 @@ type ExcludeSale = (sale: SaleRow, label: string) => void;
 type ExcludeArtist = (artist: ArtistAgg) => void;
 
 function VinilAnalyticsPage() {
+  const barsHidden = useHideOnScroll();
   const queryClient = useQueryClient();
   const fetchSales = useServerFn(getVinylSales);
   const runReident = useServerFn(reidentifySales);
@@ -379,54 +382,56 @@ function VinilAnalyticsPage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">
-          <div>
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Voltar
-                </Link>
-              </Button>
-              <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
-                <BarChart3 className="h-5 w-5 text-primary" />
-                Vinil Analytics
-              </h1>
+      <HideableBar hidden={barsHidden} className="top-0 z-30">
+        <header className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">
+            <div>
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Voltar
+                  </Link>
+                </Button>
+                <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
+                  <BarChart3 className="h-5 w-5 text-primary" />
+                  Vinil Analytics
+                </h1>
+              </div>
+              <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
+                Preços de venda por artista e álbum (a casa de leilão é irrelevante). Da pior à
+                melhor conservação, com médias por Faixa de Classificação.
+              </p>
             </div>
-            <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
-              Preços de venda por artista e álbum (a casa de leilão é irrelevante). Da pior à melhor
-              conservação, com médias por Faixa de Classificação.
-            </p>
+            <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible sm:pb-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={reidentifyAll}
+                disabled={reidentifying}
+                title="Passar a IA por todo o histórico: ajusta artista/álbum (título + descrição) e padroniza os nomes para não duplicar registros. Usa o provedor de IA selecionado ao lado."
+              >
+                <Sparkles className={`mr-2 h-4 w-4 ${reidentifying ? "animate-pulse" : ""}`} />
+                {reidentifying ? "Reidentificando…" : "Reidentificar (IA)"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => sales.refetch()}
+                disabled={sales.isFetching}
+              >
+                <RefreshCw className={`mr-2 h-4 w-4 ${sales.isFetching ? "animate-spin" : ""}`} />
+                Atualizar
+              </Button>
+              <AiProviderSelect
+                value={aiProvider}
+                onChange={changeAiProvider}
+                disabled={reidentifying}
+              />
+            </div>
           </div>
-          <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible sm:pb-0">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={reidentifyAll}
-              disabled={reidentifying}
-              title="Passar a IA por todo o histórico: ajusta artista/álbum (título + descrição) e padroniza os nomes para não duplicar registros. Usa o provedor de IA selecionado ao lado."
-            >
-              <Sparkles className={`mr-2 h-4 w-4 ${reidentifying ? "animate-pulse" : ""}`} />
-              {reidentifying ? "Reidentificando…" : "Reidentificar (IA)"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => sales.refetch()}
-              disabled={sales.isFetching}
-            >
-              <RefreshCw className={`mr-2 h-4 w-4 ${sales.isFetching ? "animate-spin" : ""}`} />
-              Atualizar
-            </Button>
-            <AiProviderSelect
-              value={aiProvider}
-              onChange={changeAiProvider}
-              disabled={reidentifying}
-            />
-          </div>
-        </div>
-      </header>
+        </header>
+      </HideableBar>
 
       <div className="mx-auto max-w-6xl px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">

@@ -36,6 +36,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AuctionStatusInline, BidStatBadges, HouseStatBadges } from "@/components/vinyl/badges";
 import { BidHouseSections, type BidCard } from "@/components/vinyl/bid-house-sections";
 import { ArtistFilter, PriceFilter } from "@/components/vinyl/filters";
+import { HideableBar } from "@/components/vinyl/hideable-bar";
 import {
   artistOptions,
   bidMatchesSearch,
@@ -63,6 +64,7 @@ import {
   type LotAi,
   type LotMarket,
 } from "@/components/vinyl/ai-score-utils";
+import { useHideOnScroll } from "@/hooks/use-hide-on-scroll";
 import { supabase } from "@/integrations/supabase/client";
 import {
   analyzeOnDemand,
@@ -258,6 +260,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   // Altura real do header sticky (header + barra de busca/abas), medida ao vivo — as barras
   // sticky internas (dia/casas, seções de Vigiados/Lances) usam esse valor como `top` para
   // colar logo abaixo dele, em vez de ficarem escondidas atrás (ambos ficariam em top:0).
+  const barsHidden = useHideOnScroll();
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
   useEffect(() => {
@@ -1197,181 +1200,180 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           setArtistFilter("");
         }}
       >
-        <div
-          ref={headerRef}
-          className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60"
-        >
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-1 sm:py-1.5">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="truncate">{email}</span>
-              <button
-                type="button"
-                onClick={() => void onSignOut()}
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <LogOut className="h-3 w-3" />
-                Sair
-              </button>
-            </div>
-            {/* No mobile a barra de ações rola na horizontal (uma linha), para o header sticky
-              ficar baixo e não atrapalhar; no desktop volta a quebrar em linhas (flex-wrap). */}
-            <div className="flex w-full items-center gap-2 overflow-x-auto sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible">
-              <Button
-                variant="outline"
-                size="sm"
-                asChild
-                title="Leilões ao vivo (pregão presencial)"
-              >
-                <Link to="/ao-vivo">
-                  <Radio className="mr-2 h-4 w-4" />
-                  Ao vivo
-                </Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild title="Análise de lotes com IA">
-                <Link to="/analise">
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Análise
-                </Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild title="Minha coleção de vinil">
-                <Link to="/colecao">
-                  <Library className="mr-2 h-4 w-4" />
-                  Coleção
-                </Link>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                asChild
-                title="Preços de venda por artista e álbum"
-              >
-                <Link to="/vinil-analytics">
-                  <BarChart3 className="mr-2 h-4 w-4" />
-                  Analytics
-                </Link>
-              </Button>
-              <div
-                className="flex items-center gap-1.5"
-                title="Modo da avaliação automática por IA (controla o gasto de créditos). A análise sob demanda, pelos botões nos dias/casas, funciona em qualquer modo."
-              >
-                <Sparkles className="h-4 w-4 shrink-0 text-primary" />
-                <Select
-                  value={aiMode}
-                  onValueChange={(value) => changeAiMode(value as "off" | "all" | "watched")}
+        <HideableBar ref={headerRef} hidden={barsHidden} className="top-0 z-30">
+          <div className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+            <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-1 sm:py-1.5">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="truncate">{email}</span>
+                <button
+                  type="button"
+                  onClick={() => void onSignOut()}
+                  className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  <SelectTrigger className="h-8 w-[176px] text-xs" aria-label="Modo da IA">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="off">IA: desligada</SelectItem>
-                    <SelectItem value="all">IA: tudo</SelectItem>
-                    <SelectItem value="watched">IA: vigiados + lances</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <LogOut className="h-3 w-3" />
+                  Sair
+                </button>
               </div>
-              <AiProviderSelect value={aiProvider} onChange={changeAiProvider} />
-              <div className="flex flex-col items-start gap-0.5 sm:items-end">
+              {/* No mobile a barra de ações rola na horizontal (uma linha), para o header sticky
+              ficar baixo e não atrapalhar; no desktop volta a quebrar em linhas (flex-wrap). */}
+              <div className="flex w-full items-center gap-2 overflow-x-auto sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={refreshAll}
-                  disabled={refreshingAll || lots.isFetching}
-                  title="Forçar atualização geral da lista"
+                  asChild
+                  title="Leilões ao vivo (pregão presencial)"
                 >
-                  {refreshingAll ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                  )}
-                  {refreshingAll && refreshPct !== null
-                    ? `Atualizando… ${refreshPct}%`
-                    : "Atualizar tudo"}
+                  <Link to="/ao-vivo">
+                    <Radio className="mr-2 h-4 w-4" />
+                    Ao vivo
+                  </Link>
                 </Button>
-                {lots.data?.updatedAt ? (
-                  <span
-                    className="text-[11px] text-muted-foreground"
-                    title="Última atualização da lista"
+                <Button variant="outline" size="sm" asChild title="Análise de lotes com IA">
+                  <Link to="/analise">
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Análise
+                  </Link>
+                </Button>
+                <Button variant="outline" size="sm" asChild title="Minha coleção de vinil">
+                  <Link to="/colecao">
+                    <Library className="mr-2 h-4 w-4" />
+                    Coleção
+                  </Link>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  asChild
+                  title="Preços de venda por artista e álbum"
+                >
+                  <Link to="/vinil-analytics">
+                    <BarChart3 className="mr-2 h-4 w-4" />
+                    Analytics
+                  </Link>
+                </Button>
+                <div
+                  className="flex items-center gap-1.5"
+                  title="Modo da avaliação automática por IA (controla o gasto de créditos). A análise sob demanda, pelos botões nos dias/casas, funciona em qualquer modo."
+                >
+                  <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+                  <Select
+                    value={aiMode}
+                    onValueChange={(value) => changeAiMode(value as "off" | "all" | "watched")}
                   >
-                    Atualizado: {formatUpdatedAt(lots.data.updatedAt)}
-                  </span>
-                ) : null}
+                    <SelectTrigger className="h-8 w-[176px] text-xs" aria-label="Modo da IA">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="off">IA: desligada</SelectItem>
+                      <SelectItem value="all">IA: tudo</SelectItem>
+                      <SelectItem value="watched">IA: vigiados + lances</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <AiProviderSelect value={aiProvider} onChange={changeAiProvider} />
+                <div className="flex flex-col items-start gap-0.5 sm:items-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={refreshAll}
+                    disabled={refreshingAll || lots.isFetching}
+                    title="Forçar atualização geral da lista"
+                  >
+                    {refreshingAll ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                    )}
+                    {refreshingAll && refreshPct !== null
+                      ? `Atualizando… ${refreshPct}%`
+                      : "Atualizar tudo"}
+                  </Button>
+                  {lots.data?.updatedAt ? (
+                    <span
+                      className="text-[11px] text-muted-foreground"
+                      title="Última atualização da lista"
+                    >
+                      Atualizado: {formatUpdatedAt(lots.data.updatedAt)}
+                    </span>
+                  ) : null}
+                </div>
               </div>
             </div>
-          </div>
 
-          {!lots.isError && !lots.isLoading ? (
-            <div className="mx-auto max-w-6xl px-4 pb-1.5 sm:pb-2">
-              <div className="flex flex-wrap items-center gap-2 pt-1.5 sm:pt-2">
-                <Input
-                  value={searchDraft}
-                  onChange={(event) => setSearchDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      setSearch(searchDraft);
-                    }
-                  }}
-                  placeholder="Buscar por título, artista, casa ou nº do lote… (Enter para pesquisar)"
-                  className="w-full sm:max-w-md"
-                />
-                <Button size="sm" onClick={() => setSearch(searchDraft)}>
-                  <SearchIcon className="mr-2 h-4 w-4" />
-                  Pesquisar
-                </Button>
-                {search || searchDraft ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSearch("");
-                      setSearchDraft("");
+            {!lots.isError && !lots.isLoading ? (
+              <div className="mx-auto max-w-6xl px-4 pb-1.5 sm:pb-2">
+                <div className="flex flex-wrap items-center gap-2 pt-1.5 sm:pt-2">
+                  <Input
+                    value={searchDraft}
+                    onChange={(event) => setSearchDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        setSearch(searchDraft);
+                      }
                     }}
-                  >
-                    Limpar busca
+                    placeholder="Buscar por título, artista, casa ou nº do lote… (Enter para pesquisar)"
+                    className="w-full sm:max-w-md"
+                  />
+                  <Button size="sm" onClick={() => setSearch(searchDraft)}>
+                    <SearchIcon className="mr-2 h-4 w-4" />
+                    Pesquisar
                   </Button>
-                ) : null}
-              </div>
-              {/* No mobile a lista de dias rola na horizontal (uma linha), evitando que o
+                  {search || searchDraft ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setSearch("");
+                        setSearchDraft("");
+                      }}
+                    >
+                      Limpar busca
+                    </Button>
+                  ) : null}
+                </div>
+                {/* No mobile a lista de dias rola na horizontal (uma linha), evitando que o
                 header sticky cresça por causa da quebra de linha; no desktop volta a
                 quebrar em linhas (flex-wrap). */}
-              <TabsList className="mt-1.5 flex h-auto flex-nowrap justify-start gap-1 overflow-x-auto bg-secondary sm:mt-2 sm:flex-wrap sm:overflow-visible">
-                {days.map((day, index) => (
-                  <TabsTrigger key={day} value={`day-${index}`} className="shrink-0">
-                    {dayLabel(day, index)}
+                <TabsList className="mt-1.5 flex h-auto flex-nowrap justify-start gap-1 overflow-x-auto bg-secondary sm:mt-2 sm:flex-wrap sm:overflow-visible">
+                  {days.map((day, index) => (
+                    <TabsTrigger key={day} value={`day-${index}`} className="shrink-0">
+                      {dayLabel(day, index)}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {lots.data?.lots.filter(
+                          (lot) =>
+                            lot.dayKey === day &&
+                            !auctionFinished(lot.dayKey, lot.time) &&
+                            matchesSearch(lot),
+                        ).length ?? 0}
+                      </span>
+                    </TabsTrigger>
+                  ))}
+                  <TabsTrigger value="watched" className="shrink-0">
+                    Vigiados
                     <span className="ml-2 text-xs text-muted-foreground">
-                      {lots.data?.lots.filter(
-                        (lot) =>
-                          lot.dayKey === day &&
-                          !auctionFinished(lot.dayKey, lot.time) &&
-                          matchesSearch(lot),
-                      ).length ?? 0}
+                      {
+                        (watched.data ?? []).filter((lot) =>
+                          watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
+                        ).length
+                      }
                     </span>
                   </TabsTrigger>
-                ))}
-                <TabsTrigger value="watched" className="shrink-0">
-                  Vigiados
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {
-                      (watched.data ?? []).filter((lot) =>
-                        watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
-                      ).length
-                    }
-                  </span>
-                </TabsTrigger>
-                <TabsTrigger value="bids" className="shrink-0">
-                  Lances
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {
-                      (bids.data ?? []).filter((bid) =>
-                        bidMatchesSearch(bid, searchNorm, albumFor(bid)),
-                      ).length
-                    }
-                  </span>
-                </TabsTrigger>
-              </TabsList>
-            </div>
-          ) : null}
-        </div>
+                  <TabsTrigger value="bids" className="shrink-0">
+                    Lances
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {
+                        (bids.data ?? []).filter((bid) =>
+                          bidMatchesSearch(bid, searchNorm, albumFor(bid)),
+                        ).length
+                      }
+                    </span>
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+            ) : null}
+          </div>
+        </HideableBar>
 
         <div className="mx-auto max-w-6xl px-4 pt-3 pb-8">
           <LiveAuctions />
@@ -1444,198 +1446,205 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
 
                 return (
                   <TabsContent key={day} value={`day-${index}`} className="space-y-6">
-                    <div
+                    <HideableBar
+                      hidden={barsHidden}
                       style={stickyBelowHeader}
-                      className="sticky z-20 -mx-4 mb-2 space-y-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur sm:py-3"
+                      className="z-20 -mx-4 mb-2"
                     >
-                      <div className="flex flex-wrap items-center gap-3">
-                        <span className="text-sm font-semibold text-foreground">
-                          {dayLabel(day, index)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => refreshDay(day)}
-                          disabled={refreshingDay === day}
-                          title="Forçar atualização deste dia"
-                          aria-label={`Forçar atualização de ${dayLabel(day, index)}`}
-                          className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
-                        >
-                          {refreshingDay === day ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <RefreshCw className="h-3.5 w-3.5" />
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setBidsViewDay(null);
-                            setWatchedViewDay((cur) => (cur === day ? null : day));
-                          }}
-                          title="Ver vigiados deste dia"
-                          aria-label={`Ver vigiados de ${dayLabel(day, index)}`}
-                          aria-pressed={isWatchedView}
-                          className={
-                            isWatchedView
-                              ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
-                              : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
-                          }
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                          Vigiados do dia
-                          {watchedForDay.length ? (
-                            <span className="ml-0.5 text-muted-foreground">
-                              {watchedForDay.length}
-                            </span>
-                          ) : null}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={refreshWatched}
-                          disabled={refreshingWatched}
-                          title="Forçar atualização dos vigiados (inclui status Vendido)"
-                          aria-label="Forçar atualização dos vigiados"
-                          className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
-                        >
-                          {refreshingWatched ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <RefreshCw className="h-3.5 w-3.5" />
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setWatchedViewDay(null);
-                            setBidsViewDay((cur) => (cur === day ? null : day));
-                          }}
-                          title="Ver lances deste dia"
-                          aria-label={`Ver lances de ${dayLabel(day, index)}`}
-                          aria-pressed={isBidsView}
-                          className={
-                            isBidsView
-                              ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
-                              : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
-                          }
-                        >
-                          <Gavel className="h-3.5 w-3.5" />
-                          Lances do dia
-                          {bidsForDay.length ? (
-                            <span className="ml-0.5 text-muted-foreground">
-                              {bidsForDay.length}
-                            </span>
-                          ) : null}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={refreshBids}
-                          disabled={refreshingBids}
-                          title="Forçar atualização dos lances (inclui status Vendido)"
-                          aria-label="Forçar atualização dos lances"
-                          className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
-                        >
-                          {refreshingBids ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <RefreshCw className="h-3.5 w-3.5" />
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => analyzeScope({ day })}
-                          disabled={analyzing !== null}
-                          title="Analisar com IA os lotes ainda não avaliados deste dia (sob demanda)"
-                          aria-label={`Analisar com IA ${dayLabel(day, index)}`}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
-                        >
-                          {analyzing === day ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Sparkles className="h-3.5 w-3.5" />
-                          )}
-                          Analisar dia
-                        </button>
-                        {!isWatchedView && !isBidsView ? (
-                          <>
-                            <ArtistFilter
-                              artists={artists}
-                              value={artistFilter}
-                              onChange={setArtistFilter}
-                            />
-                            {artistFilter ? (
-                              <Button variant="ghost" size="sm" onClick={() => setArtistFilter("")}>
-                                Limpar filtro
-                              </Button>
+                      <div className="space-y-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur sm:py-3">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="text-sm font-semibold text-foreground">
+                            {dayLabel(day, index)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => refreshDay(day)}
+                            disabled={refreshingDay === day}
+                            title="Forçar atualização deste dia"
+                            aria-label={`Forçar atualização de ${dayLabel(day, index)}`}
+                            className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                          >
+                            {refreshingDay === day ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBidsViewDay(null);
+                              setWatchedViewDay((cur) => (cur === day ? null : day));
+                            }}
+                            title="Ver vigiados deste dia"
+                            aria-label={`Ver vigiados de ${dayLabel(day, index)}`}
+                            aria-pressed={isWatchedView}
+                            className={
+                              isWatchedView
+                                ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
+                                : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
+                            }
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            Vigiados do dia
+                            {watchedForDay.length ? (
+                              <span className="ml-0.5 text-muted-foreground">
+                                {watchedForDay.length}
+                              </span>
                             ) : null}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={refreshWatched}
+                            disabled={refreshingWatched}
+                            title="Forçar atualização dos vigiados (inclui status Vendido)"
+                            aria-label="Forçar atualização dos vigiados"
+                            className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                          >
+                            {refreshingWatched ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWatchedViewDay(null);
+                              setBidsViewDay((cur) => (cur === day ? null : day));
+                            }}
+                            title="Ver lances deste dia"
+                            aria-label={`Ver lances de ${dayLabel(day, index)}`}
+                            aria-pressed={isBidsView}
+                            className={
+                              isBidsView
+                                ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
+                                : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
+                            }
+                          >
+                            <Gavel className="h-3.5 w-3.5" />
+                            Lances do dia
+                            {bidsForDay.length ? (
+                              <span className="ml-0.5 text-muted-foreground">
+                                {bidsForDay.length}
+                              </span>
+                            ) : null}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={refreshBids}
+                            disabled={refreshingBids}
+                            title="Forçar atualização dos lances (inclui status Vendido)"
+                            aria-label="Forçar atualização dos lances"
+                            className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                          >
+                            {refreshingBids ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => analyzeScope({ day })}
+                            disabled={analyzing !== null}
+                            title="Analisar com IA os lotes ainda não avaliados deste dia (sob demanda)"
+                            aria-label={`Analisar com IA ${dayLabel(day, index)}`}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                          >
+                            {analyzing === day ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Sparkles className="h-3.5 w-3.5" />
+                            )}
+                            Analisar dia
+                          </button>
+                          {!isWatchedView && !isBidsView ? (
+                            <>
+                              <ArtistFilter
+                                artists={artists}
+                                value={artistFilter}
+                                onChange={setArtistFilter}
+                              />
+                              {artistFilter ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setArtistFilter("")}
+                                >
+                                  Limpar filtro
+                                </Button>
+                              ) : null}
+                              <span className="text-xs text-muted-foreground">
+                                {visibleLots.length} lote(s) em {groups.length} casa(s)
+                              </span>
+                              {finishedCount > 0 ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => toggleShowFinished(day)}
+                                >
+                                  {showFinished
+                                    ? `Ocultar finalizados (${finishedCount})`
+                                    : `Incluir finalizados (${finishedCount})`}
+                                </Button>
+                              ) : null}
+                            </>
+                          ) : isWatchedView ? (
                             <span className="text-xs text-muted-foreground">
-                              {visibleLots.length} lote(s) em {groups.length} casa(s)
+                              {watchedForDay.length} lote(s) vigiado(s) neste dia
                             </span>
-                            {finishedCount > 0 ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => toggleShowFinished(day)}
-                              >
-                                {showFinished
-                                  ? `Ocultar finalizados (${finishedCount})`
-                                  : `Incluir finalizados (${finishedCount})`}
-                              </Button>
-                            ) : null}
-                          </>
-                        ) : isWatchedView ? (
-                          <span className="text-xs text-muted-foreground">
-                            {watchedForDay.length} lote(s) vigiado(s) neste dia
-                          </span>
-                        ) : (
-                          <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                            {bidsForDay.length} lance(s) neste dia
-                            <BidStatBadges stats={computeBidStats(bidsForDay)} />
-                          </span>
-                        )}
-                      </div>
-                      {!isWatchedView && !isBidsView && groups.length > 0 ? (
-                        <nav className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
-                          {groups.map((group) => {
-                            const houseKey = `${day}|${group.house}`;
-                            const isOpen = openHouses.has(houseKey);
-                            return (
-                              <button
-                                key={group.house}
-                                type="button"
-                                aria-expanded={isOpen}
-                                onClick={() => {
-                                  const willOpen = !openHouses.has(houseKey);
-                                  toggleHouse(houseKey);
-                                  if (willOpen) {
-                                    requestAnimationFrame(() =>
-                                      document
-                                        .getElementById(houseAnchor(group.house, index))
-                                        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-                                    );
+                          ) : (
+                            <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              {bidsForDay.length} lance(s) neste dia
+                              <BidStatBadges stats={computeBidStats(bidsForDay)} />
+                            </span>
+                          )}
+                        </div>
+                        {!isWatchedView && !isBidsView && groups.length > 0 ? (
+                          <nav className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
+                            {groups.map((group) => {
+                              const houseKey = `${day}|${group.house}`;
+                              const isOpen = openHouses.has(houseKey);
+                              return (
+                                <button
+                                  key={group.house}
+                                  type="button"
+                                  aria-expanded={isOpen}
+                                  onClick={() => {
+                                    const willOpen = !openHouses.has(houseKey);
+                                    toggleHouse(houseKey);
+                                    if (willOpen) {
+                                      requestAnimationFrame(() =>
+                                        document
+                                          .getElementById(houseAnchor(group.house, index))
+                                          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                                      );
+                                    }
+                                  }}
+                                  className={
+                                    isOpen
+                                      ? "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
+                                      : "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
                                   }
-                                }}
-                                className={
-                                  isOpen
-                                    ? "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
-                                    : "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
-                                }
-                              >
-                                {isOpen ? (
-                                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                                ) : (
-                                  <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                                )}
-                                {group.house}
-                                <span className="text-muted-foreground">{group.count}</span>
-                                <HouseStatBadges
-                                  stats={computeHouseStats(group.lots, watchedIds, bidStatusById)}
-                                />
-                              </button>
-                            );
-                          })}
-                        </nav>
-                      ) : null}
-                    </div>
+                                >
+                                  {isOpen ? (
+                                    <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                                  ) : (
+                                    <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                                  )}
+                                  {group.house}
+                                  <span className="text-muted-foreground">{group.count}</span>
+                                  <HouseStatBadges
+                                    stats={computeHouseStats(group.lots, watchedIds, bidStatusById)}
+                                  />
+                                </button>
+                              );
+                            })}
+                          </nav>
+                        ) : null}
+                      </div>
+                    </HideableBar>
                     {isWatchedView ? (
                       watched.isLoading ? (
                         <Skeleton className="h-40 w-full" />
@@ -2099,17 +2108,20 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                           const houses = groupWatchedByHouse(dayLots);
                           return (
                             <section key={dayKey || "sem-data"} className="space-y-6">
-                              <div
+                              <HideableBar
+                                hidden={barsHidden}
                                 style={stickyBelowHeader}
-                                className="sticky z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur sm:py-3"
+                                className="z-10 -mx-4"
                               >
-                                <span className="text-sm font-semibold text-foreground">
-                                  {label}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {dayLots.length} lote(s) vigiado(s) em {houses.length} casa(s)
-                                </span>
-                              </div>
+                                <div className="flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur sm:py-3">
+                                  <span className="text-sm font-semibold text-foreground">
+                                    {label}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {dayLots.length} lote(s) vigiado(s) em {houses.length} casa(s)
+                                  </span>
+                                </div>
+                              </HideableBar>
                               {houses.map((houseGroup) => {
                                 const auctionInfo = houseAuctionInfo(dayKey, houseGroup.lots[0]);
                                 return (
@@ -2243,18 +2255,21 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                           const houses = groupWatchedByHouse(dayBids);
                           return (
                             <section key={dayKey || "sem-data"} className="space-y-6">
-                              <div
+                              <HideableBar
+                                hidden={barsHidden}
                                 style={stickyBelowHeader}
-                                className="sticky z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur sm:py-3"
+                                className="z-10 -mx-4"
                               >
-                                <span className="text-sm font-semibold text-foreground">
-                                  {label}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {dayBids.length} lance(s) em {houses.length} casa(s)
-                                </span>
-                                <BidStatBadges stats={computeBidStats(dayBids)} />
-                              </div>
+                                <div className="flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur sm:py-3">
+                                  <span className="text-sm font-semibold text-foreground">
+                                    {label}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {dayBids.length} lance(s) em {houses.length} casa(s)
+                                  </span>
+                                  <BidStatBadges stats={computeBidStats(dayBids)} />
+                                </div>
+                              </HideableBar>
                               <BidHouseSections
                                 houses={houses}
                                 pending={pending}

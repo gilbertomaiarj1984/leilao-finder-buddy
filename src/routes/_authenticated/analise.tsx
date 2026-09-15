@@ -38,6 +38,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LotTags, RarityLabel, RarityLegend, ScoreBadge } from "@/components/vinyl/ai-score";
+import { HideableBar } from "@/components/vinyl/hideable-bar";
+import { useHideOnScroll } from "@/hooks/use-hide-on-scroll";
 import {
   buildInterestMatcher,
   dealLabel,
@@ -598,6 +600,7 @@ function SondagemDialog({
 }
 
 function AnalisePage() {
+  const barsHidden = useHideOnScroll();
   // Altura real do header sticky, medida ao vivo — o nav sticky de "ir para casa" (por dia)
   // usa esse valor como `top` para colar logo abaixo dele, em vez de ficar escondido atrás
   // (ambos ficariam em top:0).
@@ -1026,48 +1029,47 @@ function AnalisePage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <header
-        ref={headerRef}
-        className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60"
-      >
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">
-          <div>
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Voltar
-                </Link>
-              </Button>
-              <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
-                <Sparkles className="h-5 w-5 text-primary" />
-                Análise de Lotes
-              </h1>
+      <HideableBar ref={headerRef} hidden={barsHidden} className="top-0 z-30">
+        <header className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">
+            <div>
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Voltar
+                  </Link>
+                </Button>
+                <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  Análise de Lotes
+                </h1>
+              </div>
+              <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
+                Lotes ranqueados por nota da IA (raridade + oportunidade). ⭐ = combina com seus
+                interesses; 🎯 = casa com a sondagem.{" "}
+                {evaluated ? `${evaluated} lote(s) avaliado(s).` : "Ainda sem avaliações."}
+              </p>
             </div>
-            <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
-              Lotes ranqueados por nota da IA (raridade + oportunidade). ⭐ = combina com seus
-              interesses; 🎯 = casa com a sondagem.{" "}
-              {evaluated ? `${evaluated} lote(s) avaliado(s).` : "Ainda sem avaliações."}
-            </p>
+            <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:overflow-visible sm:pb-0">
+              <SondagemDialog
+                items={wantlistQuery.data ?? []}
+                loading={wantlistQuery.isLoading}
+                onImport={(text) => importWantMut.mutate(text)}
+                onAdd={(v) => addWantMut.mutate(v)}
+                onUpdate={(v) => updateWantMut.mutate(v)}
+                onDelete={(id) => deleteWantMut.mutate(id)}
+                busy={wantBusy}
+              />
+              <InterestsDialog
+                interests={interestsQuery.data ?? []}
+                onSave={(items) => saveInterestsMut.mutate(items)}
+                saving={saveInterestsMut.isPending}
+              />
+            </div>
           </div>
-          <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:overflow-visible sm:pb-0">
-            <SondagemDialog
-              items={wantlistQuery.data ?? []}
-              loading={wantlistQuery.isLoading}
-              onImport={(text) => importWantMut.mutate(text)}
-              onAdd={(v) => addWantMut.mutate(v)}
-              onUpdate={(v) => updateWantMut.mutate(v)}
-              onDelete={(id) => deleteWantMut.mutate(id)}
-              busy={wantBusy}
-            />
-            <InterestsDialog
-              interests={interestsQuery.data ?? []}
-              onSave={(items) => saveInterestsMut.mutate(items)}
-              saving={saveInterestsMut.isPending}
-            />
-          </div>
-        </div>
-      </header>
+        </header>
+      </HideableBar>
 
       <div className="mx-auto max-w-6xl px-4 py-6">
         {lots.isLoading ? (
@@ -1379,59 +1381,62 @@ function AnalisePage() {
                           <p className="text-sm text-muted-foreground">Nenhum lote neste dia.</p>
                         ) : (
                           <>
-                            <nav
+                            <HideableBar
+                              hidden={barsHidden}
                               style={stickyBelowHeader}
-                              className="sticky z-10 -mx-4 flex flex-nowrap gap-2 overflow-x-auto border-b border-border bg-background/95 px-4 py-2 backdrop-blur"
+                              className="z-10 -mx-4"
                             >
-                              {ordered.map((group) => {
-                                const key = `${day}|${group.house}`;
-                                const isOpen = openHouses.has(key);
-                                const best = bestScore(group);
-                                return (
-                                  <button
-                                    key={group.house}
-                                    type="button"
-                                    aria-expanded={isOpen}
-                                    onClick={() => {
-                                      const willOpen = !openHouses.has(key);
-                                      toggleHouse(key);
-                                      if (willOpen) {
-                                        requestAnimationFrame(() =>
-                                          document
-                                            .getElementById(houseAnchor(group.house, index))
-                                            ?.scrollIntoView({
-                                              behavior: "smooth",
-                                              block: "start",
-                                            }),
-                                        );
+                              <nav className="flex flex-nowrap gap-2 overflow-x-auto border-b border-border bg-background/95 px-4 py-2 backdrop-blur">
+                                {ordered.map((group) => {
+                                  const key = `${day}|${group.house}`;
+                                  const isOpen = openHouses.has(key);
+                                  const best = bestScore(group);
+                                  return (
+                                    <button
+                                      key={group.house}
+                                      type="button"
+                                      aria-expanded={isOpen}
+                                      onClick={() => {
+                                        const willOpen = !openHouses.has(key);
+                                        toggleHouse(key);
+                                        if (willOpen) {
+                                          requestAnimationFrame(() =>
+                                            document
+                                              .getElementById(houseAnchor(group.house, index))
+                                              ?.scrollIntoView({
+                                                behavior: "smooth",
+                                                block: "start",
+                                              }),
+                                          );
+                                        }
+                                      }}
+                                      className={
+                                        isOpen
+                                          ? "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
+                                          : "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
                                       }
-                                    }}
-                                    className={
-                                      isOpen
-                                        ? "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
-                                        : "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
-                                    }
-                                  >
-                                    {isOpen ? (
-                                      <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                                    ) : (
-                                      <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                                    )}
-                                    {best >= 0 ? (
-                                      <span
-                                        className={`rounded px-1 text-[10px] font-bold ${scoreTone(best)}`}
-                                      >
-                                        {best}
+                                    >
+                                      {isOpen ? (
+                                        <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                                      ) : (
+                                        <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                                      )}
+                                      {best >= 0 ? (
+                                        <span
+                                          className={`rounded px-1 text-[10px] font-bold ${scoreTone(best)}`}
+                                        >
+                                          {best}
+                                        </span>
+                                      ) : null}
+                                      {group.house}
+                                      <span className="text-muted-foreground">
+                                        {group.lots.length}
                                       </span>
-                                    ) : null}
-                                    {group.house}
-                                    <span className="text-muted-foreground">
-                                      {group.lots.length}
-                                    </span>
-                                  </button>
-                                );
-                              })}
-                            </nav>
+                                    </button>
+                                  );
+                                })}
+                              </nav>
+                            </HideableBar>
 
                             {ordered.map((group) => {
                               const key = `${day}|${group.house}`;
