@@ -700,6 +700,15 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   colunas base. Cron `step=market`.
 - **Reprocessar:** o `basis` não muda, então matches errados já gravados **não** são
   reconsultados sozinhos → `DELETE FROM lot_market` (ou só os suspeitos) e rodar o `refresh.yml`.
+- **Avaliação de lib cliente (`bartve/disconnect`, Node.js):** verificado direto no
+  código-fonte da lib — **não cobre `/marketplace/stats/{id}`** (usado hoje pra
+  `numForSale`/`lowestPrice` globais) nem tem qualquer endpoint de **listagens de um release
+  filtradas por país/moeda/frete**; só existe `getListing(id)` (um anúncio específico por ID).
+  Confirma que **não há endpoint oficial** para a faixa de preço só-BR — o scraping da página
+  `/sell/release/{id}` em `fetchBrListings` continua sendo a única forma de obter isso, com ou
+  sem SDK. A lib só reimplementaria em wrapper as 2 chamadas triviais que já fazemos
+  (`/database/search`, `/marketplace/price_suggestions`) e traria OAuth 1.0a/CRUD de
+  vendas (não usados) como peso morto. **Decisão: manter `fetch` direto, sem adotar SDK.**
 
 ## Sondagem — obras caçadas (`wantlist_items`)
 
@@ -1129,6 +1138,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.53.1      | Fix: barras piscando/pulando de posição ao rolar (v0.53.0) — `ResizeObserver` media o próprio wrapper que anima (vaivém de re-renders a cada frame, brigando com o scroll anchoring do navegador); `ref` passa para o conteúdo interno do header (altura estável), `stickyBelowHeader.top` vira `barsHidden ? 0 : headerHeight`, `HideableBar` ganha `overflow-anchor: none`, e `useHideOnScroll` trava novas trocas de estado por 350ms (`minFlipMs`)                |
 | v0.53.2      | Fix: ainda piscava sem parar ao começar a rolar (v0.53.1) — o cadeado de tempo travava um NOVO flip mas não descartava o ruído de scroll "fantasma" gerado pela própria transição, que se acumulava em `lastY` e disparava outro flip assim que o cadeado destravava (vaivém sem fim); `minFlipMs` virou `cooldownMs`, que durante o cooldown só realinha `lastY` a cada scroll (sem nunca contar pra decisão de direção) em vez de travar e deixar o ruído se acumular; transição caiu de 300ms para 200ms (mais folga abaixo do cooldown de 400ms) |
 | v0.54.0      | Abandona o auto-hide por scroll do topo no mobile (v0.53.0-2, continuava piscando mesmo após dois fixes) por um **botão manual** (`MobileTopToggle`, canto superior direito, só no mobile) — o usuário decide quando esconder/mostrar o header + barras sticky aninhadas; `useHideOnScroll` removido, `HideableBar` mantém o colapso via `grid-template-rows` mas agora `sm:grid-rows-[1fr]` sempre vence no desktop |
+| v0.54.1      | Doc: avaliação da lib `bartve/disconnect` para o Discogs — confirmado que não cobre `/marketplace/stats` nem tem endpoint de listagens por país; decisão de manter `fetch` direto (sem SDK) registrada em `notas-desenvolvimento.md` |
 
 ## Pendências
 
