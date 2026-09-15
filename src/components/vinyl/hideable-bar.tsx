@@ -11,7 +11,11 @@ import { cn } from "@/lib/utils";
  *
  * `overflow-anchor: none` evita que o navegador "compense" a mudança de
  * altura ajustando sozinho o scroll (scroll anchoring) — isso brigava com
- * `useHideOnScroll` e causava barras piscando/pulando de posição.
+ * `useHideOnScroll` e causava barras piscando/pulando de posição. A duração
+ * da transição (200ms) tem que ficar abaixo do `cooldownMs` de
+ * `useHideOnScroll` (400ms por padrão) — o cooldown existe para descartar
+ * ruído de scroll gerado pela PRÓPRIA animação; se a transição durasse mais
+ * que o cooldown, esse ruído vazaria para a próxima decisão de direção.
  *
  * Importante para quem mede a altura do header (`ResizeObserver`, para
  * outras barras colarem logo abaixo via `top`): a `ref` do observer deve ir
@@ -40,7 +44,7 @@ export function HideableBar({
     <div
       style={style}
       className={cn(
-        "sticky grid [overflow-anchor:none] transition-[grid-template-rows,top] duration-300 ease-in-out",
+        "sticky grid [overflow-anchor:none] transition-[grid-template-rows,top] duration-200 ease-in-out",
         hidden ? "grid-rows-[0fr]" : "grid-rows-[1fr]",
         className,
       )}
