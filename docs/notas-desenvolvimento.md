@@ -793,6 +793,18 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
     header encolheu (`py-3 sm:py-6` → `py-2 sm:py-3`) e o título perdeu um degrau de tamanho
     (`sm:text-4xl` → `sm:text-2xl`); e-mail + botão **Sair** saíram do fim da barra de ações
     (direita) e viraram uma linha compacta **acima do título**, no canto superior esquerdo.
+  - **Menos altura no mobile (v0.51.5):** o header sticky ainda cabia demais da tela pequena —
+    cortado mais padding vertical (`py-*` → `py-* sm:py-*` maior só a partir do `sm`) em todas as
+    5 páginas (`index.tsx`, `colecao.tsx`, `analise.tsx`, `vinil-analytics.tsx`, `ao-vivo.tsx`).
+    Em `index.tsx`, a `TabsList` dos dias (que podia quebrar em 2+ linhas com muitos dias)
+    passou a rolar na **horizontal** no mobile (`overflow-x-auto flex-nowrap`, `TabsTrigger`
+    `shrink-0`), mesmo padrão já usado na barra de ações — volta a `flex-wrap` no `sm+`; as
+    barras `sticky` internas (dia/Vigiados/Lances) também perderam padding no mobile. Em
+    `colecao.tsx`, a linha de filtro/busca/abas perdeu padding e gap no mobile. **Fix** em
+    `analise.tsx`: o `nav` sticky "ir para casa" (por dia) usava `top-0` fixo, então ficava
+    **escondido atrás** do header (mesmo `top:0`, header com `z-30` > nav `z-10`) — passou a usar
+    o mesmo padrão `headerRef`/`ResizeObserver`/`stickyBelowHeader` que `index.tsx` já usava para
+    as barras sticky aninhadas, colando corretamente abaixo do header.
 - **`index.tsx` (site principal):** cards por **dia → casa → artista**. `LotCard` mostra nota
   da IA no canto **direito** (`ScoreCorner`), nº do lote no canto **esquerdo**, e o `album` da
   IA ("Artista — Álbum (Ano)", `formatAiAlbum`) **acima** do título. Álbum resolvido por lote =
@@ -1019,6 +1031,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.51.2 | Fix: `lot_sales` ficava "presa" sem a venda (leilão capturado com 0 vendas nunca revisitado) — `checkSoldNow`/`captureSalesForAuctions` força releitura no refresh manual de Vigiados/Lances |
 | v0.51.3 | Reverte `checkSoldNow`/`captureSalesForAuctions` (v0.51.2 — pesado e arriscava o grau Disco/Capa da IA no Analytics); tarja "Vendido" via `peca.asp` passa a ler `MOSTRABTN_CLASS`/`VALOR_VENDA` do JSON embutido (mesmos campos do Analytics) em vez de marcadores de texto livre; `refetchOnMount: "always"` nas queries de status |
 | v0.51.4 | Fix: vigiados/lances somem da tela ao leilão terminar (conta para de trazê-los) — `watched`/`bids` passam a MESCLAR (nunca substituir) num acumulador local, poda só pela janela de dias/desvigia explícita; docs: endpoints de catálogo/peça documentados como fonte de verdade prioritária |
+| v0.51.5 | Mobile: header sticky mais compacto (padding menor, lista de dias/abas sem quebrar linha) nas 5 páginas autenticadas; fix do nav "ir para casa" da Análise, que ficava escondido atrás do header |
 
 ## Pendências
 

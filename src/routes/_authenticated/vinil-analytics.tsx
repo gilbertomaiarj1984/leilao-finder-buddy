@@ -380,7 +380,7 @@ function VinilAnalyticsPage() {
   return (
     <main className="min-h-screen bg-background">
       <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:py-5">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">
           <div>
             <div className="flex items-center gap-3">
               <Button variant="ghost" size="sm" asChild>
