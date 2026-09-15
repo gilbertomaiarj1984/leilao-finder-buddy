@@ -877,18 +877,22 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const [refreshingWatched, setRefreshingWatched] = useState(false);
   const [refreshingBids, setRefreshingBids] = useState(false);
 
+  // `queryClient.invalidateQueries` resolve quando o refetch TERMINA (sucesso OU erro), não
+  // quando dá certo — então usamos `refetch()` da própria query (expõe o erro de verdade) em
+  // vez de `invalidateQueries` para os vigiados/lances, cujo sucesso o toast precisa refletir.
   const refreshWatched = () => {
     void (async () => {
       setRefreshingWatched(true);
       try {
-        await queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
-        void queryClient.invalidateQueries({ queryKey: ["lot-details"] });
-        void queryClient.invalidateQueries({ queryKey: ["sold-lots"] });
+        const result = await watched.refetch({ throwOnError: true });
+        if (result.error) throw result.error;
         toast.success("Vigiados atualizados");
       } catch (error) {
         toast.error((error as Error)?.message || "Não foi possível atualizar os vigiados agora");
       } finally {
         setRefreshingWatched(false);
+        void queryClient.invalidateQueries({ queryKey: ["lot-details"] });
+        void queryClient.invalidateQueries({ queryKey: ["sold-lots"] });
       }
     })();
   };
@@ -897,14 +901,15 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     void (async () => {
       setRefreshingBids(true);
       try {
-        await queryClient.invalidateQueries({ queryKey: bidsQuery.queryKey });
-        void queryClient.invalidateQueries({ queryKey: ["lot-details"] });
-        void queryClient.invalidateQueries({ queryKey: ["sold-lots"] });
+        const result = await bids.refetch({ throwOnError: true });
+        if (result.error) throw result.error;
         toast.success("Lances atualizados");
       } catch (error) {
         toast.error((error as Error)?.message || "Não foi possível atualizar os lances agora");
       } finally {
         setRefreshingBids(false);
+        void queryClient.invalidateQueries({ queryKey: ["lot-details"] });
+        void queryClient.invalidateQueries({ queryKey: ["sold-lots"] });
       }
     })();
   };

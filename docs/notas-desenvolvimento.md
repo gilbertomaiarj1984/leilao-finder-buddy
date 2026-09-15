@@ -125,12 +125,17 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
     próprios vigiados/lances) e mescla no `soldById` só quando `lot_sales` ainda não tem aquele
     lote — prioridade: `lot_sales` (preço) > `peca.asp` (preço quando achável, senão "Vendido")
     > `bidStatus` (só lotes com lance, ver acima).
-  - **Refresh manual (v0.51.0):** ícone `RefreshCw` ao lado de "Vigiados do dia"/"Lances do dia"
-    (`refreshWatched`/`refreshBids`, `index.tsx`) — invalida a query da conta correspondente
-    (`vinyl-watched`/`vinyl-my-bids`) fora do `staleTime` de 5min, mais `lot-details`/`sold-lots`
-    (prefixo do `queryKey`, cobre os dois). NÃO reroda a varredura geral (isso já é o botão
-    "Forçar atualização deste dia"/`refreshDay`) — só a conta + os detalhes por lote que dependem
-    dela, mantendo o custo baixo (nunca a listagem inteira nem polling em segundo plano).
+  - **Refresh manual (v0.51.0–1):** ícone `RefreshCw` ao lado de "Vigiados do dia"/"Lances do
+    dia" (`refreshWatched`/`refreshBids`, `index.tsx`) — refaz a busca da conta correspondente
+    (`watched.refetch()`/`bids.refetch()`) fora do `staleTime` de 5min, mais `lot-details`/
+    `sold-lots` (`invalidateQueries` por prefixo do `queryKey`, cobre os dois). ⚠️ **v0.51.1**:
+    usa `refetch({throwOnError:true})` das próprias queries, NÃO `queryClient.invalidateQueries`
+    — este resolve quando o refetch **termina** (sucesso OU erro), então uma falha real (ex.: o
+    500 que o site às vezes dá em `authFetch` sob carga, mais provável com o leilão **ao vivo**)
+    aparecia como toast de sucesso mesmo sem atualizar nada. NÃO reroda a varredura geral (isso
+    já é o botão "Forçar atualização deste dia"/`refreshDay`) — só a conta + os detalhes por lote
+    que dependem dela, mantendo o custo baixo (nunca a listagem inteira nem polling em segundo
+    plano).
 - **Ícone roxo "já tenho na Coleção"** (`LotCard`, só na **home** `index.tsx`): disco `Disc3`
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
@@ -942,6 +947,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.50.0 | Tarja diagonal "Vendido" em vigiados/lances já vendidos (`lot_sales` escopado por `getSoldLots`) — ver "Cores, badges e busca" |
 | v0.50.1 | Tarja "Vendido" também pelo `bidStatus` (`bidIsSold`) — sinal em tempo real, sem esperar o cron `step=sales` varrer o catálogo |
 | v0.51.0 | Tarja "Vendido" via `peca.asp` p/ vigiados sem lance (`getLotDetails`, sem custo extra) + refresh manual de Vigiados/Lances do dia |
+| v0.51.1 | Fix: refresh manual usava `invalidateQueries` (resolve mesmo se o refetch falhar) — troca por `refetch({throwOnError:true})` das próprias queries, toast agora reflete falha real |
 
 ## Pendências
 
