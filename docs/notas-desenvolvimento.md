@@ -748,6 +748,16 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   - **Foto:** upload por arquivo → server fn `uploadCollectionImage` (data URL → `service_role`
     → **Storage bucket público `collection`**, criado no `setup.sql`) grava a URL pública em
     `image`; dá para trocar/remover na edição e na inserção. Validação de tipo/tamanho (8 MB).
+  - **Compressão automática (v0.57.0):** o Storage é a maior fonte de **egress** do plano free do
+    Supabase (fotos servidas em resolução cheia toda vez que a galeria abre), não as leituras de
+    banco (essas já são column-scoped/paginadas). `compressCollectionImage` (`collection.server.ts`)
+    redimensiona (lado maior ≤ 1600px, `withoutEnlargement`) e recodifica em **WEBP q82** via
+    `sharp` antes de gravar no bucket; `uploadCollectionImage` chama isso sempre, e o upload leva
+    `cacheControl: 604800` (7 dias). **Backfill** das fotos já existentes:
+    `scripts/compress-collection-images.ts` (`bun run compress-images`) — varre `collection_items`,
+    recomprime as que ainda não são `.webp` (idempotente: pula o que já foi convertido), atualiza
+    `image` para a nova URL e remove o blob antigo do bucket. Rodar manualmente fora do cron (script
+    não é chamado pela app; precisa `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` no ambiente).
   - **Grading selecionável:** `condition_media`/`condition_sleeve` são um `Select` (`GradeSelect`
     em `colecao.tsx`) com a escala **NM · EX · VG+ · VG- · G+ · G-** (+ "Não definido", sentinela
     `__none__` porque o Radix não aceita `value=""`). Aparecem também no card.
@@ -1132,6 +1142,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.55.0      | Reorganização do topo da tela inicial (`_authenticated/index.tsx`): (1) o modo da IA, o seletor de provedor e o botão "Atualizar tudo"/"Atualizado: …" saem do header; (2) a busca (antes numa linha própria abaixo do header) ocupa o lugar deles na barra de navegação; (3) a barra de controles do dia (Vigiados/Lances do dia, Analisar dia, contagem de lotes, chips de casa) deixa de ser `sticky` abaixo do header e passa a renderizar **dentro** do header, acima da lista de dias — via `createPortal` para um `<div ref={setDayBarHost}>` no header, mantendo toda a lógica de derivação (por dia) onde já estava dentro do `.map` de `days` (sem duplicar), só trocando o destino do DOM |
 | v0.55.1      | Os controles de IA/"Atualizar tudo" (movidos em v0.55.0) não ganham um `<footer>` próprio — entram na MESMA barra do rodapé global (`Footer.tsx`, fixo, montado uma vez em `__root.tsx`, mostra "Garimpo de Vinil" + versão): `Footer` ganha um `<div id="footer-extra">` na própria linha (entre o nome e a versão, `ml-auto` empurra a versão pro canto), e a tela inicial faz `document.getElementById("footer-extra")` (`useEffect`) + `createPortal` pra injetar os controles ali — sem acoplar `Footer.tsx` (compartilhado por todas as rotas) ao estado da tela inicial. `__root.tsx` sobe o `pb-12`→`pb-14` reservado pro rodapé fixo, já que a linha fica um pouco mais alta com os controles |
 | v0.56.0      | `MobileTopToggle` (botão de esconder/mostrar o topo, v0.54.0) passa a aparecer também no desktop (`alwaysVisible`, novo prop — remove o `sm:hidden` quando true), só na tela inicial. No desktop, esconder recolhe TUDO menos a lista de dias/abas (`TabsList` — dias + Vigiados + Lances): o header da tela inicial (`_authenticated/index.tsx`) é reestruturado em um wrapper `sticky top-0` sempre visível, contendo (1) um `HideableBar` colapsável (novo prop `collapseOnDesktop`, que troca o `sm:grid-rows-[1fr]` fixo por recolher em qualquer tamanho de tela) com a linha de navegação/busca + a barra de controles do dia (portal do dayBarHost, v0.55.0), e (2) a `TabsList`, DE FORA do `HideableBar`, sempre visível. `headerHeight`/`stickyBelowHeader` (usado pelas barras sticky de Vigiados/Lances) precisam agora somar duas medições independentes (`useMeasuredHeight`, novo hook local com `ResizeObserver` que reanexa sozinho quando o nó muda — cobre a `TabsList`, que só monta depois que `lots` carrega): a altura da parte colapsável (`headerHeight`, zerada quando escondida) + a altura da `TabsList` sempre visível (`tabsBarHeight`, nunca zerada) |
+| v0.57.0      | Egress do Supabase free (207% da cota) rastreado até o Storage das fotos da Coleção, não leituras de banco. `compressCollectionImage` (`collection.server.ts`) redimensiona (≤1600px) e recodifica em WEBP q82 via `sharp` antes de todo upload novo (`uploadCollectionImage`), com `cacheControl` de 7 dias. Backfill das fotos já existentes em `scripts/compress-collection-images.ts` (`bun run compress-images`, idempotente, roda manual fora do cron) |
 
 ## Pendências
 

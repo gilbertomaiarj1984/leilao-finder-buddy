@@ -953,7 +953,7 @@ export async function deleteCollectionItem(id: string): Promise<{ ok: true }> {
 
 /** Bucket público das fotos da coleção (criado em `supabase/setup.sql`). */
 const IMAGE_BUCKET = "collection";
-/** Teto do upload (imagem já decodificada). Fotos de capa não passam disso. */
+/** Teto do upload (imagem já decodificada, antes de comprimir). Fotos de capa não passam disso. */
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const IMAGE_EXT: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -964,10 +964,39 @@ const IMAGE_EXT: Record<string, string> = {
   "image/avif": "avif",
 };
 
+/** Lado maior após redimensionar e qualidade do WEBP de saída — ver `compressCollectionImage`. */
+const COMPRESS_MAX_DIMENSION = 1600;
+const COMPRESS_WEBP_QUALITY = 82;
+/** Cache no CDN/navegador (7 dias) — fotos da coleção não mudam depois de enviadas. */
+const IMAGE_CACHE_CONTROL = "604800";
+
+/**
+ * Redimensiona (lado maior ≤ 1600px, sem ampliar) e recodifica em WEBP q82. Reduz bastante o
+ * egress do Storage, que é cobrado por byte servido — usado tanto no upload novo quanto no
+ * backfill (`scripts/compress-collection-images.ts`) das fotos já existentes.
+ */
+export async function compressCollectionImage(
+  bytes: Buffer,
+): Promise<{ bytes: Buffer; contentType: string; ext: string }> {
+  const sharp = (await import("sharp")).default;
+  const out = await sharp(bytes)
+    .rotate()
+    .resize({
+      width: COMPRESS_MAX_DIMENSION,
+      height: COMPRESS_MAX_DIMENSION,
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .webp({ quality: COMPRESS_WEBP_QUALITY })
+    .toBuffer();
+  return { bytes: out, contentType: "image/webp", ext: "webp" };
+}
+
 /**
  * Faz upload de uma foto (data URL base64) ao Storage e devolve a URL pública para gravar em
  * `image`. Passa pelo servidor com `service_role` (o bucket é público só para leitura). Valida
- * tipo (imagem) e tamanho. Usado pela edição/inserção manual de um disco.
+ * tipo (imagem) e tamanho, comprime (redimensiona + recodifica em WEBP) antes de armazenar.
+ * Usado pela edição/inserção manual de um disco.
  */
 export async function uploadCollectionImage(dataUrl: string): Promise<{ url: string }> {
   const m = /^data:([^;,]+);base64,(.+)$/s.exec(dataUrl ?? "");
@@ -975,15 +1004,18 @@ export async function uploadCollectionImage(dataUrl: string): Promise<{ url: str
   const contentType = m[1]!.toLowerCase();
   const ext = IMAGE_EXT[contentType];
   if (!ext) throw new Error("Formato não suportado. Use JPG, PNG, WEBP, GIF ou AVIF.");
-  const bytes = Buffer.from(m[2]!, "base64");
-  if (!bytes.length) throw new Error("Imagem vazia.");
-  if (bytes.length > MAX_IMAGE_BYTES) {
+  const rawBytes = Buffer.from(m[2]!, "base64");
+  if (!rawBytes.length) throw new Error("Imagem vazia.");
+  if (rawBytes.length > MAX_IMAGE_BYTES) {
     throw new Error(`Imagem muito grande (máx. ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)} MB).`);
   }
-  const path = `${crypto.randomUUID()}.${ext}`;
-  const { error } = await supabaseAdmin.storage
-    .from(IMAGE_BUCKET)
-    .upload(path, bytes, { contentType, upsert: false });
+  const compressed = await compressCollectionImage(rawBytes);
+  const path = `${crypto.randomUUID()}.${compressed.ext}`;
+  const { error } = await supabaseAdmin.storage.from(IMAGE_BUCKET).upload(path, compressed.bytes, {
+    contentType: compressed.contentType,
+    upsert: false,
+    cacheControl: IMAGE_CACHE_CONTROL,
+  });
   if (error) {
     console.error("[collection] falha no upload da imagem", error);
     throw new Error(`Não foi possível enviar a imagem: ${error.message}`);

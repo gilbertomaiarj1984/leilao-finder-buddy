@@ -1,7 +1,7 @@
 {
   "name": "tanstack_start_ts",
   "private": true,
-  "version": "0.56.0",
+  "version": "0.57.0",
   "sideEffects": false,
   "type": "module",
   "scripts": {
@@ -10,7 +10,8 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "compress-images": "bun run scripts/compress-collection-images.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
@@ -32,6 +33,7 @@
     "node-html-parser": "^9.0.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "sharp": "^0.33.5",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.1",
