@@ -92,6 +92,8 @@ import {
 import { AiProviderSelect } from "@/components/vinyl/ai-provider-controls";
 import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
+import type { WatchedLot } from "@/lib/leiloesbr-watch.server";
+import type { MyBid } from "@/lib/leiloesbr-bids.server";
 import { getCollection } from "@/lib/collection.functions";
 import type { CollectionItem } from "@/lib/collection.server";
 import {
@@ -103,6 +105,7 @@ import {
   searchRelevance,
   titleCase,
   UNCLASSIFIED_LABEL,
+  upcomingDayKeys,
   type VinylLot,
 } from "@/lib/vinyl-parse";
 import {
@@ -143,6 +146,9 @@ export const Route = createFileRoute("/_authenticated/")({
 const lotsQuery = { queryKey: ["vinyl-lots"] as const };
 const watchedQuery = { queryKey: ["vinyl-watched"] as const };
 const bidsQuery = { queryKey: ["vinyl-my-bids"] as const };
+// Espelha o `WINDOW_DAYS` do servidor (`leiloesbr-scrape.server.ts`) — janela de poda do
+// acumulador local de vigiados/lances (ver comentário acima de `watched`/`bids` abaixo).
+const WATCH_WINDOW_DAYS = 5;
 
 function HomePage() {
   const navigate = useNavigate();
@@ -334,15 +340,40 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+  // Vigiados/lances "vistos" na janela de dias: a conta do LeilõesBR (l=8/l=4) pode parar de
+  // trazer um lote assim que o leilão termina — igual à listagem pública, que já "some" um
+  // leilão que ficou ao vivo. Sem isso, o card do vigiado/lance (e a tarja "Vendido" que ele
+  // carrega) desaparecia da tela assim que o leilão acabava, mesmo ainda sendo "hoje". Por
+  // isso o `queryFn` MESCLA (nunca substitui) num acumulador local: cada fetch novo entra por
+  // `id`, e um item só sai quando (a) o usuário desvigia explicitamente (`toggle.onSuccess`
+  // remove na hora, ver abaixo) ou (b) o dia dele já saiu da janela de dias do app — poda que
+  // evita crescimento sem limite numa sessão longa. `WATCH_WINDOW_DAYS` espelha o `WINDOW_DAYS`
+  // do servidor (`leiloesbr-scrape.server.ts`).
+  const watchedAccumRef = useRef<Map<string, WatchedLot>>(new Map());
+  const bidsAccumRef = useRef<Map<string, MyBid>>(new Map());
   const watched = useQuery({
     ...watchedQuery,
-    queryFn: () => fetchWatched(),
+    queryFn: async () => {
+      const fresh = await fetchWatched();
+      const acc = watchedAccumRef.current;
+      for (const w of fresh) acc.set(w.id, w);
+      const validDays = new Set(upcomingDayKeys(WATCH_WINDOW_DAYS));
+      for (const [id, w] of acc) if (!validDays.has(watchedDateToKey(w.date))) acc.delete(id);
+      return [...acc.values()];
+    },
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
   const bids = useQuery({
     ...bidsQuery,
-    queryFn: () => fetchBids(),
+    queryFn: async () => {
+      const fresh = await fetchBids();
+      const acc = bidsAccumRef.current;
+      for (const b of fresh) acc.set(b.id, b);
+      const validDays = new Set(upcomingDayKeys(WATCH_WINDOW_DAYS));
+      for (const [id, b] of acc) if (!validDays.has(watchedDateToKey(b.date))) acc.delete(id);
+      return [...acc.values()];
+    },
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -975,6 +1006,13 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             }
           : old,
       );
+      // Desvigiar é a ÚNICA saída explícita do acumulador de "vigiados vistos" (ver comentário
+      // acima de `watched`) — remove na hora, sem esperar o refetch, senão o card ficaria
+      // vigiado na tela mesmo depois do usuário desvigiar.
+      if (!result.watched) {
+        watchedAccumRef.current.delete(`${lot.idLeilao}-${lot.idPeca}`);
+        queryClient.setQueryData(watchedQuery.queryKey, [...watchedAccumRef.current.values()]);
+      }
       void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
       toast.success(result.watched ? "Lote vigiado no LeilõesBR" : "Vigia removida no LeilõesBR");
     },

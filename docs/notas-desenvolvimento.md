@@ -75,6 +75,39 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
   atalho para `BASE_URL`. `absorbSetCookie` mantém o jar da origem vivo com os `Set-Cookie` que a
   casa devolve durante o pregão.
 
+## Endpoints de catálogo/peça — fonte de verdade (PRIORIDADE nas consultas)
+
+⚠️ **Toda consulta de dados de um lote (nº, estado da venda, próximo lance, demanda, taxa…)
+deve preferir estes dois endpoints** — são os que a própria LeilõesBR usa para renderizar as
+telas, então os campos batem exatamente com o que o site mostra. Chutar marcador de TEXTO
+LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nesta base (tarja
+"Vendido" não batendo com o site — ver "Histórico de versões" v0.51.0-3) — **não repetir**.
+
+- **Catálogo do leilão inteiro** (`leiloesbr-catalog.server.ts`, `fetchCatalogData`):
+  1. **Template novo (JSON, preferido)** — `fetchCatalogJson`:
+     `<domínio>/templates/catalogo/asp/catalogocontentload.asp?leilao=<idLeilao>&pesquisa=&irpara=&Dia=&Tipo=<tipo>&artista=&Srt=0&Temtotal=1&pag=<n>&remote=1&limit=30&_=<timestamp>`
+     — paginado (`pag`, `limit=30`, até 80 páginas), array `PECAS` (ou embrulhado, ver
+     `extractPecas`) com um objeto por lote: `ID`, `LOTE`, `VALOR_VENDA` (valor REAL de venda,
+     mesmo quando `VALOR_VALUE` vem escondido/"--"), `DESCRICAO`/`MINI_DESCRICAO`, `PECA`
+     (título curado), `MOSTRABTN_CLASS` (`'is-vendido'` | `'is-naovendido'` — **o campo que diz
+     se vendeu**), `VISITAS`, `QTDLANCE`, `TAXA_LEILOEIRO`, `VALOR_CONTRATADO`. `Tipo=129`
+     filtra só "Disco de Vinil" quando a casa etiqueta (pré-filtro; vazio → tenta `Tipo=""`,
+     catálogo completo).
+  2. **Fallback: template antigo (HTML)** — `fetchCatalogHtml`/`parseCatalogData`:
+     `<domínio>/catalogo.asp?Num=<idLeilao>[&pag=<n>]`, paginado, parser por regex no HTML
+     (`SALE_VALUE_RE`/`SOLD_MARKER_RE`/`UNSOLD_RE`, calibrados no catálogo real do **Discos
+     Esquecidos** — outras casas podem exigir ajuste). Só usar quando o JSON não vier (`JSON.parse`
+     falha → casa não usa o template novo).
+  - **1 requisição por LEILÃO** (paginada) — nunca por lote. Usado por: `fetchLoteMap` (nº do
+    lote), `lot-sales.server.ts` (histórico de vendas/Vinil Analytics).
+- **Peça individual** (`leiloesbr-lot-details.server.ts`, `fetchLotDetails`/`fetchOne`):
+  `<domínio>/peca.asp?id=<idPeca>` (ou `?ID=`, mesma página) — HTML com um JSON `loadData`
+  embutido que traz os **MESMOS campos do catálogo, só que para ESSE lote**: `NOVO_VALOR`
+  (próximo lance mínimo, só em lote ABERTO), `MOSTRABTN_CLASS`, `VALOR_VENDA` (status/valor da
+  venda, quando o leilão já terminou). Extração por **regex pontual no campo**
+  (`"CAMPO":"valor"`), não por texto livre — mesma técnica pros três campos. **1 requisição por
+  LOTE** — só para conjuntos pequenos (vigiados + lances, nunca a listagem inteira).
+
 ## Nº do lote (detalhe crítico)
 
 - **A listagem geral NÃO traz o nº do lote** — ele só existe no **catálogo da casa**. O link
@@ -154,6 +187,23 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
     custo alto — até 30 catálogos inteiros (paginados) por clique, mesma pipeline pesada do
     cron de Analytics. O fix acima (extração por campo JSON do `peca.asp`) resolve o caso
     original sem nenhum desses riscos, porque NUNCA escreve em `lot_sales`.
+  - **Vigiados/lances "sumindo" ao terminar o leilão (v0.51.4):** a conta do LeilõesBR (`l=8`/
+    `l=4`) pode parar de trazer um lote assim que o leilão termina — igual à listagem pública,
+    que já "some" um leilão que ficou ao vivo (ver "Scraping do LeilõesBR"). Como `watched`/
+    `bids` (`index.tsx`) antes SUBSTITUÍAM a lista a cada fetch pelo que a conta retornava
+    naquele instante, o card do vigiado/lance (e a tarja "Vendido" que ele carrega) desaparecia
+    da tela assim que o leilão acabava — mesmo ainda sendo "hoje", e mesmo com o `refetchOnMount:
+    "always"` acima batendo a conta de novo a cada abertura de tela. Fix: os `queryFn` de
+    `watched`/`bids` agora MESCLAM (nunca substituem) num acumulador local (`watchedAccumRef`/
+    `bidsAccumRef`, `Map` por `id`) — cada fetch novo entra no mapa, e um item só sai quando
+    (a) o usuário desvigia explicitamente (`toggle.onSuccess` remove na hora, direto no
+    `Map` + `queryClient.setQueryData`, sem esperar o refetch) ou (b) o dia dele já saiu da
+    janela de `WATCH_WINDOW_DAYS` (=5, espelha o `WINDOW_DAYS` do servidor) — poda que evita
+    crescimento sem limite numa sessão longa. Não muda nada do lado do servidor (`listWatched`/
+    `listMyBids` continuam devolvendo só o que a conta tem AGORA — o acumulador é só no
+    cliente). O "mostrar/esconder leilões finalizados" da listagem geral já existia
+    (`showFinishedDays`/`toggleShowFinished`, esconde por padrão os leilões encerrados há mais
+    de 3h, com botão "Mostrar finalizados (N)") e não precisou mudar.
 - **Ícone roxo "já tenho na Coleção"** (`LotCard`, só na **home** `index.tsx`): disco `Disc3`
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
@@ -968,6 +1018,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.51.1 | Fix: refresh manual usava `invalidateQueries` (resolve mesmo se o refetch falhar) — troca por `refetch({throwOnError:true})` das próprias queries, toast agora reflete falha real |
 | v0.51.2 | Fix: `lot_sales` ficava "presa" sem a venda (leilão capturado com 0 vendas nunca revisitado) — `checkSoldNow`/`captureSalesForAuctions` força releitura no refresh manual de Vigiados/Lances |
 | v0.51.3 | Reverte `checkSoldNow`/`captureSalesForAuctions` (v0.51.2 — pesado e arriscava o grau Disco/Capa da IA no Analytics); tarja "Vendido" via `peca.asp` passa a ler `MOSTRABTN_CLASS`/`VALOR_VENDA` do JSON embutido (mesmos campos do Analytics) em vez de marcadores de texto livre; `refetchOnMount: "always"` nas queries de status |
+| v0.51.4 | Fix: vigiados/lances somem da tela ao leilão terminar (conta para de trazê-los) — `watched`/`bids` passam a MESCLAR (nunca substituir) num acumulador local, poda só pela janela de dias/desvigia explícita; docs: endpoints de catálogo/peça documentados como fonte de verdade prioritária |
 
 ## Pendências
 
