@@ -6,7 +6,7 @@ import { LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
 import { formatAiAlbum, type LotAi, type LotMarket } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import type { Condition } from "@/lib/grading";
-import { bidIsWinning, decodeHtmlEntities } from "@/lib/vinyl-parse";
+import { bidIsSold, bidIsWinning, decodeHtmlEntities } from "@/lib/vinyl-parse";
 import { OWNED_CONFIDENT_MIN, type OwnedHit } from "@/lib/wantlist-match";
 
 export type CardLot = {
@@ -30,6 +30,7 @@ export function LotCard({
   onToggle,
   showDate = false,
   bidStatus,
+  sold,
   ai,
   market,
   album,
@@ -44,6 +45,10 @@ export function LotCard({
   onToggle: () => void;
   showDate?: boolean;
   bidStatus?: string | null;
+  // Lote VENDIDO (`lot_sales`, casado por id) — só chega preenchido para vigiados/lances
+  // (o chamador escopa a consulta a esse conjunto). String = "Vendido" ou o valor de venda
+  // quando capturado; `undefined`/`null`/"" = não vendido (ou sem dado ainda).
+  sold?: string | null;
   ai?: LotAi;
   market?: LotMarket;
   // Estado de conservação (Disco/Capa/encarte + Score/Faixa), resolvido pelo pai. Quando
@@ -83,6 +88,11 @@ export function LotCard({
   // apenas vigiado = amarelo; caso contrário, borda neutra.
   const hasBid = bidStatus !== undefined && bidStatus !== null && bidStatus !== "";
   const winning = hasBid && bidIsWinning(bidStatus as string);
+  // Vendido: `lot_sales` (mais informativo, com preço) OU o status do lance já mostra
+  // encerrado-com-venda ("Coberto e Vendido"/"Vendido"/"Vencedor"/"Arrematado") — este
+  // último é MAIS RÁPIDO (a página "Meus lances" atualiza na hora; `lot_sales` só depois
+  // do cron varrer o catálogo). Fail-closed: "Não vendido" nunca marca.
+  const soldLabel = sold || (hasBid && bidIsSold(bidStatus as string) ? "Vendido" : undefined);
   // Quando estou VENCENDO, o valor atual É o meu lance (a listagem pública traz o
   // valor defasado, anterior ao meu lance vencedor). Quando estou coberto, o valor
   // atual é o da listagem (o lance que me cobriu).
@@ -98,6 +108,16 @@ export function LotCard({
     <article
       className={`relative flex flex-col overflow-hidden rounded-md border bg-card ${cardClass}`}
     >
+      {/* Tarja diagonal "Vendido" — lote vigiado/com lance cujo leilão já terminou com venda
+          confirmada (`lot_sales` OU o status do lance). Fica por cima de tudo (imagem,
+          badges) mas não bloqueia cliques nos botões abaixo dela. */}
+      {soldLabel ? (
+        <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+          <div className="absolute left-1/2 top-[38%] w-[150%] -translate-x-1/2 -translate-y-1/2 -rotate-[32deg] bg-red-600 py-1 text-center text-xs font-bold uppercase tracking-widest text-white shadow-md">
+            Vendido{soldLabel !== "Vendido" ? ` — ${soldLabel}` : ""}
+          </div>
+        </div>
+      ) : null}
       {ai ? <ScoreCorner ai={ai} market={market} price={lot.price} /> : null}
       {/* Relação com a Coleção: ícone no canto DIREITO, logo ABAIXO da nota da IA. Aparece em
           TODO card — CINZA quando não há relação; ROXO quando confirmada; ROXO + "?" quando

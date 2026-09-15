@@ -166,6 +166,18 @@ export function bidIsWinning(status: string): boolean {
 }
 
 /**
+ * true quando o status do MEU LANCE já indica leilão ENCERRADO COM VENDA ("Coberto e
+ * Vendido", "Vendido", "Vencedor"/"Arrematado" — eu ganhei). Sinal MAIS RÁPIDO que
+ * `lot_sales` (que só é preenchida pelo cron `step=sales` depois de varrer o catálogo da
+ * casa, com atraso) — a página "Meus lances" já traz o resultado assim que o leilão termina.
+ * "Não vendido" (deserto/sem lances) explicitamente NÃO conta.
+ */
+export function bidIsSold(status: string): boolean {
+  const s = status ?? "";
+  return /vendid|arremat|arrebat|\bvencedor\b/i.test(s) && !/n[ãa]o\s+vendid/i.test(s);
+}
+
+/**
  * Converte um preço em texto BR ("R$ 1.234,56": ponto de milhar, vírgula decimal)
  * para número. Retorna null quando não há valor numérico (ex.: "sem valor", "--").
  */
