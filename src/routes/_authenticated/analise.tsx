@@ -20,7 +20,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -589,6 +589,22 @@ function SondagemDialog({
 }
 
 function AnalisePage() {
+  // Altura real do header sticky, medida ao vivo — o nav sticky de "ir para casa" (por dia)
+  // usa esse valor como `top` para colar logo abaixo dele, em vez de ficar escondido atrás
+  // (ambos ficariam em top:0).
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setHeaderHeight(entry.contentRect.height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const stickyBelowHeader = { top: headerHeight };
+
   const queryClient = useQueryClient();
   const fetchLots = useServerFn(getVinylLots);
   const fetchLotAi = useServerFn(getLotAi);
@@ -976,8 +992,11 @@ function AnalisePage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:py-5">
+      <header
+        ref={headerRef}
+        className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60"
+      >
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">
           <div>
             <div className="flex items-center gap-3">
               <Button variant="ghost" size="sm" asChild>
@@ -1326,7 +1345,10 @@ function AnalisePage() {
                           <p className="text-sm text-muted-foreground">Nenhum lote neste dia.</p>
                         ) : (
                           <>
-                            <nav className="sticky top-0 z-10 -mx-4 flex flex-nowrap gap-2 overflow-x-auto border-b border-border bg-background/95 px-4 py-2 backdrop-blur">
+                            <nav
+                              style={stickyBelowHeader}
+                              className="sticky z-10 -mx-4 flex flex-nowrap gap-2 overflow-x-auto border-b border-border bg-background/95 px-4 py-2 backdrop-blur"
+                            >
                               {ordered.map((group) => {
                                 const key = `${day}|${group.house}`;
                                 const isOpen = openHouses.has(key);

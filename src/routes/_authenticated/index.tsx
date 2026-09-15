@@ -1068,7 +1068,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           ref={headerRef}
           className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60"
         >
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-1.5">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-1 sm:py-1.5">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="truncate">{email}</span>
               <button
@@ -1167,8 +1167,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           </div>
 
           {!lots.isError && !lots.isLoading ? (
-            <div className="mx-auto max-w-6xl px-4 pb-2">
-              <div className="flex flex-wrap items-center gap-2 pt-2">
+            <div className="mx-auto max-w-6xl px-4 pb-1.5 sm:pb-2">
+              <div className="flex flex-wrap items-center gap-2 pt-1.5 sm:pt-2">
                 <Input
                   value={searchDraft}
                   onChange={(event) => setSearchDraft(event.target.value)}
@@ -1198,9 +1198,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                   </Button>
                 ) : null}
               </div>
-              <TabsList className="mt-2 flex h-auto flex-wrap justify-start gap-1 bg-secondary">
+              {/* No mobile a lista de dias rola na horizontal (uma linha), evitando que o
+                header sticky cresça por causa da quebra de linha; no desktop volta a
+                quebrar em linhas (flex-wrap). */}
+              <TabsList className="mt-1.5 flex h-auto flex-nowrap justify-start gap-1 overflow-x-auto bg-secondary sm:mt-2 sm:flex-wrap sm:overflow-visible">
                 {days.map((day, index) => (
-                  <TabsTrigger key={day} value={`day-${index}`}>
+                  <TabsTrigger key={day} value={`day-${index}`} className="shrink-0">
                     {dayLabel(day, index)}
                     <span className="ml-2 text-xs text-muted-foreground">
                       {lots.data?.lots.filter(
@@ -1212,7 +1215,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                     </span>
                   </TabsTrigger>
                 ))}
-                <TabsTrigger value="watched">
+                <TabsTrigger value="watched" className="shrink-0">
                   Vigiados
                   <span className="ml-2 text-xs text-muted-foreground">
                     {
@@ -1222,7 +1225,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                     }
                   </span>
                 </TabsTrigger>
-                <TabsTrigger value="bids">
+                <TabsTrigger value="bids" className="shrink-0">
                   Lances
                   <span className="ml-2 text-xs text-muted-foreground">
                     {
@@ -1301,7 +1304,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                   <TabsContent key={day} value={`day-${index}`} className="space-y-6">
                     <div
                       style={stickyBelowHeader}
-                      className="sticky z-20 -mx-4 mb-2 space-y-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur"
+                      className="sticky z-20 -mx-4 mb-2 space-y-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur sm:py-3"
                     >
                       <div className="flex flex-wrap items-center gap-3">
                         <span className="text-sm font-semibold text-foreground">
@@ -1924,7 +1927,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                             <section key={dayKey || "sem-data"} className="space-y-6">
                               <div
                                 style={stickyBelowHeader}
-                                className="sticky z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur"
+                                className="sticky z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur sm:py-3"
                               >
                                 <span className="text-sm font-semibold text-foreground">
                                   {label}
@@ -2067,7 +2070,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                             <section key={dayKey || "sem-data"} className="space-y-6">
                               <div
                                 style={stickyBelowHeader}
-                                className="sticky z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur"
+                                className="sticky z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur sm:py-3"
                               >
                                 <span className="text-sm font-semibold text-foreground">
                                   {label}
