@@ -33,11 +33,16 @@ import { cn } from "@/lib/utils";
  */
 export function HideableBar({
   hidden,
+  collapseOnDesktop = false,
   className,
   style,
   children,
 }: {
   hidden: boolean;
+  /** Por padrão `hidden` só recolhe abaixo do breakpoint `sm` (ver comentário acima). Passe
+   * `true` para também recolher no desktop — usado pela barra de topo da tela inicial, cujo
+   * botão de esconder/mostrar agora aparece em qualquer tamanho de tela. */
+  collapseOnDesktop?: boolean;
   className?: string;
   style?: CSSProperties;
   children: ReactNode;
@@ -47,7 +52,11 @@ export function HideableBar({
       style={style}
       className={cn(
         "sticky grid [overflow-anchor:none] transition-[grid-template-rows,top] duration-200 ease-in-out",
-        hidden ? "grid-rows-[0fr] sm:grid-rows-[1fr]" : "grid-rows-[1fr]",
+        hidden
+          ? collapseOnDesktop
+            ? "grid-rows-[0fr]"
+            : "grid-rows-[0fr] sm:grid-rows-[1fr]"
+          : "grid-rows-[1fr]",
         className,
       )}
     >

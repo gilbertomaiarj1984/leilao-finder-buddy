@@ -13,9 +13,12 @@ import { APP_VERSION } from "@/lib/version";
 export function Footer() {
   return (
     <footer className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-1 px-4 py-2 text-xs text-muted-foreground sm:flex-row">
-        <span>Garimpo de Vinil</span>
-        <span className="font-mono" title="Versão do aplicativo">
+      <div className="mx-auto flex max-w-6xl items-center gap-2 overflow-x-auto px-4 py-2 text-xs text-muted-foreground">
+        <span className="shrink-0">Garimpo de Vinil</span>
+        {/* Alvo (via portal) para controles específicos da tela atual — ex.: o modo da
+        IA/provedor/"Atualizar tudo" na tela inicial (ver `footerExtraHost` em index.tsx). */}
+        <div id="footer-extra" className="flex shrink-0 items-center gap-2" />
+        <span className="ml-auto shrink-0 font-mono" title="Versão do aplicativo">
           v{APP_VERSION}
         </span>
       </div>

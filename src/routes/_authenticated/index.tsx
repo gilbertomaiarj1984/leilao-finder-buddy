@@ -19,6 +19,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -256,33 +257,50 @@ function formatUpdatedAt(iso: string | null | undefined): string {
   return fmt.format(date).replace(", ", " às ");
 }
 
-function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
-  // Esconder/mostrar o topo (header + barras sticky aninhadas) é MANUAL — botão
-  // `MobileTopToggle`, só no mobile — desde que a versão anterior por scroll
-  // (`useHideOnScroll`) ficava piscando (recálculo de altura de um `sticky`
-  // durante a transição realimentava a lógica de direção do scroll).
-  const [barsHidden, setBarsHidden] = useState(false);
-  // Altura real do header sticky (header + barra de busca/abas), medida ao vivo — as barras
-  // sticky internas (dia/casas, seções de Vigiados/Lances) usam esse valor como `top` para
-  // colar logo abaixo dele, em vez de ficarem escondidas atrás (ambos ficariam em top:0).
-  // A `ref` fica no CONTEÚDO do header (altura natural estável), não no wrapper que
-  // esconde/mostra (HideableBar) — senão o ResizeObserver ficaria medindo a própria
-  // transição de altura dele. O colapso do header vira `top: 0` combinando a altura
-  // estável com `barsHidden` diretamente, em vez de esperar a medição "seguir" o colapso.
-  const headerRef = useRef<HTMLDivElement>(null);
-  const [headerHeight, setHeaderHeight] = useState(0);
+// Mede a altura de um elemento ao vivo via `ResizeObserver`, reanexando sozinho quando o nó
+// muda (cobre conteúdo condicional, ex.: só monta depois que `lots` carrega).
+function useMeasuredHeight() {
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const [height, setHeight] = useState(0);
   useEffect(() => {
-    const el = headerRef.current;
-    if (!el) return;
+    if (!node) return;
     const observer = new ResizeObserver(([entry]) => {
-      if (entry) setHeaderHeight(entry.contentRect.height);
+      if (entry) setHeight(entry.contentRect.height);
     });
-    observer.observe(el);
+    observer.observe(node);
     return () => observer.disconnect();
-  }, []);
-  const stickyBelowHeader = { top: barsHidden ? 0 : headerHeight };
+  }, [node]);
+  return [setNode, height] as const;
+}
+
+function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
+  // Esconder/mostrar o topo é MANUAL — botão `MobileTopToggle` (agora visível também no
+  // desktop) — desde que a versão anterior por scroll (`useHideOnScroll`) ficava piscando
+  // (recálculo de altura de um `sticky` durante a transição realimentava a lógica de
+  // direção do scroll). No desktop, esconder recolhe tudo MENOS a lista de dias/abas
+  // (`TabsList`) — ela fica de fora do `HideableBar` colapsável, sempre visível, pra sempre
+  // dar pra trocar de dia/Vigiados/Lances mesmo com o resto escondido.
+  const [barsHidden, setBarsHidden] = useState(false);
+  // Altura real de cada parte do header sticky, medida ao vivo — as barras sticky internas
+  // (dia/casas, seções de Vigiados/Lances) usam a soma como `top` para colar logo abaixo do
+  // que estiver visível no momento, em vez de ficarem escondidas atrás. A `ref` fica no
+  // CONTEÚDO de cada parte (altura natural estável), não no wrapper que esconde/mostra
+  // (`HideableBar`) — senão o ResizeObserver ficaria medindo a própria transição de altura
+  // dele.
+  const [headerRef, headerHeight] = useMeasuredHeight();
+  const [tabsBarRef, tabsBarHeight] = useMeasuredHeight();
+  const stickyBelowHeader = { top: tabsBarHeight + (barsHidden ? 0 : headerHeight) };
 
   const [tab, setTab] = useState<string>("day-0");
+  // Alvo (via portal) para a barra de controles do dia (Vigiados/Lances/Analisar/casas),
+  // renderizada dentro do header — acima da lista de dias — em vez de sticky abaixo dele.
+  const [dayBarHost, setDayBarHost] = useState<HTMLDivElement | null>(null);
+  // Alvo (via portal) para o modo/provedor de IA + "Atualizar tudo", que vivem na MESMA
+  // barra do rodapé global (Footer.tsx, montado no __root.tsx) — não um <footer> próprio.
+  const [footerExtraHost, setFooterExtraHost] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setFooterExtraHost(document.getElementById("footer-extra"));
+  }, []);
   const [artistFilter, setArtistFilter] = useState<string>("");
   const [search, setSearch] = useState<string>("");
   // A busca só roda ao confirmar (Enter/botão) — evita filtrar a lista a cada tecla.
@@ -1201,7 +1219,11 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
 
   return (
     <main className="min-h-screen bg-background">
-      <MobileTopToggle collapsed={barsHidden} onToggle={() => setBarsHidden((c) => !c)} />
+      <MobileTopToggle
+        collapsed={barsHidden}
+        onToggle={() => setBarsHidden((c) => !c)}
+        alwaysVisible
+      />
       <Tabs
         value={tab}
         onValueChange={(value) => {
@@ -1209,183 +1231,148 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           setArtistFilter("");
         }}
       >
-        <HideableBar hidden={barsHidden} className="top-0 z-30">
-          <div
-            ref={headerRef}
-            className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60"
-          >
-            <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-1 sm:py-1.5">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="truncate">{email}</span>
-                <button
-                  type="button"
-                  onClick={() => void onSignOut()}
-                  className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  <LogOut className="h-3 w-3" />
-                  Sair
-                </button>
-              </div>
-              {/* No mobile a barra de ações rola na horizontal (uma linha), para o header sticky
-              ficar baixo e não atrapalhar; no desktop volta a quebrar em linhas (flex-wrap). */}
-              <div className="flex w-full items-center gap-2 overflow-x-auto sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  asChild
-                  title="Leilões ao vivo (pregão presencial)"
-                >
-                  <Link to="/ao-vivo">
-                    <Radio className="mr-2 h-4 w-4" />
-                    Ao vivo
-                  </Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild title="Análise de lotes com IA">
-                  <Link to="/analise">
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    Análise
-                  </Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild title="Minha coleção de vinil">
-                  <Link to="/colecao">
-                    <Library className="mr-2 h-4 w-4" />
-                    Coleção
-                  </Link>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  asChild
-                  title="Preços de venda por artista e álbum"
-                >
-                  <Link to="/vinil-analytics">
-                    <BarChart3 className="mr-2 h-4 w-4" />
-                    Analytics
-                  </Link>
-                </Button>
-                <div
-                  className="flex items-center gap-1.5"
-                  title="Modo da avaliação automática por IA (controla o gasto de créditos). A análise sob demanda, pelos botões nos dias/casas, funciona em qualquer modo."
-                >
-                  <Sparkles className="h-4 w-4 shrink-0 text-primary" />
-                  <Select
-                    value={aiMode}
-                    onValueChange={(value) => changeAiMode(value as "off" | "all" | "watched")}
+        <div className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+          {/* Colapsa com o botão do topo (`MobileTopToggle`) — também no desktop agora.
+          A lista de dias/abas (`TabsList`, logo abaixo) fica DE FORA, sempre visível, pra
+          sempre dar pra trocar de dia/Vigiados/Lances mesmo com o resto escondido. */}
+          <HideableBar hidden={barsHidden} collapseOnDesktop>
+            <div ref={headerRef}>
+              <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-1 sm:py-1.5">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="truncate">{email}</span>
+                  <button
+                    type="button"
+                    onClick={() => void onSignOut()}
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                   >
-                    <SelectTrigger className="h-8 w-[176px] text-xs" aria-label="Modo da IA">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="off">IA: desligada</SelectItem>
-                      <SelectItem value="all">IA: tudo</SelectItem>
-                      <SelectItem value="watched">IA: vigiados + lances</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <LogOut className="h-3 w-3" />
+                    Sair
+                  </button>
                 </div>
-                <AiProviderSelect value={aiProvider} onChange={changeAiProvider} />
-                <div className="flex flex-col items-start gap-0.5 sm:items-end">
+                {/* No mobile a barra de ações rola na horizontal (uma linha), para o header sticky
+              ficar baixo e não atrapalhar; no desktop volta a quebrar em linhas (flex-wrap). */}
+                <div className="flex w-full items-center gap-2 overflow-x-auto sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible">
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={refreshAll}
-                    disabled={refreshingAll || lots.isFetching}
-                    title="Forçar atualização geral da lista"
+                    asChild
+                    title="Leilões ao vivo (pregão presencial)"
                   >
-                    {refreshingAll ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="mr-2 h-4 w-4" />
-                    )}
-                    {refreshingAll && refreshPct !== null
-                      ? `Atualizando… ${refreshPct}%`
-                      : "Atualizar tudo"}
+                    <Link to="/ao-vivo">
+                      <Radio className="mr-2 h-4 w-4" />
+                      Ao vivo
+                    </Link>
                   </Button>
-                  {lots.data?.updatedAt ? (
-                    <span
-                      className="text-[11px] text-muted-foreground"
-                      title="Última atualização da lista"
-                    >
-                      Atualizado: {formatUpdatedAt(lots.data.updatedAt)}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-
-            {!lots.isError && !lots.isLoading ? (
-              <div className="mx-auto max-w-6xl px-4 pb-1.5 sm:pb-2">
-                <div className="flex flex-wrap items-center gap-2 pt-1.5 sm:pt-2">
-                  <Input
-                    value={searchDraft}
-                    onChange={(event) => setSearchDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        setSearch(searchDraft);
-                      }
-                    }}
-                    placeholder="Buscar por título, artista, casa ou nº do lote… (Enter para pesquisar)"
-                    className="w-full sm:max-w-md"
-                  />
-                  <Button size="sm" onClick={() => setSearch(searchDraft)}>
-                    <SearchIcon className="mr-2 h-4 w-4" />
-                    Pesquisar
+                  <Button variant="outline" size="sm" asChild title="Análise de lotes com IA">
+                    <Link to="/analise">
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Análise
+                    </Link>
                   </Button>
-                  {search || searchDraft ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setSearch("");
-                        setSearchDraft("");
+                  <Button variant="outline" size="sm" asChild title="Minha coleção de vinil">
+                    <Link to="/colecao">
+                      <Library className="mr-2 h-4 w-4" />
+                      Coleção
+                    </Link>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    asChild
+                    title="Preços de venda por artista e álbum"
+                  >
+                    <Link to="/vinil-analytics">
+                      <BarChart3 className="mr-2 h-4 w-4" />
+                      Analytics
+                    </Link>
+                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={searchDraft}
+                      onChange={(event) => setSearchDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          setSearch(searchDraft);
+                        }
                       }}
-                    >
-                      Limpar busca
+                      placeholder="Buscar por título, artista, casa ou nº do lote… (Enter para pesquisar)"
+                      className="h-8 w-[220px] text-xs sm:w-64"
+                    />
+                    <Button size="sm" onClick={() => setSearch(searchDraft)}>
+                      <SearchIcon className="mr-2 h-4 w-4" />
+                      Pesquisar
                     </Button>
-                  ) : null}
+                    {search || searchDraft ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSearch("");
+                          setSearchDraft("");
+                        }}
+                      >
+                        Limpar busca
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
-                {/* No mobile a lista de dias rola na horizontal (uma linha), evitando que o
-                header sticky cresça por causa da quebra de linha; no desktop volta a
-                quebrar em linhas (flex-wrap). */}
-                <TabsList className="mt-1.5 flex h-auto flex-nowrap justify-start gap-1 overflow-x-auto bg-secondary sm:mt-2 sm:flex-wrap sm:overflow-visible">
-                  {days.map((day, index) => (
-                    <TabsTrigger key={day} value={`day-${index}`} className="shrink-0">
-                      {dayLabel(day, index)}
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {lots.data?.lots.filter(
-                          (lot) =>
-                            lot.dayKey === day &&
-                            !auctionFinished(lot.dayKey, lot.time) &&
-                            matchesSearch(lot),
-                        ).length ?? 0}
-                      </span>
-                    </TabsTrigger>
-                  ))}
-                  <TabsTrigger value="watched" className="shrink-0">
-                    Vigiados
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      {
-                        (watched.data ?? []).filter((lot) =>
-                          watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
-                        ).length
-                      }
-                    </span>
-                  </TabsTrigger>
-                  <TabsTrigger value="bids" className="shrink-0">
-                    Lances
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      {
-                        (bids.data ?? []).filter((bid) =>
-                          bidMatchesSearch(bid, searchNorm, albumFor(bid)),
-                        ).length
-                      }
-                    </span>
-                  </TabsTrigger>
-                </TabsList>
               </div>
-            ) : null}
-          </div>
-        </HideableBar>
+
+              {!lots.isError && !lots.isLoading ? (
+                <div className="mx-auto max-w-6xl px-4 pb-1.5 sm:pb-2">
+                  {/* Alvo da barra de controles do dia (portal) — renderizada aqui, acima da
+                lista de dias, em vez de sticky abaixo do header (ver dayBarHost). */}
+                  <div ref={setDayBarHost} />
+                </div>
+              ) : null}
+            </div>
+          </HideableBar>
+
+          {!lots.isError && !lots.isLoading ? (
+            <div ref={tabsBarRef} className="mx-auto max-w-6xl px-4 pb-1.5 sm:pb-2">
+              {/* No mobile a lista de dias rola na horizontal (uma linha), evitando que o
+              header sticky cresça por causa da quebra de linha; no desktop volta a
+              quebrar em linhas (flex-wrap). Fica sempre visível (fora do HideableBar acima) —
+              nunca esconde, mesmo com o resto do topo recolhido. */}
+              <TabsList className="flex h-auto flex-nowrap justify-start gap-1 overflow-x-auto bg-secondary sm:flex-wrap sm:overflow-visible">
+                {days.map((day, index) => (
+                  <TabsTrigger key={day} value={`day-${index}`} className="shrink-0">
+                    {dayLabel(day, index)}
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {lots.data?.lots.filter(
+                        (lot) =>
+                          lot.dayKey === day &&
+                          !auctionFinished(lot.dayKey, lot.time) &&
+                          matchesSearch(lot),
+                      ).length ?? 0}
+                    </span>
+                  </TabsTrigger>
+                ))}
+                <TabsTrigger value="watched" className="shrink-0">
+                  Vigiados
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {
+                      (watched.data ?? []).filter((lot) =>
+                        watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
+                      ).length
+                    }
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger value="bids" className="shrink-0">
+                  Lances
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {
+                      (bids.data ?? []).filter((bid) =>
+                        bidMatchesSearch(bid, searchNorm, albumFor(bid)),
+                      ).length
+                    }
+                  </span>
+                </TabsTrigger>
+              </TabsList>
+            </div>
+          ) : null}
+        </div>
 
         <div className="mx-auto max-w-6xl px-4 pt-3 pb-8">
           <LiveAuctions />
@@ -1458,205 +1445,210 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
 
                 return (
                   <TabsContent key={day} value={`day-${index}`} className="space-y-6">
-                    <HideableBar
-                      hidden={barsHidden}
-                      style={stickyBelowHeader}
-                      className="z-20 -mx-4 mb-2"
-                    >
-                      <div className="space-y-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur sm:py-3">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="text-sm font-semibold text-foreground">
-                            {dayLabel(day, index)}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => refreshDay(day)}
-                            disabled={refreshingDay === day}
-                            title="Forçar atualização deste dia"
-                            aria-label={`Forçar atualização de ${dayLabel(day, index)}`}
-                            className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
-                          >
-                            {refreshingDay === day ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <RefreshCw className="h-3.5 w-3.5" />
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setBidsViewDay(null);
-                              setWatchedViewDay((cur) => (cur === day ? null : day));
-                            }}
-                            title="Ver vigiados deste dia"
-                            aria-label={`Ver vigiados de ${dayLabel(day, index)}`}
-                            aria-pressed={isWatchedView}
-                            className={
-                              isWatchedView
-                                ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
-                                : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
-                            }
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                            Vigiados do dia
-                            {watchedForDay.length ? (
-                              <span className="ml-0.5 text-muted-foreground">
-                                {watchedForDay.length}
-                              </span>
-                            ) : null}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={refreshWatched}
-                            disabled={refreshingWatched}
-                            title="Forçar atualização dos vigiados (inclui status Vendido)"
-                            aria-label="Forçar atualização dos vigiados"
-                            className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
-                          >
-                            {refreshingWatched ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <RefreshCw className="h-3.5 w-3.5" />
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setWatchedViewDay(null);
-                              setBidsViewDay((cur) => (cur === day ? null : day));
-                            }}
-                            title="Ver lances deste dia"
-                            aria-label={`Ver lances de ${dayLabel(day, index)}`}
-                            aria-pressed={isBidsView}
-                            className={
-                              isBidsView
-                                ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
-                                : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
-                            }
-                          >
-                            <Gavel className="h-3.5 w-3.5" />
-                            Lances do dia
-                            {bidsForDay.length ? (
-                              <span className="ml-0.5 text-muted-foreground">
-                                {bidsForDay.length}
-                              </span>
-                            ) : null}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={refreshBids}
-                            disabled={refreshingBids}
-                            title="Forçar atualização dos lances (inclui status Vendido)"
-                            aria-label="Forçar atualização dos lances"
-                            className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
-                          >
-                            {refreshingBids ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <RefreshCw className="h-3.5 w-3.5" />
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => analyzeScope({ day })}
-                            disabled={analyzing !== null}
-                            title="Analisar com IA os lotes ainda não avaliados deste dia (sob demanda)"
-                            aria-label={`Analisar com IA ${dayLabel(day, index)}`}
-                            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
-                          >
-                            {analyzing === day ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Sparkles className="h-3.5 w-3.5" />
-                            )}
-                            Analisar dia
-                          </button>
-                          {!isWatchedView && !isBidsView ? (
-                            <>
-                              <ArtistFilter
-                                artists={artists}
-                                value={artistFilter}
-                                onChange={setArtistFilter}
-                              />
-                              {artistFilter ? (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setArtistFilter("")}
-                                >
-                                  Limpar filtro
-                                </Button>
+                    {dayBarHost &&
+                      createPortal(
+                        <div className="space-y-3 border-t border-border px-4 py-2 sm:py-3">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <span className="text-sm font-semibold text-foreground">
+                              {dayLabel(day, index)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => refreshDay(day)}
+                              disabled={refreshingDay === day}
+                              title="Forçar atualização deste dia"
+                              aria-label={`Forçar atualização de ${dayLabel(day, index)}`}
+                              className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                            >
+                              {refreshingDay === day ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBidsViewDay(null);
+                                setWatchedViewDay((cur) => (cur === day ? null : day));
+                              }}
+                              title="Ver vigiados deste dia"
+                              aria-label={`Ver vigiados de ${dayLabel(day, index)}`}
+                              aria-pressed={isWatchedView}
+                              className={
+                                isWatchedView
+                                  ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
+                                  : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
+                              }
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              Vigiados do dia
+                              {watchedForDay.length ? (
+                                <span className="ml-0.5 text-muted-foreground">
+                                  {watchedForDay.length}
+                                </span>
                               ) : null}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={refreshWatched}
+                              disabled={refreshingWatched}
+                              title="Forçar atualização dos vigiados (inclui status Vendido)"
+                              aria-label="Forçar atualização dos vigiados"
+                              className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                            >
+                              {refreshingWatched ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setWatchedViewDay(null);
+                                setBidsViewDay((cur) => (cur === day ? null : day));
+                              }}
+                              title="Ver lances deste dia"
+                              aria-label={`Ver lances de ${dayLabel(day, index)}`}
+                              aria-pressed={isBidsView}
+                              className={
+                                isBidsView
+                                  ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
+                                  : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
+                              }
+                            >
+                              <Gavel className="h-3.5 w-3.5" />
+                              Lances do dia
+                              {bidsForDay.length ? (
+                                <span className="ml-0.5 text-muted-foreground">
+                                  {bidsForDay.length}
+                                </span>
+                              ) : null}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={refreshBids}
+                              disabled={refreshingBids}
+                              title="Forçar atualização dos lances (inclui status Vendido)"
+                              aria-label="Forçar atualização dos lances"
+                              className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                            >
+                              {refreshingBids ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => analyzeScope({ day })}
+                              disabled={analyzing !== null}
+                              title="Analisar com IA os lotes ainda não avaliados deste dia (sob demanda)"
+                              aria-label={`Analisar com IA ${dayLabel(day, index)}`}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                            >
+                              {analyzing === day ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Sparkles className="h-3.5 w-3.5" />
+                              )}
+                              Analisar dia
+                            </button>
+                            {!isWatchedView && !isBidsView ? (
+                              <>
+                                <ArtistFilter
+                                  artists={artists}
+                                  value={artistFilter}
+                                  onChange={setArtistFilter}
+                                />
+                                {artistFilter ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setArtistFilter("")}
+                                  >
+                                    Limpar filtro
+                                  </Button>
+                                ) : null}
+                                <span className="text-xs text-muted-foreground">
+                                  {visibleLots.length} lote(s) em {groups.length} casa(s)
+                                </span>
+                                {finishedCount > 0 ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => toggleShowFinished(day)}
+                                  >
+                                    {showFinished
+                                      ? `Ocultar finalizados (${finishedCount})`
+                                      : `Incluir finalizados (${finishedCount})`}
+                                  </Button>
+                                ) : null}
+                              </>
+                            ) : isWatchedView ? (
                               <span className="text-xs text-muted-foreground">
-                                {visibleLots.length} lote(s) em {groups.length} casa(s)
+                                {watchedForDay.length} lote(s) vigiado(s) neste dia
                               </span>
-                              {finishedCount > 0 ? (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => toggleShowFinished(day)}
-                                >
-                                  {showFinished
-                                    ? `Ocultar finalizados (${finishedCount})`
-                                    : `Incluir finalizados (${finishedCount})`}
-                                </Button>
-                              ) : null}
-                            </>
-                          ) : isWatchedView ? (
-                            <span className="text-xs text-muted-foreground">
-                              {watchedForDay.length} lote(s) vigiado(s) neste dia
-                            </span>
-                          ) : (
-                            <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                              {bidsForDay.length} lance(s) neste dia
-                              <BidStatBadges stats={computeBidStats(bidsForDay)} />
-                            </span>
-                          )}
-                        </div>
-                        {!isWatchedView && !isBidsView && groups.length > 0 ? (
-                          <nav className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
-                            {groups.map((group) => {
-                              const houseKey = `${day}|${group.house}`;
-                              const isOpen = openHouses.has(houseKey);
-                              return (
-                                <button
-                                  key={group.house}
-                                  type="button"
-                                  aria-expanded={isOpen}
-                                  onClick={() => {
-                                    const willOpen = !openHouses.has(houseKey);
-                                    toggleHouse(houseKey);
-                                    if (willOpen) {
-                                      requestAnimationFrame(() =>
-                                        document
-                                          .getElementById(houseAnchor(group.house, index))
-                                          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-                                      );
+                            ) : (
+                              <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                {bidsForDay.length} lance(s) neste dia
+                                <BidStatBadges stats={computeBidStats(bidsForDay)} />
+                              </span>
+                            )}
+                          </div>
+                          {!isWatchedView && !isBidsView && groups.length > 0 ? (
+                            <nav className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
+                              {groups.map((group) => {
+                                const houseKey = `${day}|${group.house}`;
+                                const isOpen = openHouses.has(houseKey);
+                                return (
+                                  <button
+                                    key={group.house}
+                                    type="button"
+                                    aria-expanded={isOpen}
+                                    onClick={() => {
+                                      const willOpen = !openHouses.has(houseKey);
+                                      toggleHouse(houseKey);
+                                      if (willOpen) {
+                                        requestAnimationFrame(() =>
+                                          document
+                                            .getElementById(houseAnchor(group.house, index))
+                                            ?.scrollIntoView({
+                                              behavior: "smooth",
+                                              block: "start",
+                                            }),
+                                        );
+                                      }
+                                    }}
+                                    className={
+                                      isOpen
+                                        ? "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
+                                        : "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
                                     }
-                                  }}
-                                  className={
-                                    isOpen
-                                      ? "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
-                                      : "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
-                                  }
-                                >
-                                  {isOpen ? (
-                                    <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                                  ) : (
-                                    <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                                  )}
-                                  {group.house}
-                                  <span className="text-muted-foreground">{group.count}</span>
-                                  <HouseStatBadges
-                                    stats={computeHouseStats(group.lots, watchedIds, bidStatusById)}
-                                  />
-                                </button>
-                              );
-                            })}
-                          </nav>
-                        ) : null}
-                      </div>
-                    </HideableBar>
+                                  >
+                                    {isOpen ? (
+                                      <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                                    ) : (
+                                      <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                                    )}
+                                    {group.house}
+                                    <span className="text-muted-foreground">{group.count}</span>
+                                    <HouseStatBadges
+                                      stats={computeHouseStats(
+                                        group.lots,
+                                        watchedIds,
+                                        bidStatusById,
+                                      )}
+                                    />
+                                  </button>
+                                );
+                              })}
+                            </nav>
+                          ) : null}
+                        </div>,
+                        dayBarHost,
+                      )}
                     {isWatchedView ? (
                       watched.isLoading ? (
                         <Skeleton className="h-40 w-full" />
@@ -2346,6 +2338,53 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             );
           })()
         : null}
+      {footerExtraHost &&
+        createPortal(
+          <>
+            <div
+              className="flex items-center gap-1.5"
+              title="Modo da avaliação automática por IA (controla o gasto de créditos). A análise sob demanda, pelos botões nos dias/casas, funciona em qualquer modo."
+            >
+              <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+              <Select
+                value={aiMode}
+                onValueChange={(value) => changeAiMode(value as "off" | "all" | "watched")}
+              >
+                <SelectTrigger className="h-8 w-[176px] text-xs" aria-label="Modo da IA">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">IA: desligada</SelectItem>
+                  <SelectItem value="all">IA: tudo</SelectItem>
+                  <SelectItem value="watched">IA: vigiados + lances</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <AiProviderSelect value={aiProvider} onChange={changeAiProvider} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshAll}
+              disabled={refreshingAll || lots.isFetching}
+              title="Forçar atualização geral da lista"
+            >
+              {refreshingAll ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              {refreshingAll && refreshPct !== null
+                ? `Atualizando… ${refreshPct}%`
+                : "Atualizar tudo"}
+            </Button>
+            {lots.data?.updatedAt ? (
+              <span title="Última atualização da lista">
+                Atualizado: {formatUpdatedAt(lots.data.updatedAt)}
+              </span>
+            ) : null}
+          </>,
+          footerExtraHost,
+        )}
     </main>
   );
 }
