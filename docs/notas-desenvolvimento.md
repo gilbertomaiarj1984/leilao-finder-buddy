@@ -753,11 +753,20 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
     banco (essas já são column-scoped/paginadas). `compressCollectionImage` (`collection.server.ts`)
     redimensiona (lado maior ≤ 1600px, `withoutEnlargement`) e recodifica em **WEBP q82** via
     `sharp` antes de gravar no bucket; `uploadCollectionImage` chama isso sempre, e o upload leva
-    `cacheControl: 604800` (7 dias). **Backfill** das fotos já existentes:
-    `scripts/compress-collection-images.ts` (`bun run compress-images`) — varre `collection_items`,
-    recomprime as que ainda não são `.webp` (idempotente: pula o que já foi convertido), atualiza
-    `image` para a nova URL e remove o blob antigo do bucket. Rodar manualmente fora do cron (script
-    não é chamado pela app; precisa `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` no ambiente).
+    `cacheControl: 604800` (7 dias).
+  - **Backfill das fotos já existentes (v0.58.0):** lógica compartilhada em
+    `listUncompressedCollectionImages`/`backfillCompressCollectionImage` (`collection.server.ts`) —
+    acha as que ainda não são `.webp`, baixa, comprime, sobe em novo path, atualiza `image` e
+    remove o blob antigo. Dois jeitos de rodar: **(1)** `scripts/compress-collection-images.ts`
+    (`bun run compress-images`), local, roda tudo de uma vez — precisa de rede direta ao Supabase
+    (não funciona em sandbox com allowlist restrita) e `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`
+    no `.env`; **(2)** step `compressimages` do `/api/cron` (`cron.server.ts`), chunked
+    (`max`, default 10) como `enrich`/`condition` — roda na Vercel (já tem rede pro Supabase),
+    dispara com `curl -H "x-cron-token: $CRON_TOKEN" "$APP_URL/api/cron?step=compressimages&max=10"`
+    em loop até `done=true`. Nenhum dos dois faz parte do laço 4x/dia do `refresh.yml` (é
+    backfill único, não recorrente). Sem estado entre chamadas do cron: uma foto que falha
+    (ex.: URL morta) volta a aparecer na próxima chamada — se `failed` não zerar, resolver a
+    linha manualmente em `collection_items` em vez de repetir.
   - **Grading selecionável:** `condition_media`/`condition_sleeve` são um `Select` (`GradeSelect`
     em `colecao.tsx`) com a escala **NM · EX · VG+ · VG- · G+ · G-** (+ "Não definido", sentinela
     `__none__` porque o Radix não aceita `value=""`). Aparecem também no card.
@@ -1143,6 +1152,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.55.1      | Os controles de IA/"Atualizar tudo" (movidos em v0.55.0) não ganham um `<footer>` próprio — entram na MESMA barra do rodapé global (`Footer.tsx`, fixo, montado uma vez em `__root.tsx`, mostra "Garimpo de Vinil" + versão): `Footer` ganha um `<div id="footer-extra">` na própria linha (entre o nome e a versão, `ml-auto` empurra a versão pro canto), e a tela inicial faz `document.getElementById("footer-extra")` (`useEffect`) + `createPortal` pra injetar os controles ali — sem acoplar `Footer.tsx` (compartilhado por todas as rotas) ao estado da tela inicial. `__root.tsx` sobe o `pb-12`→`pb-14` reservado pro rodapé fixo, já que a linha fica um pouco mais alta com os controles |
 | v0.56.0      | `MobileTopToggle` (botão de esconder/mostrar o topo, v0.54.0) passa a aparecer também no desktop (`alwaysVisible`, novo prop — remove o `sm:hidden` quando true), só na tela inicial. No desktop, esconder recolhe TUDO menos a lista de dias/abas (`TabsList` — dias + Vigiados + Lances): o header da tela inicial (`_authenticated/index.tsx`) é reestruturado em um wrapper `sticky top-0` sempre visível, contendo (1) um `HideableBar` colapsável (novo prop `collapseOnDesktop`, que troca o `sm:grid-rows-[1fr]` fixo por recolher em qualquer tamanho de tela) com a linha de navegação/busca + a barra de controles do dia (portal do dayBarHost, v0.55.0), e (2) a `TabsList`, DE FORA do `HideableBar`, sempre visível. `headerHeight`/`stickyBelowHeader` (usado pelas barras sticky de Vigiados/Lances) precisam agora somar duas medições independentes (`useMeasuredHeight`, novo hook local com `ResizeObserver` que reanexa sozinho quando o nó muda — cobre a `TabsList`, que só monta depois que `lots` carrega): a altura da parte colapsável (`headerHeight`, zerada quando escondida) + a altura da `TabsList` sempre visível (`tabsBarHeight`, nunca zerada) |
 | v0.57.0      | Egress do Supabase free (207% da cota) rastreado até o Storage das fotos da Coleção, não leituras de banco. `compressCollectionImage` (`collection.server.ts`) redimensiona (≤1600px) e recodifica em WEBP q82 via `sharp` antes de todo upload novo (`uploadCollectionImage`), com `cacheControl` de 7 dias. Backfill das fotos já existentes em `scripts/compress-collection-images.ts` (`bun run compress-images`, idempotente, roda manual fora do cron) |
+| v0.58.0      | Segunda via pro backfill de fotos da coleção (v0.57.0): o script standalone precisa de rede direta ao Supabase, que nem todo ambiente tem (ex.: sandboxes com allowlist restrita). Lógica extraída pra `listUncompressedCollectionImages`/`backfillCompressCollectionImage` (`collection.server.ts`), compartilhada pelo script E por um novo step `compressimages` do `/api/cron` (chunked, `max`, roda na Vercel — que já tem rede pro Supabase) |
 
 ## Pendências
 

@@ -1023,3 +1023,63 @@ export async function uploadCollectionImage(dataUrl: string): Promise<{ url: str
   const { data } = supabaseAdmin.storage.from(IMAGE_BUCKET).getPublicUrl(path);
   return { url: data.publicUrl };
 }
+
+/**
+ * Backfill (v0.57.0): fotos da coleção enviadas antes da compressão automática existir, ainda
+ * em resolução cheia no bucket. Compartilhado pelo cron (`step=compressimages`, chunked) e pelo
+ * script standalone `scripts/compress-collection-images.ts` (roda tudo de uma vez, fora do
+ * ambiente do servidor). Idempotente: a saída da compressão é sempre `.webp`, então só as que
+ * ainda não são `.webp` entram na lista — rodar de novo nunca recomprime o que já foi convertido.
+ */
+export async function listUncompressedCollectionImages(
+  limit: number,
+): Promise<{ id: string; image: string }[]> {
+  const { data: pub } = supabaseAdmin.storage.from(IMAGE_BUCKET).getPublicUrl("");
+  const prefix = pub.publicUrl;
+  const { data, error } = await supabaseAdmin
+    .from("collection_items")
+    .select("id, image")
+    .not("image", "is", null)
+    .like("image", `${prefix}%`)
+    .not("image", "ilike", "%.webp")
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  if (error) throw new Error(`Falha ao listar fotos da coleção: ${error.message}`);
+  return (data ?? []).filter((r): r is { id: string; image: string } => !!r.image);
+}
+
+/** Recomprime UMA foto já enviada: baixa, comprime, sobe em novo path, atualiza `image` e remove o blob antigo. */
+export async function backfillCompressCollectionImage(row: {
+  id: string;
+  image: string;
+}): Promise<{ originalBytes: number; compressedBytes: number }> {
+  const { data: pub } = supabaseAdmin.storage.from(IMAGE_BUCKET).getPublicUrl("");
+  const prefix = pub.publicUrl;
+  const oldPath = row.image.startsWith(prefix) ? row.image.slice(prefix.length) : null;
+
+  const res = await fetch(row.image);
+  if (!res.ok) throw new Error(`download HTTP ${res.status}`);
+  const rawBytes = Buffer.from(await res.arrayBuffer());
+
+  const compressed = await compressCollectionImage(rawBytes);
+  const newPath = `${crypto.randomUUID()}.${compressed.ext}`;
+  const { error: upErr } = await supabaseAdmin.storage
+    .from(IMAGE_BUCKET)
+    .upload(newPath, compressed.bytes, {
+      contentType: compressed.contentType,
+      upsert: false,
+      cacheControl: IMAGE_CACHE_CONTROL,
+    });
+  if (upErr) throw new Error(`upload: ${upErr.message}`);
+
+  const { data: newPub } = supabaseAdmin.storage.from(IMAGE_BUCKET).getPublicUrl(newPath);
+  const { error: dbErr } = await supabaseAdmin
+    .from("collection_items")
+    .update({ image: newPub.publicUrl })
+    .eq("id", row.id);
+  if (dbErr) throw new Error(`update DB: ${dbErr.message}`);
+
+  if (oldPath) await supabaseAdmin.storage.from(IMAGE_BUCKET).remove([oldPath]);
+
+  return { originalBytes: rawBytes.length, compressedBytes: compressed.bytes.length };
+}

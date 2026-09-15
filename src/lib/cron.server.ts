@@ -378,6 +378,41 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await backfillBundleFlag(max));
     }
 
+    // Backfill (v0.57.0): recomprime fotos da coleção enviadas antes da compressão automática
+    // existir (Storage é a maior fonte de egress do plano free, não leituras de banco). Chunked
+    // como `enrich`/`condition`: cada chamada processa até `max` fotos ainda não `.webp`; repete
+    // até `done=true`. NÃO faz parte do laço 4x/dia do `refresh.yml` — dispare manualmente
+    // (`curl -H "x-cron-token: $CRON_TOKEN" "$APP_URL/api/cron?step=compressimages&max=10"` em
+    // loop) uma vez, até `done=true`. Sem estado entre chamadas: uma foto que falha (ex.: URL
+    // morta) volta na próxima chamada — se `failed` não cair a zero em algumas rodadas, pare e
+    // resolva a linha manualmente (`collection_items`) em vez de repetir pra sempre.
+    if (step === "compressimages") {
+      const { listUncompressedCollectionImages, backfillCompressCollectionImage } =
+        await import("./collection.server");
+      const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 10, 1), 30);
+      const targets = await listUncompressedCollectionImages(max);
+      let originalBytes = 0;
+      let compressedBytes = 0;
+      let failed = 0;
+      for (const row of targets) {
+        try {
+          const r = await backfillCompressCollectionImage(row);
+          originalBytes += r.originalBytes;
+          compressedBytes += r.compressedBytes;
+        } catch (error) {
+          failed++;
+          console.error("[cron] compressimages: falhou", row.id, error);
+        }
+      }
+      return json({
+        processed: targets.length,
+        failed,
+        originalBytes,
+        compressedBytes,
+        done: targets.length < max,
+      });
+    }
+
     // Diagnóstico da captura de vendas: sinais crus do catálogo dos leilões terminados
     // (não grava, não marca). Útil quando `sales` volta 0 — confirma se é legítimo.
     if (step === "salesdebug") {
@@ -430,7 +465,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     return json(
       {
         error:
-          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|backfillbundle|salesdebug|catdebug)",
+          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|backfillbundle|compressimages|salesdebug|catdebug)",
       },
       400,
     );
