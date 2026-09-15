@@ -77,7 +77,7 @@ import {
   getLotCondition,
   getLotIdent,
   getLotMarket,
-  getNextBids,
+  getLotDetails,
   getSoldLots,
   getUserInterests,
   getVerifiedHouses,
@@ -142,6 +142,7 @@ export const Route = createFileRoute("/_authenticated/")({
 
 const lotsQuery = { queryKey: ["vinyl-lots"] as const };
 const watchedQuery = { queryKey: ["vinyl-watched"] as const };
+const bidsQuery = { queryKey: ["vinyl-my-bids"] as const };
 
 function HomePage() {
   const navigate = useNavigate();
@@ -306,7 +307,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const runEnrich = useServerFn(enrichLotes);
   const fetchVerified = useServerFn(getVerifiedHouses);
   const saveVerified = useServerFn(setVerifiedHouses);
-  const fetchNextBids = useServerFn(getNextBids);
+  const fetchLotDetails = useServerFn(getLotDetails);
   const fetchSoldLots = useServerFn(getSoldLots);
   const fetchLotAi = useServerFn(getLotAi);
   const fetchLotIdent = useServerFn(getLotIdent);
@@ -340,7 +341,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     refetchOnWindowFocus: false,
   });
   const bids = useQuery({
-    queryKey: ["vinyl-my-bids"] as const,
+    ...bidsQuery,
     queryFn: () => fetchBids(),
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -869,6 +870,45 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     })();
   };
 
+  // Força a atualização de Vigiados/Lances (conta LeilõesBR) fora do TTL de 5min — inclui o
+  // status "Vendido" (`lot_sales` + peca.asp), que depende desses dados. Não refaz a varredura
+  // geral (`refreshDay` já cobre isso): só a conta + os detalhes por lote (peca.asp) que casam
+  // com ela.
+  const [refreshingWatched, setRefreshingWatched] = useState(false);
+  const [refreshingBids, setRefreshingBids] = useState(false);
+
+  const refreshWatched = () => {
+    void (async () => {
+      setRefreshingWatched(true);
+      try {
+        await queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
+        void queryClient.invalidateQueries({ queryKey: ["lot-details"] });
+        void queryClient.invalidateQueries({ queryKey: ["sold-lots"] });
+        toast.success("Vigiados atualizados");
+      } catch (error) {
+        toast.error((error as Error)?.message || "Não foi possível atualizar os vigiados agora");
+      } finally {
+        setRefreshingWatched(false);
+      }
+    })();
+  };
+
+  const refreshBids = () => {
+    void (async () => {
+      setRefreshingBids(true);
+      try {
+        await queryClient.invalidateQueries({ queryKey: bidsQuery.queryKey });
+        void queryClient.invalidateQueries({ queryKey: ["lot-details"] });
+        void queryClient.invalidateQueries({ queryKey: ["sold-lots"] });
+        toast.success("Lances atualizados");
+      } catch (error) {
+        toast.error((error as Error)?.message || "Não foi possível atualizar os lances agora");
+      } finally {
+        setRefreshingBids(false);
+      }
+    })();
+  };
+
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [refreshPct, setRefreshPct] = useState<number | null>(null);
   // Atualiza tudo em BLOCOS sequenciais de páginas (uma requisição por vez),
@@ -1010,9 +1050,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     for (const b of bids.data ?? []) if (b.myBid) map.set(b.idPeca, b.myBid);
     return map;
   }, [bids.data]);
-  // Próximo lance (NOVO_VALOR do peca.asp) só para VIGIADOS + LANCES (conjunto pequeno;
-  // 1 requisição por lote). Alvos = idPeca + url para montar a URL da peça no servidor.
-  const nextBidTargets = useMemo(() => {
+  // Próximo lance (NOVO_VALOR) e resultado da venda (fallback rápido de "vendido" para quem
+  // só VIGIA, sem lance) lidos do peca.asp — só para VIGIADOS + LANCES (conjunto pequeno; 1
+  // requisição por lote). Alvos = idPeca + url para montar a URL da peça no servidor.
+  const lotDetailTargets = useMemo(() => {
     const byPeca = new Map<string, { idPeca: string; url: string }>();
     for (const w of watched.data ?? [])
       if (w.idPeca && w.url) byPeca.set(w.idPeca, { idPeca: w.idPeca, url: w.url });
@@ -1021,28 +1062,37 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         byPeca.set(b.idPeca, { idPeca: b.idPeca, url: b.url });
     return [...byPeca.values()];
   }, [watched.data, bids.data]);
-  const nextBidsKey = useMemo(
+  const lotDetailTargetsKey = useMemo(
     () =>
-      nextBidTargets
+      lotDetailTargets
         .map((t) => t.idPeca)
         .sort()
         .join(","),
-    [nextBidTargets],
+    [lotDetailTargets],
   );
-  const nextBids = useQuery({
-    queryKey: ["next-bids", nextBidsKey] as const,
-    queryFn: () => fetchNextBids({ data: { targets: nextBidTargets } }),
-    enabled: nextBidTargets.length > 0,
+  const lotDetails = useQuery({
+    queryKey: ["lot-details", lotDetailTargetsKey] as const,
+    queryFn: () => fetchLotDetails({ data: { targets: lotDetailTargets } }),
+    enabled: lotDetailTargets.length > 0,
     staleTime: 3 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
   const nextBidById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const [idPeca, value] of Object.entries(nextBids.data ?? {})) map.set(idPeca, value);
+    for (const [idPeca, d] of Object.entries(lotDetails.data ?? {}))
+      if (d.nextBid) map.set(idPeca, d.nextBid);
     return map;
-  }, [nextBids.data]);
-  // Status "Vendido" (tarja diagonal) — só para VIGIADOS + LANCES (mesmo escopo pequeno do
-  // próximo lance acima), casado por `id` (${idLeilao}-${idPeca}) com `lot_sales`.
+  }, [lotDetails.data]);
+  // Lote/idPeca → id (`${idLeilao}-${idPeca}`) dos vigiados + lances, para casar o resultado
+  // da venda (por idPeca, do peca.asp) com o mapa `soldById` (por id, mesma chave da varredura).
+  const lotIdByPeca = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const w of watched.data ?? []) if (w.idPeca && w.id) map.set(w.idPeca, w.id);
+    for (const b of bids.data ?? []) if (b.idPeca && b.id) map.set(b.idPeca, b.id);
+    return map;
+  }, [watched.data, bids.data]);
+  // Status "Vendido" (tarja diagonal) — só para VIGIADOS + LANCES, casado por `id`
+  // (${idLeilao}-${idPeca}) com `lot_sales` (fonte mais rica, com valor de venda).
   const soldTargets = useMemo(() => {
     const ids = new Set<string>();
     for (const w of watched.data ?? []) if (w.id) ids.add(w.id);
@@ -1060,8 +1110,15 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const soldById = useMemo(() => {
     const map = new Map<string, string>();
     for (const r of soldLots.data ?? []) map.set(r.lot_id, r.sold_price_raw?.trim() || "Vendido");
+    // Fallback do peca.asp (mais rápido que lot_sales, único sinal para vigiados sem lance) —
+    // só preenche o que a lot_sales ainda não trouxe.
+    for (const [idPeca, d] of Object.entries(lotDetails.data ?? {})) {
+      if (!d.sold) continue;
+      const lotId = lotIdByPeca.get(idPeca);
+      if (lotId && !map.has(lotId)) map.set(lotId, d.sold);
+    }
     return map;
-  }, [soldLots.data]);
+  }, [soldLots.data, lotDetails.data, lotIdByPeca]);
   // A URL do site da casa não vem na página de lances — casamos pelo nome da casa
   // com o que já lemos da varredura geral e dos vigiados.
   const houseUrlByName = useMemo(() => {
@@ -1369,6 +1426,20 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                         </button>
                         <button
                           type="button"
+                          onClick={refreshWatched}
+                          disabled={refreshingWatched}
+                          title="Forçar atualização dos vigiados (inclui status Vendido)"
+                          aria-label="Forçar atualização dos vigiados"
+                          className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                        >
+                          {refreshingWatched ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => {
                             setWatchedViewDay(null);
                             setBidsViewDay((cur) => (cur === day ? null : day));
@@ -1389,6 +1460,20 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                               {bidsForDay.length}
                             </span>
                           ) : null}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={refreshBids}
+                          disabled={refreshingBids}
+                          title="Forçar atualização dos lances (inclui status Vendido)"
+                          aria-label="Forçar atualização dos lances"
+                          className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                        >
+                          {refreshingBids ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          )}
                         </button>
                         <button
                           type="button"

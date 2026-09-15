@@ -114,6 +114,23 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
     `bidIsWinning`). Cobre "Coberto e Vendido" (perdi) e "Vencedor"/"Arrematado" (ganhei) assim
     que o leilão encerra, sem esperar o cron. `lot_sales` (com preço) tem prioridade quando as
     duas fontes concordam; sem ela, cai no rótulo genérico "Vendido".
+  - **Sinal para quem só VIGIA, sem lance (v0.51.0):** a página de vigia (`l=8`) não traz status
+    — então o único sinal rápido é o `peca.asp` do próprio lote. `leiloesbr-lot-details.server.ts`
+    virou `fetchLotDetails` (era `fetchNextBids`): a MESMA requisição que já buscava o próximo
+    lance (`NOVO_VALOR`) agora também aplica os marcadores de "vendido" do catálogo (`Valor de
+    venda: R$ …`/`Lote vendido`/`não vendido`, fail-closed) ao texto da página — **custo zero
+    adicional**, é o request que já existia, escopado a vigiados+lances (nunca mais que 100,
+    concorrência 8). Server fn renomeada `getLotDetails` (era `getNextBids`), retorna
+    `Record<idPeca, {nextBid?, sold?}>`. `index.tsx` casa `idPeca → id` (`lotIdByPeca`, dos
+    próprios vigiados/lances) e mescla no `soldById` só quando `lot_sales` ainda não tem aquele
+    lote — prioridade: `lot_sales` (preço) > `peca.asp` (preço quando achável, senão "Vendido")
+    > `bidStatus` (só lotes com lance, ver acima).
+  - **Refresh manual (v0.51.0):** ícone `RefreshCw` ao lado de "Vigiados do dia"/"Lances do dia"
+    (`refreshWatched`/`refreshBids`, `index.tsx`) — invalida a query da conta correspondente
+    (`vinyl-watched`/`vinyl-my-bids`) fora do `staleTime` de 5min, mais `lot-details`/`sold-lots`
+    (prefixo do `queryKey`, cobre os dois). NÃO reroda a varredura geral (isso já é o botão
+    "Forçar atualização deste dia"/`refreshDay`) — só a conta + os detalhes por lote que dependem
+    dela, mantendo o custo baixo (nunca a listagem inteira nem polling em segundo plano).
 - **Ícone roxo "já tenho na Coleção"** (`LotCard`, só na **home** `index.tsx`): disco `Disc3`
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
@@ -924,6 +941,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.49.3 | Ao vivo: card sobe para o topo da grade ao abrir "Abrir aqui" (agrupa os pregões abertos) |
 | v0.50.0 | Tarja diagonal "Vendido" em vigiados/lances já vendidos (`lot_sales` escopado por `getSoldLots`) — ver "Cores, badges e busca" |
 | v0.50.1 | Tarja "Vendido" também pelo `bidStatus` (`bidIsSold`) — sinal em tempo real, sem esperar o cron `step=sales` varrer o catálogo |
+| v0.51.0 | Tarja "Vendido" via `peca.asp` p/ vigiados sem lance (`getLotDetails`, sem custo extra) + refresh manual de Vigiados/Lances do dia |
 
 ## Pendências
 

@@ -114,10 +114,12 @@ export const listMyBids = createServerFn({ method: "GET" })
   });
 
 /**
- * Próximo lance (NOVO_VALOR do `peca.asp`) por lote. 1 requisição por lote → usar só
- * para conjuntos pequenos (vigiados + lances). Best-effort: {} em erro.
+ * Detalhes por lote lidos do `peca.asp` (1 requisição por lote → usar só para conjuntos
+ * pequenos: vigiados + lances): próximo lance (`NOVO_VALOR`) e, quando o leilão já terminou,
+ * o resultado da venda (sinal mais rápido de "vendido" para quem só VIGIA, sem lance — ver
+ * `leiloesbr-lot-details.server.ts`). Best-effort: {} em erro.
  */
-export const getNextBids = createServerFn({ method: "POST" })
+export const getLotDetails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { targets?: { idPeca: string; url: string }[] } | undefined) => ({
     targets: Array.isArray(input?.targets)
@@ -129,13 +131,14 @@ export const getNextBids = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
-    if (!data.targets.length) return {} as Record<string, string>;
+    const empty: Record<string, { nextBid?: string; sold?: string }> = {};
+    if (!data.targets.length) return empty;
     try {
-      const { fetchNextBids } = await import("./leiloesbr-lot-details.server");
-      return await fetchNextBids(data.targets);
+      const { fetchLotDetails } = await import("./leiloesbr-lot-details.server");
+      return await fetchLotDetails(data.targets);
     } catch (error) {
-      console.error("[leiloesbr] não foi possível ler os próximos lances", error);
-      return {} as Record<string, string>;
+      console.error("[leiloesbr] não foi possível ler os detalhes dos lotes", error);
+      return empty;
     }
   });
 
