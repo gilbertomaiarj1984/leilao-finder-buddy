@@ -107,6 +107,13 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
   500 ids) → `getAllLotSales({ids, withOrig:false})`. Query `["sold-lots", <ids ordenados>]` no
   `index.tsx` (mesmo padrão de `nextBidTargets`/`getNextBids`), mapa `soldById` passado a todo
   `LotCard` direto e a `BidHouseSections` (prop `soldById`).
+  - **Sinal mais rápido para quem tem LANCE (v0.50.1):** `lot_sales` só chega depois que o cron
+    `step=sales` varre o catálogo da casa (atraso) — então `LotCard` TAMBÉM olha o `bidStatus`
+    (já vem em tempo real de "Meus lances", `l=4`): `bidIsSold(status)` (`vinyl-parse.ts`) casa
+    `vendid|arremat|arrebat|vencedor` e EXCLUI "Não vendido" (fail-closed, mesmo espírito de
+    `bidIsWinning`). Cobre "Coberto e Vendido" (perdi) e "Vencedor"/"Arrematado" (ganhei) assim
+    que o leilão encerra, sem esperar o cron. `lot_sales` (com preço) tem prioridade quando as
+    duas fontes concordam; sem ela, cai no rótulo genérico "Vendido".
 - **Ícone roxo "já tenho na Coleção"** (`LotCard`, só na **home** `index.tsx`): disco `Disc3`
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
@@ -916,6 +923,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.49.1 | Otimização dos `.md` do repo (só documentação): remove duplicação de convenções entre `AGENTS.md`/`CLAUDE.md`/notas (fonte única em `AGENTS.md`), remove telemetria repetida (fonte única em `economia-migracao.md`) e comprime o Histórico de versões para 1 linha/versão — a mecânica detalhada de cada área já vive nas seções acima |
 | v0.49.3 | Ao vivo: card sobe para o topo da grade ao abrir "Abrir aqui" (agrupa os pregões abertos) |
 | v0.50.0 | Tarja diagonal "Vendido" em vigiados/lances já vendidos (`lot_sales` escopado por `getSoldLots`) — ver "Cores, badges e busca" |
+| v0.50.1 | Tarja "Vendido" também pelo `bidStatus` (`bidIsSold`) — sinal em tempo real, sem esperar o cron `step=sales` varrer o catálogo |
 
 ## Pendências
 
