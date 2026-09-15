@@ -29,7 +29,7 @@ import { scoreTone } from "@/components/vinyl/ai-score-utils";
 import { fmtMoney } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
-import { useHideOnScroll } from "@/hooks/use-hide-on-scroll";
+import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
 import {
   type AlbumAgg,
@@ -108,7 +108,8 @@ type ExcludeSale = (sale: SaleRow, label: string) => void;
 type ExcludeArtist = (artist: ArtistAgg) => void;
 
 function VinilAnalyticsPage() {
-  const barsHidden = useHideOnScroll();
+  // Esconder/mostrar o topo é MANUAL — botão `MobileTopToggle`, só no mobile.
+  const [barsHidden, setBarsHidden] = useState(false);
   const queryClient = useQueryClient();
   const fetchSales = useServerFn(getVinylSales);
   const runReident = useServerFn(reidentifySales);
@@ -382,6 +383,7 @@ function VinilAnalyticsPage() {
 
   return (
     <main className="min-h-screen bg-background">
+      <MobileTopToggle collapsed={barsHidden} onToggle={() => setBarsHidden((c) => !c)} />
       <HideableBar hidden={barsHidden} className="top-0 z-30">
         <header className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">

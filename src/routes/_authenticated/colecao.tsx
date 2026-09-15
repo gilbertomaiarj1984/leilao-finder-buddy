@@ -39,7 +39,7 @@ import { CollectionCard } from "@/components/vinyl/collection-card";
 import { collectionLabel } from "@/components/vinyl/collection-utils";
 import { ArtistFilter } from "@/components/vinyl/filters";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
-import { useHideOnScroll } from "@/hooks/use-hide-on-scroll";
+import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import { GEMINI_IMPORT_PROMPT, parseCollectionBulkText } from "@/lib/collection-bulk";
 import { GRADE_ORDER } from "@/lib/grading";
 import { AiProviderSelect } from "@/components/vinyl/ai-provider-controls";
@@ -227,7 +227,8 @@ function toDraft(item: CollectionItem): Draft {
 }
 
 function ColecaoPage() {
-  const barsHidden = useHideOnScroll();
+  // Esconder/mostrar o topo é MANUAL — botão `MobileTopToggle`, só no mobile.
+  const [barsHidden, setBarsHidden] = useState(false);
   const queryClient = useQueryClient();
   const fetchCollection = useServerFn(getCollection);
   const scan = useServerFn(scanCollection);
@@ -533,6 +534,7 @@ function ColecaoPage() {
 
   return (
     <main className="min-h-screen bg-background">
+      <MobileTopToggle collapsed={barsHidden} onToggle={() => setBarsHidden((c) => !c)} />
       <Tabs defaultValue="cards">
         <HideableBar hidden={barsHidden} className="top-0 z-30">
           <div className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">

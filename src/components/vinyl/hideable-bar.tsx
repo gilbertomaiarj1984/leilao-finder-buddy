@@ -9,25 +9,27 @@ import { cn } from "@/lib/utils";
  * seu espaço no fluxo). O truque do grid-template-rows anima para qualquer
  * altura de conteúdo sem precisar medir via JS.
  *
- * `overflow-anchor: none` evita que o navegador "compense" a mudança de
- * altura ajustando sozinho o scroll (scroll anchoring) — isso brigava com
- * `useHideOnScroll` e causava barras piscando/pulando de posição. A duração
- * da transição (200ms) tem que ficar abaixo do `cooldownMs` de
- * `useHideOnScroll` (400ms por padrão) — o cooldown existe para descartar
- * ruído de scroll gerado pela PRÓPRIA animação; se a transição durasse mais
- * que o cooldown, esse ruído vazaria para a próxima decisão de direção.
+ * `hidden` só recolhe abaixo do breakpoint `sm` (`sm:grid-rows-[1fr]` sempre
+ * vence) — o controle é o botão manual `MobileTopToggle`, que também só
+ * aparece no mobile; no desktop o topo fica sempre visível, sem depender de
+ * nenhum estado de coluna vir "certo" no resize.
+ *
+ * Esconder/mostrar é **manual** (clique no botão), não reage a scroll: uma
+ * versão anterior tentava auto-esconder ao rolar (`useHideOnScroll`), mas o
+ * próprio recálculo de altura de um elemento `sticky` durante a transição
+ * gerava ruído de scroll que realimentava a lógica e ficava piscando sem
+ * parar — removido em favor deste controle explícito do usuário.
  *
  * Importante para quem mede a altura do header (`ResizeObserver`, para
  * outras barras colarem logo abaixo via `top`): a `ref` do observer deve ir
  * no elemento de CONTEÚDO passado como `children` (o `<header>`/`<div>`
  * visual), NUNCA neste wrapper — a altura deste wrapper é o que está sendo
  * animado (0 ⇄ natural), então observá-lo gera um vaivém de medições a cada
- * frame da transição (o bug de "piscar"). O conteúdo interno mantém sua
- * altura natural estável o tempo todo (só fica visualmente recortado pelo
- * `overflow-hidden` quando a linha do grid encolhe); combine essa altura
- * estável com o próprio `hidden` para decidir o `top` de barras abaixo
- * (`hidden ? 0 : headerHeight`), em vez de depender da medição acompanhar
- * o colapso sozinha.
+ * frame da transição. O conteúdo interno mantém sua altura natural estável o
+ * tempo todo (só fica visualmente recortado pelo `overflow-hidden` quando a
+ * linha do grid encolhe); combine essa altura estável com o próprio `hidden`
+ * para decidir o `top` de barras abaixo (`hidden ? 0 : headerHeight`), em vez
+ * de depender da medição acompanhar o colapso sozinha.
  */
 export function HideableBar({
   hidden,
@@ -45,7 +47,7 @@ export function HideableBar({
       style={style}
       className={cn(
         "sticky grid [overflow-anchor:none] transition-[grid-template-rows,top] duration-200 ease-in-out",
-        hidden ? "grid-rows-[0fr]" : "grid-rows-[1fr]",
+        hidden ? "grid-rows-[0fr] sm:grid-rows-[1fr]" : "grid-rows-[1fr]",
         className,
       )}
     >
