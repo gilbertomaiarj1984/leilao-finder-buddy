@@ -136,6 +136,18 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
     já é o botão "Forçar atualização deste dia"/`refreshDay`) — só a conta + os detalhes por lote
     que dependem dela, mantendo o custo baixo (nunca a listagem inteira nem polling em segundo
     plano).
+  - **`lot_sales` "presa" sem a venda (v0.51.2):** `captureFinishedSales` marca um leilão como
+    capturado assim que lê o catálogo com sucesso — **mesmo com 0 vendas reconhecidas** naquele
+    momento — e nunca mais o revisita (ver "Histórico de vendas" abaixo). Se o catálogo ainda
+    não tinha marcado o lote como vendido nessa 1ª leitura do cron, ele fica **capturado sem a
+    venda para sempre**, mesmo que o usuário já veja "vendido" no site depois — a tarja nunca
+    aparecia nesse caso (nem `lot_sales` nem `bidStatus`/`peca.asp` sozinhos resolviam). Fix:
+    `captureSalesForAuctions(idLeiloes)` (`lot-sales.server.ts`) **ignora o checkpoint** e força
+    uma releitura do catálogo dos leilões pedidos (upsert idempotente, nunca duplica) — chamada
+    pelo refresh manual (`checkSoldNow`, `leiloesbr.functions.ts`) com os `idLeilao` distintos
+    dos vigiados/lances recém-atualizados (até 30). `refreshWatched`/`refreshBids` chamam isso
+    ANTES de invalidar `sold-lots`, então o refresh manual agora é o jeito confiável de "forçar"
+    a tarja quando o usuário já confirmou a venda no site.
 - **Ícone roxo "já tenho na Coleção"** (`LotCard`, só na **home** `index.tsx`): disco `Disc3`
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
@@ -948,6 +960,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.50.1 | Tarja "Vendido" também pelo `bidStatus` (`bidIsSold`) — sinal em tempo real, sem esperar o cron `step=sales` varrer o catálogo |
 | v0.51.0 | Tarja "Vendido" via `peca.asp` p/ vigiados sem lance (`getLotDetails`, sem custo extra) + refresh manual de Vigiados/Lances do dia |
 | v0.51.1 | Fix: refresh manual usava `invalidateQueries` (resolve mesmo se o refetch falhar) — troca por `refetch({throwOnError:true})` das próprias queries, toast agora reflete falha real |
+| v0.51.2 | Fix: `lot_sales` ficava "presa" sem a venda (leilão capturado com 0 vendas nunca revisitado) — `checkSoldNow`/`captureSalesForAuctions` força releitura no refresh manual de Vigiados/Lances |
 
 ## Pendências
 

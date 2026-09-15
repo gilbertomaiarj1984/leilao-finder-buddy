@@ -567,6 +567,72 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   return { sales, auctions: doneIds.length, remaining, done: remaining === 0, aiUsed, identUsed };
 }
 
+/**
+ * Recaptura vendas de leilões ESPECÍFICOS (por `idLeilao`), **ignorando** o checkpoint de já
+ * capturados. `captureFinishedSales` marca um leilão como capturado assim que lê o catálogo
+ * com sucesso — MESMO com 0 vendas reconhecidas naquele momento — e nunca mais o revisita. Se
+ * o catálogo da casa ainda não tinha marcado o lote como vendido nessa 1ª leitura (ou o
+ * parser daquela casa perdeu o marcador), o leilão fica "capturado" para sempre sem a venda,
+ * mesmo que o site já mostre "vendido" depois. Usado pelo refresh manual de Vigiados/Lances
+ * (`checkSoldNow`) para forçar uma releitura AGORA dos leilões visíveis, sem esperar o cron.
+ * `upsertLotSales` é idempotente (upsert por `lot_id`), então recapturar nunca duplica nem
+ * atrapalha o fluxo normal do cron — só preenche o que faltava.
+ */
+export async function captureSalesForAuctions(
+  idLeiloes: string[],
+): Promise<{ sales: number; auctions: number }> {
+  const ids = new Set(idLeiloes.filter(Boolean));
+  if (!ids.size) return { sales: 0, auctions: 0 };
+  const { parseAuctionRef, fetchCatalogData } = await import("./leiloesbr-catalog.server");
+  const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
+  const { getAllLotIdent } = await import("./lot-ident.server");
+
+  const [seen, snapshot, identRows] = await Promise.all([
+    readSeenAuctions(),
+    scrapeVinylLots(false),
+    getAllLotIdent().catch(() => []),
+  ]);
+
+  const targets = seen
+    .filter((a) => ids.has(a.id_leilao))
+    .map((a) => ({ row: a, ref: parseAuctionRef(a.entry_url ?? "") }))
+    .filter(
+      (x): x is { row: SeenAuctionRow; ref: { domain: string; idLeilao: string } } =>
+        x.ref !== null,
+    );
+  if (!targets.length) return { sales: 0, auctions: 0 };
+
+  const vinylById = new Map<string, VinylInfo>();
+  for (const r of identRows) {
+    if (r.album) vinylById.set(r.id, { title: r.album, artist: extractArtist(r.album) });
+  }
+  for (const lot of snapshot.lots) vinylById.set(lot.id, { title: lot.title, artist: lot.artist });
+
+  let sales = 0;
+  let auctions = 0;
+  for (const { row, ref } of targets) {
+    try {
+      const catalog = await fetchCatalogData(ref.domain, ref.idLeilao);
+      const rows = salesRowsFromCatalog(
+        {
+          idLeilao: ref.idLeilao,
+          domain: ref.domain,
+          dayKey: row.day_key,
+          house: row.house,
+          uf: row.uf ?? "",
+        },
+        catalog,
+        vinylById,
+      );
+      if (rows.length) sales += await upsertLotSales(rows);
+      auctions += 1;
+    } catch (error) {
+      console.error(`[lot-sales] falha ao recapturar vendas do leilão ${ref.idLeilao}`, error);
+    }
+  }
+  return { sales, auctions };
+}
+
 // Teto de vendas por RODADA que passam pela IA de identificação (mantém a rodada barata/rápida;
 // o laço do cron/UI chama de novo até `done`).
 const REIDENT_CAP = 25;

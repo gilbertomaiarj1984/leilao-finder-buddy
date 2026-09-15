@@ -584,6 +584,39 @@ export const getSoldLots = createServerFn({ method: "POST" })
   });
 
 /**
+ * Força a RELEITURA do catálogo dos leilões informados (por `idLeilao`), ignorando o
+ * checkpoint de "já capturado" — `captureFinishedSales` marca um leilão como capturado assim
+ * que lê o catálogo com sucesso, mesmo sem reconhecer nenhuma venda naquele momento, e nunca
+ * mais o revisita; então um lote que o site já mostra "vendido" pode ficar sem refletir isso
+ * em `lot_sales` até alguém pedir essa releitura. Usada pelo refresh manual de Vigiados/Lances
+ * (o botão de atualizar chama isso para os leilões visíveis, além de refazer a busca da
+ * conta). Escopado (até 30 leilões) — nunca a listagem inteira. Best-effort.
+ */
+export const checkSoldNow = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { idLeiloes?: string[] } | undefined) => ({
+    idLeiloes: Array.isArray(input?.idLeiloes)
+      ? [
+          ...new Set(
+            input!.idLeiloes.filter((id): id is string => typeof id === "string" && id.length > 0),
+          ),
+        ].slice(0, 30)
+      : [],
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    if (!data.idLeiloes.length) return { sales: 0, auctions: 0 };
+    try {
+      const { captureSalesForAuctions } = await import("./lot-sales.server");
+      return await captureSalesForAuctions(data.idLeiloes);
+    } catch (error) {
+      console.error("[lot-sales] não foi possível recapturar vendas sob demanda", error);
+      return { sales: 0, auctions: 0 };
+    }
+  });
+
+/**
  * Captura de vendas pós-leilão sob demanda (mesma rotina do cron `step=sales`): varre o
  * catálogo de até `max` leilões terminados ainda não capturados e grava em `lot_sales`.
  * O cliente pode chamar em laço até `done` (igual ao preenchimento de nº de lote).
