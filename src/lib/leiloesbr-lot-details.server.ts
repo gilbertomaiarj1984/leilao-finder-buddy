@@ -1,4 +1,5 @@
 import { publicFetch } from "./leiloesbr-auth.server";
+import { parseSoldMarkers } from "./leiloesbr-catalog.server";
 import { auctionHouseDomain } from "./vinyl-parse";
 
 /**
@@ -11,7 +12,13 @@ import { auctionHouseDomain } from "./vinyl-parse";
  *   do leilão inteiro; aqui, da página do PRÓPRIO lote) — lidos com a mesma técnica de regex
  *   pontual no campo já usada para `NOVO_VALOR`, não um chute de texto livre. É o sinal MAIS
  *   RÁPIDO de "vendido" para quem só VIGIA (sem lance) — a página de vigia não traz status, e
- *   `lot_sales` só é preenchida pelo cron `step=sales` bem depois.
+ *   `lot_sales` só é preenchida pelo cron `step=sales` bem depois (e só depois que o LEILÃO
+ *   INTEIRO termina — um lote pode já estar vendido num pregão ainda "ao vivo").
+ * - **Casas do template ANTIGO** (catálogo HTML server-side, sem o JSON `loadData`): a página
+ *   do lote também não embute `MOSTRABTN_CLASS`, então cai no fallback de marcadores de texto
+ *   (`parseSoldMarkers`, a MESMA heurística fail-closed que `leiloesbr-catalog.server.ts` usa
+ *   para essas casas no catálogo pós-leilão) — sem isso, essas casas nunca mostravam a tarja
+ *   "Vendido" para quem só vigia enquanto o pregão ainda estava ao vivo.
  *
  * 1 requisição por lote serve os dois — usar só para conjuntos pequenos (vigiados + lances),
  * nunca para a listagem inteira.
@@ -37,15 +44,20 @@ function parseNextBid(html: string): string | null {
 
 /**
  * Mesmos campos do `loadData` que `leiloesbr-catalog.server.ts` já lê com sucesso do catálogo
- * (`MOSTRABTN_CLASS`, `VALOR_VENDA`) — aqui embutidos na página do PRÓPRIO lote. Fail-closed:
- * campo ausente ou `is-naovendido` → `undefined` (sem tarja por esse sinal; `lot_sales` e
- * `bidStatus` continuam valendo como fallback).
+ * (`MOSTRABTN_CLASS`, `VALOR_VENDA`) — aqui embutidos na página do PRÓPRIO lote. `is-naovendido`
+ * é um sinal EXPLÍCITO de "não vendido" (fail-closed: undefined, sem cair no fallback de texto).
+ * Quando o campo nem existe (casa do template ANTIGO, sem esse JSON), cai no fallback de
+ * marcadores de texto (`parseSoldMarkers`) aplicado à página inteira do lote.
  */
 function parseSold(html: string): string | undefined {
   const status = html.match(/"MOSTRABTN_CLASS":"([^"]*)"/)?.[1];
-  if (status !== "is-vendido") return undefined;
-  const valor = html.match(/"VALOR_VENDA":"([^"]*)"/)?.[1]?.trim();
-  return valor && valor !== "0" ? `R$ ${valor},00` : "Vendido";
+  if (status === "is-vendido") {
+    const valor = html.match(/"VALOR_VENDA":"([^"]*)"/)?.[1]?.trim();
+    return valor && valor !== "0" ? `R$ ${valor},00` : "Vendido";
+  }
+  if (status === "is-naovendido") return undefined;
+  const { sold, soldPrice } = parseSoldMarkers(html);
+  return sold ? (soldPrice ?? "Vendido") : undefined;
 }
 
 async function fetchOne(target: {

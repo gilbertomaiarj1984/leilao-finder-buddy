@@ -87,6 +87,25 @@ const SOLD_MARKER_RE = /lote\s+vendido|arrematad|\bvendid[oa]\b/i;
 // Marcadores de lote NÃO vendido no card do catálogo (fail-closed: some da captura).
 const UNSOLD_RE = /n[ãa]o\s+vendid|n[ãa]o\s+arrematad|sem\s+lances?|retirad[oa]|deserto/i;
 
+/**
+ * Marcadores de venda por TEXTO (mesma heurística fail-closed de `parseCatalogData`), extraída
+ * para ser reaproveitada por `leiloesbr-lot-details.server.ts` como fallback em casas do
+ * template ANTIGO (HTML server-side, sem o JSON `loadData`/`MOSTRABTN_CLASS` — só essas casas
+ * têm esse campo). Sem rótulo/marcador claro OU com marcador de "não vendido", `sold=false`.
+ */
+export function parseSoldMarkers(text: string): { sold: boolean; soldPrice: string | null } {
+  const unsold = UNSOLD_RE.test(text);
+  const labeled = text.match(SALE_VALUE_RE);
+  let soldPrice: string | null = null;
+  if (labeled) {
+    soldPrice = `R$ ${labeled[1]}`;
+  } else if (SOLD_MARKER_RE.test(text)) {
+    const brl = text.match(BRL_RE);
+    if (brl) soldPrice = `R$ ${brl[1]}`;
+  }
+  return { sold: soldPrice !== null && !unsold, soldPrice };
+}
+
 /** Decodifica as entidades HTML comuns de um texto de atributo. */
 const decodeEntities = decodeHtmlEntities;
 
@@ -143,16 +162,7 @@ export function parseCatalogData(html: string): Map<string, CatalogLot> {
       seg.match(/\blote\s*n?[ºo°]?\s*[:.-]?\s*([0-9]+[a-zA-Z]?)\b/i)?.[1] ??
       null;
 
-    const unsold = UNSOLD_RE.test(seg);
-    const labeled = seg.match(SALE_VALUE_RE);
-    let soldPrice: string | null = null;
-    if (labeled) {
-      soldPrice = `R$ ${labeled[1]}`;
-    } else if (SOLD_MARKER_RE.test(seg)) {
-      const brl = seg.match(BRL_RE);
-      if (brl) soldPrice = `R$ ${brl[1]}`;
-    }
-    const sold = soldPrice !== null && !unsold;
+    const { sold, soldPrice } = parseSoldMarkers(seg);
 
     // Descritivo do card, limpo de fragmentos de href/query (ex.: `&ctd=309&tot=&tipo=&artista="`)
     // e de sobras de atributo malformado, que aparecem em alguns catálogos.
