@@ -96,6 +96,17 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
 - **Verde** = tenho lance e estou ganhando/arrematei (`bidIsWinning(status)` casa
   `venc|arremat|arrebat`). **Vermelho** = tenho lance mas coberto. **Amarelo** = só vigiado.
   Precedência: **lance vence vigia**.
+- **Tarja diagonal "Vendido" (v0.50.0):** lote **vigiado ou com lance** cujo leilão já
+  terminou com venda confirmada em `lot_sales` (mesma tabela do Vinil Analytics, preenchida pelo
+  cron `step=sales`/`captureFinishedSales` após cada leilão terminar — cobre TODO lote de vinil
+  visto, sem mecânica nova de scraping). `LotCard` ganhou a prop `sold?: string | null`
+  (`sold_price_raw` quando capturado, senão `"Vendido"`) e renderiza a tarja (`absolute inset-0
+  z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear os botões.
+  Casamento por `lot_id` (`${idLeilao}-${idPeca}`), **escopado** aos ids de vigiados + lances
+  visíveis (nunca lê `lot_sales` inteira): `getSoldLots` (`leiloesbr.functions.ts`, POST, até
+  500 ids) → `getAllLotSales({ids, withOrig:false})`. Query `["sold-lots", <ids ordenados>]` no
+  `index.tsx` (mesmo padrão de `nextBidTargets`/`getNextBids`), mapa `soldById` passado a todo
+  `LotCard` direto e a `BidHouseSections` (prop `soldById`).
 - **Ícone roxo "já tenho na Coleção"** (`LotCard`, só na **home** `index.tsx`): disco `Disc3`
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
@@ -904,6 +915,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.48.4 | Fase 1 do plano de economia: RPC de anti-join, laço do cron encolhido, `lot_sales.bundle` — ver `docs/economia-fase-1-egress-e-cpu.md` |
 | v0.49.1 | Otimização dos `.md` do repo (só documentação): remove duplicação de convenções entre `AGENTS.md`/`CLAUDE.md`/notas (fonte única em `AGENTS.md`), remove telemetria repetida (fonte única em `economia-migracao.md`) e comprime o Histórico de versões para 1 linha/versão — a mecânica detalhada de cada área já vive nas seções acima |
 | v0.49.3 | Ao vivo: card sobe para o topo da grade ao abrir "Abrir aqui" (agrupa os pregões abertos) |
+| v0.50.0 | Tarja diagonal "Vendido" em vigiados/lances já vendidos (`lot_sales` escopado por `getSoldLots`) — ver "Cores, badges e busca" |
 
 ## Pendências
 

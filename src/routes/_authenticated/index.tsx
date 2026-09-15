@@ -78,6 +78,7 @@ import {
   getLotIdent,
   getLotMarket,
   getNextBids,
+  getSoldLots,
   getUserInterests,
   getVerifiedHouses,
   getVinylLots,
@@ -306,6 +307,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const fetchVerified = useServerFn(getVerifiedHouses);
   const saveVerified = useServerFn(setVerifiedHouses);
   const fetchNextBids = useServerFn(getNextBids);
+  const fetchSoldLots = useServerFn(getSoldLots);
   const fetchLotAi = useServerFn(getLotAi);
   const fetchLotIdent = useServerFn(getLotIdent);
   const runSaveTags = useServerFn(setLotTags);
@@ -1039,6 +1041,27 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     for (const [idPeca, value] of Object.entries(nextBids.data ?? {})) map.set(idPeca, value);
     return map;
   }, [nextBids.data]);
+  // Status "Vendido" (tarja diagonal) — só para VIGIADOS + LANCES (mesmo escopo pequeno do
+  // próximo lance acima), casado por `id` (${idLeilao}-${idPeca}) com `lot_sales`.
+  const soldTargets = useMemo(() => {
+    const ids = new Set<string>();
+    for (const w of watched.data ?? []) if (w.id) ids.add(w.id);
+    for (const b of bids.data ?? []) if (b.id) ids.add(b.id);
+    return [...ids];
+  }, [watched.data, bids.data]);
+  const soldTargetsKey = useMemo(() => soldTargets.slice().sort().join(","), [soldTargets]);
+  const soldLots = useQuery({
+    queryKey: ["sold-lots", soldTargetsKey] as const,
+    queryFn: () => fetchSoldLots({ data: { ids: soldTargets } }),
+    enabled: soldTargets.length > 0,
+    staleTime: 3 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const soldById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of soldLots.data ?? []) map.set(r.lot_id, r.sold_price_raw?.trim() || "Vendido");
+    return map;
+  }, [soldLots.data]);
   // A URL do site da casa não vem na página de lances — casamos pelo nome da casa
   // com o que já lemos da varredura geral e dos vigiados.
   const houseUrlByName = useMemo(() => {
@@ -1534,6 +1557,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                       onOpenOwned={() => setOwnedPanelLot(lot)}
                                       onEditTags={editTags(lot.id)}
                                       bidStatus={bidStatusById.get(lot.idPeca)}
+                                      sold={soldById.get(lot.id)}
                                       onToggle={() =>
                                         toggle.mutate({
                                           idPeca: lot.idPeca,
@@ -1563,6 +1587,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                           priceById={priceById}
                           nextBidById={nextBidById}
                           albumById={albumById}
+                          soldById={soldById}
                           ownedFor={ownedFor}
                           onOpenOwned={(bid) => setOwnedPanelLot(bid)}
                           onToggle={(bid) => toggle.mutate(bid)}
@@ -1623,6 +1648,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   onOpenOwned={() => setOwnedPanelLot(lot)}
                                   onEditTags={editTags(lot.id)}
                                   bidStatus={bidStatusById.get(lot.idPeca)}
+                                  sold={soldById.get(lot.id)}
                                   onToggle={() =>
                                     toggle.mutate({
                                       idPeca: lot.idPeca,
@@ -1806,6 +1832,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                               onOpenOwned={() => setOwnedPanelLot(lot)}
                                               onEditTags={editTags(lot.id)}
                                               bidStatus={bidStatusById.get(lot.idPeca)}
+                                              sold={soldById.get(lot.id)}
                                               onToggle={() =>
                                                 toggle.mutate({
                                                   idPeca: lot.idPeca,
@@ -1994,6 +2021,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                           onOpenOwned={() => setOwnedPanelLot(lot)}
                                           onEditTags={editTags(lot.id)}
                                           bidStatus={bidStatusById.get(lot.idPeca)}
+                                          sold={soldById.get(lot.id)}
                                           onToggle={() =>
                                             toggle.mutate({
                                               idPeca: lot.idPeca,

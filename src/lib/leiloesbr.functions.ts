@@ -552,6 +552,35 @@ export const getVinylSales = createServerFn({ method: "GET" })
   });
 
 /**
+ * Status de VENDIDO para um conjunto pontual de lotes (vigiados + lances), casado por
+ * `lot_id` com o histórico já capturado em `lot_sales` (mesma tabela do Vinil Analytics,
+ * preenchida pelo cron `step=sales` após cada leilão terminar). Escopado por `ids` — nunca lê a
+ * tabela inteira — para servir a tarja "Vendido" nos cards sem custo de egress. Best-effort: [].
+ */
+export const getSoldLots = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { ids?: string[] } | undefined) => ({
+    ids: Array.isArray(input?.ids)
+      ? input!.ids
+          .filter((id): id is string => typeof id === "string" && id.length > 0)
+          .slice(0, 500)
+      : [],
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    if (!data.ids.length) return [];
+    try {
+      const { getAllLotSales } = await import("./lot-sales.server");
+      const rows = await getAllLotSales({ ids: data.ids, withOrig: false });
+      return rows.map((r) => ({ lot_id: r.lot_id, sold_price_raw: r.sold_price_raw }));
+    } catch (error) {
+      console.error("[lot-sales] não foi possível checar lotes vendidos", error);
+      return [];
+    }
+  });
+
+/**
  * Captura de vendas pós-leilão sob demanda (mesma rotina do cron `step=sales`): varre o
  * catálogo de até `max` leilões terminados ainda não capturados e grava em `lot_sales`.
  * O cliente pode chamar em laço até `done` (igual ao preenchimento de nº de lote).

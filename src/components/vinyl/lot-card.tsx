@@ -30,6 +30,7 @@ export function LotCard({
   onToggle,
   showDate = false,
   bidStatus,
+  sold,
   ai,
   market,
   album,
@@ -44,6 +45,10 @@ export function LotCard({
   onToggle: () => void;
   showDate?: boolean;
   bidStatus?: string | null;
+  // Lote VENDIDO (`lot_sales`, casado por id) — só chega preenchido para vigiados/lances
+  // (o chamador escopa a consulta a esse conjunto). String = "Vendido" ou o valor de venda
+  // quando capturado; `undefined`/`null`/"" = não vendido (ou sem dado ainda).
+  sold?: string | null;
   ai?: LotAi;
   market?: LotMarket;
   // Estado de conservação (Disco/Capa/encarte + Score/Faixa), resolvido pelo pai. Quando
@@ -98,6 +103,16 @@ export function LotCard({
     <article
       className={`relative flex flex-col overflow-hidden rounded-md border bg-card ${cardClass}`}
     >
+      {/* Tarja diagonal "Vendido" — lote vigiado/com lance cujo leilão já terminou com venda
+          confirmada (`lot_sales`). Fica por cima de tudo (imagem, badges) mas não bloqueia
+          cliques nos botões abaixo dela. */}
+      {sold ? (
+        <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+          <div className="absolute left-1/2 top-[38%] w-[150%] -translate-x-1/2 -translate-y-1/2 -rotate-[32deg] bg-red-600 py-1 text-center text-xs font-bold uppercase tracking-widest text-white shadow-md">
+            Vendido{typeof sold === "string" && sold !== "Vendido" ? ` — ${sold}` : ""}
+          </div>
+        </div>
+      ) : null}
       {ai ? <ScoreCorner ai={ai} market={market} price={lot.price} /> : null}
       {/* Relação com a Coleção: ícone no canto DIREITO, logo ABAIXO da nota da IA. Aparece em
           TODO card — CINZA quando não há relação; ROXO quando confirmada; ROXO + "?" quando
