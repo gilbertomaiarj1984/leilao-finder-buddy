@@ -37,6 +37,7 @@ import { AuctionStatusInline, BidStatBadges, HouseStatBadges } from "@/component
 import { BidHouseSections, type BidCard } from "@/components/vinyl/bid-house-sections";
 import { ArtistFilter, PriceFilter } from "@/components/vinyl/filters";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
+import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import {
   artistOptions,
   bidMatchesSearch,
@@ -64,7 +65,6 @@ import {
   type LotAi,
   type LotMarket,
 } from "@/components/vinyl/ai-score-utils";
-import { useHideOnScroll } from "@/hooks/use-hide-on-scroll";
 import { supabase } from "@/integrations/supabase/client";
 import {
   analyzeOnDemand,
@@ -257,15 +257,18 @@ function formatUpdatedAt(iso: string | null | undefined): string {
 }
 
 function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
+  // Esconder/mostrar o topo (header + barras sticky aninhadas) é MANUAL — botão
+  // `MobileTopToggle`, só no mobile — desde que a versão anterior por scroll
+  // (`useHideOnScroll`) ficava piscando (recálculo de altura de um `sticky`
+  // durante a transição realimentava a lógica de direção do scroll).
+  const [barsHidden, setBarsHidden] = useState(false);
   // Altura real do header sticky (header + barra de busca/abas), medida ao vivo — as barras
   // sticky internas (dia/casas, seções de Vigiados/Lances) usam esse valor como `top` para
   // colar logo abaixo dele, em vez de ficarem escondidas atrás (ambos ficariam em top:0).
   // A `ref` fica no CONTEÚDO do header (altura natural estável), não no wrapper que
   // esconde/mostra (HideableBar) — senão o ResizeObserver ficaria medindo a própria
-  // transição de altura dele, causando um vaivém de re-renders (barras piscando/pulando
-  // de posição ao rolar). O colapso do header vira `top: 0` combinando a altura estável
-  // com `barsHidden` diretamente, em vez de esperar a medição "seguir" o colapso.
-  const barsHidden = useHideOnScroll();
+  // transição de altura dele. O colapso do header vira `top: 0` combinando a altura
+  // estável com `barsHidden` diretamente, em vez de esperar a medição "seguir" o colapso.
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
   useEffect(() => {
@@ -1198,6 +1201,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
 
   return (
     <main className="min-h-screen bg-background">
+      <MobileTopToggle collapsed={barsHidden} onToggle={() => setBarsHidden((c) => !c)} />
       <Tabs
         value={tab}
         onValueChange={(value) => {

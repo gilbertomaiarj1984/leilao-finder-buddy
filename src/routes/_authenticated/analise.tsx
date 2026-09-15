@@ -39,7 +39,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LotTags, RarityLabel, RarityLegend, ScoreBadge } from "@/components/vinyl/ai-score";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
-import { useHideOnScroll } from "@/hooks/use-hide-on-scroll";
+import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import {
   buildInterestMatcher,
   dealLabel,
@@ -600,14 +600,17 @@ function SondagemDialog({
 }
 
 function AnalisePage() {
-  const barsHidden = useHideOnScroll();
+  // Esconder/mostrar o topo (header + nav sticky aninhado) é MANUAL — botão
+  // `MobileTopToggle`, só no mobile — desde que a versão anterior por scroll
+  // (`useHideOnScroll`) ficava piscando (recálculo de altura de um `sticky`
+  // durante a transição realimentava a lógica de direção do scroll).
+  const [barsHidden, setBarsHidden] = useState(false);
   // Altura real do header sticky, medida ao vivo — o nav sticky de "ir para casa" (por dia)
   // usa esse valor como `top` para colar logo abaixo dele, em vez de ficar escondido atrás
   // (ambos ficariam em top:0). A `ref` fica no CONTEÚDO do header (altura natural estável),
   // não no wrapper que esconde/mostra (HideableBar) — senão o ResizeObserver mediria a
-  // própria transição de altura dele, causando um vaivém de re-renders (barras
-  // piscando/pulando de posição ao rolar). `top: 0` no colapso combina a altura estável
-  // com `barsHidden` diretamente, em vez de esperar a medição "seguir" o colapso.
+  // própria transição de altura dele. `top: 0` no colapso combina a altura estável com
+  // `barsHidden` diretamente, em vez de esperar a medição "seguir" o colapso.
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
   useEffect(() => {
@@ -1033,6 +1036,7 @@ function AnalisePage() {
 
   return (
     <main className="min-h-screen bg-background">
+      <MobileTopToggle collapsed={barsHidden} onToggle={() => setBarsHidden((c) => !c)} />
       <HideableBar hidden={barsHidden} className="top-0 z-30">
         <header
           ref={headerRef}

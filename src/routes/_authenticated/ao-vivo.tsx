@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
-import { useHideOnScroll } from "@/hooks/use-hide-on-scroll";
+import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import type { PresencialAuction } from "@/lib/leiloesbr-auctions.server";
 import { getTodayAuctions, openLiveAuction } from "@/lib/leiloesbr.functions";
 
@@ -194,7 +194,8 @@ function AuctionCard({
 }
 
 function AoVivoPage() {
-  const barsHidden = useHideOnScroll();
+  // Esconder/mostrar o topo é MANUAL — botão `MobileTopToggle`, só no mobile.
+  const [barsHidden, setBarsHidden] = useState(false);
   const fetchToday = useServerFn(getTodayAuctions);
   const query = useQuery({
     queryKey: ["vinyl-today-auctions"] as const,
@@ -226,6 +227,7 @@ function AoVivoPage() {
 
   return (
     <main className="min-h-screen bg-background">
+      <MobileTopToggle collapsed={barsHidden} onToggle={() => setBarsHidden((c) => !c)} />
       <HideableBar hidden={barsHidden} className="top-0 z-30">
         <header className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">

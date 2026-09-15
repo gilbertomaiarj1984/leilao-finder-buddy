@@ -879,39 +879,21 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
     **escondido atrás** do header (mesmo `top:0`, header com `z-30` > nav `z-10`) — passou a usar
     o mesmo padrão `headerRef`/`ResizeObserver`/`stickyBelowHeader` que `index.tsx` já usava para
     as barras sticky aninhadas, colando corretamente abaixo do header.
-  - **Somem ao rolar pra baixo (v0.53.0):** mesmo compactos, os headers/barras `sticky` (agora
-    permanentes, já que o header também é `sticky`) ainda comiam espaço útil no celular.
-    `useHideOnScroll` (`src/hooks/use-hide-on-scroll.ts`) escuta o scroll da **janela** (todas
-    as páginas rolam pelo `window`, sem container interno) e devolve `hidden` conforme a
-    direção (desce = esconde, sobe = mostra; sempre visível no topo da página). `HideableBar`
-    (`src/components/vinyl/hideable-bar.tsx`) envolve cada barra `sticky` (o `<header>` e, em
-    `index.tsx`/`analise.tsx`, as barras aninhadas com `stickyBelowHeader`) e anima a altura via
-    `grid-template-rows` (1fr↔0fr) — evita o vão em branco que um `transform: translateY`
-    deixaria, já que um elemento `sticky` continua reservando seu espaço no fluxo mesmo grudado
-    no topo.
-    - ⚠️ **Fix v0.53.1 — barras piscando/pulando de posição ao rolar:** a `ref` do
-      `ResizeObserver` (`headerRef`) estava no próprio `HideableBar` — o wrapper cuja altura é
-      justamente o que a transição anima (0 ⇄ natural). O observer então media a cada frame da
-      animação, disparando um vaivém de re-renders que reposicionava `stickyBelowHeader` a cada
-      frame (a barra "piscando"), e a mudança de altura de página em cada frame ainda dava
-      chance ao **scroll anchoring** do navegador de ajustar o `scrollY` sozinho, brigando com
-      `useHideOnScroll`. Fix: a `ref` passou a ir no CONTEÚDO interno do header (altura natural
-      estável, só fica recortado visualmente pelo `overflow-hidden` durante o colapso — não
-      muda de tamanho sozinho), `stickyBelowHeader.top` virou `barsHidden ? 0 : headerHeight`
-      (combina o booleano direto com a altura estável, em vez de esperar a medição "seguir" o
-      colapso) e `HideableBar` ganhou `overflow-anchor: none` (desliga a compensação de scroll
-      do navegador). `useHideOnScroll` também ganhou `minFlipMs` (tranca novas trocas de estado
-      por 350ms após cada uma) contra alternância rápida perto do limiar.
-    - ⚠️ **Fix v0.53.2 — ainda piscava sem parar ao começar a rolar:** o `minFlipMs` do v0.53.1
-      travava um NOVO flip, mas não descartava o ruído acumulado em `lastY` durante a transição
-      — se a própria animação (header mudando de altura, `sticky` recalculando) gerasse um
-      evento de scroll "fantasma" (mesmo com `overflow-anchor:none`, o navegador ainda pode
-      gerar um resíduo), esse ruído ficava acumulado e, assim que o cadeado destravava,
-      disparava um novo flip na hora — um vaivém sem fim. Fix: virou `cooldownMs` — durante o
-      cooldown pós-flip, TODO scroll só realinha `lastY` (`lastY.current = y`) sem nunca contar
-      para a decisão de direção, descartando o ruído da própria transição em vez de acumulá-lo;
-      só depois do cooldown a próxima decisão parte de uma base limpa. Duração da transição
-      também caiu de 300ms para 200ms, para sobrar mais margem abaixo do cooldown (400ms).
+  - **Esconder/mostrar o topo no mobile — histórico:** tentativas v0.53.0-2 auto-escondiam as
+    barras `sticky` ao detectar direção do scroll (`useHideOnScroll`), mas o próprio recálculo
+    de altura de um elemento `sticky` durante a transição gerava ruído de scroll que
+    realimentava a lógica de direção — mesmo com `overflow-anchor:none` e um cooldown para
+    descartar esse ruído (v0.53.2), continuava piscando/abrindo e fechando sem parar ao começar
+    a rolar. **v0.54.0 abandonou o auto-hide por scroll**: agora é um **botão manual**
+    (`MobileTopToggle`, `src/components/vinyl/mobile-top-toggle.tsx` — canto superior direito,
+    `sm:hidden`, só aparece no mobile) que alterna um `useState` por página; o controle fica com
+    o usuário, sem depender de heurística de scroll nenhuma. `HideableBar`
+    (`src/components/vinyl/hideable-bar.tsx`) continua fazendo o colapso em si — anima a altura
+    via `grid-template-rows` (1fr↔0fr) em vez de um `transform: translateY` (que deixaria um vão
+    em branco, já que um elemento `sticky` continua reservando seu espaço no fluxo) — mas agora
+    o `hidden` vem do clique no botão, não de um listener de scroll; o `sm:grid-rows-[1fr]`
+    sempre vence no desktop, então o recolhimento só tem efeito visual abaixo do breakpoint
+    `sm` mesmo que o estado fique marcado como escondido.
 - **`index.tsx` (site principal):** cards por **dia → casa → artista**. `LotCard` mostra nota
   da IA no canto **direito** (`ScoreCorner`), nº do lote no canto **esquerdo**, e o `album` da
   IA ("Artista — Álbum (Ano)", `formatAiAlbum`) **acima** do título. Álbum resolvido por lote =
@@ -1146,6 +1128,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.53.0      | Mobile: os headers/barras `sticky` (das 5 páginas autenticadas) somem ao rolar pra baixo e voltam ao rolar pra cima, ganhando espaço de tela — `useHideOnScroll` (direção do scroll da janela) + `HideableBar` (recolhe a altura via `grid-template-rows`, sem deixar vão em branco)                                                                                                                                                                                    |
 | v0.53.1      | Fix: barras piscando/pulando de posição ao rolar (v0.53.0) — `ResizeObserver` media o próprio wrapper que anima (vaivém de re-renders a cada frame, brigando com o scroll anchoring do navegador); `ref` passa para o conteúdo interno do header (altura estável), `stickyBelowHeader.top` vira `barsHidden ? 0 : headerHeight`, `HideableBar` ganha `overflow-anchor: none`, e `useHideOnScroll` trava novas trocas de estado por 350ms (`minFlipMs`)                |
 | v0.53.2      | Fix: ainda piscava sem parar ao começar a rolar (v0.53.1) — o cadeado de tempo travava um NOVO flip mas não descartava o ruído de scroll "fantasma" gerado pela própria transição, que se acumulava em `lastY` e disparava outro flip assim que o cadeado destravava (vaivém sem fim); `minFlipMs` virou `cooldownMs`, que durante o cooldown só realinha `lastY` a cada scroll (sem nunca contar pra decisão de direção) em vez de travar e deixar o ruído se acumular; transição caiu de 300ms para 200ms (mais folga abaixo do cooldown de 400ms) |
+| v0.54.0      | Abandona o auto-hide por scroll do topo no mobile (v0.53.0-2, continuava piscando mesmo após dois fixes) por um **botão manual** (`MobileTopToggle`, canto superior direito, só no mobile) — o usuário decide quando esconder/mostrar o header + barras sticky aninhadas; `useHideOnScroll` removido, `HideableBar` mantém o colapso via `grid-template-rows` mas agora `sm:grid-rows-[1fr]` sempre vence no desktop |
 
 ## Pendências
 
