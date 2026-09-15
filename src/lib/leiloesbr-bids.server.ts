@@ -99,3 +99,12 @@ export async function listMyBidsFromSite(): Promise<MyBid[]> {
 
   return out;
 }
+
+/**
+ * Leilões onde o usuário aparece como VENCEDOR nos lances (`l=4`, `status` = "Vencedor") —
+ * candidatos para a varredura incremental de compras (`listPurchasesForAuctions` em
+ * `leiloesbr-purchases.server.ts`), bem mais barata que reler toda "Minhas compras" do zero.
+ */
+export function wonAuctionIdsFromBids(bids: MyBid[]): string[] {
+  return [...new Set(bids.filter((b) => /vencedor/i.test(b.status)).map((b) => b.idLeilao))];
+}

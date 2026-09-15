@@ -178,7 +178,7 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
     pelo próprio vigiado/lance) — colisão nesse composto exigiria as DUAS casas coincidirem em
     `idLeilao` E `idPeca` ao mesmo tempo, praticamente impossível. `lotIdByPeca` foi removido
     (não é mais necessário).
-    ⚠️ **Fix v0.51.7 — tarja ainda errada mesmo com o `id` composto correto**: mesmo indexado
+    ⚠️ **Fix v0.52.1 — tarja ainda errada mesmo com o `id` composto correto**: mesmo indexado
     certinho, `sold`/`bidStatus` podem estar errados na ORIGEM (ex.: a própria casa reaproveita
     `idLeilao` ao longo do tempo para uma "sala"/categoria recorrente, ou um card de "lotes
     relacionados" embutido na página cola o resultado de outro lote) — casos difíceis de
@@ -238,7 +238,7 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
     `leilao-finder:watched-accum:v1`/`leilao-finder:bids-accum:v1`) — gravado a cada merge do
     `queryFn` e a cada remoção explícita (desvigiar). Best-effort (SSR, aba anônima ou
     `localStorage` indisponível/cheio caem para `Map` vazio/silencioso, nunca quebram a tela).
-    ⚠️ **Fix v0.51.7 — sumia de novo ao navegar entre `/` e `/analise`**: a rota `/analise`
+    ⚠️ **Fix v0.52.1 — sumia de novo ao navegar entre `/` e `/analise`**: a rota `/analise`
     (`analise.tsx`) tem sua PRÓPRIA `useQuery` para vigiados/lances, mas lendo a MESMA chave de
     query (`["vinyl-watched"]`/`["vinyl-my-bids"]`) — o `QueryClient` é único para o app inteiro,
     então as duas rotas compartilham o mesmo cache por chave. A versão de `analise.tsx` só
@@ -772,10 +772,24 @@ midia, capa, valor, tags, notas}`. Parser puro/**client-safe** `parseCollectionB
   "Escolher arquivo" — no celular abre a câmera direto; no desktop o `capture` é ignorado e cai no
   seletor. Mesmo fluxo `handleFile`/`uploadCollectionImage`. **Upload de foto EM MASSA segue
   pendente** (o import em massa cria discos sem foto; a foto é adicionada depois por disco).
-- **Botão "Atualizar coleção"** → `importWonLots()`: varre **"Minhas compras"**
-  (`conta_site.asp?l=6&t=1&...&pag=N`, **`t=1`** confirmado com o site; lê página a página até
-  uma sem lotes novos) via `leiloesbr-purchases.server.ts` (`listVinylPurchases`; filtra
-  não-vinil por `looksNonVinyl`), e **ACRESCENTA** os lotes ainda ausentes (**de-dup por
+- **Botão "Atualizar coleção"** → `importWonLotsIncremental()` (v0.52.0): em vez de sempre
+  repaginar `l=6` do zero (`id=0`, `t=1`+`t=0`, até 50 páginas cada — caro e com teto), lê
+  `listMyBidsFromSite()` (`l=4`) e filtra os lances com `status` "Vencedor"
+  (`wonAuctionIdsFromBids`), obtendo só os `idLeilao` candidatos; para esses, varre
+  `conta_site.asp?l=6&id=<idLeilao>&t=<0|1>&...&pag=N` (**`listPurchasesForAuctions`**, em
+  `leiloesbr-purchases.server.ts`) — 1 leilão por vez, poucas páginas cada, bem mais barato.
+  **Cai sozinho para a varredura completa** (`importWonLots`, abaixo) quando a coleção ainda
+  não tem NENHUM item vindo de leilão (`lotId` — 1ª varredura: `l=4` não garante cobrir todo o
+  histórico). Resultado inclui `auctionsChecked` (`-1` = caiu para a completa; `0` = nenhum
+  leilão vencido nos lances atuais).
+- **Botão "Varredura completa"** (ghost, ao lado) → `importWonLots()`: a varredura ANTIGA,
+  irrestrita (`conta_site.asp?l=6&t=1&...&pag=N`, **`t=1`** confirmado com o site, e depois
+  `t=0`; lê página a página até uma sem lotes novos) via `listVinylPurchases`. Cara —
+  contingência manual para quando um leilão vencido escapa da incremental (ex.: some de `l=4`
+  antes do usuário atualizar).
+  Ambas usam `leiloesbr-purchases.server.ts` (`listVinylPurchases`/`listVinylPurchasesForAuctions`;
+  filtram não-vinil por `looksNonVinyl`) e a mesma lógica de importação (`importFromWonLots`
+  em `collection.server.ts`), que **ACRESCENTA** os lotes ainda ausentes (**de-dup por
   `lot_id` = `${idLeilao}-${idPeca}`**) — nunca sobrescreve edição do usuário. Semeia
   artista/álbum/ano e a faixa Discogs **reaproveitando a identificação já gravada**
   (`lot_ai`/`lot_ident` via `parseAiAlbum`) e o mercado (`lot_market` via `toLotMarket`); **não**
@@ -816,7 +830,8 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
     campo que a IA devolver. Nenhum dos dois zera com resultado vazio. Sem `ANTHROPIC_API_KEY`, erro
     claro. (`identLotsSync` segue existindo para o fluxo antigo de leilões.)
 - **Uso pretendido:** a base de `lots` já acompanha o que o usuário arremata, então a varredura
-  de `l=6` é **carga inicial / emergência**, não o fluxo contínuo.
+  de `l=6` não precisa ser exaustiva a cada clique — daí a incremental (por leilão vencido) ser
+  o padrão; a **completa** (`id=0`, irrestrita) fica para carga inicial / emergência.
 - **Duplicados questionados:** mesmo `lot_id` (mesma peça) é ignorado no re-scan; um vinil com
   **mesmo artista+álbum** de um já existente NÃO entra sozinho — volta em `duplicates`
   (`PendingWonLot`) para a UI confirmar (diálogo "Possíveis duplicados": _Adicionar_ →
@@ -1082,7 +1097,8 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.51.4      | Fix: vigiados/lances somem da tela ao leilão terminar (conta para de trazê-los) — `watched`/`bids` passam a MESCLAR (nunca substituir) num acumulador local, poda só pela janela de dias/desvigia explícita; docs: endpoints de catálogo/peça documentados como fonte de verdade prioritária                                            |
 | v0.51.5      | Mobile: header sticky mais compacto (padding menor, lista de dias/abas sem quebrar linha) nas 5 páginas autenticadas; fix do nav "ir para casa" da Análise, que ficava escondido atrás do header                                                                                                                                        |
 | v0.51.6      | Fix: tarja "Vendido" errada em vigiados de leilão futuro — `getLotDetails`/`soldById`/`nextBidById` indexavam por `idPeca` sozinho (só único DENTRO de uma casa; casas parceiras são instalações independentes e reaproveitam os mesmos números), misturando o resultado de venda de um lote de uma casa com outro só coincidente no número; passam a indexar por `id` (`${idLeilao}-${idPeca}`). Fix: vigiados/lances do dia sumiam depois de um tempo mesmo sem desvigiar — o acumulador local (v0.51.4) vivia só num `useRef` em memória e se perdia a cada reload/fechar aba; agora persiste em `localStorage` (`loadAccum`/`saveAccum`)                                                                                                                                        |
-| v0.51.7      | Fix: tarja "Vendido" ainda aparecia em vigiados de leilão FUTURO mesmo após v0.51.6 — `LotCard` agora bloqueia a tarja quando o leilão ainda não começou (`auctionStarted`), fail-closed contra qualquer fonte de `sold`/`bidStatus` errada (ex.: `idLeilao`/`idPeca` reaproveitados ao longo do tempo pela mesma casa). Fix: vigiados/lances somem ao navegar entre `/` e `/analise` — as duas rotas liam a MESMA chave de query (`["vinyl-watched"]`/`["vinyl-my-bids"]`) mas só `index.tsx` mesclava no acumulador (v0.51.4/6); a versão de `analise.tsx` SUBSTITUÍA, apagando o acumulado ao navegar; acumulador extraído para `@/lib/watched-accum` (`mergeWatchedAccum`), usado pelas duas rotas                                                                            |
+| v0.52.0      | "Atualizar coleção" passa a ser INCREMENTAL por padrão (`importWonLotsIncremental` — lê os leilões vencidos em `l=4`/`status="Vencedor"` e varre só esses via `l=6&id=<idLeilao>`, `listPurchasesForAuctions`), em vez de sempre repaginar `l=6` do zero; cai sozinho para a varredura completa (`importWonLots`) na 1ª vez (coleção ainda sem item de leilão). Novo botão "Varredura completa" (`scanCollectionFull`) para forçar o backfill irrestrito manualmente |
+| v0.52.1      | Fix: tarja "Vendido" ainda aparecia em vigiados de leilão FUTURO mesmo após v0.51.6 — `LotCard` agora bloqueia a tarja quando o leilão ainda não começou (`auctionStarted`), fail-closed contra qualquer fonte de `sold`/`bidStatus` errada (ex.: `idLeilao`/`idPeca` reaproveitados ao longo do tempo pela mesma casa). Fix: vigiados/lances somem ao navegar entre `/` e `/analise` — as duas rotas liam a MESMA chave de query (`["vinyl-watched"]`/`["vinyl-my-bids"]`) mas só `index.tsx` mesclava no acumulador (v0.51.4/6); a versão de `analise.tsx` SUBSTITUÍA, apagando o acumulado ao navegar; acumulador extraído para `@/lib/watched-accum` (`mergeWatchedAccum`), usado pelas duas rotas                                                                            |
 
 ## Pendências
 

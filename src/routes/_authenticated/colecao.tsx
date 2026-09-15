@@ -54,6 +54,7 @@ import {
   importCollectionText,
   reprocessCollectionItem,
   scanCollection,
+  scanCollectionFull,
   updateCollectionItem,
   uploadCollectionImage,
 } from "@/lib/collection.functions";
@@ -227,6 +228,7 @@ function ColecaoPage() {
   const queryClient = useQueryClient();
   const fetchCollection = useServerFn(getCollection);
   const scan = useServerFn(scanCollection);
+  const scanFull = useServerFn(scanCollectionFull);
   const addItem = useServerFn(addCollectionItem);
   const importBulk = useServerFn(importCollectionText);
   const addWon = useServerFn(addWonLot);
@@ -287,31 +289,44 @@ function ColecaoPage() {
     }
   };
 
+  type ScanResult = {
+    added: number;
+    scanned: number;
+    duplicates: PendingWonLot[];
+    sources: { stored: number; title: number; none: number };
+  };
+  const onScanSuccess = (res: ScanResult) => {
+    void invalidate();
+    if (res.duplicates.length) setReview(res.duplicates);
+    const dup = res.duplicates.length
+      ? ` ${res.duplicates.length} possível(is) duplicado(s) para revisar.`
+      : "";
+    const src = res.sources
+      ? ` (banco ${res.sources.stored} · título ${res.sources.title} · sem artista ${res.sources.none})`
+      : "";
+    toast.success(
+      res.added > 0
+        ? `${res.added} disco(s) adicionado(s).${dup}${src}`
+        : res.duplicates.length
+          ? `Nenhum novo automático.${dup}`
+          : "Nada novo. Se você tem compras e nada aparece, clique em Diagnóstico.",
+    );
+  };
+  const onScanError = (e: Error) => toast.error(e.message || "Falha ao varrer as compras");
+
   const scanMut = useMutation({
     mutationFn: () => scan(),
-    onSuccess: (res: {
-      added: number;
-      scanned: number;
-      duplicates: PendingWonLot[];
-      sources: { stored: number; title: number; none: number };
-    }) => {
-      void invalidate();
-      if (res.duplicates.length) setReview(res.duplicates);
-      const dup = res.duplicates.length
-        ? ` ${res.duplicates.length} possível(is) duplicado(s) para revisar.`
-        : "";
-      const src = res.sources
-        ? ` (banco ${res.sources.stored} · título ${res.sources.title} · sem artista ${res.sources.none})`
-        : "";
-      toast.success(
-        res.added > 0
-          ? `${res.added} disco(s) adicionado(s).${dup}${src}`
-          : res.duplicates.length
-            ? `Nenhum novo automático.${dup}`
-            : "Nada novo. Se você tem compras e nada aparece, clique em Diagnóstico.",
-      );
-    },
-    onError: (e: Error) => toast.error(e.message || "Falha ao varrer as compras"),
+    onSuccess: onScanSuccess,
+    onError: onScanError,
+  });
+
+  // Varredura completa manual ("id=0", todas as páginas) — backfill de contingência para
+  // quando um leilão vencido não aparece mais em "Meus lances" (l=4) e por isso escapa da
+  // varredura incremental padrão.
+  const scanFullMut = useMutation({
+    mutationFn: () => scanFull(),
+    onSuccess: onScanSuccess,
+    onError: onScanError,
   });
 
   // Identifica pela IA (só texto, nunca a capa) em laço pelo cursor até terminar. Define
@@ -584,6 +599,18 @@ function ColecaoPage() {
               >
                 <RefreshCw className={`mr-2 h-4 w-4 ${scanMut.isPending ? "animate-spin" : ""}`} />
                 {scanMut.isPending ? "Atualizando…" : "Atualizar coleção"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => scanFullMut.mutate()}
+                disabled={scanFullMut.isPending}
+                title="Varredura completa de 'Minhas compras' (todas as páginas) — use se um leilão vencido não aparecer mais em Meus lances"
+              >
+                <RefreshCw
+                  className={`mr-2 h-4 w-4 ${scanFullMut.isPending ? "animate-spin" : ""}`}
+                />
+                {scanFullMut.isPending ? "Varrendo…" : "Varredura completa"}
               </Button>
               <AiProviderSelect
                 value={aiProvider}
