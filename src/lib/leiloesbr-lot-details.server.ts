@@ -49,6 +49,7 @@ function parseSold(html: string): string | undefined {
 }
 
 async function fetchOne(target: {
+  id: string;
   idPeca: string;
   url: string;
 }): Promise<[string, LotDetails] | null> {
@@ -61,25 +62,30 @@ async function fetchOne(target: {
     if (nextBid) details.nextBid = nextBid;
     const sold = parseSold(html);
     if (sold) details.sold = sold;
-    return details.nextBid || details.sold ? [target.idPeca, details] : null;
+    return details.nextBid || details.sold ? [target.id, details] : null;
   } catch {
     return null;
   }
 }
 
 /**
- * Busca os detalhes de cada lote (por `idPeca`), com concorrência limitada e um teto de
- * alvos (protege o tempo do servidor). Best-effort: lotes que falharem ou não trouxerem nada
- * de útil simplesmente ficam de fora do mapa.
+ * Busca os detalhes de cada lote, com concorrência limitada e um teto de alvos (protege o
+ * tempo do servidor). Chave/dedup por `id` (`${idLeilao}-${idPeca}`), NUNCA por `idPeca`
+ * sozinho — `idPeca` é só único DENTRO de uma casa/leilão; casas diferentes (instalações
+ * independentes da mesma plataforma) reaproveitam os mesmos números, então dedupar ou
+ * indexar só por `idPeca` já misturou o resultado de venda de um lote vigiado com outro lote
+ * (de outra casa) que só coincidia no `idPeca`. Best-effort: lotes que falharem ou não
+ * trouxerem nada de útil simplesmente ficam de fora do mapa.
  */
 export async function fetchLotDetails(
-  targets: { idPeca: string; url: string }[],
+  targets: { id: string; idPeca: string; url: string }[],
 ): Promise<Record<string, LotDetails>> {
-  const byPeca = new Map<string, string>(); // idPeca -> url (dedup por peça)
+  const byId = new Map<string, { idPeca: string; url: string }>(); // id -> {idPeca, url} (dedup por lote)
   for (const t of targets) {
-    if (t?.idPeca && t?.url && !byPeca.has(t.idPeca)) byPeca.set(t.idPeca, t.url);
+    if (t?.id && t?.idPeca && t?.url && !byId.has(t.id))
+      byId.set(t.id, { idPeca: t.idPeca, url: t.url });
   }
-  const list = [...byPeca].slice(0, 100).map(([idPeca, url]) => ({ idPeca, url }));
+  const list = [...byId].slice(0, 100).map(([id, v]) => ({ id, idPeca: v.idPeca, url: v.url }));
   const out: Record<string, LotDetails> = {};
   const CONCURRENCY = 8;
   let cursor = 0;

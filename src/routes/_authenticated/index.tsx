@@ -149,6 +149,31 @@ const bidsQuery = { queryKey: ["vinyl-my-bids"] as const };
 // Espelha o `WINDOW_DAYS` do servidor (`leiloesbr-scrape.server.ts`) — janela de poda do
 // acumulador local de vigiados/lances (ver comentário acima de `watched`/`bids` abaixo).
 const WATCH_WINDOW_DAYS = 5;
+const WATCHED_ACCUM_STORAGE_KEY = "leilao-finder:watched-accum:v1";
+const BIDS_ACCUM_STORAGE_KEY = "leilao-finder:bids-accum:v1";
+
+/** Lê o acumulador salvo em `localStorage` (best-effort: SSR, aba anônima ou JSON corrompido
+ * simplesmente devolvem um mapa vazio, nunca quebram a tela). */
+function loadAccum<T>(key: string): Map<string, T> {
+  if (typeof window === "undefined") return new Map();
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return new Map();
+    return new Map(JSON.parse(raw) as [string, T][]);
+  } catch {
+    return new Map();
+  }
+}
+
+/** Grava o acumulador em `localStorage` (best-effort — indisponível/cheio nunca quebra a tela). */
+function saveAccum<T>(key: string, acc: Map<string, T>): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify([...acc]));
+  } catch {
+    // ignora — o acumulador em memória continua valendo pelo resto da sessão
+  }
+}
 
 function HomePage() {
   const navigate = useNavigate();
@@ -348,17 +373,24 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   // `id`, e um item só sai quando (a) o usuário desvigia explicitamente (`toggle.onSuccess`
   // remove na hora, ver abaixo) ou (b) o dia dele já saiu da janela de dias do app — poda que
   // evita crescimento sem limite numa sessão longa. `WATCH_WINDOW_DAYS` espelha o `WINDOW_DAYS`
-  // do servidor (`leiloesbr-scrape.server.ts`).
-  const watchedAccumRef = useRef<Map<string, WatchedLot>>(new Map());
-  const bidsAccumRef = useRef<Map<string, MyBid>>(new Map());
+  // do servidor (`leiloesbr-scrape.server.ts`). Persistido em `localStorage` (`loadAccum`/
+  // `saveAccum`) — um `useRef` puro some ao recarregar a página/fechar a aba, o que fazia os
+  // vigiados do dia "sumirem depois de um tempo" mesmo sem o usuário ter desvigiado nada.
+  const watchedAccumRef = useRef<Map<string, WatchedLot> | null>(null);
+  if (watchedAccumRef.current === null)
+    watchedAccumRef.current = loadAccum<WatchedLot>(WATCHED_ACCUM_STORAGE_KEY);
+  const bidsAccumRef = useRef<Map<string, MyBid> | null>(null);
+  if (bidsAccumRef.current === null)
+    bidsAccumRef.current = loadAccum<MyBid>(BIDS_ACCUM_STORAGE_KEY);
   const watched = useQuery({
     ...watchedQuery,
     queryFn: async () => {
       const fresh = await fetchWatched();
-      const acc = watchedAccumRef.current;
+      const acc = watchedAccumRef.current!;
       for (const w of fresh) acc.set(w.id, w);
       const validDays = new Set(upcomingDayKeys(WATCH_WINDOW_DAYS));
       for (const [id, w] of acc) if (!validDays.has(watchedDateToKey(w.date))) acc.delete(id);
+      saveAccum(WATCHED_ACCUM_STORAGE_KEY, acc);
       return [...acc.values()];
     },
     staleTime: 5 * 60 * 1000,
@@ -368,10 +400,11 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     ...bidsQuery,
     queryFn: async () => {
       const fresh = await fetchBids();
-      const acc = bidsAccumRef.current;
+      const acc = bidsAccumRef.current!;
       for (const b of fresh) acc.set(b.id, b);
       const validDays = new Set(upcomingDayKeys(WATCH_WINDOW_DAYS));
       for (const [id, b] of acc) if (!validDays.has(watchedDateToKey(b.date))) acc.delete(id);
+      saveAccum(BIDS_ACCUM_STORAGE_KEY, acc);
       return [...acc.values()];
     },
     staleTime: 5 * 60 * 1000,
@@ -1010,8 +1043,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       // acima de `watched`) — remove na hora, sem esperar o refetch, senão o card ficaria
       // vigiado na tela mesmo depois do usuário desvigiar.
       if (!result.watched) {
-        watchedAccumRef.current.delete(`${lot.idLeilao}-${lot.idPeca}`);
-        queryClient.setQueryData(watchedQuery.queryKey, [...watchedAccumRef.current.values()]);
+        watchedAccumRef.current!.delete(`${lot.idLeilao}-${lot.idPeca}`);
+        saveAccum(WATCHED_ACCUM_STORAGE_KEY, watchedAccumRef.current!);
+        queryClient.setQueryData(watchedQuery.queryKey, [...watchedAccumRef.current!.values()]);
       }
       void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
       toast.success(result.watched ? "Lote vigiado no LeilõesBR" : "Vigia removida no LeilõesBR");
@@ -1099,20 +1133,25 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   }, [bids.data]);
   // Próximo lance (NOVO_VALOR) e resultado da venda (fallback rápido de "vendido" para quem
   // só VIGIA, sem lance) lidos do peca.asp — só para VIGIADOS + LANCES (conjunto pequeno; 1
-  // requisição por lote). Alvos = idPeca + url para montar a URL da peça no servidor.
+  // requisição por lote). Alvos = id (`${idLeilao}-${idPeca}`) + idPeca + url para montar a
+  // URL da peça no servidor. Dedup/chave por `id`, NUNCA por `idPeca` sozinho: `idPeca` só é
+  // único DENTRO de uma casa (cada casa parceira é uma instalação independente da mesma
+  // plataforma, com sua própria contagem) — indexar por `idPeca` já misturou o resultado de
+  // venda de um lote vigiado de uma casa com outro lote (de outra casa/leilão) que só
+  // coincidia no número.
   const lotDetailTargets = useMemo(() => {
-    const byPeca = new Map<string, { idPeca: string; url: string }>();
+    const byId = new Map<string, { id: string; idPeca: string; url: string }>();
     for (const w of watched.data ?? [])
-      if (w.idPeca && w.url) byPeca.set(w.idPeca, { idPeca: w.idPeca, url: w.url });
+      if (w.id && w.idPeca && w.url) byId.set(w.id, { id: w.id, idPeca: w.idPeca, url: w.url });
     for (const b of bids.data ?? [])
-      if (b.idPeca && b.url && !byPeca.has(b.idPeca))
-        byPeca.set(b.idPeca, { idPeca: b.idPeca, url: b.url });
-    return [...byPeca.values()];
+      if (b.id && b.idPeca && b.url && !byId.has(b.id))
+        byId.set(b.id, { id: b.id, idPeca: b.idPeca, url: b.url });
+    return [...byId.values()];
   }, [watched.data, bids.data]);
   const lotDetailTargetsKey = useMemo(
     () =>
       lotDetailTargets
-        .map((t) => t.idPeca)
+        .map((t) => t.id)
         .sort()
         .join(","),
     [lotDetailTargets],
@@ -1129,18 +1168,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   });
   const nextBidById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const [idPeca, d] of Object.entries(lotDetails.data ?? {}))
-      if (d.nextBid) map.set(idPeca, d.nextBid);
+    for (const [id, d] of Object.entries(lotDetails.data ?? {}))
+      if (d.nextBid) map.set(id, d.nextBid);
     return map;
   }, [lotDetails.data]);
-  // Lote/idPeca → id (`${idLeilao}-${idPeca}`) dos vigiados + lances, para casar o resultado
-  // da venda (por idPeca, do peca.asp) com o mapa `soldById` (por id, mesma chave da varredura).
-  const lotIdByPeca = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const w of watched.data ?? []) if (w.idPeca && w.id) map.set(w.idPeca, w.id);
-    for (const b of bids.data ?? []) if (b.idPeca && b.id) map.set(b.idPeca, b.id);
-    return map;
-  }, [watched.data, bids.data]);
   // Status "Vendido" (tarja diagonal) — só para VIGIADOS + LANCES, casado por `id`
   // (${idLeilao}-${idPeca}) com `lot_sales` (fonte mais rica, com valor de venda).
   const soldTargets = useMemo(() => {
@@ -1162,14 +1193,14 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     const map = new Map<string, string>();
     for (const r of soldLots.data ?? []) map.set(r.lot_id, r.sold_price_raw?.trim() || "Vendido");
     // Fallback do peca.asp (mais rápido que lot_sales, único sinal para vigiados sem lance) —
-    // só preenche o que a lot_sales ainda não trouxe.
-    for (const [idPeca, d] of Object.entries(lotDetails.data ?? {})) {
+    // já vem indexado por `id` (${idLeilao}-${idPeca}); só preenche o que a lot_sales ainda
+    // não trouxe.
+    for (const [id, d] of Object.entries(lotDetails.data ?? {})) {
       if (!d.sold) continue;
-      const lotId = lotIdByPeca.get(idPeca);
-      if (lotId && !map.has(lotId)) map.set(lotId, d.sold);
+      if (!map.has(id)) map.set(id, d.sold);
     }
     return map;
-  }, [soldLots.data, lotDetails.data, lotIdByPeca]);
+  }, [soldLots.data, lotDetails.data]);
   // A URL do site da casa não vem na página de lances — casamos pelo nome da casa
   // com o que já lemos da varredura geral e dos vigiados.
   const houseUrlByName = useMemo(() => {
@@ -1684,7 +1715,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                         dayKey: lot.date,
                                         watched: true,
                                         myBid: myBidById.get(lot.idPeca),
-                                        nextBid: nextBidById.get(lot.idPeca),
+                                        nextBid: nextBidById.get(lot.id),
                                       }}
                                       busy={pending === lot.idPeca}
                                       ai={aiFor(lot)}
@@ -1775,7 +1806,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                     ...lot,
                                     lote: lot.lote || loteById.get(lot.idPeca) || "",
                                     myBid: myBidById.get(lot.idPeca),
-                                    nextBid: nextBidById.get(lot.idPeca),
+                                    nextBid: nextBidById.get(lot.id),
                                   }}
                                   busy={pending === lot.idPeca}
                                   ai={aiFor(lot)}
@@ -1959,7 +1990,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                                 ...lot,
                                                 lote: lot.lote || loteById.get(lot.idPeca) || "",
                                                 myBid: myBidById.get(lot.idPeca),
-                                                nextBid: nextBidById.get(lot.idPeca),
+                                                nextBid: nextBidById.get(lot.id),
                                               }}
                                               busy={pending === lot.idPeca}
                                               ai={aiFor(lot)}

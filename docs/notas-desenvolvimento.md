@@ -134,7 +134,7 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   cron `step=sales`/`captureFinishedSales` após cada leilão terminar — cobre TODO lote de vinil
   visto, sem mecânica nova de scraping). `LotCard` ganhou a prop `sold?: string | null`
   (`sold_price_raw` quando capturado, senão `"Vendido"`) e renderiza a tarja (`absolute inset-0
-  z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear os botões.
+z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear os botões.
   Casamento por `lot_id` (`${idLeilao}-${idPeca}`), **escopado** aos ids de vigiados + lances
   visíveis (nunca lê `lot_sales` inteira): `getSoldLots` (`leiloesbr.functions.ts`, POST, até
   500 ids) → `getAllLotSales({ids, withOrig:false})`. Query `["sold-lots", <ids ordenados>]` no
@@ -161,10 +161,23 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
     vendido"/"não vendido") — um chute sem confirmação contra o site real (sem rede a partir
     deste ambiente) — trocado pela extração por CAMPO do JSON acima, a mesma técnica (regex
     pontual no campo) já usada e funcionando para `NOVO_VALOR`. Retorna
-    `Record<idPeca, {nextBid?, sold?}>`. `index.tsx` casa `idPeca → id` (`lotIdByPeca`, dos
-    próprios vigiados/lances) e mescla no `soldById` só quando `lot_sales` ainda não tem aquele
-    lote — prioridade: `lot_sales` (preço, quando o cron já capturou) > `peca.asp` (preço
-    quando achável, senão "Vendido") > `bidStatus` (só lotes com lance, ver acima).
+    `Record<id, {nextBid?, sold?}>`, **indexado por `id` (`${idLeilao}-${idPeca}`)**, NUNCA por
+    `idPeca` sozinho — mescla no `soldById` só quando `lot_sales` ainda não tem aquele lote —
+    prioridade: `lot_sales` (preço, quando o cron já capturou) > `peca.asp` (preço quando
+    achável, senão "Vendido") > `bidStatus` (só lotes com lance, ver acima).
+    ⚠️ **Fix v0.51.6 — tarja "Vendido" errada em vigiados de leilão FUTURO**: `getLotDetails`/
+    `fetchLotDetails`, `nextBidById` e o merge do `soldById` indexavam por `idPeca` sozinho
+    (dedup por `idPeca` em `lotDetailTargets`, `lotIdByPeca: idPeca → id`). `idPeca` só é único
+    **DENTRO de uma casa** — cada casa parceira é uma instalação independente da mesma
+    plataforma (LeilõesBR white-label), com sua própria numeração — então duas casas diferentes
+    reaproveitam os mesmos números. Um usuário vigiando lotes em mais de uma casa podia ter o
+    resultado de venda de um lote (de uma casa) atribuído a outro lote (de outra casa/leilão,
+    inclusive **futuro**, ainda não pregoado) só porque coincidiam no `idPeca`. Fix: todo esse
+    caminho (targets, retorno de `fetchLotDetails`, `nextBidById`, merge do `soldById`) passa a
+    indexar/dedupar por `id` (`${idLeilao}-${idPeca}`, a mesma chave já usada por `lot_sales` e
+    pelo próprio vigiado/lance) — colisão nesse composto exigiria as DUAS casas coincidirem em
+    `idLeilao` E `idPeca` ao mesmo tempo, praticamente impossível. `lotIdByPeca` foi removido
+    (não é mais necessário).
   - **Refresh — automático ao abrir a tela + manual (v0.51.0-3):** as duas queries de status
     (`["lot-details", …]`/`["sold-lots", …]`) têm `refetchOnMount: "always"` — sempre rechecam
     ao montar a tela, sem esperar o `staleTime` (3min); como o alvo já é só vigiados+lances
@@ -193,7 +206,7 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
     `bids` (`index.tsx`) antes SUBSTITUÍAM a lista a cada fetch pelo que a conta retornava
     naquele instante, o card do vigiado/lance (e a tarja "Vendido" que ele carrega) desaparecia
     da tela assim que o leilão acabava — mesmo ainda sendo "hoje", e mesmo com o `refetchOnMount:
-    "always"` acima batendo a conta de novo a cada abertura de tela. Fix: os `queryFn` de
+"always"` acima batendo a conta de novo a cada abertura de tela. Fix: os `queryFn` de
     `watched`/`bids` agora MESCLAM (nunca substituem) num acumulador local (`watchedAccumRef`/
     `bidsAccumRef`, `Map` por `id`) — cada fetch novo entra no mapa, e um item só sai quando
     (a) o usuário desvigia explicitamente (`toggle.onSuccess` remove na hora, direto no
@@ -204,6 +217,14 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
     cliente). O "mostrar/esconder leilões finalizados" da listagem geral já existia
     (`showFinishedDays`/`toggleShowFinished`, esconde por padrão os leilões encerrados há mais
     de 3h, com botão "Mostrar finalizados (N)") e não precisou mudar.
+    ⚠️ **Fix v0.51.6 — acumulador ainda sumia depois de um tempo**: o `Map` da v0.51.4 vivia só
+    num `useRef` em memória — sobrevivia a troca de aba/dia DENTRO da mesma sessão do app, mas se
+    perdia a cada reload de página ou fechar/reabrir a aba (comum num app mobile/PWA), fazendo o
+    vigiado "sumir" de novo mesmo sem o usuário ter desvigiado nada. Fix: `watchedAccumRef`/
+    `bidsAccumRef` agora persistem em `localStorage` (`loadAccum`/`saveAccum`,
+    `leilao-finder:watched-accum:v1`/`leilao-finder:bids-accum:v1`) — gravado a cada merge do
+    `queryFn` e a cada remoção explícita (desvigiar). Best-effort (SSR, aba anônima ou
+    `localStorage` indisponível/cheio caem para `Map` vazio/silencioso, nunca quebram a tela).
 - **Ícone roxo "já tenho na Coleção"** (`LotCard`, só na **home** `index.tsx`): disco `Disc3`
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
@@ -298,9 +319,9 @@ Base do Vinil Analytics: cada venda de cada lote, capturada do **catálogo da ca
   **valor de venda** e o **texto do card**. `fetchLoteMap` virou um wrapper fino disso.
   ⚠️ **Fail-closed**: só marca `sold` quando há valor (rótulo "Valor de venda: R$ …", ou
   marcador "vendido"/"arrematado" + `R$`) e nenhum marcador de "não vendido"; sem isso, não grava
-  (nunca inventa venda). Calibrado a partir do catálogo real do **Discos Esquecidos** (v0.31.1) —
-  ver "Estrutura do card do catálogo" abaixo; outras casas podem exigir ajuste de
-  `SALE_VALUE_RE`/`SOLD_MARKER_RE`/`UNSOLD_RE`.
+(nunca inventa venda). Calibrado a partir do catálogo real do **Discos Esquecidos** (v0.31.1) —
+ver "Estrutura do card do catálogo" abaixo; outras casas podem exigir ajuste de
+`SALE_VALUE_RE`/`SOLD_MARKER_RE`/`UNSOLD_RE`.
 - **Varredura:** `captureFinishedSales` (`lot-sales.server.ts`) lê `seen_auctions` (durável,
   **nunca podado**), filtra os leilões **terminados** (`auctionFinished`) ainda não capturados
   (checkpoint `app_state.sales_captured`), busca o catálogo por leilão e grava as vendas. Processa
@@ -334,7 +355,7 @@ parsers de venda/estado/nº do lote:
   `longestAttr` pega o atributo mais longo (ignorando o "Lote-NN"). Ex.:
   `GILBERTO GIL - RAÇA HUMANA - CAPA VG+ - DISCO VG+/NM - Disco com mínimos riscos superficiais…`.
 - **Estado no próprio título**, formato `CAPA <grau> - DISCO <grau>` (sem dois-pontos; `DISCO
-  VG+/NM` = faixa entre VG+ e NM). `parseConditionFromText` casa pelos rótulos `CAPA`/`DISCO`.
+VG+/NM` = faixa entre VG+ e NM). `parseConditionFromText` casa pelos rótulos `CAPA`/`DISCO`.
 - **Valor de venda** rotulado: `Valor de venda: R$ 70,00` (`SALE_VALUE_RE`), com botão
   **"Lote vendido"** (`SOLD_MARKER_RE`); não vendidos trazem "Lote não vendido" (`UNSOLD_RE`).
 - **Nº do lote** no cabeçalho do card: `LOTE 4` (fallback genérico além de `LoteProd`/`title`).
@@ -418,12 +439,12 @@ Visão de mercado por obra, independente da casa de leilão, sobre o histórico 
   balaio **"(álbum não identificado)"** (`deriveAlbum` devolve o placeholder quando o derivado é o
   próprio artista, ex.: "Rita Lee - Rita Lee"). Duas mudanças:
   - **`orig_text` em `lot_sales`** (nova coluna, migração `20260909150000_lot_sales_orig_text.sql`
-    + `setup.sql`): guarda o **descritivo COMPLETO do card do catálogo** (o mesmo `data.text` que
-    alimenta o estado), preservado mesmo depois que a reidentificação por IA reescreve `title`.
-    `lot-sales.server.ts` grava em `salesRowsFromCatalog` e tolera a coluna ausente
-    (`isMissingColumn`, igual ao `lot_market`) — o app funciona ANTES de aplicar a migração; só
-    vendas novas/re-capturadas ganham o texto (o catálogo antigo sai do ar). ⚠️ **aplicar a
-    migração à mão** (SQL Editor / `setup.sql`).
+    - `setup.sql`): guarda o **descritivo COMPLETO do card do catálogo** (o mesmo `data.text` que
+      alimenta o estado), preservado mesmo depois que a reidentificação por IA reescreve `title`.
+      `lot-sales.server.ts` grava em `salesRowsFromCatalog` e tolera a coluna ausente
+      (`isMissingColumn`, igual ao `lot_market`) — o app funciona ANTES de aplicar a migração; só
+      vendas novas/re-capturadas ganham o texto (o catálogo antigo sai do ar). ⚠️ **aplicar a
+      migração à mão** (SQL Editor / `setup.sql`).
   - **Correção POR VENDA (aprendizado por `lot_id`):** chave `app_state.analytics_sale_overrides`
     (`Record<lotId, {artist?, album?}>`), devolvida junto pelos apelidos (`getAnalyticsAliases`
     ganhou `sales`) e aplicada em **`buildAnalytics` ANTES de derivar/agrupar** (precede a
@@ -854,7 +875,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
     `AuctionStatusInline`/`houseAuctionInfo` (antes só em Vigiados) passa a aparecer também no
     cabeçalho de casa da **lista principal por dia** (`index.tsx`, seção não-Vigiados/Lances),
     usando `group.lots[0]` (`VinylLot`, já tem `idLeilao`/`url`) — substitui o antigo `às
-    {group.time}` solto; link **"pregão presencial"** ao lado de "site da casa". A seção
+{group.time}` solto; link **"pregão presencial"** ao lado de "site da casa". A seção
     **"Acontecendo agora"** (`live-auctions.tsx`) vira **cartão de 2 linhas** (casa+ícone /
     horário+UF+lotes, sem título de amostra nem CTA separado) e o cartão INTEIRO linka pro
     **presencial** (`auction.presencialUrl ?? entryUrl ?? houseUrl`); `listLiveAuctions`
@@ -955,7 +976,7 @@ folgado (49/500 MB), mas **egress do Supabase já estourado** e **Active CPU da 
   49/500 MB não é urgente, mas órfã em `lot_ident` é linha lida à toa pelo anti-join.
   ⚠️ **Nunca** cascatear `lot_sales` → `lots`.
 - **Lição:** a v0.48.1 planejou a partir do schema e mirou o tamanho do banco — alvo errado.
-  Schema mostra o que *pode* crescer; só telemetria mostra o que *está* doendo.
+  Schema mostra o que _pode_ crescer; só telemetria mostra o que _está_ doendo.
 
 ## Histórico de versões
 
@@ -963,75 +984,76 @@ Fonte única da versão em `src/lib/version.ts` (`APP_VERSION`) + `package.json`
 Entradas resumidas (1 linha/versão) — a mecânica atual e detalhada de cada área já está nas
 seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep`.
 
-| Versão | Entrega |
-| --- | --- |
-| v0.1.0 | Rodapé + versionamento (`Footer.tsx`, `version.ts`) — #35 |
-| v0.2.0 | Bump obrigatório + valor atual/última atualização/casas verificadas |
-| v0.4.0 | IA de avaliação (`lot_ai`, Batches) + página Análise — #51 |
-| v0.5.0 | Âncora Discogs (`lot_market`) |
-| v0.6.0 | Sondagem (`wantlist_items`) + filtros da Análise — #52 |
-| v0.6.1 | Casamento probabilístico da sondagem (≥80%) — #53 |
-| v0.7.0 | Análise: Top 100 + tabela por casa, hover via portal — #54 |
-| v0.8.0 | Faixa Discogs BR, "Lances do dia", tags editáveis |
-| v0.8.1 | Raridade colorida (`RarityLabel`) |
-| v0.9.0 | Filtro por raridade + validação na edição de tags |
-| v0.9.1 | Fix jank de tag + resiliência `lot_market` + hover no toque |
-| v0.10.0 | Casamento Discogs estruturado artista+álbum+ano (`pickBestRelease`) |
-| v0.10.1–2 | Cron endurecido (header-only, timing-safe, sem retry 4xx) — #60 |
-| v0.11.0 | Modo de IA `ai_mode` (off/all/watched) + análise sob demanda — #61 |
-| v0.12.0 | Cards refinados + `lot_ident` (identificação simples) |
-| v0.13.0 | Fix classificação IA + categoria "Lote" + busca por relevância — #63/#64 |
-| v0.14.0 | Página Ao vivo (pregão presencial por casa) — #66 |
-| v0.15.0 | Pregão abre já logado (proxy `/api/live`, sessão por origem, HMAC) — #73 |
-| v0.15.1 | Login da casa: GET de aquecimento + erro real no proxy — #74 |
-| v0.15.2 | Auto-login best-effort para casa fora da plataforma |
-| v0.16.0 | Menu Coleção (`collection_items`) + varredura "Minhas compras" (`l=6`) — #76 |
-| v0.16.1 | Fix data vazia do `l=6` quebrando o insert — #77 |
-| v0.17.0–3 | Coleção: parser real do `l=6`, `parsePurchaseTitle`, título rotulado, prioridade banco→título→IA — #78–80 |
-| v0.18.0 | Coleção: IA só-texto reidentifica a base + agrupamento normalizado + "Coletâneas" — #82 |
-| v0.19.0 | Coleção: card por artista/álbum, descritivo IA (`description`), upload de foto |
-| v0.20.0–21.0 | Coleção: reidentificação `onlyUnidentified` + reprocessar por card (`RotateCw`) |
-| v0.22.0–1 | Coleção: descritivo rico rolável, grading `Select`, tags editáveis/IA (só gênero) — #86 |
-| v0.23.0–2 | Home: ícone "já tenho na Coleção" (`ownedMatchForLot`), precisão por tokens distintivos — #88–90 |
-| v0.24.0–2 | Coleção: relação manual lote↔Coleção + aprendizado (`collection_links`/`collection_feedback`, `resolveOwned`) — #91–93 |
-| v0.25.0 | Removido "Painel de mudanças" (`/dashboard`) |
-| v0.26.0 | Coleção: importação em massa por texto (`BulkImportDialog`) + câmera no upload |
-| v0.27.0–1 | IA multi-provedor (Gemini via REST, failover por quota) — #96 |
-| v0.28.0 | Rodapé fixo/persistente |
-| v0.28.1–2 | Fix Gemini "não retorna nada" (folga de tokens, erro explícito) + retry/failover em erro transitório — #99 |
-| v0.29.0 | Grading Disco×Capa (`grading.ts`, 10 graus, Score Final, Faixas) |
-| v0.30.0 | Captura de vendas pós-leilão (`lot_sales`, 1 req/leilão, fail-closed) |
-| v0.31.0–1 | Página Vinil Analytics (`buildAnalytics`) + calibração do catálogo (tooltip, valor de venda) |
-| v0.32.0–3 | `lot_condition` (estado pré-leilão) + fixes de segmentação/filtro de vinil na captura de vendas |
-| v0.33.0–1 | Catálogo via endpoint JSON (`catalogocontentload.asp`), embrulho `Catalogo`, backfill |
-| v0.34.0 | Filtro de vinil na origem (`Tipo=129`) |
-| v0.35.0 | Campos ricos do catálogo (demanda, taxa, valor inicial) — badge de demanda + Analytics |
-| v0.36.0 | Identidade via campo `PECA` para casas com `DESCRICAO` em prosa |
-| v0.37.0 | Reparo de mojibake (dupla-codificação UTF-8/Latin-1) no catálogo (`fixMojibake`) |
-| v0.38.0 | Grading tolerante a prosa + regra de score = MÉDIA (padrão em todos os cards) |
-| v0.39.0 | Fallback de IA para estado quando o regex não acha nada (`conditionAiSync`) |
-| v0.40.0 | Analytics: exclui não-vinil + reidentifica artistas genéricos por IA |
-| v0.41.0 | Seletor único de IA + header sticky + reidentificação/padronização de todo o histórico |
-| v0.42.0 | Analytics: curadoria com aprendizado (apelidos/fusão de artista/álbum) + refinos de UI |
-| v0.43.0 | Analytics: `lot_sales.orig_text` + correção por venda (`analytics_sale_overrides`) |
-| v0.44.0–2 | Analytics: IA por artista/álbum (escopo `lotIds`) + roadmap de provedores de IA — #127 |
-| v0.45.0–1 | Analytics: oculta lotes/coletâneas + `extractArtist` aceita nomes curtos c/ dígito ("U2") — #128 |
-| v0.46.0–6 | Analytics: excluir venda/artista (#128); fixes sucessivos de qualidade — lote confirmado reaparecendo, `isDiscBundle` em prosa, colecionismo geral poluindo balaios, "Grandes Sucessos" preso em Coletâneas, `extractArtist` bail-out cedo demais, grafias de "AC/DC" divergentes |
-| v0.47.0–1 | Horário/status/link do pregão presencial ao lado da casa em Vigiados (`houseAuctionInfo`) |
-| v0.48.0 | Alerta "ao vivo" + link do presencial na lista principal; busca só ao confirmar; header menor |
-| v0.48.1–2 | Plano de economia (doc): v0.48.1 mirou o tamanho do banco (errado); v0.48.2 corrige com telemetria real — ver "Infra — economia" |
-| v0.48.3 | Header/barra de filtros fixos (home e Coleção) |
-| v0.48.4 | Fase 1 do plano de economia: RPC de anti-join, laço do cron encolhido, `lot_sales.bundle` — ver `docs/economia-fase-1-egress-e-cpu.md` |
-| v0.49.1 | Otimização dos `.md` do repo (só documentação): remove duplicação de convenções entre `AGENTS.md`/`CLAUDE.md`/notas (fonte única em `AGENTS.md`), remove telemetria repetida (fonte única em `economia-migracao.md`) e comprime o Histórico de versões para 1 linha/versão — a mecânica detalhada de cada área já vive nas seções acima |
-| v0.49.3 | Ao vivo: card sobe para o topo da grade ao abrir "Abrir aqui" (agrupa os pregões abertos) |
-| v0.50.0 | Tarja diagonal "Vendido" em vigiados/lances já vendidos (`lot_sales` escopado por `getSoldLots`) — ver "Cores, badges e busca" |
-| v0.50.1 | Tarja "Vendido" também pelo `bidStatus` (`bidIsSold`) — sinal em tempo real, sem esperar o cron `step=sales` varrer o catálogo |
-| v0.51.0 | Tarja "Vendido" via `peca.asp` p/ vigiados sem lance (`getLotDetails`, sem custo extra) + refresh manual de Vigiados/Lances do dia |
-| v0.51.1 | Fix: refresh manual usava `invalidateQueries` (resolve mesmo se o refetch falhar) — troca por `refetch({throwOnError:true})` das próprias queries, toast agora reflete falha real |
-| v0.51.2 | Fix: `lot_sales` ficava "presa" sem a venda (leilão capturado com 0 vendas nunca revisitado) — `checkSoldNow`/`captureSalesForAuctions` força releitura no refresh manual de Vigiados/Lances |
-| v0.51.3 | Reverte `checkSoldNow`/`captureSalesForAuctions` (v0.51.2 — pesado e arriscava o grau Disco/Capa da IA no Analytics); tarja "Vendido" via `peca.asp` passa a ler `MOSTRABTN_CLASS`/`VALOR_VENDA` do JSON embutido (mesmos campos do Analytics) em vez de marcadores de texto livre; `refetchOnMount: "always"` nas queries de status |
-| v0.51.4 | Fix: vigiados/lances somem da tela ao leilão terminar (conta para de trazê-los) — `watched`/`bids` passam a MESCLAR (nunca substituir) num acumulador local, poda só pela janela de dias/desvigia explícita; docs: endpoints de catálogo/peça documentados como fonte de verdade prioritária |
-| v0.51.5 | Mobile: header sticky mais compacto (padding menor, lista de dias/abas sem quebrar linha) nas 5 páginas autenticadas; fix do nav "ir para casa" da Análise, que ficava escondido atrás do header |
+| Versão       | Entrega                                                                                                                                                                                                                                                                                                                                 |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| v0.1.0       | Rodapé + versionamento (`Footer.tsx`, `version.ts`) — #35                                                                                                                                                                                                                                                                               |
+| v0.2.0       | Bump obrigatório + valor atual/última atualização/casas verificadas                                                                                                                                                                                                                                                                     |
+| v0.4.0       | IA de avaliação (`lot_ai`, Batches) + página Análise — #51                                                                                                                                                                                                                                                                              |
+| v0.5.0       | Âncora Discogs (`lot_market`)                                                                                                                                                                                                                                                                                                           |
+| v0.6.0       | Sondagem (`wantlist_items`) + filtros da Análise — #52                                                                                                                                                                                                                                                                                  |
+| v0.6.1       | Casamento probabilístico da sondagem (≥80%) — #53                                                                                                                                                                                                                                                                                       |
+| v0.7.0       | Análise: Top 100 + tabela por casa, hover via portal — #54                                                                                                                                                                                                                                                                              |
+| v0.8.0       | Faixa Discogs BR, "Lances do dia", tags editáveis                                                                                                                                                                                                                                                                                       |
+| v0.8.1       | Raridade colorida (`RarityLabel`)                                                                                                                                                                                                                                                                                                       |
+| v0.9.0       | Filtro por raridade + validação na edição de tags                                                                                                                                                                                                                                                                                       |
+| v0.9.1       | Fix jank de tag + resiliência `lot_market` + hover no toque                                                                                                                                                                                                                                                                             |
+| v0.10.0      | Casamento Discogs estruturado artista+álbum+ano (`pickBestRelease`)                                                                                                                                                                                                                                                                     |
+| v0.10.1–2    | Cron endurecido (header-only, timing-safe, sem retry 4xx) — #60                                                                                                                                                                                                                                                                         |
+| v0.11.0      | Modo de IA `ai_mode` (off/all/watched) + análise sob demanda — #61                                                                                                                                                                                                                                                                      |
+| v0.12.0      | Cards refinados + `lot_ident` (identificação simples)                                                                                                                                                                                                                                                                                   |
+| v0.13.0      | Fix classificação IA + categoria "Lote" + busca por relevância — #63/#64                                                                                                                                                                                                                                                                |
+| v0.14.0      | Página Ao vivo (pregão presencial por casa) — #66                                                                                                                                                                                                                                                                                       |
+| v0.15.0      | Pregão abre já logado (proxy `/api/live`, sessão por origem, HMAC) — #73                                                                                                                                                                                                                                                                |
+| v0.15.1      | Login da casa: GET de aquecimento + erro real no proxy — #74                                                                                                                                                                                                                                                                            |
+| v0.15.2      | Auto-login best-effort para casa fora da plataforma                                                                                                                                                                                                                                                                                     |
+| v0.16.0      | Menu Coleção (`collection_items`) + varredura "Minhas compras" (`l=6`) — #76                                                                                                                                                                                                                                                            |
+| v0.16.1      | Fix data vazia do `l=6` quebrando o insert — #77                                                                                                                                                                                                                                                                                        |
+| v0.17.0–3    | Coleção: parser real do `l=6`, `parsePurchaseTitle`, título rotulado, prioridade banco→título→IA — #78–80                                                                                                                                                                                                                               |
+| v0.18.0      | Coleção: IA só-texto reidentifica a base + agrupamento normalizado + "Coletâneas" — #82                                                                                                                                                                                                                                                 |
+| v0.19.0      | Coleção: card por artista/álbum, descritivo IA (`description`), upload de foto                                                                                                                                                                                                                                                          |
+| v0.20.0–21.0 | Coleção: reidentificação `onlyUnidentified` + reprocessar por card (`RotateCw`)                                                                                                                                                                                                                                                         |
+| v0.22.0–1    | Coleção: descritivo rico rolável, grading `Select`, tags editáveis/IA (só gênero) — #86                                                                                                                                                                                                                                                 |
+| v0.23.0–2    | Home: ícone "já tenho na Coleção" (`ownedMatchForLot`), precisão por tokens distintivos — #88–90                                                                                                                                                                                                                                        |
+| v0.24.0–2    | Coleção: relação manual lote↔Coleção + aprendizado (`collection_links`/`collection_feedback`, `resolveOwned`) — #91–93                                                                                                                                                                                                                  |
+| v0.25.0      | Removido "Painel de mudanças" (`/dashboard`)                                                                                                                                                                                                                                                                                            |
+| v0.26.0      | Coleção: importação em massa por texto (`BulkImportDialog`) + câmera no upload                                                                                                                                                                                                                                                          |
+| v0.27.0–1    | IA multi-provedor (Gemini via REST, failover por quota) — #96                                                                                                                                                                                                                                                                           |
+| v0.28.0      | Rodapé fixo/persistente                                                                                                                                                                                                                                                                                                                 |
+| v0.28.1–2    | Fix Gemini "não retorna nada" (folga de tokens, erro explícito) + retry/failover em erro transitório — #99                                                                                                                                                                                                                              |
+| v0.29.0      | Grading Disco×Capa (`grading.ts`, 10 graus, Score Final, Faixas)                                                                                                                                                                                                                                                                        |
+| v0.30.0      | Captura de vendas pós-leilão (`lot_sales`, 1 req/leilão, fail-closed)                                                                                                                                                                                                                                                                   |
+| v0.31.0–1    | Página Vinil Analytics (`buildAnalytics`) + calibração do catálogo (tooltip, valor de venda)                                                                                                                                                                                                                                            |
+| v0.32.0–3    | `lot_condition` (estado pré-leilão) + fixes de segmentação/filtro de vinil na captura de vendas                                                                                                                                                                                                                                         |
+| v0.33.0–1    | Catálogo via endpoint JSON (`catalogocontentload.asp`), embrulho `Catalogo`, backfill                                                                                                                                                                                                                                                   |
+| v0.34.0      | Filtro de vinil na origem (`Tipo=129`)                                                                                                                                                                                                                                                                                                  |
+| v0.35.0      | Campos ricos do catálogo (demanda, taxa, valor inicial) — badge de demanda + Analytics                                                                                                                                                                                                                                                  |
+| v0.36.0      | Identidade via campo `PECA` para casas com `DESCRICAO` em prosa                                                                                                                                                                                                                                                                         |
+| v0.37.0      | Reparo de mojibake (dupla-codificação UTF-8/Latin-1) no catálogo (`fixMojibake`)                                                                                                                                                                                                                                                        |
+| v0.38.0      | Grading tolerante a prosa + regra de score = MÉDIA (padrão em todos os cards)                                                                                                                                                                                                                                                           |
+| v0.39.0      | Fallback de IA para estado quando o regex não acha nada (`conditionAiSync`)                                                                                                                                                                                                                                                             |
+| v0.40.0      | Analytics: exclui não-vinil + reidentifica artistas genéricos por IA                                                                                                                                                                                                                                                                    |
+| v0.41.0      | Seletor único de IA + header sticky + reidentificação/padronização de todo o histórico                                                                                                                                                                                                                                                  |
+| v0.42.0      | Analytics: curadoria com aprendizado (apelidos/fusão de artista/álbum) + refinos de UI                                                                                                                                                                                                                                                  |
+| v0.43.0      | Analytics: `lot_sales.orig_text` + correção por venda (`analytics_sale_overrides`)                                                                                                                                                                                                                                                      |
+| v0.44.0–2    | Analytics: IA por artista/álbum (escopo `lotIds`) + roadmap de provedores de IA — #127                                                                                                                                                                                                                                                  |
+| v0.45.0–1    | Analytics: oculta lotes/coletâneas + `extractArtist` aceita nomes curtos c/ dígito ("U2") — #128                                                                                                                                                                                                                                        |
+| v0.46.0–6    | Analytics: excluir venda/artista (#128); fixes sucessivos de qualidade — lote confirmado reaparecendo, `isDiscBundle` em prosa, colecionismo geral poluindo balaios, "Grandes Sucessos" preso em Coletâneas, `extractArtist` bail-out cedo demais, grafias de "AC/DC" divergentes                                                       |
+| v0.47.0–1    | Horário/status/link do pregão presencial ao lado da casa em Vigiados (`houseAuctionInfo`)                                                                                                                                                                                                                                               |
+| v0.48.0      | Alerta "ao vivo" + link do presencial na lista principal; busca só ao confirmar; header menor                                                                                                                                                                                                                                           |
+| v0.48.1–2    | Plano de economia (doc): v0.48.1 mirou o tamanho do banco (errado); v0.48.2 corrige com telemetria real — ver "Infra — economia"                                                                                                                                                                                                        |
+| v0.48.3      | Header/barra de filtros fixos (home e Coleção)                                                                                                                                                                                                                                                                                          |
+| v0.48.4      | Fase 1 do plano de economia: RPC de anti-join, laço do cron encolhido, `lot_sales.bundle` — ver `docs/economia-fase-1-egress-e-cpu.md`                                                                                                                                                                                                  |
+| v0.49.1      | Otimização dos `.md` do repo (só documentação): remove duplicação de convenções entre `AGENTS.md`/`CLAUDE.md`/notas (fonte única em `AGENTS.md`), remove telemetria repetida (fonte única em `economia-migracao.md`) e comprime o Histórico de versões para 1 linha/versão — a mecânica detalhada de cada área já vive nas seções acima |
+| v0.49.3      | Ao vivo: card sobe para o topo da grade ao abrir "Abrir aqui" (agrupa os pregões abertos)                                                                                                                                                                                                                                               |
+| v0.50.0      | Tarja diagonal "Vendido" em vigiados/lances já vendidos (`lot_sales` escopado por `getSoldLots`) — ver "Cores, badges e busca"                                                                                                                                                                                                          |
+| v0.50.1      | Tarja "Vendido" também pelo `bidStatus` (`bidIsSold`) — sinal em tempo real, sem esperar o cron `step=sales` varrer o catálogo                                                                                                                                                                                                          |
+| v0.51.0      | Tarja "Vendido" via `peca.asp` p/ vigiados sem lance (`getLotDetails`, sem custo extra) + refresh manual de Vigiados/Lances do dia                                                                                                                                                                                                      |
+| v0.51.1      | Fix: refresh manual usava `invalidateQueries` (resolve mesmo se o refetch falhar) — troca por `refetch({throwOnError:true})` das próprias queries, toast agora reflete falha real                                                                                                                                                       |
+| v0.51.2      | Fix: `lot_sales` ficava "presa" sem a venda (leilão capturado com 0 vendas nunca revisitado) — `checkSoldNow`/`captureSalesForAuctions` força releitura no refresh manual de Vigiados/Lances                                                                                                                                            |
+| v0.51.3      | Reverte `checkSoldNow`/`captureSalesForAuctions` (v0.51.2 — pesado e arriscava o grau Disco/Capa da IA no Analytics); tarja "Vendido" via `peca.asp` passa a ler `MOSTRABTN_CLASS`/`VALOR_VENDA` do JSON embutido (mesmos campos do Analytics) em vez de marcadores de texto livre; `refetchOnMount: "always"` nas queries de status    |
+| v0.51.4      | Fix: vigiados/lances somem da tela ao leilão terminar (conta para de trazê-los) — `watched`/`bids` passam a MESCLAR (nunca substituir) num acumulador local, poda só pela janela de dias/desvigia explícita; docs: endpoints de catálogo/peça documentados como fonte de verdade prioritária                                            |
+| v0.51.5      | Mobile: header sticky mais compacto (padding menor, lista de dias/abas sem quebrar linha) nas 5 páginas autenticadas; fix do nav "ir para casa" da Análise, que ficava escondido atrás do header                                                                                                                                        |
+| v0.51.6      | Fix: tarja "Vendido" errada em vigiados de leilão futuro — `getLotDetails`/`soldById`/`nextBidById` indexavam por `idPeca` sozinho (só único DENTRO de uma casa; casas parceiras são instalações independentes e reaproveitam os mesmos números), misturando o resultado de venda de um lote de uma casa com outro só coincidente no número; passam a indexar por `id` (`${idLeilao}-${idPeca}`). Fix: vigiados/lances do dia sumiam depois de um tempo mesmo sem desvigiar — o acumulador local (v0.51.4) vivia só num `useRef` em memória e se perdia a cada reload/fechar aba; agora persiste em `localStorage` (`loadAccum`/`saveAccum`)                                                                                                                                        |
 
 ## Pendências
 
@@ -1043,7 +1065,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 **Roadmap — novos provedores de IA (avaliado, não iniciado)**
 
 Avaliamos o repo `tashfeenahmed/freellmapi` (proxy **local** `localhost:3001`, OpenAI-compatible,
-declaradamente *"not production"*) e **descartamos integrá-lo**: o app roda server-side em
+declaradamente _"not production"_) e **descartamos integrá-lo**: o app roda server-side em
 nuvem/CI (cron), a camada de `ai-provider.server.ts` já faz o failover que ele promete, e passar
 por um proxy local perderia a **Batches API** da Anthropic (~50% mais barata) do cron. O caminho
 aderente é **acrescentar provedores à camada plugável que já existe** (`runText` + `AiProvider`).
