@@ -121,13 +121,21 @@ export const listMyBids = createServerFn({ method: "GET" })
  */
 export const getLotDetails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { targets?: { idPeca: string; url: string }[] } | undefined) => ({
-    targets: Array.isArray(input?.targets)
-      ? input!.targets
-          .filter((t) => t && typeof t.idPeca === "string" && typeof t.url === "string")
-          .slice(0, 100)
-      : [],
-  }))
+  .inputValidator(
+    (input: { targets?: { id: string; idPeca: string; url: string }[] } | undefined) => ({
+      targets: Array.isArray(input?.targets)
+        ? input!.targets
+            .filter(
+              (t) =>
+                t &&
+                typeof t.id === "string" &&
+                typeof t.idPeca === "string" &&
+                typeof t.url === "string",
+            )
+            .slice(0, 100)
+        : [],
+    }),
+  )
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);

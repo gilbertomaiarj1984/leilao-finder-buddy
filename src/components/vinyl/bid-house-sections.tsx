@@ -85,7 +85,7 @@ export function BidHouseSections({
                   image: bid.image,
                   // Valor atual não vem na página de lances — casado por id com a varredura.
                   price: priceById.get(bid.id) ?? "",
-                  nextBid: nextBidById.get(bid.idPeca),
+                  nextBid: nextBidById.get(bid.id),
                   time: "",
                   house: bid.house,
                   uf: bid.uf,
