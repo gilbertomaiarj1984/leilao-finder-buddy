@@ -287,6 +287,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   // Alvo (via portal) para a barra de controles do dia (Vigiados/Lances/Analisar/casas),
   // renderizada dentro do header — acima da lista de dias — em vez de sticky abaixo dele.
   const [dayBarHost, setDayBarHost] = useState<HTMLDivElement | null>(null);
+  // Alvo (via portal) para o modo/provedor de IA + "Atualizar tudo", que vivem na MESMA
+  // barra do rodapé global (Footer.tsx, montado no __root.tsx) — não um <footer> próprio.
+  const [footerExtraHost, setFooterExtraHost] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setFooterExtraHost(document.getElementById("footer-extra"));
+  }, []);
   const [artistFilter, setArtistFilter] = useState<string>("");
   const [search, setSearch] = useState<string>("");
   // A busca só roda ao confirmar (Enter/botão) — evita filtrar a lista a cada tecla.
@@ -2312,51 +2318,53 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             );
           })()
         : null}
-      <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-3">
-        <div
-          className="flex items-center gap-1.5"
-          title="Modo da avaliação automática por IA (controla o gasto de créditos). A análise sob demanda, pelos botões nos dias/casas, funciona em qualquer modo."
-        >
-          <Sparkles className="h-4 w-4 shrink-0 text-primary" />
-          <Select
-            value={aiMode}
-            onValueChange={(value) => changeAiMode(value as "off" | "all" | "watched")}
-          >
-            <SelectTrigger className="h-8 w-[176px] text-xs" aria-label="Modo da IA">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="off">IA: desligada</SelectItem>
-              <SelectItem value="all">IA: tudo</SelectItem>
-              <SelectItem value="watched">IA: vigiados + lances</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <AiProviderSelect value={aiProvider} onChange={changeAiProvider} />
-        <div className="flex flex-col items-start gap-0.5 sm:items-end">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={refreshAll}
-            disabled={refreshingAll || lots.isFetching}
-            title="Forçar atualização geral da lista"
-          >
-            {refreshingAll ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
-            )}
-            {refreshingAll && refreshPct !== null
-              ? `Atualizando… ${refreshPct}%`
-              : "Atualizar tudo"}
-          </Button>
-          {lots.data?.updatedAt ? (
-            <span className="text-[11px] text-muted-foreground" title="Última atualização da lista">
-              Atualizado: {formatUpdatedAt(lots.data.updatedAt)}
-            </span>
-          ) : null}
-        </div>
-      </footer>
+      {footerExtraHost &&
+        createPortal(
+          <>
+            <div
+              className="flex items-center gap-1.5"
+              title="Modo da avaliação automática por IA (controla o gasto de créditos). A análise sob demanda, pelos botões nos dias/casas, funciona em qualquer modo."
+            >
+              <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+              <Select
+                value={aiMode}
+                onValueChange={(value) => changeAiMode(value as "off" | "all" | "watched")}
+              >
+                <SelectTrigger className="h-8 w-[176px] text-xs" aria-label="Modo da IA">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">IA: desligada</SelectItem>
+                  <SelectItem value="all">IA: tudo</SelectItem>
+                  <SelectItem value="watched">IA: vigiados + lances</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <AiProviderSelect value={aiProvider} onChange={changeAiProvider} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshAll}
+              disabled={refreshingAll || lots.isFetching}
+              title="Forçar atualização geral da lista"
+            >
+              {refreshingAll ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              {refreshingAll && refreshPct !== null
+                ? `Atualizando… ${refreshPct}%`
+                : "Atualizar tudo"}
+            </Button>
+            {lots.data?.updatedAt ? (
+              <span title="Última atualização da lista">
+                Atualizado: {formatUpdatedAt(lots.data.updatedAt)}
+              </span>
+            ) : null}
+          </>,
+          footerExtraHost,
+        )}
     </main>
   );
 }
