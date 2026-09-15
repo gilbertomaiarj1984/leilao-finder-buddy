@@ -97,6 +97,13 @@ import type { MyBid } from "@/lib/leiloesbr-bids.server";
 import { getCollection } from "@/lib/collection.functions";
 import type { CollectionItem } from "@/lib/collection.server";
 import {
+  BIDS_ACCUM_STORAGE_KEY,
+  loadAccum,
+  mergeWatchedAccum,
+  saveAccum,
+  WATCHED_ACCUM_STORAGE_KEY,
+} from "@/lib/watched-accum";
+import {
   auctionFinished,
   COMPILATION_LABEL,
   isDiscBundle,
@@ -105,7 +112,6 @@ import {
   searchRelevance,
   titleCase,
   UNCLASSIFIED_LABEL,
-  upcomingDayKeys,
   type VinylLot,
 } from "@/lib/vinyl-parse";
 import {
@@ -146,34 +152,6 @@ export const Route = createFileRoute("/_authenticated/")({
 const lotsQuery = { queryKey: ["vinyl-lots"] as const };
 const watchedQuery = { queryKey: ["vinyl-watched"] as const };
 const bidsQuery = { queryKey: ["vinyl-my-bids"] as const };
-// Espelha o `WINDOW_DAYS` do servidor (`leiloesbr-scrape.server.ts`) — janela de poda do
-// acumulador local de vigiados/lances (ver comentário acima de `watched`/`bids` abaixo).
-const WATCH_WINDOW_DAYS = 5;
-const WATCHED_ACCUM_STORAGE_KEY = "leilao-finder:watched-accum:v1";
-const BIDS_ACCUM_STORAGE_KEY = "leilao-finder:bids-accum:v1";
-
-/** Lê o acumulador salvo em `localStorage` (best-effort: SSR, aba anônima ou JSON corrompido
- * simplesmente devolvem um mapa vazio, nunca quebram a tela). */
-function loadAccum<T>(key: string): Map<string, T> {
-  if (typeof window === "undefined") return new Map();
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return new Map();
-    return new Map(JSON.parse(raw) as [string, T][]);
-  } catch {
-    return new Map();
-  }
-}
-
-/** Grava o acumulador em `localStorage` (best-effort — indisponível/cheio nunca quebra a tela). */
-function saveAccum<T>(key: string, acc: Map<string, T>): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify([...acc]));
-  } catch {
-    // ignora — o acumulador em memória continua valendo pelo resto da sessão
-  }
-}
 
 function HomePage() {
   const navigate = useNavigate();
@@ -369,13 +347,16 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   // trazer um lote assim que o leilão termina — igual à listagem pública, que já "some" um
   // leilão que ficou ao vivo. Sem isso, o card do vigiado/lance (e a tarja "Vendido" que ele
   // carrega) desaparecia da tela assim que o leilão acabava, mesmo ainda sendo "hoje". Por
-  // isso o `queryFn` MESCLA (nunca substitui) num acumulador local: cada fetch novo entra por
-  // `id`, e um item só sai quando (a) o usuário desvigia explicitamente (`toggle.onSuccess`
-  // remove na hora, ver abaixo) ou (b) o dia dele já saiu da janela de dias do app — poda que
-  // evita crescimento sem limite numa sessão longa. `WATCH_WINDOW_DAYS` espelha o `WINDOW_DAYS`
-  // do servidor (`leiloesbr-scrape.server.ts`). Persistido em `localStorage` (`loadAccum`/
-  // `saveAccum`) — um `useRef` puro some ao recarregar a página/fechar a aba, o que fazia os
-  // vigiados do dia "sumirem depois de um tempo" mesmo sem o usuário ter desvigiado nada.
+  // isso o `queryFn` MESCLA (nunca substitui) num acumulador local (`mergeWatchedAccum`,
+  // `@/lib/watched-accum`): cada fetch novo entra por `id`, e um item só sai quando (a) o
+  // usuário desvigia explicitamente (`toggle.onSuccess` remove na hora, ver abaixo) ou (b) o
+  // dia dele já saiu da janela de dias do app — poda que evita crescimento sem limite numa
+  // sessão longa. Persistido em `localStorage` — um `useRef` puro some ao recarregar a
+  // página/fechar a aba, o que fazia os vigiados "sumirem depois de um tempo" mesmo sem o
+  // usuário ter desvigiado nada. ⚠️ A rota `/analise` lê a MESMA chave de query
+  // (`["vinyl-watched"]`/`["vinyl-my-bids"]`, compartilhada no `QueryClient` do app inteiro) —
+  // ela usa esta MESMA função, senão a versão dela (sem mesclar) sobrescreve o acumulado
+  // desta rota ao navegar entre as duas.
   const watchedAccumRef = useRef<Map<string, WatchedLot> | null>(null);
   if (watchedAccumRef.current === null)
     watchedAccumRef.current = loadAccum<WatchedLot>(WATCHED_ACCUM_STORAGE_KEY);
@@ -386,12 +367,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     ...watchedQuery,
     queryFn: async () => {
       const fresh = await fetchWatched();
-      const acc = watchedAccumRef.current!;
-      for (const w of fresh) acc.set(w.id, w);
-      const validDays = new Set(upcomingDayKeys(WATCH_WINDOW_DAYS));
-      for (const [id, w] of acc) if (!validDays.has(watchedDateToKey(w.date))) acc.delete(id);
-      saveAccum(WATCHED_ACCUM_STORAGE_KEY, acc);
-      return [...acc.values()];
+      return mergeWatchedAccum(watchedAccumRef.current!, fresh, WATCHED_ACCUM_STORAGE_KEY);
     },
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -400,12 +376,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     ...bidsQuery,
     queryFn: async () => {
       const fresh = await fetchBids();
-      const acc = bidsAccumRef.current!;
-      for (const b of fresh) acc.set(b.id, b);
-      const validDays = new Set(upcomingDayKeys(WATCH_WINDOW_DAYS));
-      for (const [id, b] of acc) if (!validDays.has(watchedDateToKey(b.date))) acc.delete(id);
-      saveAccum(BIDS_ACCUM_STORAGE_KEY, acc);
-      return [...acc.values()];
+      return mergeWatchedAccum(bidsAccumRef.current!, fresh, BIDS_ACCUM_STORAGE_KEY);
     },
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -1712,7 +1683,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                       key={lot.id}
                                       lot={{
                                         ...lot,
-                                        dayKey: lot.date,
+                                        dayKey: watchedDateToKey(lot.date) || lot.date,
                                         watched: true,
                                         myBid: myBidById.get(lot.idPeca),
                                         nextBid: nextBidById.get(lot.id),
@@ -2177,7 +2148,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                           key={lot.id}
                                           lot={{
                                             ...lot,
-                                            dayKey: lot.date,
+                                            dayKey: watchedDateToKey(lot.date) || lot.date,
                                             watched: true,
                                             myBid: myBidById.get(lot.idPeca),
                                           }}
