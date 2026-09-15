@@ -114,10 +114,12 @@ export const listMyBids = createServerFn({ method: "GET" })
   });
 
 /**
- * Próximo lance (NOVO_VALOR do `peca.asp`) por lote. 1 requisição por lote → usar só
- * para conjuntos pequenos (vigiados + lances). Best-effort: {} em erro.
+ * Detalhes por lote lidos do `peca.asp` (1 requisição por lote → usar só para conjuntos
+ * pequenos: vigiados + lances): próximo lance (`NOVO_VALOR`) e, quando o leilão já terminou,
+ * o resultado da venda (sinal mais rápido de "vendido" para quem só VIGIA, sem lance — ver
+ * `leiloesbr-lot-details.server.ts`). Best-effort: {} em erro.
  */
-export const getNextBids = createServerFn({ method: "POST" })
+export const getLotDetails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { targets?: { idPeca: string; url: string }[] } | undefined) => ({
     targets: Array.isArray(input?.targets)
@@ -129,13 +131,14 @@ export const getNextBids = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
-    if (!data.targets.length) return {} as Record<string, string>;
+    const empty: Record<string, { nextBid?: string; sold?: string }> = {};
+    if (!data.targets.length) return empty;
     try {
-      const { fetchNextBids } = await import("./leiloesbr-lot-details.server");
-      return await fetchNextBids(data.targets);
+      const { fetchLotDetails } = await import("./leiloesbr-lot-details.server");
+      return await fetchLotDetails(data.targets);
     } catch (error) {
-      console.error("[leiloesbr] não foi possível ler os próximos lances", error);
-      return {} as Record<string, string>;
+      console.error("[leiloesbr] não foi possível ler os detalhes dos lotes", error);
+      return empty;
     }
   });
 
@@ -547,6 +550,35 @@ export const getVinylSales = createServerFn({ method: "GET" })
       return await getAllLotSales({ withOrig: false });
     } catch (error) {
       console.error("[lot-sales] não foi possível ler o histórico de vendas", error);
+      return [];
+    }
+  });
+
+/**
+ * Status de VENDIDO para um conjunto pontual de lotes (vigiados + lances), casado por
+ * `lot_id` com o histórico já capturado em `lot_sales` (mesma tabela do Vinil Analytics,
+ * preenchida pelo cron `step=sales` após cada leilão terminar). Escopado por `ids` — nunca lê a
+ * tabela inteira — para servir a tarja "Vendido" nos cards sem custo de egress. Best-effort: [].
+ */
+export const getSoldLots = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { ids?: string[] } | undefined) => ({
+    ids: Array.isArray(input?.ids)
+      ? input!.ids
+          .filter((id): id is string => typeof id === "string" && id.length > 0)
+          .slice(0, 500)
+      : [],
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    if (!data.ids.length) return [];
+    try {
+      const { getAllLotSales } = await import("./lot-sales.server");
+      const rows = await getAllLotSales({ ids: data.ids, withOrig: false });
+      return rows.map((r) => ({ lot_id: r.lot_id, sold_price_raw: r.sold_price_raw }));
+    } catch (error) {
+      console.error("[lot-sales] não foi possível checar lotes vendidos", error);
       return [];
     }
   });

@@ -75,6 +75,39 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
   atalho para `BASE_URL`. `absorbSetCookie` mantém o jar da origem vivo com os `Set-Cookie` que a
   casa devolve durante o pregão.
 
+## Endpoints de catálogo/peça — fonte de verdade (PRIORIDADE nas consultas)
+
+⚠️ **Toda consulta de dados de um lote (nº, estado da venda, próximo lance, demanda, taxa…)
+deve preferir estes dois endpoints** — são os que a própria LeilõesBR usa para renderizar as
+telas, então os campos batem exatamente com o que o site mostra. Chutar marcador de TEXTO
+LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nesta base (tarja
+"Vendido" não batendo com o site — ver "Histórico de versões" v0.51.0-3) — **não repetir**.
+
+- **Catálogo do leilão inteiro** (`leiloesbr-catalog.server.ts`, `fetchCatalogData`):
+  1. **Template novo (JSON, preferido)** — `fetchCatalogJson`:
+     `<domínio>/templates/catalogo/asp/catalogocontentload.asp?leilao=<idLeilao>&pesquisa=&irpara=&Dia=&Tipo=<tipo>&artista=&Srt=0&Temtotal=1&pag=<n>&remote=1&limit=30&_=<timestamp>`
+     — paginado (`pag`, `limit=30`, até 80 páginas), array `PECAS` (ou embrulhado, ver
+     `extractPecas`) com um objeto por lote: `ID`, `LOTE`, `VALOR_VENDA` (valor REAL de venda,
+     mesmo quando `VALOR_VALUE` vem escondido/"--"), `DESCRICAO`/`MINI_DESCRICAO`, `PECA`
+     (título curado), `MOSTRABTN_CLASS` (`'is-vendido'` | `'is-naovendido'` — **o campo que diz
+     se vendeu**), `VISITAS`, `QTDLANCE`, `TAXA_LEILOEIRO`, `VALOR_CONTRATADO`. `Tipo=129`
+     filtra só "Disco de Vinil" quando a casa etiqueta (pré-filtro; vazio → tenta `Tipo=""`,
+     catálogo completo).
+  2. **Fallback: template antigo (HTML)** — `fetchCatalogHtml`/`parseCatalogData`:
+     `<domínio>/catalogo.asp?Num=<idLeilao>[&pag=<n>]`, paginado, parser por regex no HTML
+     (`SALE_VALUE_RE`/`SOLD_MARKER_RE`/`UNSOLD_RE`, calibrados no catálogo real do **Discos
+     Esquecidos** — outras casas podem exigir ajuste). Só usar quando o JSON não vier (`JSON.parse`
+     falha → casa não usa o template novo).
+  - **1 requisição por LEILÃO** (paginada) — nunca por lote. Usado por: `fetchLoteMap` (nº do
+    lote), `lot-sales.server.ts` (histórico de vendas/Vinil Analytics).
+- **Peça individual** (`leiloesbr-lot-details.server.ts`, `fetchLotDetails`/`fetchOne`):
+  `<domínio>/peca.asp?id=<idPeca>` (ou `?ID=`, mesma página) — HTML com um JSON `loadData`
+  embutido que traz os **MESMOS campos do catálogo, só que para ESSE lote**: `NOVO_VALOR`
+  (próximo lance mínimo, só em lote ABERTO), `MOSTRABTN_CLASS`, `VALOR_VENDA` (status/valor da
+  venda, quando o leilão já terminou). Extração por **regex pontual no campo**
+  (`"CAMPO":"valor"`), não por texto livre — mesma técnica pros três campos. **1 requisição por
+  LOTE** — só para conjuntos pequenos (vigiados + lances, nunca a listagem inteira).
+
 ## Nº do lote (detalhe crítico)
 
 - **A listagem geral NÃO traz o nº do lote** — ele só existe no **catálogo da casa**. O link
@@ -96,6 +129,81 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
 - **Verde** = tenho lance e estou ganhando/arrematei (`bidIsWinning(status)` casa
   `venc|arremat|arrebat`). **Vermelho** = tenho lance mas coberto. **Amarelo** = só vigiado.
   Precedência: **lance vence vigia**.
+- **Tarja diagonal "Vendido" (v0.50.0):** lote **vigiado ou com lance** cujo leilão já
+  terminou com venda confirmada em `lot_sales` (mesma tabela do Vinil Analytics, preenchida pelo
+  cron `step=sales`/`captureFinishedSales` após cada leilão terminar — cobre TODO lote de vinil
+  visto, sem mecânica nova de scraping). `LotCard` ganhou a prop `sold?: string | null`
+  (`sold_price_raw` quando capturado, senão `"Vendido"`) e renderiza a tarja (`absolute inset-0
+  z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear os botões.
+  Casamento por `lot_id` (`${idLeilao}-${idPeca}`), **escopado** aos ids de vigiados + lances
+  visíveis (nunca lê `lot_sales` inteira): `getSoldLots` (`leiloesbr.functions.ts`, POST, até
+  500 ids) → `getAllLotSales({ids, withOrig:false})`. Query `["sold-lots", <ids ordenados>]` no
+  `index.tsx` (mesmo padrão de `nextBidTargets`/`getNextBids`), mapa `soldById` passado a todo
+  `LotCard` direto e a `BidHouseSections` (prop `soldById`).
+  - **Sinal mais rápido para quem tem LANCE (v0.50.1):** `lot_sales` só chega depois que o cron
+    `step=sales` varre o catálogo da casa (atraso) — então `LotCard` TAMBÉM olha o `bidStatus`
+    (já vem em tempo real de "Meus lances", `l=4`): `bidIsSold(status)` (`vinyl-parse.ts`) casa
+    `vendid|arremat|arrebat|vencedor` e EXCLUI "Não vendido" (fail-closed, mesmo espírito de
+    `bidIsWinning`). Cobre "Coberto e Vendido" (perdi) e "Vencedor"/"Arrematado" (ganhei) assim
+    que o leilão encerra, sem esperar o cron. `lot_sales` (com preço) tem prioridade quando as
+    duas fontes concordam; sem ela, cai no rótulo genérico "Vendido".
+  - **Sinal para quem só VIGIA, sem lance (v0.51.0, corrigido em v0.51.3):** a página de vigia
+    (`l=8`) não traz status — então o sinal rápido é o `peca.asp?ID=<idPeca>` do próprio lote
+    (mesma lógica em toda casa, só o domínio muda). `leiloesbr-lot-details.server.ts`
+    (`fetchLotDetails`/`getLotDetails`, era `fetchNextBids`/`getNextBids`): a MESMA requisição
+    que já buscava o próximo lance (`NOVO_VALOR`, no JSON `loadData` embutido na página) agora
+    TAMBÉM lê `MOSTRABTN_CLASS` ('is-vendido'/'is-naovendido') e `VALOR_VENDA` do MESMO
+    `loadData` — os MESMOS campos que `leiloesbr-catalog.server.ts` já lê com sucesso do
+    catálogo para o Vinil Analytics, só que aqui vêm da página do PRÓPRIO lote em vez do
+    catálogo do leilão inteiro. **Custo zero adicional** (mesmo request que já existia,
+    escopado a vigiados+lances, nunca mais que 100, concorrência 8). ⚠️ **v0.51.3**: a extração
+    original (v0.51.0-v0.51.2) tentava marcadores de TEXTO LIVRE no HTML ("vendido"/"lote
+    vendido"/"não vendido") — um chute sem confirmação contra o site real (sem rede a partir
+    deste ambiente) — trocado pela extração por CAMPO do JSON acima, a mesma técnica (regex
+    pontual no campo) já usada e funcionando para `NOVO_VALOR`. Retorna
+    `Record<idPeca, {nextBid?, sold?}>`. `index.tsx` casa `idPeca → id` (`lotIdByPeca`, dos
+    próprios vigiados/lances) e mescla no `soldById` só quando `lot_sales` ainda não tem aquele
+    lote — prioridade: `lot_sales` (preço, quando o cron já capturou) > `peca.asp` (preço
+    quando achável, senão "Vendido") > `bidStatus` (só lotes com lance, ver acima).
+  - **Refresh — automático ao abrir a tela + manual (v0.51.0-3):** as duas queries de status
+    (`["lot-details", …]`/`["sold-lots", …]`) têm `refetchOnMount: "always"` — sempre rechecam
+    ao montar a tela, sem esperar o `staleTime` (3min); como o alvo já é só vigiados+lances
+    (nunca mais que 100), isso não pesa mais que o request que já existia. O ícone `RefreshCw`
+    ao lado de "Vigiados do dia"/"Lances do dia" (`refreshWatched`/`refreshBids`, `index.tsx`)
+    faz o mesmo papel, só disparado por clique: `watched.refetch()`/`bids.refetch()` (com
+    `throwOnError:true` — `queryClient.invalidateQueries` resolve quando o refetch TERMINA,
+    sucesso OU erro, então antes uma falha real de rede virava toast de sucesso; corrigido em
+    v0.51.1) + invalida `lot-details`/`sold-lots`. NÃO reroda a varredura geral (isso já é o
+    botão "Forçar atualização deste dia"/`refreshDay`) e **NUNCA** relê o catálogo do leilão
+    nem escreve em `lot_sales` — ver v0.51.2 abaixo.
+  - **v0.51.2, revertido em v0.51.3 — recaptura do catálogo pelo refresh manual:** chegamos a
+    ter `checkSoldNow`/`captureSalesForAuctions` (`lot-sales.server.ts`), que o refresh manual
+    chamava pra RELER o catálogo inteiro do leilão e regravar `lot_sales`, contornando o
+    checkpoint `sales_captured` (que `captureFinishedSales` marca assim que lê o catálogo com
+    sucesso, MESMO com 0 vendas reconhecidas naquele momento, e nunca mais revisita). **Revertido
+    a pedido**: (1) não rodava o fallback de IA (`conditionAiSync`) que `captureFinishedSales`
+    roda — uma venda com grau Disco/Capa já preenchido por IA podia voltar em branco; (2) podia
+    reverter a padronização de grafia do artista (`reidentifyAllSales`) pra aquele lote; (3)
+    custo alto — até 30 catálogos inteiros (paginados) por clique, mesma pipeline pesada do
+    cron de Analytics. O fix acima (extração por campo JSON do `peca.asp`) resolve o caso
+    original sem nenhum desses riscos, porque NUNCA escreve em `lot_sales`.
+  - **Vigiados/lances "sumindo" ao terminar o leilão (v0.51.4):** a conta do LeilõesBR (`l=8`/
+    `l=4`) pode parar de trazer um lote assim que o leilão termina — igual à listagem pública,
+    que já "some" um leilão que ficou ao vivo (ver "Scraping do LeilõesBR"). Como `watched`/
+    `bids` (`index.tsx`) antes SUBSTITUÍAM a lista a cada fetch pelo que a conta retornava
+    naquele instante, o card do vigiado/lance (e a tarja "Vendido" que ele carrega) desaparecia
+    da tela assim que o leilão acabava — mesmo ainda sendo "hoje", e mesmo com o `refetchOnMount:
+    "always"` acima batendo a conta de novo a cada abertura de tela. Fix: os `queryFn` de
+    `watched`/`bids` agora MESCLAM (nunca substituem) num acumulador local (`watchedAccumRef`/
+    `bidsAccumRef`, `Map` por `id`) — cada fetch novo entra no mapa, e um item só sai quando
+    (a) o usuário desvigia explicitamente (`toggle.onSuccess` remove na hora, direto no
+    `Map` + `queryClient.setQueryData`, sem esperar o refetch) ou (b) o dia dele já saiu da
+    janela de `WATCH_WINDOW_DAYS` (=5, espelha o `WINDOW_DAYS` do servidor) — poda que evita
+    crescimento sem limite numa sessão longa. Não muda nada do lado do servidor (`listWatched`/
+    `listMyBids` continuam devolvendo só o que a conta tem AGORA — o acumulador é só no
+    cliente). O "mostrar/esconder leilões finalizados" da listagem geral já existia
+    (`showFinishedDays`/`toggleShowFinished`, esconde por padrão os leilões encerrados há mais
+    de 3h, com botão "Mostrar finalizados (N)") e não precisou mudar.
 - **Ícone roxo "já tenho na Coleção"** (`LotCard`, só na **home** `index.tsx`): disco `Disc3`
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
@@ -685,7 +793,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
     header encolheu (`py-3 sm:py-6` → `py-2 sm:py-3`) e o título perdeu um degrau de tamanho
     (`sm:text-4xl` → `sm:text-2xl`); e-mail + botão **Sair** saíram do fim da barra de ações
     (direita) e viraram uma linha compacta **acima do título**, no canto superior esquerdo.
-  - **Menos altura no mobile (v0.49.4):** o header sticky ainda cabia demais da tela pequena —
+  - **Menos altura no mobile (v0.51.5):** o header sticky ainda cabia demais da tela pequena —
     cortado mais padding vertical (`py-*` → `py-* sm:py-*` maior só a partir do `sm`) em todas as
     5 páginas (`index.tsx`, `colecao.tsx`, `analise.tsx`, `vinil-analytics.tsx`, `ao-vivo.tsx`).
     Em `index.tsx`, a `TabsList` dos dias (que podia quebrar em 2+ linhas com muitos dias)
@@ -916,7 +1024,14 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.48.4 | Fase 1 do plano de economia: RPC de anti-join, laço do cron encolhido, `lot_sales.bundle` — ver `docs/economia-fase-1-egress-e-cpu.md` |
 | v0.49.1 | Otimização dos `.md` do repo (só documentação): remove duplicação de convenções entre `AGENTS.md`/`CLAUDE.md`/notas (fonte única em `AGENTS.md`), remove telemetria repetida (fonte única em `economia-migracao.md`) e comprime o Histórico de versões para 1 linha/versão — a mecânica detalhada de cada área já vive nas seções acima |
 | v0.49.3 | Ao vivo: card sobe para o topo da grade ao abrir "Abrir aqui" (agrupa os pregões abertos) |
-| v0.49.4 | Mobile: header sticky mais compacto (padding menor, lista de dias/abas sem quebrar linha) nas 5 páginas autenticadas; fix do nav "ir para casa" da Análise, que ficava escondido atrás do header |
+| v0.50.0 | Tarja diagonal "Vendido" em vigiados/lances já vendidos (`lot_sales` escopado por `getSoldLots`) — ver "Cores, badges e busca" |
+| v0.50.1 | Tarja "Vendido" também pelo `bidStatus` (`bidIsSold`) — sinal em tempo real, sem esperar o cron `step=sales` varrer o catálogo |
+| v0.51.0 | Tarja "Vendido" via `peca.asp` p/ vigiados sem lance (`getLotDetails`, sem custo extra) + refresh manual de Vigiados/Lances do dia |
+| v0.51.1 | Fix: refresh manual usava `invalidateQueries` (resolve mesmo se o refetch falhar) — troca por `refetch({throwOnError:true})` das próprias queries, toast agora reflete falha real |
+| v0.51.2 | Fix: `lot_sales` ficava "presa" sem a venda (leilão capturado com 0 vendas nunca revisitado) — `checkSoldNow`/`captureSalesForAuctions` força releitura no refresh manual de Vigiados/Lances |
+| v0.51.3 | Reverte `checkSoldNow`/`captureSalesForAuctions` (v0.51.2 — pesado e arriscava o grau Disco/Capa da IA no Analytics); tarja "Vendido" via `peca.asp` passa a ler `MOSTRABTN_CLASS`/`VALOR_VENDA` do JSON embutido (mesmos campos do Analytics) em vez de marcadores de texto livre; `refetchOnMount: "always"` nas queries de status |
+| v0.51.4 | Fix: vigiados/lances somem da tela ao leilão terminar (conta para de trazê-los) — `watched`/`bids` passam a MESCLAR (nunca substituir) num acumulador local, poda só pela janela de dias/desvigia explícita; docs: endpoints de catálogo/peça documentados como fonte de verdade prioritária |
+| v0.51.5 | Mobile: header sticky mais compacto (padding menor, lista de dias/abas sem quebrar linha) nas 5 páginas autenticadas; fix do nav "ir para casa" da Análise, que ficava escondido atrás do header |
 
 ## Pendências
 

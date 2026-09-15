@@ -38,6 +38,7 @@ export function BidHouseSections({
   priceById,
   nextBidById,
   albumById,
+  soldById,
   ownedFor,
   onOpenOwned,
   onToggle,
@@ -48,6 +49,7 @@ export function BidHouseSections({
   priceById: Map<string, string>;
   nextBidById: Map<string, string>;
   albumById?: Map<string, string>;
+  soldById?: Map<string, string>;
   ownedFor?: (lot: { id: string }) => OwnedHit | null;
   onOpenOwned?: (bid: { id: string; title: string }) => void;
   onToggle: (bid: { idPeca: string; idLeilao: string; base: string; watch: boolean }) => void;
@@ -94,6 +96,7 @@ export function BidHouseSections({
                 }}
                 busy={pending === bid.idPeca}
                 bidStatus={bid.status}
+                sold={soldById?.get(bid.id)}
                 album={albumById?.get(bid.id) ?? null}
                 owned={ownedFor?.(bid) ?? null}
                 onOpenOwned={
