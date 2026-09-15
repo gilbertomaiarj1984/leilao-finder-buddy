@@ -191,21 +191,33 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
     anterior, já que dar um lance pressupõe leilão aberto. Os vigiados (`index.tsx`, dd/mm/yyyy
     em `WatchedLot.date`) passaram a normalizar para `yyyy-mm-dd` (`watchedDateToKey`) ao montar
     o `dayKey` do card, senão a guarda nunca teria dado match nesse caminho.
-  - **Fix v0.58.1 — tarja não aparecia em casas do template ANTIGO**: a troca da v0.51.3 (texto
-    livre → campo `MOSTRABTN_CLASS` do JSON `loadData`) fez `leiloesbr-lot-details.server.ts`
+  - **Fix v0.58.1/v0.58.2 — tarja não aparecia em casas do template ANTIGO**: a troca da v0.51.3
+    (texto livre → campo `MOSTRABTN_CLASS` do JSON `loadData`) fez `leiloesbr-lot-details.server.ts`
     (`parseSold`) confiar SÓ nesse campo — mas ele só existe em casas do template NOVO (o mesmo
     JS que `catalogocontentload.asp`). Casas do template ANTIGO (catálogo HTML server-side, ex.:
-    Robson Gini) não embutem esse `loadData` na `peca.asp`, então `parseSold` nunca achava
-    `MOSTRABTN_CLASS` e devolvia `undefined` sempre — mesmo com o lote já vendido e o leilão
-    ainda "ao vivo" (`lot_sales` só chega depois que o cron varre o catálogo do leilão
+    Robson Gini/Trem das 7) não embutem esse `loadData` na `peca.asp`, então `parseSold` nunca
+    achava `MOSTRABTN_CLASS` e devolvia `undefined` sempre — mesmo com o lote já vendido e o
+    leilão ainda "ao vivo" (`lot_sales` só chega depois que o cron varre o catálogo do leilão
     INTEIRO já encerrado). Resultado: vigiados dessas casas nunca ganhavam a tarja "Vendido",
-    nem sozinho nem com "Forçar atualização" (que só rechama essa mesma função). Fix: `parseSold`
-    volta a cair no fallback de marcadores de texto — mas reaproveitando `parseSoldMarkers`
-    (extraída de `parseCatalogData`, `leiloesbr-catalog.server.ts` — a MESMA heurística
-    fail-closed já validada contra o site real pelo histórico de vendas) — SÓ quando
-    `MOSTRABTN_CLASS` está ausente (não quando vem `is-naovendido`, sinal explícito que ainda
-    vale sozinho). Casas do template novo continuam pelo campo JSON (mais confiável); as do
-    antigo ganham de volta o sinal rápido que a v0.51.3 tinha removido sem essa rede de segurança.
+    nem sozinho nem com "Forçar atualização" (que só rechama essa mesma função).
+    **v0.58.1** tentou reaproveitar `parseSoldMarkers` (heurística de `parseCatalogData`,
+    calibrada no CATÁLOGO — texto contínuo "Valor de venda: R$ 70,00") como fallback, mas
+    não resolveu: confirmado contra o HTML real da `peca.asp` (Robson Gini) que **(1)** essa
+    página tem uma estrutura DIFERENTE do card do catálogo — "R$" e o valor vêm em `<span>`s
+    SEPARADOS (`<span class="is-rs">R$</span> <span class="is-valor">15,00</span>`), então o
+    `BRL_RE`/`SALE_VALUE_RE` (que exigem texto contínuo) nunca casavam o valor; e **(2)** o
+    texto "Lote vendido" (minúsculo) aparece nos TERMOS E CONDIÇÕES, fixos em TODA `peca.asp`
+    (vendida ou não) — usar esse texto solto como marcador teria dado falso positivo sempre
+    (por sorte o `SOLD_MARKER_RE` da v0.58.1 até "achava" o marcador, mas como o valor nunca
+    casava, `soldPrice` ficava `null` e `sold` saía `false` de qualquer jeito — mascarou o bug
+    sem criar falso positivo, mas também sem resolver o real). **v0.58.2** troca por um parser
+    dedicado à `peca.asp` (`parseSoldOldTemplate`), calibrado no HTML real: o sinal confiável é
+    a CLASSE CSS do botão de lance, que só existe nesse estado — `<li id="fazerlance"
+    class="is-CoolBtn lotevendido"><span>Lote Vendido</span></li>` (token `lotevendido`, sem
+    espaço — não colide com o texto livre dos Termos) — e o preço sai de uma janela maior até
+    o span `is-valor` (`valor de venda[\s\S]{0,300}?is-valor"[^>]*>\s*(\d+,\d{2})`), cobrindo o
+    espaçamento entre label e spans. Casas do template novo continuam pelo campo JSON (mais
+    confiável); as do antigo ganham o sinal rápido de verdade, validado contra o HTML real.
   - **Refresh — automático ao abrir a tela + manual (v0.51.0-3):** as duas queries de status
     (`["lot-details", …]`/`["sold-lots", …]`) têm `refetchOnMount: "always"` — sempre rechecam
     ao montar a tela, sem esperar o `staleTime` (3min); como o alvo já é só vigiados+lances
@@ -1168,7 +1180,8 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.56.0      | `MobileTopToggle` (botão de esconder/mostrar o topo, v0.54.0) passa a aparecer também no desktop (`alwaysVisible`, novo prop — remove o `sm:hidden` quando true), só na tela inicial. No desktop, esconder recolhe TUDO menos a lista de dias/abas (`TabsList` — dias + Vigiados + Lances): o header da tela inicial (`_authenticated/index.tsx`) é reestruturado em um wrapper `sticky top-0` sempre visível, contendo (1) um `HideableBar` colapsável (novo prop `collapseOnDesktop`, que troca o `sm:grid-rows-[1fr]` fixo por recolher em qualquer tamanho de tela) com a linha de navegação/busca + a barra de controles do dia (portal do dayBarHost, v0.55.0), e (2) a `TabsList`, DE FORA do `HideableBar`, sempre visível. `headerHeight`/`stickyBelowHeader` (usado pelas barras sticky de Vigiados/Lances) precisam agora somar duas medições independentes (`useMeasuredHeight`, novo hook local com `ResizeObserver` que reanexa sozinho quando o nó muda — cobre a `TabsList`, que só monta depois que `lots` carrega): a altura da parte colapsável (`headerHeight`, zerada quando escondida) + a altura da `TabsList` sempre visível (`tabsBarHeight`, nunca zerada) |
 | v0.57.0      | Egress do Supabase free (207% da cota) rastreado até o Storage das fotos da Coleção, não leituras de banco. `compressCollectionImage` (`collection.server.ts`) redimensiona (≤1600px) e recodifica em WEBP q82 via `sharp` antes de todo upload novo (`uploadCollectionImage`), com `cacheControl` de 7 dias. Backfill das fotos já existentes em `scripts/compress-collection-images.ts` (`bun run compress-images`, idempotente, roda manual fora do cron) |
 | v0.58.0      | Segunda via pro backfill de fotos da coleção (v0.57.0): o script standalone precisa de rede direta ao Supabase, que nem todo ambiente tem (ex.: sandboxes com allowlist restrita). Lógica extraída pra `listUncompressedCollectionImages`/`backfillCompressCollectionImage` (`collection.server.ts`), compartilhada pelo script E por um novo step `compressimages` do `/api/cron` (chunked, `max`, roda na Vercel — que já tem rede pro Supabase) |
-| v0.58.1      | Fix: tarja "Vendido" nunca aparecia (nem sozinha nem com "Forçar atualização") em vigiados **sem lance** de casas do template ANTIGO (catálogo HTML server-side, ex.: Robson Gini) enquanto o leilão ainda estava "ao vivo". A v0.51.3 trocou o sinal rápido do `peca.asp` (`leiloesbr-lot-details.server.ts`) de marcadores de texto pro campo `MOSTRABTN_CLASS` do JSON `loadData` — que só existe em casas do template NOVO. `parseSold` volta a cair num fallback de texto quando esse campo está ausente, reaproveitando `parseSoldMarkers` (extraída de `parseCatalogData`, `leiloesbr-catalog.server.ts`) em vez de reinventar a heurística |
+| v0.58.1      | Fix (INCOMPLETO — ver v0.58.2): tarja "Vendido" nunca aparecia em vigiados **sem lance** de casas do template ANTIGO (catálogo HTML server-side, ex.: Robson Gini) enquanto o leilão ainda estava "ao vivo" (v0.51.3 trocou o sinal do `peca.asp` de texto livre pro campo `MOSTRABTN_CLASS`, que só existe em casas do template NOVO). Tentativa: `parseSold` cai num fallback reaproveitando `parseSoldMarkers` (heurística de `parseCatalogData`, calibrada no CATÁLOGO) — não resolveu, ver v0.58.2 |
+| v0.58.2      | Fix de verdade pro v0.58.1: confirmado contra o HTML real da `peca.asp` (Robson Gini/Trem das 7) que `parseSoldMarkers` não servia ali — o valor vem em `<span>`s separados ("R$" e "15,00" não são texto contínuo) e o texto "Lote vendido" aparece nos Termos e Condições de TODA peça (daria falso positivo se usado como marcador). Novo `parseSoldOldTemplate` (`leiloesbr-lot-details.server.ts`) usa a classe CSS do botão de lance (`id="fazerlance" class="is-CoolBtn lotevendido"`, token que só existe nesse estado) + uma janela maior até o span `is-valor` pro preço |
 
 ## Pendências
 

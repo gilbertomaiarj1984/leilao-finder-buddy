@@ -1,5 +1,4 @@
 import { publicFetch } from "./leiloesbr-auth.server";
-import { parseSoldMarkers } from "./leiloesbr-catalog.server";
 import { auctionHouseDomain } from "./vinyl-parse";
 
 /**
@@ -14,11 +13,13 @@ import { auctionHouseDomain } from "./vinyl-parse";
  *   RÁPIDO de "vendido" para quem só VIGIA (sem lance) — a página de vigia não traz status, e
  *   `lot_sales` só é preenchida pelo cron `step=sales` bem depois (e só depois que o LEILÃO
  *   INTEIRO termina — um lote pode já estar vendido num pregão ainda "ao vivo").
- * - **Casas do template ANTIGO** (catálogo HTML server-side, sem o JSON `loadData`): a página
- *   do lote também não embute `MOSTRABTN_CLASS`, então cai no fallback de marcadores de texto
- *   (`parseSoldMarkers`, a MESMA heurística fail-closed que `leiloesbr-catalog.server.ts` usa
- *   para essas casas no catálogo pós-leilão) — sem isso, essas casas nunca mostravam a tarja
- *   "Vendido" para quem só vigia enquanto o pregão ainda estava ao vivo.
+ * - **Casas do template ANTIGO** (catálogo HTML server-side, sem o JSON `loadData`): confirmado
+ *   contra o HTML real (Robson Gini/Trem das 7) que a peça.asp NÃO embute `MOSTRABTN_CLASS`
+ *   nessas casas. O sinal aqui é a CLASSE do botão de lance, que muda quando o leiloeiro bate o
+ *   martelo: `<li id="fazerlance" class="is-CoolBtn lotevendido"><span>Lote Vendido</span></li>`
+ *   — ver `parseSoldOldTemplate` abaixo (⚠️ NÃO usar marcadores de texto livre tipo "vendido"/
+ *   "lote vendido": essa MESMA frase aparece nos Termos e Condições, presentes em TODA peça.asp,
+ *   vendida ou não — daria falso positivo sempre).
  *
  * 1 requisição por lote serve os dois — usar só para conjuntos pequenos (vigiados + lances),
  * nunca para a listagem inteira.
@@ -42,12 +43,29 @@ function parseNextBid(html: string): string | null {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+// Classe do botão de lance quando o leiloeiro já bateu o martelo (template ANTIGO). Token CSS
+// só usado nesse estado — não colide com o texto livre "Lote vendido" dos Termos e Condições
+// (que também está presente, sem espaço, em toda peça.asp, vendida ou não).
+const OLD_TEMPLATE_SOLD_CLASS_RE = /\blotevendido\b/;
+// "Valor de venda" e o preço vêm no MESMO bloco, mas em spans SEPARADOS
+// (`<span class="is-rs">R$</span> <span class="is-valor">15,00</span>`) — não como texto
+// contínuo "R$ 15,00" (por isso não dá pra reaproveitar o `BRL_RE` do catálogo aqui).
+const OLD_TEMPLATE_PRICE_RE =
+  /valor\s+de\s+venda[\s\S]{0,300}?is-valor"[^>]*>\s*([\d.]{1,12},\d{2})/i;
+
+/** Fallback de texto/classe para casas do template ANTIGO (peça.asp sem JSON `loadData`). */
+function parseSoldOldTemplate(html: string): string | undefined {
+  if (!OLD_TEMPLATE_SOLD_CLASS_RE.test(html)) return undefined;
+  const price = html.match(OLD_TEMPLATE_PRICE_RE)?.[1];
+  return price ? `R$ ${price}` : "Vendido";
+}
+
 /**
  * Mesmos campos do `loadData` que `leiloesbr-catalog.server.ts` já lê com sucesso do catálogo
  * (`MOSTRABTN_CLASS`, `VALOR_VENDA`) — aqui embutidos na página do PRÓPRIO lote. `is-naovendido`
- * é um sinal EXPLÍCITO de "não vendido" (fail-closed: undefined, sem cair no fallback de texto).
- * Quando o campo nem existe (casa do template ANTIGO, sem esse JSON), cai no fallback de
- * marcadores de texto (`parseSoldMarkers`) aplicado à página inteira do lote.
+ * é um sinal EXPLÍCITO de "não vendido" (fail-closed: undefined, sem cair no fallback abaixo).
+ * Quando o campo nem existe (casa do template ANTIGO, sem esse JSON), cai em
+ * `parseSoldOldTemplate` (classe do botão de lance, ver acima).
  */
 function parseSold(html: string): string | undefined {
   const status = html.match(/"MOSTRABTN_CLASS":"([^"]*)"/)?.[1];
@@ -56,8 +74,7 @@ function parseSold(html: string): string | undefined {
     return valor && valor !== "0" ? `R$ ${valor},00` : "Vendido";
   }
   if (status === "is-naovendido") return undefined;
-  const { sold, soldPrice } = parseSoldMarkers(html);
-  return sold ? (soldPrice ?? "Vendido") : undefined;
+  return parseSoldOldTemplate(html);
 }
 
 async function fetchOne(target: {
