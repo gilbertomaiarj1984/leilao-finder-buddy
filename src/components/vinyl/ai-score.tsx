@@ -1,6 +1,11 @@
-import { ExternalLink, Plus, Sparkles, Star, X } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { ExternalLink, Loader2, Plus, RefreshCw, Sparkles, Star, X } from "lucide-react";
 import { useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
+
+import { reevaluateLot } from "@/lib/leiloesbr.functions";
 
 import {
   dealLabel,
@@ -14,6 +19,15 @@ import {
   type LotAi,
   type LotMarket,
 } from "./ai-score-utils";
+
+/** Dados do lote necessários para refazer a consulta à IA (botão no painel de detalhes). */
+export type ReevalLot = {
+  id: string;
+  title: string;
+  price: string;
+  house: string;
+  image: string | null;
+};
 
 /** Bloco do mercado (Discogs): faixa de preço no Brasil (c/ frete), sugerido e demanda. */
 function MarketBlock({ market, price }: { market: LotMarket; price?: string }) {
@@ -284,11 +298,13 @@ export function ScoreBadge({
   market,
   price,
   rank,
+  lot,
 }: {
   ai: LotAi;
   market?: LotMarket;
   price?: string;
   rank?: number;
+  lot?: ReevalLot;
 }) {
   if (ai.score === null) return <span className="text-muted-foreground">—</span>;
   return (
@@ -306,9 +322,53 @@ export function ScoreBadge({
           </button>
         }
       >
-        <ScoreDetails ai={ai} market={market} price={price} />
+        <ScoreDetails ai={ai} market={market} price={price} lot={lot} />
       </HoverDetails>
     </div>
+  );
+}
+
+/**
+ * Botão "refazer consulta" do painel de detalhes: reavalia o lote NA HORA (ignora o cache
+ * por título) e atualiza o cache local (`["lot-ai"]`) com o resultado — a nota/raridade/
+ * oportunidade do card/linha atualizam sozinhas, sem precisar recarregar a página.
+ */
+function ReevaluateButton({ lot }: { lot: ReevalLot }) {
+  const queryClient = useQueryClient();
+  const runReevaluate = useServerFn(reevaluateLot);
+  const mutation = useMutation({
+    mutationFn: () => runReevaluate({ data: lot }),
+    onSuccess: (res: { row: { id: string } }) => {
+      queryClient.setQueryData(["lot-ai"], (old: unknown) =>
+        Array.isArray(old)
+          ? old.some((r) => r && (r as { id: string }).id === res.row.id)
+            ? old.map((r) => ((r as { id: string })?.id === res.row.id ? res.row : r))
+            : [...old, res.row]
+          : old,
+      );
+      toast.success("Nota da IA atualizada");
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || "Não foi possível refazer a consulta à IA"),
+  });
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        mutation.mutate();
+      }}
+      disabled={mutation.isPending}
+      title="Refazer a consulta à IA com informações novas do lote"
+      className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-60"
+    >
+      {mutation.isPending ? (
+        <Loader2 className="h-3 w-3 animate-spin" />
+      ) : (
+        <RefreshCw className="h-3 w-3" />
+      )}
+      refazer consulta
+    </button>
   );
 }
 
@@ -317,16 +377,22 @@ export function ScoreDetails({
   ai,
   market,
   price,
+  lot,
 }: {
   ai: LotAi;
   market?: LotMarket;
   price?: string;
+  // Dados do lote para o botão "refazer consulta" — sem eles, o botão simplesmente não aparece.
+  lot?: ReevalLot;
 }) {
   return (
     <div className="space-y-1.5 text-xs">
-      <div className="flex items-center gap-1.5 font-semibold text-foreground">
-        <Sparkles className="h-3.5 w-3.5 text-primary" />
-        Nota {ai.score ?? "—"} / 100
+      <div className="flex items-center justify-between gap-1.5">
+        <div className="flex items-center gap-1.5 font-semibold text-foreground">
+          <Sparkles className="h-3.5 w-3.5 text-primary" />
+          Nota {ai.score ?? "—"} / 100
+        </div>
+        {lot ? <ReevaluateButton lot={lot} /> : null}
       </div>
       {ai.album ? <p className="font-medium text-foreground">{ai.album}</p> : null}
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-muted-foreground">
@@ -363,10 +429,12 @@ export function ScoreCorner({
   ai,
   market,
   price,
+  lot,
 }: {
   ai: LotAi;
   market?: LotMarket;
   price?: string;
+  lot?: ReevalLot;
 }) {
   if (ai.score === null) return null;
   return (
@@ -383,7 +451,7 @@ export function ScoreCorner({
           </button>
         }
       >
-        <ScoreDetails ai={ai} market={market} price={price} />
+        <ScoreDetails ai={ai} market={market} price={price} lot={lot} />
       </HoverDetails>
     </div>
   );
