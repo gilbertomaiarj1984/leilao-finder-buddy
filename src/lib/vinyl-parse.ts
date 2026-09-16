@@ -178,6 +178,15 @@ export function bidIsSold(status: string): boolean {
 }
 
 /**
+ * true quando o status do MEU LANCE indica que fui SUPERADO (alguém deu um lance maior
+ * e o leilão ainda está aberto — "Coberto"/"Coberto e Vendido"). Usado para disparar o
+ * aviso de "lance superado" (`bid-alerts.ts`) comparando com o status visto anteriormente.
+ */
+export function bidIsCovered(status: string): boolean {
+  return /cobert/i.test(status ?? "");
+}
+
+/**
  * Converte um preço em texto BR ("R$ 1.234,56": ponto de milhar, vírgula decimal)
  * para número. Retorna null quando não há valor numérico (ex.: "sem valor", "--").
  */
