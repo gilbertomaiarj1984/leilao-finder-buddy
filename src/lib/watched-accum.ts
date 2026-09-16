@@ -9,7 +9,7 @@
 // rota apagar o acumulado da outra ao navegar entre elas — foi exatamente essa divergência
 // (fix original só em `index.tsx`) que fazia os vigiados "sumirem depois de um tempo" mesmo
 // com o acumulador certo já existindo ali.
-import { upcomingDayKeys } from "./vinyl-parse";
+import { auctionFinished, upcomingDayKeys } from "./vinyl-parse";
 
 // Espelha o `WINDOW_DAYS` do servidor (`leiloesbr-scrape.server.ts`) — janela de poda do
 // acumulador (um item só sai quando o dia dele já saiu dessa janela, ou é removido explicitamente).
@@ -52,14 +52,29 @@ export function saveAccum<T>(key: string, acc: Map<string, T>): void {
  * da janela de dias, persiste em `localStorage` e devolve a lista resultante. Usar no `queryFn`
  * de TODA `useQuery` que leia `["vinyl-watched"]`/`["vinyl-my-bids"]`.
  */
-export function mergeWatchedAccum<T extends { id: string; date: string }>(
+export function mergeWatchedAccum<T extends { id: string; date: string; time?: string }>(
   acc: Map<string, T>,
   fresh: T[],
   storageKey: string,
 ): T[] {
+  const freshIds = new Set(fresh.map((item) => item.id));
   for (const item of fresh) acc.set(item.id, item);
   const validDays = new Set(upcomingDayKeys(WATCH_WINDOW_DAYS));
-  for (const [id, item] of acc) if (!validDays.has(dateToKey(item.date))) acc.delete(id);
+  for (const [id, item] of acc) {
+    const dayKey = dateToKey(item.date);
+    if (!validDays.has(dayKey)) {
+      acc.delete(id);
+      continue;
+    }
+    // Um item com `time` (vigiados — lances não têm) ausente do fresh só é removido aqui se o
+    // leilão dele NÃO estiver terminado: se ainda está rolando e sumiu do fresh, a vigia foi
+    // removida de fato (ex.: pelo próprio usuário no site do LeilõesBR) e o card deve sumir
+    // também aqui, sem esperar a poda pela janela de dias — do contrário o card ficava "preso"
+    // como vigiado até `WATCH_WINDOW_DAYS` dias depois de já ter sido desmarcado no site.
+    if (item.time !== undefined && !freshIds.has(id) && !auctionFinished(dayKey, item.time)) {
+      acc.delete(id);
+    }
+  }
   saveAccum(storageKey, acc);
   return [...acc.values()];
 }

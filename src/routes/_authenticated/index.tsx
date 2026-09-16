@@ -379,9 +379,11 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   // carrega) desaparecia da tela assim que o leilão acabava, mesmo ainda sendo "hoje". Por
   // isso o `queryFn` MESCLA (nunca substitui) num acumulador local (`mergeWatchedAccum`,
   // `@/lib/watched-accum`): cada fetch novo entra por `id`, e um item só sai quando (a) o
-  // usuário desvigia explicitamente (`toggle.onSuccess` remove na hora, ver abaixo) ou (b) o
+  // usuário desvigia explicitamente (`toggle.onSuccess` remove na hora, ver abaixo), (b) o
   // dia dele já saiu da janela de dias do app — poda que evita crescimento sem limite numa
-  // sessão longa. Persistido em `localStorage` — um `useRef` puro some ao recarregar a
+  // sessão longa — ou (c) ele sumiu do fetch fresco e o leilão ainda não terminou (vigia
+  // removida fora do app, ex. direto no site do LeilõesBR). Persistido em `localStorage` — um
+  // `useRef` puro some ao recarregar a
   // página/fechar a aba, o que fazia os vigiados "sumirem depois de um tempo" mesmo sem o
   // usuário ter desvigiado nada. ⚠️ A rota `/analise` lê a MESMA chave de query
   // (`["vinyl-watched"]`/`["vinyl-my-bids"]`, compartilhada no `QueryClient` do app inteiro) —
