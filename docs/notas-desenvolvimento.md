@@ -305,6 +305,19 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
     nenhuma das duas mais substitui o que a outra acumulou. `analise.tsx#toggle.onSuccess`
     também ganhou a remoção explícita do acumulador ao desvigiar (espelhando `index.tsx`), que
     antes faltava ali.
+    ⚠️ **Fix v0.59.1 — lote continuava "vigiando" na ferramenta depois de desvigiado direto no
+    site**: a poda do acumulador (`mergeWatchedAccum`) só removia um item quando o dia dele saía
+    da janela de `WATCH_WINDOW_DAYS` — a saída "explícita" (linha acima) só cobria o desvigiar
+    feito PELO PRÓPRIO APP (`toggle.onSuccess`). Se o usuário desvigiasse direto no site do
+    LeilõesBR (fora do app), o `fresh` do próximo fetch já vinha sem o lote, mas como ele ainda
+    estava dentro da janela de dias, o item ficava "grudado" no acumulador/`localStorage` como
+    vigiado até o leilão sair da janela (até `WATCH_WINDOW_DAYS` dias depois). Fix:
+    `mergeWatchedAccum` agora remove também um item ausente do `fresh` quando o leilão dele
+    ainda **não terminou** (`auctionFinished`, `vinyl-parse.ts`, janela de 3h de graça após o
+    horário de início) — se já terminou, mantém (é o caso original que a v0.51.4 corrigia: a
+    conta para de listar o lote assim que o leilão acaba, mesmo ainda sendo "hoje"). Como `MyBid`
+    (lances) não tem campo `time`, essa remoção por ausência só se aplica a vigiados
+    (`WatchedLot`), preservando o comportamento de lances.
 - **Ícone roxo "já tenho na Coleção"** (`LotCard`, só na **home** `index.tsx`): disco `Disc3`
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
@@ -1218,6 +1231,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.58.2      | Fix de verdade pro v0.58.1: confirmado contra o HTML real da `peca.asp` (Robson Gini/Trem das 7) que `parseSoldMarkers` não servia ali — o valor vem em `<span>`s separados ("R$" e "15,00" não são texto contínuo) e o texto "Lote vendido" aparece nos Termos e Condições de TODA peça (daria falso positivo se usado como marcador). Novo `parseSoldOldTemplate` (`leiloesbr-lot-details.server.ts`) usa a classe CSS do botão de lance (`id="fazerlance" class="is-CoolBtn lotevendido"`, token que só existe nesse estado) + uma janela maior até o span `is-valor` pro preço |
 | v0.58.3      | Fix: vigiar um lote confirmava no site (LeilõesBR) mas o card na grade geral do dia continuava aparecendo "não vigiado". `watchedIds` (deriva de `listWatched`, que relê a conta do LeilõesBR) tem prioridade sobre `lot.watched` sempre que já há outros vigiados — e `toggle.onSuccess` (`index.tsx`) só atualizava o acumulador local que alimenta `watchedIds` no caminho de DESVIGIAR, não no de VIGIAR (dependia do refetch de `listWatched` pegar o lote novo, que pode atrasar). Agora vigiar também escreve na hora em `watchedAccumRef`, reconstruindo o `WatchedLot` a partir do lote já conhecido em `lots.data.lots` |
 | v0.59.0      | Aviso de "lance superado": toast (`sonner`) quando um lote com lance vira `status === "Coberto"` (`bidIsCovered`, `vinyl-parse.ts`), disparado pelo hook `useBidCoveredAlerts` (`bid-alerts.ts`) sobre o `bids.data` das queries `["vinyl-my-bids"]` já existentes em `index.tsx`/`analise.tsx`. Só funciona com o app aberto (nenhuma mudança em cron/DB) — a transição é detectada comparando com um snapshot do último `status` visto por lote, persistido em `localStorage` via `loadAccum`/`saveAccum` (mesmo helper de `watched-accum.ts`) |
+| v0.59.1      | Fix: lote ficava marcado "vigiando" na ferramenta mesmo depois de desvigiado direto no site do LeilõesBR (fora do app), até sair da janela de dias do acumulador. `mergeWatchedAccum` (`watched-accum.ts`) agora remove também um item ausente do `fresh` quando o leilão ainda não terminou (`auctionFinished`), não só quando o dia sai da janela |
 
 ## Pendências
 
