@@ -10,6 +10,9 @@ import { auctionStarted, bidIsSold, bidIsWinning, decodeHtmlEntities } from "@/l
 import { OWNED_CONFIDENT_MIN, type OwnedHit } from "@/lib/wantlist-match";
 
 export type CardLot = {
+  // Opcional só por cautela de tipagem; todo lote real tem id (chave da tabela `lots`) — sem
+  // ele, o botão "refazer consulta" da IA no painel de detalhes simplesmente não aparece.
+  id?: string;
   title: string;
   url: string;
   image: string | null;
@@ -127,7 +130,24 @@ export function LotCard({
           </div>
         </div>
       ) : null}
-      {ai ? <ScoreCorner ai={ai} market={market} price={lot.price} /> : null}
+      {ai ? (
+        <ScoreCorner
+          ai={ai}
+          market={market}
+          price={lot.price}
+          lot={
+            lot.id
+              ? {
+                  id: lot.id,
+                  title: lot.title,
+                  price: lot.price,
+                  house: lot.house,
+                  image: lot.image,
+                }
+              : undefined
+          }
+        />
+      ) : null}
       {/* Relação com a Coleção: ícone no canto DIREITO, logo ABAIXO da nota da IA. Aparece em
           TODO card — CINZA quando não há relação; ROXO quando confirmada; ROXO + "?" quando
           incerta/sugerida. Clicar abre o painel para ver o disco, desfazer ou criar a relação. */}

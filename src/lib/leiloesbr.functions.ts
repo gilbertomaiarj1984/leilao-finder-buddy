@@ -408,6 +408,49 @@ export const setLotTags = createServerFn({ method: "POST" })
     return { id: data.id, tags: await updateLotTags(data.id, data.tags) };
   });
 
+/**
+ * Refaz a avaliação da IA de UM lote sob demanda (botão no painel de detalhes da nota).
+ * Ignora o cache por título (sempre consulta de novo, mesmo sem mudança no título) — é
+ * justamente para atualizar com base em informações novas do lote (imagem, texto). Usa o
+ * provedor de IA PADRÃO do usuário. Devolve a linha gravada para o cliente atualizar o
+ * cache local sem precisar reler tudo.
+ */
+export const reevaluateLot = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (
+      input:
+        | { id?: string; title?: string; price?: string; house?: string; image?: string | null }
+        | undefined,
+    ) => {
+      if (!input?.id || typeof input.id !== "string") throw new Error("Lote inválido.");
+      if (!input.title || typeof input.title !== "string") throw new Error("Lote inválido.");
+      return {
+        id: input.id,
+        title: input.title,
+        price: typeof input.price === "string" ? input.price : "",
+        house: typeof input.house === "string" ? input.house : "",
+        image: typeof input.image === "string" ? input.image : null,
+      };
+    },
+  )
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { aiConfigured, evalLotsSync } = await import("./ai-eval.server");
+    if (!aiConfigured()) {
+      throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
+    }
+    const { getAiProvider } = await import("./app-state.server");
+    const provider = await getAiProvider();
+    const { upsertLotAi } = await import("./lot-ai.server");
+    const { rows, error } = await evalLotsSync([data], provider);
+    const row = rows[0];
+    if (!row) throw new Error(error || "A IA não conseguiu reavaliar este lote.");
+    await upsertLotAi([row]);
+    return { row };
+  });
+
 /** Modo da avaliação por IA da rodada automática: "off" | "all" | "watched". Global. */
 export const getAiMode = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

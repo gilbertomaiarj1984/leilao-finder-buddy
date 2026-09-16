@@ -751,6 +751,16 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
 - **`matchesInterests` é da UI, NÃO da IA:** `buildInterestMatcher` (`ai-score-utils.ts`) casa
   a lista `app_state.user_interests` com o título via `normalizeForMatch` (determinístico,
   não gasta tokens); destaca com ⭐.
+- **Refazer consulta por lote (v0.60.0):** botão "refazer consulta" no painel de detalhes da
+  nota (`ScoreDetails`, aberto ao passar o mouse/focar o selo — `ScoreCorner` nos cards,
+  `ScoreBadge` nas tabelas da Análise). Server fn `reevaluateLot({id, title, price, house,
+  image})` chama `evalLotsSync` **direto** (ignora o cache por `title_hash` — é justamente
+  para reavaliar com base em informação nova do lote, ex.: imagem trocada) e faz
+  `upsertLotAi([row])`. Provedor: o PADRÃO do usuário (`resolveAiProvider`/`getAiProvider`).
+  Self-contained em `ai-score.tsx` (`ReevaluateButton`): `useMutation` grava a linha devolvida
+  direto no cache `["lot-ai"]` (mesmo padrão da edição de tags) — sem invalidar/reler tudo, o
+  card/linha atualizam sozinhos. Só aparece quando o chamador passa o prop `lot` (dados
+  mínimos do lote); `CardLot.id` é opcional só por cautela de tipo (todo lote real tem id).
 
 ## Discogs / preço de mercado (`lot_market`)
 
@@ -1232,6 +1242,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.58.3      | Fix: vigiar um lote confirmava no site (LeilõesBR) mas o card na grade geral do dia continuava aparecendo "não vigiado". `watchedIds` (deriva de `listWatched`, que relê a conta do LeilõesBR) tem prioridade sobre `lot.watched` sempre que já há outros vigiados — e `toggle.onSuccess` (`index.tsx`) só atualizava o acumulador local que alimenta `watchedIds` no caminho de DESVIGIAR, não no de VIGIAR (dependia do refetch de `listWatched` pegar o lote novo, que pode atrasar). Agora vigiar também escreve na hora em `watchedAccumRef`, reconstruindo o `WatchedLot` a partir do lote já conhecido em `lots.data.lots` |
 | v0.59.0      | Aviso de "lance superado": toast (`sonner`) quando um lote com lance vira `status === "Coberto"` (`bidIsCovered`, `vinyl-parse.ts`), disparado pelo hook `useBidCoveredAlerts` (`bid-alerts.ts`) sobre o `bids.data` das queries `["vinyl-my-bids"]` já existentes em `index.tsx`/`analise.tsx`. Só funciona com o app aberto (nenhuma mudança em cron/DB) — a transição é detectada comparando com um snapshot do último `status` visto por lote, persistido em `localStorage` via `loadAccum`/`saveAccum` (mesmo helper de `watched-accum.ts`) |
 | v0.59.1      | Fix: lote ficava marcado "vigiando" na ferramenta mesmo depois de desvigiado direto no site do LeilõesBR (fora do app), até sair da janela de dias do acumulador. `mergeWatchedAccum` (`watched-accum.ts`) agora remove também um item ausente do `fresh` quando o leilão ainda não terminou (`auctionFinished`), não só quando o dia sai da janela |
+| v0.60.0      | Botão "refazer consulta" no painel de detalhes da nota da IA (hover no selo, cards e Análise): reavalia o lote na hora, ignorando o cache por título (`reevaluateLot` server fn → `evalLotsSync` direto + `upsertLotAi`), e atualiza o cache `["lot-ai"]` local com o resultado — ver seção "IA (avaliação, identificação, modo)" |
 
 ## Pendências
 

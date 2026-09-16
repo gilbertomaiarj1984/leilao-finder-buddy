@@ -1305,6 +1305,13 @@ function AnalisePage() {
                                   market={marketFor(lot)}
                                   price={lot.price}
                                   rank={i + 1}
+                                  lot={{
+                                    id: lot.id,
+                                    title: lot.title,
+                                    price: lot.price,
+                                    house: lot.house,
+                                    image: lot.image,
+                                  }}
                                 />
                               </td>
                               <td className="px-3 py-2">
@@ -1523,6 +1530,13 @@ function AnalisePage() {
                                                       ai={ai}
                                                       market={marketFor(lot)}
                                                       price={lot.price}
+                                                      lot={{
+                                                        id: lot.id,
+                                                        title: lot.title,
+                                                        price: lot.price,
+                                                        house: lot.house,
+                                                        image: lot.image,
+                                                      }}
                                                     />
                                                   ) : (
                                                     <span className="text-muted-foreground">—</span>
