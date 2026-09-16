@@ -97,6 +97,7 @@ import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import type { WatchedLot } from "@/lib/leiloesbr-watch.server";
 import type { MyBid } from "@/lib/leiloesbr-bids.server";
+import { useBidCoveredAlerts } from "@/lib/bid-alerts";
 import { getCollection } from "@/lib/collection.functions";
 import type { CollectionItem } from "@/lib/collection.server";
 import {
@@ -410,6 +411,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
+  // Aviso (toast) quando um lote com lance vira "Coberto" — só com o app aberto, ver
+  // `@/lib/bid-alerts`.
+  useBidCoveredAlerts(bids.data);
   // Avaliações da IA (score/raridade/oportunidade) e interesses do usuário: alimentam o
   // badge de nota no canto do card. Best-effort — sem avaliação, o card fica como hoje.
   const lotAiQuery = useQuery({

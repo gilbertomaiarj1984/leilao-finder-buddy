@@ -621,6 +621,25 @@ Três valores de **fontes diferentes** — não confundir:
   o leilão todo), útil para casas cujo catálogo HTML é JS-rendered.
 - **`data[0].navinfo[]`** = `{PREVID, NEXTID}`.
 
+## Aviso de lance superado (v0.59.0)
+
+- **Só client-side, só com o app aberto** — nenhuma mudança em cron/`/api/cron`/DB. Reaproveita
+  o refetch já existente de `["vinyl-my-bids"]` (`staleTime` 5min + refresh manual) tanto em
+  `index.tsx` quanto em `analise.tsx`.
+- **Detecção:** `bidIsCovered(status)` (`vinyl-parse.ts`, regex `/cobert/i`) identifica "fui
+  superado". O evento a avisar é a **transição** para coberto — não o estado em si — senão todo
+  reload avisaria de novo de um lote já coberto numa sessão anterior.
+- **`bid-alerts.ts`** (`detectNewlyCoveredBids` + hook `useBidCoveredAlerts`): compara o `status`
+  de cada `MyBid` contra um snapshot do último `status` visto por `id`, persistido em
+  `localStorage` (`BID_STATUS_SNAPSHOT_KEY`) via os mesmos `loadAccum`/`saveAccum` genéricos de
+  `watched-accum.ts` (chave compartilhada entre `index.tsx`/`analise.tsx`, igual ao acumulador de
+  vigiados/lances). Quando há lote(s) recém-coberto(s), dispara `toast.warning` (`sonner`, já
+  montado globalmente em `__root.tsx`) — um toast por lote, ou agrupado se vier mais de um na
+  mesma leva.
+- **Indicador persistente na tela** continua sendo o badge vermelho já existente
+  (`BidStatBadges`/`HouseStats.red`, `badges.tsx`/`grouping.ts`) — não foi criado nenhum badge
+  novo, o toast é só o "empurrão" ativo.
+
 ## Painel de mudanças — DESCONTINUADO (v0.25.0)
 
 A página **`/dashboard`** foi removida (home/Análise/Ao vivo cobrem o uso). Chave órfã
@@ -1198,6 +1217,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.58.1      | Fix (INCOMPLETO — ver v0.58.2): tarja "Vendido" nunca aparecia em vigiados **sem lance** de casas do template ANTIGO (catálogo HTML server-side, ex.: Robson Gini) enquanto o leilão ainda estava "ao vivo" (v0.51.3 trocou o sinal do `peca.asp` de texto livre pro campo `MOSTRABTN_CLASS`, que só existe em casas do template NOVO). Tentativa: `parseSold` cai num fallback reaproveitando `parseSoldMarkers` (heurística de `parseCatalogData`, calibrada no CATÁLOGO) — não resolveu, ver v0.58.2 |
 | v0.58.2      | Fix de verdade pro v0.58.1: confirmado contra o HTML real da `peca.asp` (Robson Gini/Trem das 7) que `parseSoldMarkers` não servia ali — o valor vem em `<span>`s separados ("R$" e "15,00" não são texto contínuo) e o texto "Lote vendido" aparece nos Termos e Condições de TODA peça (daria falso positivo se usado como marcador). Novo `parseSoldOldTemplate` (`leiloesbr-lot-details.server.ts`) usa a classe CSS do botão de lance (`id="fazerlance" class="is-CoolBtn lotevendido"`, token que só existe nesse estado) + uma janela maior até o span `is-valor` pro preço |
 | v0.58.3      | Fix: vigiar um lote confirmava no site (LeilõesBR) mas o card na grade geral do dia continuava aparecendo "não vigiado". `watchedIds` (deriva de `listWatched`, que relê a conta do LeilõesBR) tem prioridade sobre `lot.watched` sempre que já há outros vigiados — e `toggle.onSuccess` (`index.tsx`) só atualizava o acumulador local que alimenta `watchedIds` no caminho de DESVIGIAR, não no de VIGIAR (dependia do refetch de `listWatched` pegar o lote novo, que pode atrasar). Agora vigiar também escreve na hora em `watchedAccumRef`, reconstruindo o `WatchedLot` a partir do lote já conhecido em `lots.data.lots` |
+| v0.59.0      | Aviso de "lance superado": toast (`sonner`) quando um lote com lance vira `status === "Coberto"` (`bidIsCovered`, `vinyl-parse.ts`), disparado pelo hook `useBidCoveredAlerts` (`bid-alerts.ts`) sobre o `bids.data` das queries `["vinyl-my-bids"]` já existentes em `index.tsx`/`analise.tsx`. Só funciona com o app aberto (nenhuma mudança em cron/DB) — a transição é detectada comparando com um snapshot do último `status` visto por lote, persistido em `localStorage` via `loadAccum`/`saveAccum` (mesmo helper de `watched-accum.ts`) |
 
 ## Pendências
 

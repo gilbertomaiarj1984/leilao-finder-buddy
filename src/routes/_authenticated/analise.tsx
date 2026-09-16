@@ -78,6 +78,7 @@ import {
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import type { WatchedLot } from "@/lib/leiloesbr-watch.server";
 import type { MyBid } from "@/lib/leiloesbr-bids.server";
+import { useBidCoveredAlerts } from "@/lib/bid-alerts";
 import { bidIsWinning, formatDayLabel, normalizeForMatch, type VinylLot } from "@/lib/vinyl-parse";
 import {
   BIDS_ACCUM_STORAGE_KEY,
@@ -731,6 +732,9 @@ function AnalisePage() {
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
+  // Aviso (toast) quando um lote com lance vira "Coberto" — só com o app aberto, ver
+  // `@/lib/bid-alerts`.
+  useBidCoveredAlerts(bidsQuery.data);
 
   const saveInterestsMut = useMutation({
     mutationFn: (items: string[]) => saveInterests({ data: { items } }),
