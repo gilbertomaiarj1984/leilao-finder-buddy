@@ -76,7 +76,14 @@ function toRows(result: unknown): Row[] {
   return (result as Row[] | null) ?? [];
 }
 
-class QueryBuilder<T = Row> {
+type Mode = "list" | "single" | "maybeSingle";
+// T é o formato de UMA linha; o formato do resultado depende do modo
+// (.single()/.maybeSingle() reduzem de T[] pra T/T|null) — sem isso, todo
+// select() sem .single() ficava tipado como se devolvesse uma linha só em vez
+// de um array, e o TypeScript não via `for..of`/`.length` no resultado.
+type Out<T, M extends Mode> = M extends "single" ? T : M extends "maybeSingle" ? T | null : T[];
+
+class QueryBuilder<T = Row, M extends Mode = "list"> {
   private table: string;
   private mode: "select" | "insert" | "update" | "delete" | "upsert" = "select";
   private selectCols = "*";
@@ -163,13 +170,13 @@ class QueryBuilder<T = Row> {
     this.limitVal = n;
     return this;
   }
-  single(): this {
+  single(): QueryBuilder<T, "single"> {
     this.wantSingle = "single";
-    return this;
+    return this as unknown as QueryBuilder<T, "single">;
   }
-  maybeSingle(): this {
+  maybeSingle(): QueryBuilder<T, "maybeSingle"> {
     this.wantSingle = "maybeSingle";
-    return this;
+    return this as unknown as QueryBuilder<T, "maybeSingle">;
   }
 
   insert(rows: Row | Row[]): this {
@@ -193,8 +200,8 @@ class QueryBuilder<T = Row> {
     return this;
   }
 
-  then<TResult1 = Result<T>, TResult2 = never>(
-    onfulfilled?: ((value: Result<T>) => TResult1 | PromiseLike<TResult1>) | null,
+  then<TResult1 = Result<Out<T, M>>, TResult2 = never>(
+    onfulfilled?: ((value: Result<Out<T, M>>) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): PromiseLike<TResult1 | TResult2> {
     return this.execute().then(onfulfilled, onrejected);
@@ -231,18 +238,18 @@ class QueryBuilder<T = Row> {
     return "";
   }
 
-  private finalize(rows: Row[]): Result<T> {
+  private finalize(rows: Row[]): Result<Out<T, M>> {
     if (this.wantSingle === "single") {
       if (rows.length === 0) return { data: null, error: { message: "No rows found" } };
-      return { data: rows[0] as unknown as T, error: null };
+      return { data: rows[0] as unknown as Out<T, M>, error: null };
     }
     if (this.wantSingle === "maybeSingle") {
-      return { data: (rows[0] ?? null) as unknown as T, error: null };
+      return { data: (rows[0] ?? null) as unknown as Out<T, M>, error: null };
     }
-    return { data: rows as unknown as T, error: null };
+    return { data: rows as unknown as Out<T, M>, error: null };
   }
 
-  private async execute(): Promise<Result<T>> {
+  private async execute(): Promise<Result<Out<T, M>>> {
     try {
       switch (this.mode) {
         case "select":
@@ -262,7 +269,7 @@ class QueryBuilder<T = Row> {
     }
   }
 
-  private async execSelect(): Promise<Result<T>> {
+  private async execSelect(): Promise<Result<Out<T, M>>> {
     const pb = new ParamBuilder();
     const cols = this.headOnly ? "count(*)::int AS count" : this.selectCols;
     const where = this.buildWhereClause(pb);
@@ -278,9 +285,9 @@ class QueryBuilder<T = Row> {
     return this.finalize(rows);
   }
 
-  private async execInsert(): Promise<Result<T>> {
+  private async execInsert(): Promise<Result<Out<T, M>>> {
     const rows = this.insertRows ?? [];
-    if (rows.length === 0) return { data: [] as unknown as T, error: null };
+    if (rows.length === 0) return { data: [] as unknown as Out<T, M>, error: null };
     const pb = new ParamBuilder();
     const cols = Object.keys(rows[0] as Row);
     const colList = cols.map(ident).join(", ");
@@ -293,7 +300,7 @@ class QueryBuilder<T = Row> {
     return this.finalize(rowsOut);
   }
 
-  private async execUpdate(): Promise<Result<T>> {
+  private async execUpdate(): Promise<Result<Out<T, M>>> {
     const patch = this.updateRow ?? {};
     const pb = new ParamBuilder();
     const setSql = Object.keys(patch)
@@ -306,7 +313,7 @@ class QueryBuilder<T = Row> {
     return this.finalize(rowsOut);
   }
 
-  private async execDelete(): Promise<Result<T>> {
+  private async execDelete(): Promise<Result<Out<T, M>>> {
     const pb = new ParamBuilder();
     const where = this.buildWhereClause(pb);
     const returning = this.returningCols ? `RETURNING ${this.returningCols}` : "";
@@ -319,9 +326,9 @@ class QueryBuilder<T = Row> {
   // UPDATE SET — replica o comportamento do PostgREST que protege orig_text em
   // lot-sales.server.ts (ver docstring de upsertLotSales). Assume lotes
   // internamente homogêneos (mesmo invariante que o código já depende hoje).
-  private async execUpsert(): Promise<Result<T>> {
+  private async execUpsert(): Promise<Result<Out<T, M>>> {
     const rows = this.upsertRows ?? [];
-    if (rows.length === 0) return { data: [] as unknown as T, error: null };
+    if (rows.length === 0) return { data: [] as unknown as Out<T, M>, error: null };
     const colSet = new Set<string>();
     for (const r of rows) for (const k of Object.keys(r)) colSet.add(k);
     const cols = Array.from(colSet);

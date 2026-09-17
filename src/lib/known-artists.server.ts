@@ -14,7 +14,7 @@ async function loadDbNames(): Promise<string[]> {
     const names: string[] = [];
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await supabaseAdmin
-        .from("known_artists")
+        .from<{ name: string }>("known_artists")
         .select("name")
         .range(from, from + PAGE - 1);
       if (error) throw error;

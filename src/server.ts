@@ -65,6 +65,12 @@ export default {
       const authResponse = await handleGoogleAuth(request);
       if (authResponse) return authResponse;
 
+      // Fotos da Coleção servidas do disco (Fase 3 da migração para VPS) — até
+      // a Fase 4 (Docker/Caddy), o Node serve /collection/* direto.
+      const { handleCollectionAssets } = await import("./lib/collection-storage.server");
+      const collectionResponse = await handleCollectionAssets(request);
+      if (collectionResponse) return collectionResponse;
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

@@ -37,7 +37,7 @@ export async function getAllLotAi(): Promise<LotAiRow[]> {
   const rows: LotAiRow[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabaseAdmin
-      .from("lot_ai")
+      .from<LotAiRow>("lot_ai")
       .select("id, title_hash, score, rarity, deal, album, reason, tags, model")
       .range(from, from + PAGE - 1);
     if (error) throw error;

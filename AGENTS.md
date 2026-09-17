@@ -9,9 +9,9 @@ com **Supabase** como backend e deploy na **Vercel**.
 
 > **Trabalho de infraestrutura/custo pendente:** ver `docs/economia-migracao.md` (índice) e
 > os dois planos de fase que ele aponta. VPS contratado, migração em andamento na branch `vps`
-> (base: `origin/main`) — Fase 1 (camada de dados) validada contra o Postgres real do VPS e
-> mesclada; Fase 2 (Auth: Google OAuth direto, sem Supabase Auth) entregue em código, ainda não
-> validada. Em resumo: o egress do Supabase **já estourou** (9,14/5 GB) e o Active
+> (base: `origin/main`) — Fases 1 (camada de dados) e 2 (Auth: Google OAuth direto) validadas e
+> mescladas; Fase 3 (Storage: fotos da Coleção em disco) entregue em código, `@supabase/supabase-js`
+> já saiu do `package.json`. Em resumo: o egress do Supabase **já estourou** (9,14/5 GB) e o Active
 > CPU da Vercel está em 79% — porque o cron lê tabelas inteiras em laço. O banco em si está
 > folgado (49/500 MB).
 
