@@ -20,12 +20,7 @@ const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36";
 
 function proxySecret(): string | null {
-  return (
-    process.env["LIVE_PROXY_SECRET"] ||
-    process.env["SUPABASE_SERVICE_ROLE_KEY"] ||
-    process.env["CRON_TOKEN"] ||
-    null
-  );
+  return process.env["LIVE_PROXY_SECRET"] || process.env["CRON_TOKEN"] || null;
 }
 
 // ---------------------------------------------------------------- base64url ---
