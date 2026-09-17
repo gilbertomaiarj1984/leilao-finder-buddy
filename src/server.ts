@@ -59,6 +59,12 @@ export default {
       const cronResponse = await handleCron(request);
       if (cronResponse) return cronResponse;
 
+      // Login/logout via Google OAuth direto (Fase 2 da migração para VPS),
+      // fora do fluxo de server functions. Retorna cedo para /api/auth/*.
+      const { handleGoogleAuth } = await import("./lib/auth.server");
+      const authResponse = await handleGoogleAuth(request);
+      if (authResponse) return authResponse;
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

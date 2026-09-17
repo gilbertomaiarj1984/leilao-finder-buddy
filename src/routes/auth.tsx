@@ -1,9 +1,8 @@
-import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { Disc3, Loader2 } from "lucide-react";
+import { createFileRoute } from "@tanstack/react-router";
+import { Disc3 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -25,69 +24,21 @@ export const Route = createFileRoute("/auth")({
   component: AuthPage,
 });
 
+// O login em si é uma navegação de página inteira para /api/auth/google/start
+// (tratado direto em server.ts, fora das server functions — ver auth.server.ts),
+// que redireciona pro Google e volta em /api/auth/google/callback com a sessão
+// já em cookie. Não há mais PKCE/exchange no cliente (era feito pelo supabase-js).
 function AuthPage() {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let active = true;
-    const cleanup = () => {
-      active = false;
-    };
-
     const url = new URL(window.location.href);
-    const code = url.searchParams.get("code");
-    const oauthError = url.searchParams.get("error_description") ?? url.searchParams.get("error");
-
-    if (oauthError) {
+    const err = url.searchParams.get("error");
+    if (err) {
       setError("Não foi possível entrar com o Google. Tente novamente.");
-      // Limpa os parâmetros de erro da URL.
       window.history.replaceState({}, "", url.pathname);
-      return cleanup;
     }
-
-    // Retorno do OAuth: troca o code do PKCE por uma sessão e segue para o app.
-    if (code) {
-      setBusy(true);
-      void supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-        if (!active) return;
-        if (error) {
-          setError("Não foi possível concluir o login. Tente novamente.");
-          setBusy(false);
-          window.history.replaceState({}, "", url.pathname);
-          return;
-        }
-        void router.navigate({ to: "/", replace: true });
-      });
-      return cleanup;
-    }
-
-    // Sem code: se já houver sessão ativa, entra direto.
-    void supabase.auth.getUser().then(({ data }) => {
-      if (active && data.user) void router.navigate({ to: "/", replace: true });
-    });
-
-    return cleanup;
-  }, [router]);
-
-  async function signIn() {
-    setBusy(true);
-    setError(null);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth`,
-        queryParams: { prompt: "select_account" },
-      },
-    });
-    if (error) {
-      setError("Não foi possível entrar com o Google. Tente novamente.");
-      setBusy(false);
-    }
-    // Em caso de sucesso o navegador é redirecionado para o Google; o retorno
-    // cai de volta em /auth?code=... e é tratado no efeito acima.
-  }
+  }, []);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -98,8 +49,12 @@ function AuthPage() {
         <p className="mt-3 text-sm text-muted-foreground">
           Acesso restrito. Entre com a conta Google do mesmo e-mail cadastrado nas casas de leilão.
         </p>
-        <Button className="mt-6 w-full" onClick={() => void signIn()} disabled={busy}>
-          {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+        <Button
+          className="mt-6 w-full"
+          onClick={() => {
+            window.location.href = "/api/auth/google/start";
+          }}
+        >
           Entrar com Google
         </Button>
         {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
