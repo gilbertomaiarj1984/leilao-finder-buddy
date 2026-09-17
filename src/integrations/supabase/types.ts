@@ -383,6 +383,63 @@ export type Database = {
         }
         Relationships: []
       }
+      purchases: {
+        Row: {
+          base: string
+          created_at: string
+          domain: string | null
+          house: string
+          id: string
+          id_leilao: string
+          id_peca: string
+          image: string | null
+          lot_id: string
+          lote: string
+          title: string
+          uf: string
+          updated_at: string
+          url: string
+          won_date: string | null
+          won_price: string
+        }
+        Insert: {
+          base?: string
+          created_at?: string
+          domain?: string | null
+          house?: string
+          id?: string
+          id_leilao: string
+          id_peca: string
+          image?: string | null
+          lot_id: string
+          lote?: string
+          title?: string
+          uf?: string
+          updated_at?: string
+          url?: string
+          won_date?: string | null
+          won_price?: string
+        }
+        Update: {
+          base?: string
+          created_at?: string
+          domain?: string | null
+          house?: string
+          id?: string
+          id_leilao?: string
+          id_peca?: string
+          image?: string | null
+          lot_id?: string
+          lote?: string
+          title?: string
+          uf?: string
+          updated_at?: string
+          url?: string
+          won_date?: string | null
+          won_price?: string
+        }
+        Relationships: []
+      }
       wantlist_items: {
         Row: {
           acquired: boolean

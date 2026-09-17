@@ -16,6 +16,7 @@ import {
   Radio,
   RefreshCw,
   Search as SearchIcon,
+  ShoppingBag,
   Sparkles,
 } from "lucide-react";
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -1310,6 +1311,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                     <Link to="/colecao">
                       <Library className="mr-2 h-4 w-4" />
                       Coleção
+                    </Link>
+                  </Button>
+                  <Button variant="outline" size="sm" asChild title="Minhas compras (vinil)">
+                    <Link to="/compras">
+                      <ShoppingBag className="mr-2 h-4 w-4" />
+                      Compras
                     </Link>
                   </Button>
                   <Button
