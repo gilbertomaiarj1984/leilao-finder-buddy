@@ -130,6 +130,49 @@ export async function listLiveAuctions(windowHours = 3): Promise<PresencialAucti
   }
 }
 
+// Fase 5 da migração para VPS (docs/economia-fase-2-vps-unico.md): `seen_auctions` nunca
+// era podada, só cresce. Só removemos leilões cujas vendas JÁ foram capturadas
+// (`app_state.sales_captured` — ver `getSalesCaptured` e `captureFinishedSales` em
+// `lot-sales.server.ts`), então nunca perdemos o backlog de um leilão ainda pendente; a
+// janela de dias é só uma margem de segurança sobre isso, não o critério principal.
+const SEEN_AUCTIONS_RETENTION_DAYS = 14;
+
+/**
+ * Remove de `seen_auctions` os leilões com vendas já capturadas e mais antigos que
+ * `SEEN_AUCTIONS_RETENTION_DAYS`. Best-effort e idempotente — chamado pelo cron
+ * (`step=prune`). Nunca mexe em `lots`/`lot_sales`.
+ */
+export async function pruneSeenAuctions(): Promise<{ pruned: number }> {
+  try {
+    const { getSalesCaptured } = await import("./app-state.server");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const captured = await getSalesCaptured();
+    if (!captured.size) return { pruned: 0 };
+
+    const cutoff = new Date(Date.now() - SEEN_AUCTIONS_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const { data, error } = await supabaseAdmin
+      .from("seen_auctions")
+      .select("id_leilao")
+      .in("id_leilao", [...captured])
+      .lt("day_key", cutoff);
+    if (error) throw error;
+    const ids = (data as { id_leilao: string }[] | null)?.map((r) => r.id_leilao) ?? [];
+    if (!ids.length) return { pruned: 0 };
+
+    const { error: delError } = await supabaseAdmin
+      .from("seen_auctions")
+      .delete()
+      .in("id_leilao", ids);
+    if (delError) throw delError;
+    return { pruned: ids.length };
+  } catch (error) {
+    console.error("[leiloesbr] não foi possível podar seen_auctions", error);
+    return { pruned: 0 };
+  }
+}
+
 /** Data de hoje (YYYY-MM-DD) no fuso de São Paulo — mesmo formato de `day_key`. */
 function todayDayKey(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());

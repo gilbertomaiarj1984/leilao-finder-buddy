@@ -21,6 +21,11 @@ jobs:
         env:
           APP_URL: ${{ secrets.APP_URL }}
           CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+          # Fase 5 da migração para VPS (docs/economia-fase-2-vps-unico.md). OPCIONAL: sem
+          # este secret, os pings viram no-op (curl nem roda) — nada quebra. Crie um check
+          # em https://healthchecks.io (free), tipo "Cron", período ~13h de folga sobre as
+          # 12h entre execuções, e cole a "Ping URL" aqui.
+          HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
         run: |
           set -euo pipefail
           if [ -z "${APP_URL:-}" ] || [ -z "${CRON_TOKEN:-}" ]; then
@@ -28,6 +33,13 @@ jobs:
           fi
           base="${APP_URL%/}"
           call() { curl -fsS --max-time 120 --retry 3 --retry-delay 5 -H "x-cron-token: $CRON_TOKEN" "$base$1"; }
+          # Avisa o healthchecks.io se a execução falhar (falha silenciosa é o risco nº 1 do
+          # cron — ver "Riscos e reversão" no plano de migração); ping de sucesso no final.
+          ping_healthcheck() {
+            [ -z "${HEALTHCHECKS_PING_URL:-}" ] && return 0
+            curl -fsS --retry 2 --max-time 10 "${HEALTHCHECKS_PING_URL%/}${1:+/$1}" >/dev/null || true
+          }
+          trap 'ping_healthcheck fail' ERR
 
           echo "== Varredura em blocos =="
           from="null"
@@ -132,4 +144,11 @@ jobs:
           res="$(call "/api/cron?step=purchases")"
           echo "purchases: $res"
 
+          echo "== Faxina de seen_auctions (Fase 5 da migração para VPS) =="
+          # Remove leilões cujas vendas já foram capturadas e fora da janela de retenção —
+          # tabela nunca era podada antes, só crescia. 1 chamada, idempotente.
+          res="$(call "/api/cron?step=prune")"
+          echo "prune: $res"
+
           echo "Concluído."
+          ping_healthcheck

@@ -472,10 +472,18 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json({ missingAuctions: auctions.length, probes });
     }
 
+    // Fase 5 da migração para VPS (docs/economia-fase-2-vps-unico.md): poda
+    // `seen_auctions` (leilões com vendas já capturadas e fora da janela de retenção).
+    // Barato — 1 SELECT + 1 DELETE por rodada; roda 1x por execução do cron.
+    if (step === "prune") {
+      const { pruneSeenAuctions } = await import("./leiloesbr-auctions.server");
+      return json(await pruneSeenAuctions());
+    }
+
     return json(
       {
         error:
-          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|purchases|backfillbundle|compressimages|salesdebug|catdebug)",
+          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|purchases|backfillbundle|compressimages|prune|salesdebug|catdebug)",
       },
       400,
     );

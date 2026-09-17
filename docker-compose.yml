@@ -7,12 +7,26 @@
 #
 # Criar a rede uma vez, antes do primeiro `docker compose up`:
 #   docker network create proxy
+#
+# `backup` (Fase 5) usa uma imagem própria (`docker/backup/Dockerfile`), buildada e
+# publicada pelo mesmo workflow que builda o `app` (`.github/workflows/deploy.yml`) — nunca
+# builda no VPS, mesma regra do `app`.
+#
+# `portainer` (Fase 5): UI de containers/logs/deploys, servida pelo Caddy num subdomínio
+# próprio (`PORTAINER_DOMAIN`). ⚠️ Tem acesso ao socket do Docker do HOST — enxerga e
+# controla TODOS os containers da máquina, não só os deste app (ver "Endurecimento da
+# máquina" em docs/economia-fase-2-vps-unico.md para o checklist de acesso).
 
 services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     mem_limit: 128m
+    # `env_file` é o que faz `{$APP_DOMAIN}`/`{$PORTAINER_DOMAIN}` no Caddyfile resolverem
+    # de verdade: são placeholders do PRÓPRIO Caddy (lidos do ambiente do container em
+    # tempo de execução), não substituição do docker-compose — sem isso ficam vazios.
+    env_file:
+      - .env
     ports:
       - "80:80"
       - "443:443"
@@ -57,6 +71,38 @@ services:
     # Sem `ports:` de propósito — acesso administrativo só por túnel SSH
     # (ver "Endurecimento da máquina" em docs/economia-fase-2-vps-unico.md).
 
+  backup:
+    image: ${BACKUP_IMAGE:-ghcr.io/gilbertomaiarj1984/leilao-finder-buddy-backup:latest}
+    restart: unless-stopped
+    mem_limit: 128m
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-garimpo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-garimpo}
+      R2_ENDPOINT: ${R2_ENDPOINT:?defina R2_ENDPOINT no .env}
+      R2_BUCKET: ${R2_BUCKET:?defina R2_BUCKET no .env}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?defina R2_ACCESS_KEY_ID no .env}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?defina R2_SECRET_ACCESS_KEY no .env}
+    networks:
+      - default
+    depends_on:
+      - postgres
+
+  portainer:
+    image: portainer/portainer-ce:lts
+    restart: unless-stopped
+    mem_limit: 256m
+    command: -H unix:///var/run/docker.sock --http-enabled
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - portainer_data:/data
+    networks:
+      - default
+    # Sem `ports:` — o Caddy fala com ele por dentro da rede (porta 9000, HTTP; TLS é
+    # coisa do Caddy). `--http-enabled` liga o listener HTTP interno (por padrão só o
+    # HTTPS self-signed da 9443 fica de pé, que o Caddy não teria como validar).
+
 networks:
   proxy:
     external: true
@@ -67,3 +113,4 @@ volumes:
   collection_data:
   caddy_data:
   caddy_config:
+  portainer_data:

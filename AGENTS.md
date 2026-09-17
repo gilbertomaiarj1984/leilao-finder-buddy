@@ -10,10 +10,12 @@ com **Postgres** próprio como backend e deploy em **VPS** (Docker Compose + Cad
 > **Trabalho de infraestrutura/custo pendente:** ver `docs/economia-migracao.md` (índice) e
 > os dois planos de fase que ele aponta. Migração em andamento na branch `vps` (base:
 > `origin/main`) — Fases 1 (camada de dados), 2 (Auth: Google OAuth direto), 3 (Storage: fotos
-> da Coleção em disco) e 4 (Host: Docker Compose + Caddy no VPS) entregues em código e
-> mescladas. Faltam a Fase 5 (backup/monitoramento/faxina) e a Fase 6 (cutover — migrar o banco
-> de verdade, apontar o DNS, mesclar `vps` → `main`). Até lá, produção continua no Supabase/
-> Vercel; o ambiente do VPS existe em paralelo, só validado por quem testa manualmente.
+> da Coleção em disco), 4 (Host: Docker Compose + Caddy no VPS) e 5 (backup/monitoramento/
+> faxina) entregues em código. Falta só a Fase 6 (cutover — migrar o banco de verdade, apontar
+> o DNS, mesclar `vps` → `main`), que exige acesso ao VPS real e não é algo que uma sessão
+> remota consiga fazer sozinha — ver o passo a passo manual em
+> `docs/economia-fase-2-vps-unico.md`. Até lá, produção continua no Supabase/Vercel; o
+> ambiente do VPS existe em paralelo, só validado por quem testa manualmente.
 
 ## Visão geral
 
