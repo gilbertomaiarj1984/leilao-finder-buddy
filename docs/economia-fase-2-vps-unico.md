@@ -45,6 +45,27 @@ API e failover, Discogs, e **nenhum componente de UI** — porque a RLS está li
 nenhuma e `anon`/`authenticated` têm `REVOKE ALL`, o navegador nunca fala com o Postgres. A
 migração de dados é 100% server-side.
 
+### A máquina comporta mais de um app — desenhar para isso desde o início
+
+O VPS não é dedicado a este app, e o custo marginal de um segundo app é zero (diferente do modelo
+Vercel/Supabase, onde cada projeto novo consome mais um free tier). Isso muda uma decisão de
+desenho na Fase 4: o compose deve nascer já preparado, em vez de monolítico.
+
+- **Uma rede Docker externa compartilhada** (ex. `proxy`), criada fora do compose. O Caddy é o
+  único serviço com portas 80/443 publicadas e roteia **por domínio**; cada app é um projeto
+  Compose separado que se conecta a essa rede sem publicar porta nenhuma.
+- **Um Postgres só, com bancos e usuários separados** por app, em vez de uma instância por app —
+  cada instância extra custa 200–400 MB à toa. O job de backup da Fase 5 deve usar `pg_dumpall`
+  (ou iterar os bancos), não só o banco do Garimpo.
+- **`mem_limit` por serviço no compose.** Sem isso, um app vizinho com vazamento de memória
+  derruba o Postgres deste app junto. É a diferença entre "um app caiu" e "o servidor caiu".
+
+**Orçamento de memória:** o stack deste app consome ~800 MB, deixando ~3,2 GB livres — espaço
+confortável para mais dois ou três apps pequenos (Node/Go/Python, 100–300 MB cada). Atenção aos
+devoradores: outra instância de Postgres, n8n (400 MB–1 GB), e qualquer coisa com JVM ou
+Elasticsearch. **Não planejar passar de ~3 GB usados**: a folga não é desperdício, é cache de
+páginas do Postgres e margem para os picos do `sharp`.
+
 ## Estratégia de execução: ambiente paralelo, sem fork
 
 `main` fica **intocada e sempre deployável na Vercel** enquanto o ambiente novo nasce em
