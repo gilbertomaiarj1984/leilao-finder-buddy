@@ -29,7 +29,7 @@ Além do custo, quatro defeitos que dinheiro não resolve:
    re-login no site de leilões.
 4. **Cláusula de uso não comercial** do Hobby e **pausa por inatividade** do Supabase Free.
 
-**Alvo:** uma máquina, ~R$ 28/mês, sem egress medido, sem pausa, sem teto de 60 s, **com
+**Alvo:** uma máquina, ~R$ 38/mês, sem egress medido, sem pausa, sem teto de 60 s, **com
 backup**, mantendo cron no GitHub Actions, IA e Discogs intactos.
 
 ## Arquitetura alvo
@@ -75,48 +75,64 @@ sincronização com a `main` num PR entre repositórios. Só atrito.
 
 ## Passo 0 — Provedor: decidido
 
-**HostGator "VPS Cloud / VPS OCI NVMe 2" — 1 vCPU · 2 GB RAM · 50 GB NVMe · Ubuntu 22.04 ·
-Brasil (São Paulo), latência 13 ms · R$ 334,68/ano (R$ 27,89/mês), renovação R$ 539,80/ano
-(R$ 45/mês).**
+**HostGator "VPS Cloud / VPS OCI NVMe 4" — 2 vCPU · 4 GB RAM · 100 GB NVMe · Brasil (São Paulo),
+latência 13 ms · R$ 451,10/ano (R$ 37,59/mês), renovação R$ 939,80/ano (R$ 78,32/mês).**
 
-Alternativa avaliada e preterida: 4 vCPU / 8 GB / 100 GB na Europa por US$ 6,60/mês (~R$ 36) —
-muito mais folgada, mas com **222 ms** de latência.
+Alternativas avaliadas e preteridas: o **OCI NVMe 2** da mesma casa (1 vCPU / 2 GB, R$ 27,89/mês)
+e uma máquina de **4 vCPU / 8 GB na Europa** por US$ 6,60/mês (~R$ 36) — esta última, folgada mas
+com **222 ms** de latência.
 
 | | Ano 1 | Ano 2+ | Latência | Specs |
 |---|---|---|---|---|
-| **HostGator SP (escolhido)** | **R$ 27,89/mês** | R$ 45/mês | **13 ms** | 1 vCPU / 2 GB |
-| VPS Europa US$ 6,60 | R$ 36/mês | R$ 36/mês | 222 ms | 4 vCPU / 8 GB |
+| **HostGator SP NVMe 4 (escolhido)** | **R$ 37,59/mês** | R$ 78,32/mês | **13 ms** | 2 vCPU / 4 GB / 100 GB |
+| HostGator SP NVMe 2 | R$ 27,89/mês | R$ 45/mês | 13 ms | 1 vCPU / 2 GB / 50 GB |
+| VPS Europa US$ 6,60 | R$ 36/mês | R$ 36/mês | 222 ms | 4 vCPU / 8 GB / 100 GB |
 
 **Por que a latência ganhou dos cores.** Ela pesa duas vezes neste app: no cron, que faz centenas
 de requisições **sequenciais** a sites de leilão brasileiros, e na navegação, onde cada server
 function é uma ida e volta. 13 ms é melhor até que a Vercel de hoje (~120 ms). Cores ociosos não
-compram nada equivalente para um banco de 49 MB e um usuário. Como efeito colateral, o
-**Cloudflare deixa de ser necessário como remendo de latência** — vira opcional, só para esconder
-o IP do VPS.
+compram nada equivalente para um banco de 49 MB e um usuário. No ano 1 o preço empata com a
+máquina europeia, então os 209 ms a menos saem de graça. Como efeito colateral, o **Cloudflare
+deixa de ser necessário como remendo de latência** — vira opcional, só para esconder o IP do VPS.
 
-**O aperto é real e tem mitigação obrigatória.** A conta de memória fecha — Node SSR ~250 MB +
-Postgres com `shared_buffers` modesto ~400 MB + Caddy ~20 MB + Docker ~100 MB ≈ 800 MB, sobrando
-~1 GB — mas é o piso, não conforto. Daí três regras que deixam de ser preferência:
+**Por que subir do NVMe 2 para o NVMe 4 foi acerto.** Os dois apertos reais do plano de 1 vCPU /
+2 GB somem por ~R$ 10/mês:
+
+- **4 GB em vez de 2** tira o risco de OOM no `sharp`, que decodifica imagens de até 8 MB
+  (`MAX_IMAGE_BYTES`, `collection.server.ts:957`) e reencoda a 1600px — o pico curto e alto que
+  poderia derrubar o Postgres. A conta de memória sai de "cabe apertado" para folgada: Node SSR
+  ~250 MB + Postgres ~400 MB + Caddy ~20 MB + Docker ~100 MB ≈ 800 MB, sobrando >3 GB.
+- **2 vCPU em vez de 1** tira a disputa entre o parsing HTML do cron (CPU-bound) e o Postgres.
+
+Restam duas regras, agora por higiene e não por sobrevivência:
 
 1. **Confirmar a arquitetura antes de escrever o Dockerfile** (`uname -m`). "VPS OCI" é Oracle
    Cloud Infrastructure, que na região Brasil oferece x86 **e** ARM (Ampere). Se for `aarch64`, a
    imagem precisa ser construída para `arm64` ou o `sharp` quebra o upload de foto e o step
-   `compressimages`.
-2. **Nunca construir a imagem no VPS.** Com 1 vCPU / 2 GB um `docker build` do Vite trava a
-   máquina. Build no GitHub Actions → GHCR → `docker compose pull` no VPS. Obrigatório, não
-   opcional.
-3. **2 GB de swap + Postgres afinado para baixo.** O swap é a rede de segurança para os picos do
-   `sharp`, que decodifica imagens de até 8 MB (`MAX_IMAGE_BYTES`, `collection.server.ts:957`) e
-   reencoda a 1600px. Sem ele, o OOM killer derruba o Postgres ou o app no meio de um upload.
+   `compressimages`. **Continua sendo a primeira checagem pós-contratação.**
+2. **Construir a imagem no GitHub Actions, não no VPS** (→ GHCR → `docker compose pull`). Com
+   2 vCPU / 4 GB um `docker build` do Vite já não trava a máquina, mas manter o build fora deixa
+   o deploy rápido e reproduzível.
+3. **1 GB de swap** como rede de segurança barata. Deixou de ser crítico.
 
-Além disso, o parsing HTML do cron é CPU-bound e vai disputar o único core com o Postgres — o
-cron fica mais lento. Como o teto de 60 s por função deixa de existir, lento não quebra nada.
+**Sistema operacional: "SO Simples" com Ubuntu LTS puro** (24.04 se disponível — suporte até
+2029; o 22.04 pré-selecionado também serve, mas vence antes). As outras duas opções do checkout
+atrapalham:
+
+- **"SO com Painel"** (cPanel/Plesk/CyberPanel) é feito para hospedagem compartilhada e PHP. O
+  painel assume as portas 80/443 e o firewall — justamente o que o Caddy precisa — e o cPanel
+  sozinho consome mais de 1 GB de RAM.
+- **"Aplicação"** entrega um stack pré-montado, com versões e opiniões de terceiros. Como todo o
+  ambiente vive num `docker-compose.yml` versionado no repo, partir de um SO limpo é mais
+  previsível. Instalar Docker + Compose no Ubuntu são dois comandos.
 
 **Backup continua obrigatório** (Fase 5, junto com a Fase 4): não há data protection gerenciada.
 
-> ⏰ **Marcar lembrete antes da renovação.** A R$ 45/mês a conta inverte e a opção de 4 vCPU /
-> 8 GB fica mais barata com quatro vezes os recursos. Como todo o stack vive num
-> `docker-compose.yml` versionado, trocar de máquina é restaurar um dump e apontar o DNS.
+> ⏰ **Marcar lembrete antes da renovação — agora importa mais.** A R$ 78,32/mês você estaria
+> pagando **mais que o dobro** da máquina europeia de 4 vCPU / 8 GB por metade dos recursos.
+> Segue muito abaixo dos ~R$ 250 de Supabase Pro + Vercel Pro, então não é urgência; mas é o
+> momento natural de reavaliar. Como todo o stack vive num `docker-compose.yml` versionado,
+> trocar de máquina é restaurar um dump e apontar o DNS.
 
 ## Alívio imediato (antes de qualquer código)
 
@@ -315,9 +331,9 @@ Supabase segue com os dados do momento do congelamento.
 |---|---|---|---|---|
 | Hoje (free, estourado) | R$ 0 → bloqueio | ❌ | 60 s | 🔴 sim |
 | Ficar e pagar (Supabase Pro + Vercel Pro) | ~R$ 250 | ✅ | 60 s | sim, com folga |
-| **VPS único — HostGator SP, o escolhido** | **R$ 27,89** (R$ 45 na renovação) | ✅ (pg_dump → R2) | nenhum | ❌ não |
+| **VPS único — HostGator SP NVMe 4, o escolhido** | **R$ 37,59** (R$ 78,32 na renovação) | ✅ (pg_dump → R2) | nenhum | ❌ não |
 
-Economia de ~R$ 222/mês contra ficar e pagar — e, mais relevante, sai da rota de colisão com as
+Economia de ~R$ 212/mês contra ficar e pagar — e, mais relevante, sai da rota de colisão com as
 cotas sem trocar o problema de lugar. De quebra, 13 ms de latência contra os ~120 ms da Vercel
 de hoje.
 
@@ -355,10 +371,9 @@ Backup não testado não é backup.
 | Semântica sutil do PostgREST mal reproduzida (upsert, count, range) | Enumerada explicitamente na Fase 1; validada pelo teste de "mesmas vendas identificadas". |
 | Perda da máquina (sem data protection do provedor) | `pg_dump` noturno para o R2 **entregue junto com a Fase 4**, restauração testada, snapshot tirado, compose versionado no repo. |
 | Máquina exposta: 1 IP público, sem rede privada, guardando senha do leiloesbr e chaves de API | Postgres sem porta publicada, UFW, SSH só por chave, fail2ban, Cloudflare na frente, chaves rotacionadas ao sair da Vercel. |
-| 2 GB de RAM: pico do `sharp` derrubar Postgres ou app via OOM | 2 GB de swap, `shared_buffers` do Postgres afinado para baixo, e build da imagem fora do VPS (GHCR). |
-| 1 vCPU: cron CPU-bound disputando core com o Postgres | Aceitável — o teto de 60 s por função some, então o cron pode demorar. Se apertar, reduzir o paralelismo antes de trocar de máquina. |
 | Arquitetura ARM inesperada quebrar o `sharp` | `uname -m` como primeira checagem pós-contratação, antes de escrever o Dockerfile. |
-| Renovação a R$ 45/mês inverter a conta | Lembrete antes do vencimento; stack em `docker-compose.yml` versionado torna a troca de máquina um restore + DNS. |
+| Pico de memória do `sharp` | Coberto pelos 4 GB; 1 GB de swap como margem extra. |
+| Renovação a R$ 78,32/mês | Lembrete antes do vencimento — ali vale reavaliar. Stack em `docker-compose.yml` versionado torna a troca de máquina um restore + DNS. |
 | Virar administrador de servidor | Tudo em um `docker-compose.yml` versionado, `unattended-upgrades`, e ping de healthcheck que avisa quando o cron para. |
 | Branch `vps` divergir da `main` por semanas | `git merge origin/main` na `vps` a cada fase concluída, não só no fim. Atenção a `docs/notas-desenvolvimento.md` (conflito add/add conhecido). |
 | Banco de teste do VPS envelhecer e alguém confiar nele | Regra explícita: é descartável. O que vale é o dump da Fase 6. |

@@ -1165,7 +1165,7 @@ folgado (49/500 MB), mas **egress do Supabase já estourado** e **Active CPU da 
 - **Netlify e Neon descartados.** Netlify: timeout de 10 s mata os steps do cron e o `/api/live`
   (confirmado — o projeto conectado ao repo falha o deploy em todo PR). Neon: o gargalo é egress,
   não storage, e o Neon cobra CU-horas que o mesmo padrão queima igual.
-- **Fase 2 (VPS único em São Paulo, R$ 27,89/mês) — plano fechado em v0.60.5, execução não iniciada.** Migração
+- **Fase 2 (VPS único em São Paulo, R$ 37,59/mês) — plano fechado em v0.60.5/6, execução não iniciada.** Migração
   completa (Postgres + Auth + Storage) em 6 fases reversíveis, numa branch **`vps`** paralela: a
   `main` fica intocada na Vercel até o cutover, que é a Fase 6. A camada de dados sai por um
   **shim `postgres.js`** que preserva o nome exportado `supabaseAdmin` e é ligado por
@@ -1280,6 +1280,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.60.3      | Mesmo fix estendido a `condition`/`sales` — `getAllLotCondition`/`readSeenAuctions` também liam tabela inteira a cada chamada do laço (`seen_auctions` nunca é podada, cresce para sempre); cache TTL 30s nas duas |
 | v0.60.4      | Mesmo fix no último caso recorrente: `getAllLotSales({ withOrig: false })` (sem `ids`) — usado por `getVinylSales` (Vinil Analytics) e pela padronização de grafia dentro de `reidentifyAllSales` — ganhou cache TTL 30s, invalidado por `upsertLotSales`. Varredura de padrões concluída: `collection.server.ts`/`wantlist.server.ts` também leem tabela inteira, mas só em página aberta pelo usuário (não em laço do cron) — prioridade baixa, não mexido |
 | v0.60.5      | Plano de migração para VPS único fechado e documentado (só documentação, sem mudança de código): `docs/economia-fase-2-vps-unico.md` reescrito como plano executável em 6 fases — shim `postgres.js` preservando `supabaseAdmin`, OAuth Google direto, Storage em volume, branch `vps` paralela com a `main` intocada até o cutover |
+| v0.60.6      | Provedor e SO fechados no plano de migração (só documentação): HostGator VPS Cloud OCI NVMe 4 em São Paulo (2 vCPU / 4 GB / 100 GB, 13 ms) com "SO Simples" Ubuntu LTS — os 4 GB removem o risco de OOM no `sharp` e os 2 vCPU tiram a disputa do cron com o Postgres |
 
 ## Pendências
 
