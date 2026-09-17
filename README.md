@@ -45,5 +45,5 @@ O schema está consolidado em `supabase/setup.sql`; o histórico em
 
 ## Atualização periódica
 
-`.github/workflows/refresh.yml` chama `/api/cron` 4×/dia. Configure os secrets
+`.github/workflows/refresh.yml` chama `/api/cron` 1×/dia. Configure os secrets
 `APP_URL` (domínio do app na Vercel) e `CRON_TOKEN` no repositório.
