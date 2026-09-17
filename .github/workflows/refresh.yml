@@ -126,4 +126,10 @@ jobs:
             if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
           done
 
+          echo "== Sincronização de compras (vinil, menu Compras) =="
+          # Descobre leilões vencidos pelos lances (l=4) e varre só esses (l=6&id=<idLeilao>),
+          # upsert por lot_id — 1 chamada por rodada, sem paginação cega.
+          res="$(call "/api/cron?step=purchases")"
+          echo "purchases: $res"
+
           echo "Concluído."

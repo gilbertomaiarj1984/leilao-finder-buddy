@@ -413,6 +413,16 @@ export async function handleCron(request: Request): Promise<Response | null> {
       });
     }
 
+    // Sync incremental de compras (vinil) para a tabela `purchases` (menu Compras).
+    // Descobre leilões vencidos via `wonAuctionIdsFromBids` (l=4) e varre só esses
+    // (`l=6&id=<idLeilao>`), upsert por `lot_id`. Barato — 1 chamada por rodada do cron
+    // (sem paginação cega). Independente da varredura de compras da Coleção
+    // (`collection.server.ts`) — tabelas separadas, mesma descoberta.
+    if (step === "purchases") {
+      const { syncPurchasesIncremental } = await import("./purchases.server");
+      return json(await syncPurchasesIncremental());
+    }
+
     // Diagnóstico da captura de vendas: sinais crus do catálogo dos leilões terminados
     // (não grava, não marca). Útil quando `sales` volta 0 — confirma se é legítimo.
     if (step === "salesdebug") {
@@ -465,7 +475,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     return json(
       {
         error:
-          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|backfillbundle|compressimages|salesdebug|catdebug)",
+          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|purchases|backfillbundle|compressimages|salesdebug|catdebug)",
       },
       400,
     );

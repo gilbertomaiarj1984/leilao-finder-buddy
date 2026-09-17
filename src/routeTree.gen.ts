@@ -15,6 +15,7 @@ import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedAnaliseRouteImport } from './routes/_authenticated/analise'
 import { Route as AuthenticatedAoVivoRouteImport } from './routes/_authenticated/ao-vivo'
 import { Route as AuthenticatedColecaoRouteImport } from './routes/_authenticated/colecao'
+import { Route as AuthenticatedComprasRouteImport } from './routes/_authenticated/compras'
 import { Route as AuthenticatedVinilAnalyticsRouteImport } from './routes/_authenticated/vinil-analytics'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
@@ -46,6 +47,11 @@ const AuthenticatedColecaoRoute = AuthenticatedColecaoRouteImport.update({
   path: '/colecao',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedComprasRoute = AuthenticatedComprasRouteImport.update({
+  id: '/compras',
+  path: '/compras',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedVinilAnalyticsRoute =
   AuthenticatedVinilAnalyticsRouteImport.update({
     id: '/vinil-analytics',
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/analise': typeof AuthenticatedAnaliseRoute
   '/ao-vivo': typeof AuthenticatedAoVivoRoute
   '/colecao': typeof AuthenticatedColecaoRoute
+  '/compras': typeof AuthenticatedComprasRoute
   '/vinil-analytics': typeof AuthenticatedVinilAnalyticsRoute
 }
 export interface FileRoutesByTo {
@@ -66,6 +73,7 @@ export interface FileRoutesByTo {
   '/analise': typeof AuthenticatedAnaliseRoute
   '/ao-vivo': typeof AuthenticatedAoVivoRoute
   '/colecao': typeof AuthenticatedColecaoRoute
+  '/compras': typeof AuthenticatedComprasRoute
   '/vinil-analytics': typeof AuthenticatedVinilAnalyticsRoute
   '/': typeof AuthenticatedIndexRoute
 }
@@ -76,15 +84,29 @@ export interface FileRoutesById {
   '/_authenticated/analise': typeof AuthenticatedAnaliseRoute
   '/_authenticated/ao-vivo': typeof AuthenticatedAoVivoRoute
   '/_authenticated/colecao': typeof AuthenticatedColecaoRoute
+  '/_authenticated/compras': typeof AuthenticatedComprasRoute
   '/_authenticated/vinil-analytics': typeof AuthenticatedVinilAnalyticsRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/auth' | '/analise' | '/ao-vivo' | '/colecao' | '/vinil-analytics'
+    | '/'
+    | '/auth'
+    | '/analise'
+    | '/ao-vivo'
+    | '/colecao'
+    | '/compras'
+    | '/vinil-analytics'
   fileRoutesByTo: FileRoutesByTo
-  to: '/auth' | '/analise' | '/ao-vivo' | '/colecao' | '/vinil-analytics' | '/'
+  to:
+    | '/auth'
+    | '/analise'
+    | '/ao-vivo'
+    | '/colecao'
+    | '/compras'
+    | '/vinil-analytics'
+    | '/'
   id:
     | '__root__'
     | '/_authenticated'
@@ -92,6 +114,7 @@ export interface FileRouteTypes {
     | '/_authenticated/analise'
     | '/_authenticated/ao-vivo'
     | '/_authenticated/colecao'
+    | '/_authenticated/compras'
     | '/_authenticated/vinil-analytics'
     | '/_authenticated/'
   fileRoutesById: FileRoutesById
@@ -145,6 +168,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedColecaoRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/compras': {
+      id: '/_authenticated/compras'
+      path: '/compras'
+      fullPath: '/compras'
+      preLoaderRoute: typeof AuthenticatedComprasRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/vinil-analytics': {
       id: '/_authenticated/vinil-analytics'
       path: '/vinil-analytics'
@@ -159,6 +189,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAnaliseRoute: typeof AuthenticatedAnaliseRoute
   AuthenticatedAoVivoRoute: typeof AuthenticatedAoVivoRoute
   AuthenticatedColecaoRoute: typeof AuthenticatedColecaoRoute
+  AuthenticatedComprasRoute: typeof AuthenticatedComprasRoute
   AuthenticatedVinilAnalyticsRoute: typeof AuthenticatedVinilAnalyticsRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
@@ -167,6 +198,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAnaliseRoute: AuthenticatedAnaliseRoute,
   AuthenticatedAoVivoRoute: AuthenticatedAoVivoRoute,
   AuthenticatedColecaoRoute: AuthenticatedColecaoRoute,
+  AuthenticatedComprasRoute: AuthenticatedComprasRoute,
   AuthenticatedVinilAnalyticsRoute: AuthenticatedVinilAnalyticsRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }
