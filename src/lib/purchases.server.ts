@@ -124,7 +124,7 @@ export async function getAllPurchases(): Promise<Purchase[]> {
 async function upsertWonLots(won: WonLot[]): Promise<{ added: number; scanned: number }> {
   if (!won.length) return { added: 0, scanned: 0 };
   const { data: existing, error: readError } = await supabaseAdmin
-    .from("purchases")
+    .from<{ lot_id: string }>("purchases")
     .select("lot_id");
   if (readError) throw readError;
   const have = new Set((existing ?? []).map((r) => r.lot_id));

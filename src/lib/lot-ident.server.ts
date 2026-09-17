@@ -30,7 +30,7 @@ export async function getAllLotIdent(): Promise<LotIdentRow[]> {
   const rows: LotIdentRow[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabaseAdmin
-      .from("lot_ident")
+      .from<LotIdentRow>("lot_ident")
       .select("id, title_hash, album, year, confidence, source, model")
       .range(from, from + PAGE - 1);
     if (error) throw error;

@@ -34,3 +34,6 @@ dist-ssr
 
 # Vercel
 .vercel
+
+# Fotos da Coleção em disco (Fase 3 da migração para VPS — COLLECTION_DIR)
+/data/collection

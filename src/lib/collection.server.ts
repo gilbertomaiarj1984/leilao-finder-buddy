@@ -2,6 +2,12 @@ import { fmtMoney, parseAiAlbum, toLotMarket } from "@/components/vinyl/ai-score
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
 import {
+  collectionPathFromUrl,
+  getCollectionPublicUrl,
+  removeCollectionFile,
+  uploadCollectionFile,
+} from "@/lib/collection-storage.server";
+import {
   COMPILATION_LABEL,
   extractArtist,
   isCompilation,
@@ -951,8 +957,6 @@ export async function deleteCollectionItem(id: string): Promise<{ ok: true }> {
   return { ok: true };
 }
 
-/** Bucket público das fotos da coleção (criado em `supabase/setup.sql`). */
-const IMAGE_BUCKET = "collection";
 /** Teto do upload (imagem já decodificada, antes de comprimir). Fotos de capa não passam disso. */
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const IMAGE_EXT: Record<string, string> = {
@@ -967,8 +971,6 @@ const IMAGE_EXT: Record<string, string> = {
 /** Lado maior após redimensionar e qualidade do WEBP de saída — ver `compressCollectionImage`. */
 const COMPRESS_MAX_DIMENSION = 1600;
 const COMPRESS_WEBP_QUALITY = 82;
-/** Cache no CDN/navegador (7 dias) — fotos da coleção não mudam depois de enviadas. */
-const IMAGE_CACHE_CONTROL = "604800";
 
 /**
  * Redimensiona (lado maior ≤ 1600px, sem ampliar) e recodifica em WEBP q82. Reduz bastante o
@@ -1010,18 +1012,16 @@ export async function uploadCollectionImage(dataUrl: string): Promise<{ url: str
     throw new Error(`Imagem muito grande (máx. ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)} MB).`);
   }
   const compressed = await compressCollectionImage(rawBytes);
-  const path = `${crypto.randomUUID()}.${compressed.ext}`;
-  const { error } = await supabaseAdmin.storage.from(IMAGE_BUCKET).upload(path, compressed.bytes, {
-    contentType: compressed.contentType,
-    upsert: false,
-    cacheControl: IMAGE_CACHE_CONTROL,
-  });
-  if (error) {
+  const filePath = `${crypto.randomUUID()}.${compressed.ext}`;
+  try {
+    const { publicUrl } = await uploadCollectionFile(filePath, compressed.bytes);
+    return { url: publicUrl };
+  } catch (error) {
     console.error("[collection] falha no upload da imagem", error);
-    throw new Error(`Não foi possível enviar a imagem: ${error.message}`);
+    throw new Error(
+      `Não foi possível enviar a imagem: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
-  const { data } = supabaseAdmin.storage.from(IMAGE_BUCKET).getPublicUrl(path);
-  return { url: data.publicUrl };
 }
 
 /**
@@ -1034,10 +1034,9 @@ export async function uploadCollectionImage(dataUrl: string): Promise<{ url: str
 export async function listUncompressedCollectionImages(
   limit: number,
 ): Promise<{ id: string; image: string }[]> {
-  const { data: pub } = supabaseAdmin.storage.from(IMAGE_BUCKET).getPublicUrl("");
-  const prefix = pub.publicUrl;
+  const prefix = getCollectionPublicUrl("");
   const { data, error } = await supabaseAdmin
-    .from("collection_items")
+    .from<{ id: string; image: string | null }>("collection_items")
     .select("id, image")
     .not("image", "is", null)
     .like("image", `${prefix}%`)
@@ -1053,9 +1052,7 @@ export async function backfillCompressCollectionImage(row: {
   id: string;
   image: string;
 }): Promise<{ originalBytes: number; compressedBytes: number }> {
-  const { data: pub } = supabaseAdmin.storage.from(IMAGE_BUCKET).getPublicUrl("");
-  const prefix = pub.publicUrl;
-  const oldPath = row.image.startsWith(prefix) ? row.image.slice(prefix.length) : null;
+  const oldPath = collectionPathFromUrl(row.image);
 
   const res = await fetch(row.image);
   if (!res.ok) throw new Error(`download HTTP ${res.status}`);
@@ -1063,23 +1060,15 @@ export async function backfillCompressCollectionImage(row: {
 
   const compressed = await compressCollectionImage(rawBytes);
   const newPath = `${crypto.randomUUID()}.${compressed.ext}`;
-  const { error: upErr } = await supabaseAdmin.storage
-    .from(IMAGE_BUCKET)
-    .upload(newPath, compressed.bytes, {
-      contentType: compressed.contentType,
-      upsert: false,
-      cacheControl: IMAGE_CACHE_CONTROL,
-    });
-  if (upErr) throw new Error(`upload: ${upErr.message}`);
+  const { publicUrl: newPublicUrl } = await uploadCollectionFile(newPath, compressed.bytes);
 
-  const { data: newPub } = supabaseAdmin.storage.from(IMAGE_BUCKET).getPublicUrl(newPath);
   const { error: dbErr } = await supabaseAdmin
     .from("collection_items")
-    .update({ image: newPub.publicUrl })
+    .update({ image: newPublicUrl })
     .eq("id", row.id);
   if (dbErr) throw new Error(`update DB: ${dbErr.message}`);
 
-  if (oldPath) await supabaseAdmin.storage.from(IMAGE_BUCKET).remove([oldPath]);
+  if (oldPath) await removeCollectionFile(oldPath);
 
   return { originalBytes: rawBytes.length, compressedBytes: compressed.bytes.length };
 }
