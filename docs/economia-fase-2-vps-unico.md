@@ -384,6 +384,26 @@ domínio, ao Google Cloud Console e às contas do Cloudflare R2/healthchecks.io 
 sessão remota consegue fazer isso sozinha. Siga na ordem; cada bloco diz o que fazer, onde
 clicar/rodar, e como confirmar que deu certo antes de ir pro próximo.
 
+> ⚠️ **Estes passos são executados FORA deste repositório** (SSH no VPS, painéis externos)
+> — nenhuma sessão consegue confirmar sozinha o que já rodou. Por isso o progresso é
+> marcado aqui, **manualmente, a cada passo concluído** (trocar `[ ]` por `[x]` e commitar).
+> Uma sessão nova lê este bloco antes de perguntar "o que já foi feito" ou repetir passos.
+
+### Progresso
+
+- [ ] 1. Contratar e preparar o VPS (`uname -m`, usuário `deploy`, Docker, UFW/fail2ban, rede `proxy`)
+- [ ] 2. Gerar a chave SSH do GitHub Actions
+- [ ] 3. Cadastrar os secrets no GitHub
+- [ ] 4. Preparar o `.env` no VPS
+- [ ] 5. Cloudflare R2 (backup)
+- [ ] 6. healthchecks.io (monitoramento)
+- [ ] 7. Primeiro deploy (`workflow_dispatch` do `deploy.yml`)
+- [ ] 8. DNS + domínio do app
+- [ ] 9. Portainer (DNS próprio + primeiro acesso)
+- [ ] 10. Google OAuth para o novo domínio
+- [ ] 11. Validar antes do cutover
+- [ ] 12. Fase 6 — cutover (banco de produção, ponto de não-retorno no passo 8 dele)
+
 ### 1. Contratar e preparar o VPS
 
 1. Contratar o **HostGator "VPS Cloud / VPS OCI NVMe 4"** (2 vCPU / 4 GB / 100 GB, São Paulo),
