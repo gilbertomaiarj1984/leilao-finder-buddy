@@ -64,6 +64,15 @@ function isMissingColumn(error: { code?: string; message?: string } | null): boo
   return (error.message ?? "").includes("orig_text");
 }
 
+// Cache curto do caso `{ withOrig: false }` SEM `ids` — a leitura da tabela INTEIRA (sem a
+// coluna mais pesada). É o caminho batido por `getVinylSales` (Vinil Analytics, a cada
+// abertura) e pela padronização de grafia dentro de `reidentifyAllSales` (até 15x por
+// execução do cron). Invalidado a cada escrita (`upsertLotSales`). O caso `{ ids }` e o
+// `withOrig: true` (só o backfill único de `bundle`) ficam de fora — não são o padrão
+// recorrente que pesa no egress.
+let noOrigCache: { at: number; rows: LotSaleRow[] } | null = null;
+const NO_ORIG_TTL_MS = 30_000;
+
 /**
  * Lê vendas de `lot_sales` (single-user; paginado). Best-effort. Tolera `orig_text` ausente
  * (banco sem a migração da coluna).
@@ -81,7 +90,12 @@ export async function getAllLotSales(opts?: {
   const ids = opts?.ids;
   if (ids && !ids.length) return [];
   let withOrig = opts?.withOrig ?? true;
+  const wantedNoOrig = !ids && !withOrig;
   const rows: LotSaleRow[] = [];
+
+  if (wantedNoOrig && noOrigCache && Date.now() - noOrigCache.at < NO_ORIG_TTL_MS) {
+    return noOrigCache.rows;
+  }
 
   if (ids) {
     for (;;) {
@@ -120,6 +134,7 @@ export async function getAllLotSales(opts?: {
       rows.push({ orig_text: "", bundle: false, ...r } as unknown as LotSaleRow);
     if (batch.length < PAGE) break;
   }
+  if (wantedNoOrig) noOrigCache = { at: Date.now(), rows };
   return rows;
 }
 
@@ -161,11 +176,13 @@ export async function upsertLotSales(
         console.error("[lot-sales] falha ao gravar vendas (sem orig_text)", retry.error);
         throw new Error(`Não foi possível gravar as vendas: ${retry.error.message}`);
       }
+      noOrigCache = null;
       return payload.length;
     }
     console.error("[lot-sales] falha ao gravar vendas", error);
     throw new Error(`Não foi possível gravar as vendas: ${error.message}`);
   }
+  noOrigCache = null;
   return payload.length;
 }
 
