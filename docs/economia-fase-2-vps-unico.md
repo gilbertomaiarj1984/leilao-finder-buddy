@@ -550,7 +550,29 @@ pasta de deploy (`VPS_DEPLOY_PATH`) ANTES do primeiro deploy, porque o `docker-c
    `https://garimpo.seudominio.com` no navegador — deve carregar a tela de login,
    com certificado válido (cadeado verde).
 
-### 9. Google OAuth para o novo domínio
+### 9. Portainer (painel de containers, Fase 5)
+
+1. Criar **outro** registro DNS **A** — um subdomínio **separado** do app (ex.:
+   `painel.seudominio.com`) apontando para o mesmo IP do VPS. Nunca reusar o domínio do
+   app: o Caddyfile já espera dois hosts distintos (`APP_DOMAIN` e `PORTAINER_DOMAIN`).
+2. Preencher `PORTAINER_DOMAIN` no `.env` do VPS (passo 4) com esse subdomínio e rodar
+   `docker compose up -d` de novo (ou disparar o workflow) para o Caddy e o Portainer
+   subirem com o domínio certo.
+3. Assim que o DNS propagar, abrir `https://painel.seudominio.com` — a PRIMEIRA coisa que
+   o Portainer pede é criar a senha do usuário `admin`. **Faça isso na hora**: por padrão
+   ele trava esse cadastro inicial depois de alguns minutos, e o único jeito de destravar é
+   reiniciar o container (`docker compose restart portainer`), apagando qualquer conta
+   parcialmente criada.
+4. Na tela seguinte, escolher "Get Started" / ambiente local (ele já enxerga o Docker do
+   host via `docker.sock`) — nenhuma configuração extra de cluster é necessária, é um VPS
+   único.
+5. **Restringir o acesso** (recomendado, não obrigatório): como esse painel controla
+   TODOS os containers da máquina (não só o Garimpo, se houver outros apps), considere uma
+   camada a mais além da senha — Cloudflare Access (se já usa Cloudflare na frente) ou uma
+   allowlist de IP no Caddyfile (`@allowed_ips remote_ip <seu-ip>` + `abort` fora dela) são
+   as opções mais simples.
+
+### 10. Google OAuth para o novo domínio
 
 No [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services →
 Credentials** → o OAuth Client ID já usado pelo app → **Authorized redirect URIs → Add URI**:
@@ -562,7 +584,7 @@ https://garimpo.seudominio.com/api/auth/google/callback
 Não remover a URI antiga (da Vercel) ainda — só depois que o cutover (Fase 6) terminar e o
 domínio antigo for descomissionado.
 
-### 10. Validar antes do cutover
+### 11. Validar antes do cutover
 
 Com o domínio no ar, ainda em PARALELO com a produção na Vercel (o cron continua batendo só
 na Vercel — não rode `workflow_dispatch` do `refresh.yml` contra os dois ao mesmo tempo):
@@ -581,7 +603,7 @@ na Vercel — não rode `workflow_dispatch` do `refresh.yml` contra os dois ao m
   5433:5432 postgres:17-alpine` + `gunzip -c arquivo.sql.gz | psql -h localhost -p 5433 -U
   postgres`). Backup não testado não é backup.
 
-### 11. Fase 6 — cutover (janela de ~30 min, banco de produção)
+### 12. Fase 6 — cutover (janela de ~30 min, banco de produção)
 
 Só depois de tudo acima validado. Nesta ordem, sem pular etapas:
 

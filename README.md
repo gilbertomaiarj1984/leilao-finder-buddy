@@ -66,6 +66,17 @@ Monitoramento: `HEALTHCHECKS_PING_URL` (opcional, `.github/workflows/refresh.yml
 de sucesso no fim da execução, `/fail` se qualquer chamada do cron falhar. Sem esse secret,
 os pings viram no-op.
 
+## Painel de containers (Portainer)
+
+Serviço `portainer` no compose, exposto pelo Caddy num subdomínio **próprio e separado**
+do app (`PORTAINER_DOMAIN`, ver `.env.example`) — lista visual dos containers/imagens,
+logs e status de cada deploy. ⚠️ Tem acesso ao socket do Docker do **host inteiro**: em
+um VPS com mais de um app, ele enxerga e controla todos, não só o Garimpo. Definir a
+senha do admin **imediatamente** no primeiro acesso (o Portainer expira o cadastro
+inicial em alguns minutos) e considerar restringir o acesso ao subdomínio (Cloudflare
+Access, allowlist de IP, ou VPN) — ver o checklist manual em
+`docs/economia-fase-2-vps-unico.md`.
+
 ## Banco de dados
 
 Postgres próprio (sem serviço gerenciado). Schema consolidado em
