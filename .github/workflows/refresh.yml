@@ -1,11 +1,12 @@
 name: Atualização periódica dos lotes
 
-# Roda 4x por dia (UTC 03/09/15/21 = BRT 00/06/12/18). Também pode ser disparado
+# Roda 2x por dia (UTC 03:10/17:00 = BRT 00:10/14:00) — reduzido de 4x/dia para
+# ficar dentro da cota de Fluid Active CPU do Vercel. Também pode ser disparado
 # manualmente na aba Actions ("Run workflow"). O "Atualizar tudo" no app continua
 # existindo para forçar na hora.
 on:
   schedule:
-    - cron: "0 3,9,15,21 * * *"
+    - cron: "10 3,17 * * *"
   workflow_dispatch: {}
 
 concurrency:

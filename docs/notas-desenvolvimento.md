@@ -668,7 +668,7 @@ segue existindo, usado pela home ("Atualizar tudo").
   load há **migração única** localStorage → servidor. (Antes ficava só no localStorage → sumia
   ao trocar de navegador/dispositivo ou usar a URL de preview, de origem diferente.)
 
-## Atualização em background (cron 4×/dia)
+## Atualização em background (cron 2×/dia, v0.60.1)
 
 - **Endpoint** `/api/cron` (tratado direto em `src/server.ts`, FORA das server functions → sem
   Supabase/CSRF), protegido pelo segredo **`CRON_TOKEN`** (header `x-cron-token`; o fallback
@@ -677,10 +677,18 @@ segue existindo, usado pela home ("Atualizar tudo").
   (identificação IA), `aieval` (avaliação IA), `market` (Discogs), `condition` (estado
   pré-leilão), `sales` (captura de vendas), `reident` (reidentifica/padroniza o histórico de
   vendas pela IA), `salesdebug`/`catdebug` (diagnósticos).
-- **GitHub Actions** `.github/workflows/refresh.yml`: `cron: "0 3,9,15,21 * * *"` (UTC = BRT
-  00/06/12/18h) + `workflow_dispatch`. Varre em blocos até `nextPage:null`, enriquece por
-  `offset` até `done:true`, depois laços curtos de `aiident` → `aieval` → `market`.
-- O **"Atualizar tudo"** manual na UI continua (chunk + enrich por cursor).
+- **GitHub Actions** `.github/workflows/refresh.yml`: `cron: "10 3,17 * * *"` (UTC = BRT
+  00:10/14:00) + `workflow_dispatch`. Reduzido de 4x/dia (v0.60.0 e antes) para 2x/dia em
+  v0.60.1 — a Fluid Active CPU da Vercel estava estourando a cota do plano Hobby (ver
+  `docs/economia-migracao.md`). Varre em blocos até `nextPage:null`, enriquece por `offset`
+  até `done:true`, depois laços curtos de `aiident` → `aieval` → `market`.
+- O **"Atualizar tudo"** manual na UI continua (chunk + enrich por cursor), sem mudança.
+- **Pendência conhecida (não corrigida nesta versão):** os steps `aieval`, `aiident` e `market`
+  ainda baixam `lot_ai`/`lot_ident`/`lot_market`/o snapshot inteiro de `lots` a cada chamada do
+  laço (mesmo padrão que causava o egress do `reident`, corrigido só parcialmente na Fase 1 —
+  ver `docs/economia-fase-1-egress-e-cpu.md`, seção "Verificar também"). Como essas tabelas só
+  crescem, isso deve seguir empurrando o egress do Supabase para cima; ainda não tem RPC de
+  anti-join equivalente à do `reident`.
 
 ## IA (avaliação, identificação, modo)
 
@@ -1243,6 +1251,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.59.0      | Aviso de "lance superado": toast (`sonner`) quando um lote com lance vira `status === "Coberto"` (`bidIsCovered`, `vinyl-parse.ts`), disparado pelo hook `useBidCoveredAlerts` (`bid-alerts.ts`) sobre o `bids.data` das queries `["vinyl-my-bids"]` já existentes em `index.tsx`/`analise.tsx`. Só funciona com o app aberto (nenhuma mudança em cron/DB) — a transição é detectada comparando com um snapshot do último `status` visto por lote, persistido em `localStorage` via `loadAccum`/`saveAccum` (mesmo helper de `watched-accum.ts`) |
 | v0.59.1      | Fix: lote ficava marcado "vigiando" na ferramenta mesmo depois de desvigiado direto no site do LeilõesBR (fora do app), até sair da janela de dias do acumulador. `mergeWatchedAccum` (`watched-accum.ts`) agora remove também um item ausente do `fresh` quando o leilão ainda não terminou (`auctionFinished`), não só quando o dia sai da janela |
 | v0.60.0      | Botão "refazer consulta" no painel de detalhes da nota da IA (hover no selo, cards e Análise): reavalia o lote na hora, ignorando o cache por título (`reevaluateLot` server fn → `evalLotsSync` direto + `upsertLotAi`), e atualiza o cache `["lot-ai"]` local com o resultado — ver seção "IA (avaliação, identificação, modo)" |
+| v0.60.1      | Cron 4x/dia → 2x/dia (`refresh.yml`, `0/3/9/15/21` → `10 3,17 * * *`) — Fluid Active CPU da Vercel estourou a cota do Hobby; egress do Supabase também segue acima da cota (ver `docs/economia-migracao.md`) |
 
 ## Pendências
 
