@@ -4,6 +4,7 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "./types";
 import { createSupabaseFetch } from "./api-fetch";
+import { createDbQueryClient } from "@/lib/db-query.server";
 
 function createSupabaseAdminClient() {
   const SUPABASE_URL = process.env["SUPABASE_URL"];
@@ -31,7 +32,35 @@ function createSupabaseAdminClient() {
   });
 }
 
-let _supabaseAdmin: ReturnType<typeof createSupabaseAdminClient> | undefined;
+// Fase 1 da migração para VPS (docs/economia-fase-2-vps-unico.md): com
+// DATABASE_URL definida, `.from`/`.rpc` passam a falar direto com o Postgres via
+// o shim `postgres.js` (src/lib/db-query.server.ts). `.storage` continua no
+// Supabase até a Fase 3 — sem DATABASE_URL, cai de volta no cliente Supabase
+// original. Nenhum import muda em lugar nenhum; reverter é apagar a env var.
+function createDbBackedAdminClient() {
+  const db = createDbQueryClient();
+  let _storageClient: ReturnType<typeof createSupabaseAdminClient> | undefined;
+  function storageClient() {
+    if (!_storageClient) _storageClient = createSupabaseAdminClient();
+    return _storageClient;
+  }
+  return {
+    from: db.from,
+    rpc: db.rpc,
+    get storage() {
+      return storageClient().storage;
+    },
+  };
+}
+
+type AdminClient =
+  ReturnType<typeof createSupabaseAdminClient> | ReturnType<typeof createDbBackedAdminClient>;
+
+let _supabaseAdmin: AdminClient | undefined;
+
+function createAdminClient(): AdminClient {
+  return process.env["DATABASE_URL"] ? createDbBackedAdminClient() : createSupabaseAdminClient();
+}
 
 // Server-side Supabase client with service role - bypasses RLS
 // SECURITY: Only use this for trusted server-side operations, never expose to client code
@@ -39,7 +68,7 @@ let _supabaseAdmin: ReturnType<typeof createSupabaseAdminClient> | undefined;
 // Top-level import is safe only in other .server.ts modules - route files and *.functions.ts ship to the client bundle.
 export const supabaseAdmin = new Proxy({} as ReturnType<typeof createSupabaseAdminClient>, {
   get(_, prop, receiver) {
-    if (!_supabaseAdmin) _supabaseAdmin = createSupabaseAdminClient();
+    if (!_supabaseAdmin) _supabaseAdmin = createAdminClient();
     return Reflect.get(_supabaseAdmin, prop, receiver);
   },
 });
