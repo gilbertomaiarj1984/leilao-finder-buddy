@@ -119,8 +119,13 @@ const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo";
 
+// PUBLIC_BASE_URL (Fase 4 da migração para VPS) tem prioridade sobre `url.origin`: atrás do
+// Caddy, a conexão do Node com o container é HTTP puro (TLS só na borda), e o Nitro/h3 não
+// confia em X-Forwarded-Proto por padrão — `url.origin` vinha como "http://" mesmo com o site
+// servido em HTTPS, e o Google recusava o redirect_uri por mismatch de protocolo.
 function redirectUri(origin: string): string {
-  return `${origin}/api/auth/google/callback`;
+  const base = process.env["PUBLIC_BASE_URL"] || origin;
+  return `${base.replace(/\/$/, "")}/api/auth/google/callback`;
 }
 
 async function startGoogleAuth(request: Request): Promise<Response> {
