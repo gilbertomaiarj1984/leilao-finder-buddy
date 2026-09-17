@@ -30,6 +30,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # O driver `docker` padrão do runner hospedado não suporta `cache-to: type=gha`
+      # ("Cache export is not supported for the docker driver") — precisa do driver
+      # `docker-container`, que este passo configura.
+      - name: Configurar Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Login no GHCR
         uses: docker/login-action@v3
         with:
