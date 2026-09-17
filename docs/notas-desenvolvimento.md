@@ -318,6 +318,19 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
     conta para de listar o lote assim que o leilão acaba, mesmo ainda sendo "hoje"). Como `MyBid`
     (lances) não tem campo `time`, essa remoção por ausência só se aplica a vigiados
     (`WatchedLot`), preservando o comportamento de lances.
+    ⚠️ **Fix v0.60.9 — lote com lance aparecia só como "Vigiando" (sem borda/status de lance)**:
+    a poda por janela de dias em `mergeWatchedAccum` (`upcomingDayKeys(WATCH_WINDOW_DAYS)`, "hoje
+    + próximos 4 dias") tratava `date` sempre como a data do LEILÃO — verdade para `WatchedLot`,
+    mas não para `MyBid`: em `MyBid`, `date` (`leiloesbr-bids.server.ts#parseBidChunk`) é a data
+    em que o LANCE foi dado (tipicamente hoje ou um dia antes do pregão), não a do leilão. Assim
+    que essa data caía fora da janela "só futuro" — ou seja, em qualquer lance dado num dia que
+    não fosse hoje —, o item era removido do acumulador na própria chamada de merge (antes de
+    chegar a `bids.data`), e o `LotCard` nunca recebia `bidStatus`/`myBid`, caindo no card
+    "só vigiado". Fix: `mergeWatchedAccum` agora poda vigiados (`item.time !== undefined`) pela
+    janela de dias FUTUROS (`upcomingDayKeys`, como antes) e lances (`item.time === undefined`)
+    por uma janela de dias PASSADOS a partir da data do lance (`recentDayKeys`,
+    `BID_RETENTION_DAYS` = 14, margem generosa entre dar o lance e o leilão fechar).
+    `recentDayKeys` é o espelho de `upcomingDayKeys` em `vinyl-parse.ts`.
 - **Ícone roxo "já tenho na Coleção"** (`LotCard`, só na **home** `index.tsx`): disco `Disc3`
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
@@ -1283,6 +1296,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.60.6      | Provedor e SO fechados no plano de migração (só documentação): HostGator VPS Cloud OCI NVMe 4 em São Paulo (2 vCPU / 4 GB / 100 GB, 13 ms) com "SO Simples" Ubuntu LTS — os 4 GB removem o risco de OOM no `sharp` e os 2 vCPU tiram a disputa do cron com o Postgres |
 | v0.60.7      | Catálogo de Aplicações do provedor avaliado no plano (só documentação): "Docker" é atalho aceitável, **"Supabase" self-hosted é descartado** (12+ containers, ~3-4 GB, não cabe nos 4 GB junto com o app — e Realtime/Edge Functions nem são usados), K3S descartado |
 | v0.60.8      | Plano de migração passa a prever multi-app no VPS (só documentação): rede Docker externa compartilhada com o Caddy roteando por domínio, um Postgres só com bancos separados, `mem_limit` por serviço e orçamento de memória (~800 MB usados de 4 GB) — evita refatorar o compose depois |
+| v0.60.9      | Fix: lote com lance dado aparecia na tela só como "Vigiando" (sem borda/status de lance). `mergeWatchedAccum` (`watched-accum.ts`) podava TODO item pela janela "hoje + próximos N dias" (`upcomingDayKeys`), mas em `MyBid` (lances) o campo `date` é o dia em que o LANCE foi dado (passado), não o do leilão — o item saía do acumulador assim que era mesclado, antes de chegar a `bids.data`/`LotCard`. Lances agora podam por uma janela de dias PASSADOS a partir da data do lance (`recentDayKeys`, novo espelho de `upcomingDayKeys` em `vinyl-parse.ts`; `BID_RETENTION_DAYS` = 14); vigiados continuam podando pela janela futura, sem mudança de comportamento |
 
 ## Pendências
 

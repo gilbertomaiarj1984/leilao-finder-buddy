@@ -587,6 +587,16 @@ export function upcomingDayKeys(count = 3, now = new Date()): string[] {
   });
 }
 
+/** Day keys for today + the previous (count - 1) days, in São Paulo time. */
+export function recentDayKeys(count = 3, now = new Date()): string[] {
+  const sp = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(sp);
+    d.setDate(sp.getDate() - i);
+    return toDayKey(d);
+  });
+}
+
 export function formatDayLabel(dayKey: string, dayKeys: string[]): string {
   const index = dayKeys.indexOf(dayKey);
   const [y, m, d] = dayKey.split("-");

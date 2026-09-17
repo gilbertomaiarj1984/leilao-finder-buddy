@@ -9,11 +9,19 @@
 // rota apagar o acumulado da outra ao navegar entre elas — foi exatamente essa divergência
 // (fix original só em `index.tsx`) que fazia os vigiados "sumirem depois de um tempo" mesmo
 // com o acumulador certo já existindo ali.
-import { auctionFinished, upcomingDayKeys } from "./vinyl-parse";
+import { auctionFinished, recentDayKeys, upcomingDayKeys } from "./vinyl-parse";
 
 // Espelha o `WINDOW_DAYS` do servidor (`leiloesbr-scrape.server.ts`) — janela de poda do
-// acumulador (um item só sai quando o dia dele já saiu dessa janela, ou é removido explicitamente).
+// acumulador de vigiados (um item só sai quando o dia do LEILÃO já saiu dessa janela, ou é
+// removido explicitamente). Lances usam `BID_RETENTION_DAYS` abaixo — ver comentário em
+// `mergeWatchedAccum`.
 export const WATCH_WINDOW_DAYS = 5;
+
+// Para lances (`MyBid`), `date` é o dia em que o lance foi DADO (normalmente hoje ou um pouco
+// antes do pregão), não o dia do leilão — ao contrário de `WatchedLot`. Por isso a poda de
+// lances olha para os últimos N dias (passado), não para os próximos (`upcomingDayKeys`), com
+// margem suficiente para cobrir o intervalo entre dar o lance e o leilão fechar.
+export const BID_RETENTION_DAYS = 14;
 export const WATCHED_ACCUM_STORAGE_KEY = "leilao-finder:watched-accum:v1";
 export const BIDS_ACCUM_STORAGE_KEY = "leilao-finder:bids-accum:v1";
 
@@ -59,19 +67,29 @@ export function mergeWatchedAccum<T extends { id: string; date: string; time?: s
 ): T[] {
   const freshIds = new Set(fresh.map((item) => item.id));
   for (const item of fresh) acc.set(item.id, item);
-  const validDays = new Set(upcomingDayKeys(WATCH_WINDOW_DAYS));
+  const validUpcomingDays = new Set(upcomingDayKeys(WATCH_WINDOW_DAYS));
+  const validBidDays = new Set(recentDayKeys(BID_RETENTION_DAYS));
   for (const [id, item] of acc) {
     const dayKey = dateToKey(item.date);
-    if (!validDays.has(dayKey)) {
-      acc.delete(id);
-      continue;
-    }
-    // Um item com `time` (vigiados — lances não têm) ausente do fresh só é removido aqui se o
-    // leilão dele NÃO estiver terminado: se ainda está rolando e sumiu do fresh, a vigia foi
-    // removida de fato (ex.: pelo próprio usuário no site do LeilõesBR) e o card deve sumir
-    // também aqui, sem esperar a poda pela janela de dias — do contrário o card ficava "preso"
-    // como vigiado até `WATCH_WINDOW_DAYS` dias depois de já ter sido desmarcado no site.
-    if (item.time !== undefined && !freshIds.has(id) && !auctionFinished(dayKey, item.time)) {
+    // `item.time` só existe em `WatchedLot` — ali `date` é o dia do LEILÃO, então a poda olha
+    // para frente (`upcomingDayKeys`). Em `MyBid` (sem `time`), `date` é o dia em que o lance
+    // foi DADO — normalmente hoje ou um pouco antes do pregão —, então a poda olha para trás
+    // (`recentDayKeys`); podar pela janela "só futuro" apagava o lance do acumulador assim que
+    // ele era mesclado, e o card nunca chegava a mostrar "Meu lance".
+    if (item.time !== undefined) {
+      if (!validUpcomingDays.has(dayKey)) {
+        acc.delete(id);
+        continue;
+      }
+      // Ausente do fresh só remove aqui se o leilão NÃO estiver terminado: se ainda está
+      // rolando e sumiu do fresh, a vigia foi removida de fato (ex.: pelo próprio usuário no
+      // site do LeilõesBR) e o card deve sumir também aqui, sem esperar a poda pela janela de
+      // dias — do contrário o card ficava "preso" como vigiado até `WATCH_WINDOW_DAYS` dias
+      // depois de já ter sido desmarcado no site.
+      if (!freshIds.has(id) && !auctionFinished(dayKey, item.time)) {
+        acc.delete(id);
+      }
+    } else if (!validBidDays.has(dayKey)) {
       acc.delete(id);
     }
   }
