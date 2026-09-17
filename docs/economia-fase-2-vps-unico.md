@@ -401,7 +401,7 @@ clicar/rodar, e como confirmar que deu certo antes de ir pro próximo.
 - [x] 8. DNS + domínio do app — usando `sslip.io` (sem domínio próprio ainda): `143-95-214-240.sslip.io`, TLS automático do Caddy funcionou de primeira
 - [x] 9. Portainer (DNS próprio + primeiro acesso) — `painel-143-95-214-240.sslip.io`; setup token pego em `docker compose logs portainer`; Edge Compute pulado (não precisa, Docker é local)
 - [x] 10. Google OAuth para o novo domínio — precisou de um fix de código: atrás do Caddy o Nitro/h3 não confia em `X-Forwarded-Proto`, então `redirect_uri` saía como `http://` e o Google recusava mesmo com a URI certa cadastrada; `auth.server.ts` passou a priorizar `PUBLIC_BASE_URL` sobre `url.origin` (v0.68.2)
-- [x] 11. Validar antes do cutover — login Google funcionando confirmado; banco vazio é o esperado (Postgres deste ambiente é descartável, dados reais só entram no dump/restore da Fase 6). Falta ainda: testar upload de foto na Coleção e conferir um ciclo do `backup` (`docker compose logs backup`)
+- [x] 11. Validar antes do cutover — login Google, sessão LeilõesBR (vigias/lances ao vivo), upload de foto na Coleção (disco + Caddy servindo) e um ciclo completo do `backup` (dump → upload pro R2) confirmados funcionando. Achado nesta passada: o Postgres novo nunca recebe o schema sozinho — corrigido (`docker-entrypoint-initdb.d` + `supabase/setup.sql` copiado pelo `deploy.yml`, v0.68.4); banco desta instância aplicado manualmente uma vez, já que o volume tinha nascido antes do fix. Falta só o teste de restauração do backup ("backup não testado não é backup")
 - [ ] 12. Fase 6 — cutover (banco de produção, ponto de não-retorno no passo 8 dele)
 
 ### 1. Contratar e preparar o VPS
@@ -601,6 +601,18 @@ pasta de deploy (`VPS_DEPLOY_PATH`) ANTES do primeiro deploy, porque o `docker-c
 4. **Ainda sem domínio/DNS apontado**, testar direto pelo IP não vai funcionar (o Caddy só
    emite certificado TLS para o domínio configurado em `APP_DOMAIN`) — é normal, segue pro
    próximo passo.
+5. O `deploy.yml` copia `supabase/setup.sql` pro VPS e o Postgres aplica sozinho **só quando
+   o volume de dados nasce vazio** (mecanismo `docker-entrypoint-initdb.d` da imagem oficial).
+   Se o volume já existia de uma tentativa anterior (por exemplo, você rodou `docker compose
+   up` antes deste PR existir), aplique à mão uma vez — é seguro rodar de novo, o script é
+   idempotente (`IF NOT EXISTS`):
+   ```sh
+   docker compose exec -T postgres psql -U garimpo -d garimpo < supabase-init/01-setup.sql
+   ```
+   Confirma com `docker compose exec postgres psql -U garimpo -d garimpo -c '\dt'` — espera-se
+   12 tabelas (`lots`, `collection_items`, `purchases`, etc.). Os erros `role "anon"/
+   "service_role" does not exist` e `relation "storage.buckets" does not exist` são
+   esperados e inofensivos — resíduo do tempo do Supabase, sem efeito no Postgres próprio.
 
 ### 8. DNS + domínio
 
