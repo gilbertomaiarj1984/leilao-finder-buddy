@@ -35,8 +35,16 @@ function titleHash(title: string): string {
   return (h >>> 0).toString(36);
 }
 
+// Cache curto em memória: `getAllLotCondition` é chamada a cada iteração do laço `condition`
+// do cron (até 40x/execução) — sempre a tabela INTEIRA. Invalidado a cada escrita
+// (`upsertLotCondition`). Mesmo padrão de `lot-ai.server.ts`/`lot-ident.server.ts` (ver
+// docs/economia-fase-1-egress-e-cpu.md).
+let allCache: { at: number; rows: LotConditionRow[] } | null = null;
+const ALL_TTL_MS = 30_000;
+
 /** Lê todo o cache de estado (single-user; paginado). Best-effort. */
 export async function getAllLotCondition(): Promise<LotConditionRow[]> {
+  if (allCache && Date.now() - allCache.at < ALL_TTL_MS) return allCache.rows;
   const rows: LotConditionRow[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabaseAdmin
@@ -48,6 +56,7 @@ export async function getAllLotCondition(): Promise<LotConditionRow[]> {
     rows.push(...batch);
     if (batch.length < PAGE) break;
   }
+  allCache = { at: Date.now(), rows };
   return rows;
 }
 
@@ -61,6 +70,7 @@ export async function upsertLotCondition(rows: LotConditionRow[]): Promise<numbe
     console.error("[lot-condition] falha ao gravar estado", error);
     throw new Error(`Não foi possível gravar o estado: ${error.message}`);
   }
+  allCache = null;
   return payload.length;
 }
 

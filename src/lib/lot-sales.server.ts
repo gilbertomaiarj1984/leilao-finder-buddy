@@ -197,8 +197,19 @@ type SeenAuctionRow = {
   uf: string | null;
 };
 
+// Cache curto em memória: `readSeenAuctions` é chamada a cada iteração do laço `sales` do
+// cron (até 40x/execução) e `seen_auctions` NUNCA é podada (só cresce). Sem invalidação
+// explícita por escrita — quem grava ali é `recordAuctions` (`leiloesbr-auctions.server.ts`,
+// módulo separado); tolerável, porque um leilão novo/atualizado aparecer com até
+// `SEEN_TTL_MS` de atraso na captura de vendas não muda o resultado (a próxima chamada do
+// laço, ou a próxima execução do cron, pega). Mesmo padrão de `lot-ai.server.ts` (ver
+// docs/economia-fase-1-egress-e-cpu.md).
+let seenCache: { at: number; rows: SeenAuctionRow[] } | null = null;
+const SEEN_TTL_MS = 30_000;
+
 /** Lê os leilões conhecidos (durável; nunca podado) com o que a captura precisa. */
 async function readSeenAuctions(): Promise<SeenAuctionRow[]> {
+  if (seenCache && Date.now() - seenCache.at < SEEN_TTL_MS) return seenCache.rows;
   const out: SeenAuctionRow[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabaseAdmin
@@ -210,6 +221,7 @@ async function readSeenAuctions(): Promise<SeenAuctionRow[]> {
     out.push(...batch);
     if (batch.length < PAGE) break;
   }
+  seenCache = { at: Date.now(), rows: out };
   return out;
 }
 

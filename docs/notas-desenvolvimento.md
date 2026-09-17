@@ -700,6 +700,12 @@ segue existindo, usado pela home ("Atualizar tudo").
   reprocessar os mesmos lotes.
   Mitigação complementar: laços do `refresh.yml` encolhidos (`aieval`/`aiident` 10→5,
   `market` 30→12).
+- **v0.60.3:** mesma correção estendida a `condition` (`enrichConditions`, lia
+  `lot_condition` inteira a cada chamada) e `sales` (`captureFinishedSales`, lia
+  `seen_auctions` inteira — tabela **nunca podada**, cresce para sempre igual `lot_sales`
+  antes do fix do `reident`). Cache TTL 30s em `getAllLotCondition` (invalidado por
+  `upsertLotCondition`) e em `readSeenAuctions` (sem invalidação por escrita — quem grava
+  `seen_auctions` é outro módulo, `recordAuctions`; tolerável, best-effort).
 
 ## IA (avaliação, identificação, modo)
 
@@ -1264,6 +1270,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.60.0      | Botão "refazer consulta" no painel de detalhes da nota da IA (hover no selo, cards e Análise): reavalia o lote na hora, ignorando o cache por título (`reevaluateLot` server fn → `evalLotsSync` direto + `upsertLotAi`), e atualiza o cache `["lot-ai"]` local com o resultado — ver seção "IA (avaliação, identificação, modo)" |
 | v0.60.1      | Cron 4x/dia → 2x/dia (`refresh.yml`, `0/3/9/15/21` → `10 3,17 * * *`) — Fluid Active CPU da Vercel estourou a cota do Hobby; egress do Supabase também segue acima da cota (ver `docs/economia-migracao.md`) |
 | v0.60.2      | `aieval`/`aiident`/`market` liam `lot_ai`/`lot_ident`/`lots` inteiros a cada chamada do laço (mesmo padrão de egress do `reident`) — cache curto (TTL 30s, invalidado por escrita) em `scrapeVinylLots`/`getAllLotAi`/`getAllLotIdent` + laços do `refresh.yml` encolhidos (aieval/aiident 10→5, market 30→12) |
+| v0.60.3      | Mesmo fix estendido a `condition`/`sales` — `getAllLotCondition`/`readSeenAuctions` também liam tabela inteira a cada chamada do laço (`seen_auctions` nunca é podada, cresce para sempre); cache TTL 30s nas duas |
 
 ## Pendências
 
