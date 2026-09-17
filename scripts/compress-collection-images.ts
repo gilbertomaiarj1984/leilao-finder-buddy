@@ -1,11 +1,11 @@
 // Backfill: recomprime (redimensiona + recodifica em WEBP) as fotos da coleção já enviadas antes
-// da compressão automática existir, para reduzir o egress do Supabase Storage.
+// da compressão automática existir.
 //
-// Roda uma vez, manualmente, DE UM AMBIENTE COM SAÍDA DE REDE PARA O SUPABASE (não funciona em
-// sandboxes com allowlist de rede restrita — nesse caso use o step `compressimages` do
-// `/api/cron`, que roda na Vercel): `bun run compress-images`
-// Precisa de SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no ambiente (o `.env` da raiz já serve,
-// o Bun carrega automaticamente).
+// Roda uma vez, manualmente, DE UM AMBIENTE COM SAÍDA DE REDE PRO DOMÍNIO PÚBLICO DO APP
+// (baixa cada foto por HTTP de `PUBLIC_BASE_URL` antes de recomprimir) — não funciona em
+// sandboxes com allowlist de rede restrita; nesse caso use o step `compressimages` do
+// `/api/cron`. Precisa de `DATABASE_URL` no ambiente (o `.env` da raiz já serve, o Bun
+// carrega automaticamente).
 //
 // Compartilha a lógica com o step do cron (`listUncompressedCollectionImages` /
 // `backfillCompressCollectionImage` em `collection.server.ts`). Idempotente: só processa
