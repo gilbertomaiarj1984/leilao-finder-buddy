@@ -18,7 +18,16 @@ const MAX_PAGES = 150; // teto de páginas por varredura (janela maior = mais p�
 // Cache/merge em memória: GARANTE a lista mesmo que o banco esteja indisponível
 // (ex.: migração ainda não aplicada). O banco é usado como camada durável quando
 // disponível — a UI nunca fica vazia por causa do banco.
-let memCache: { at: number; days: string[]; lots: VinylLot[] } | null = null;
+let memCache: { at: number; days: string[]; lots: VinylLot[]; updatedAt: string | null } | null =
+  null;
+
+// TTL curto para pular a releitura da tabela `lots` (janela inteira) quando a mesma
+// instância de function atende chamadas em sequência rápida — é o caso do laço do cron
+// (`aieval`/`aiident`/`market` chamam `scrapeVinylLots(false)` a cada iteração) e de
+// navegação normal no app. Reduz egress do Supabase / Active CPU da Vercel sem mudar o
+// resultado visível (a mesma janela não muda de um segundo para o outro). Best-effort: se
+// a instância for fria (memCache vazio), cai no caminho normal de sempre.
+const SNAPSHOT_TTL_MS = 30_000;
 
 function listUrl(page: number): string {
   const params = new URLSearchParams({
@@ -449,12 +458,23 @@ export async function scrapeVinylLots(
   // app funcionar igual em produção (onde a varredura de ~150 páginas excede o
   // tempo de execução do servidor e a requisição era abortada, deixando a tela vazia).
   if (!force) {
+    // Cache "quente": mesma instância, mesma janela, dentro do TTL — devolve sem tocar
+    // o banco (pula a leitura paginada de `lots` inteira + a consulta de `updatedAt`).
+    if (
+      memCache &&
+      Date.now() - memCache.at < SNAPSHOT_TTL_MS &&
+      memCache.days.length === days.length &&
+      memCache.days.every((d, i) => d === days[i])
+    ) {
+      return { days: memCache.days, lots: memCache.lots, updatedAt: memCache.updatedAt };
+    }
+
     const lots = await mergeSources(windowStart, windowEnd, []);
     if (lots.length) {
       const at = memCache?.at ?? Date.now();
-      memCache = { at, days, lots };
       const updatedAt =
         (await latestUpdatedAt(windowStart, windowEnd)) ?? new Date(at).toISOString();
+      memCache = { at, days, lots, updatedAt };
       return { days, lots, updatedAt };
     }
   }
@@ -472,7 +492,6 @@ export async function scrapeVinylLots(
 
   const at = Date.now();
   const lots = await mergeSources(windowStart, windowEnd, fresh);
-  memCache = { at, days, lots };
 
   if (fresh.length) {
     try {
@@ -483,6 +502,7 @@ export async function scrapeVinylLots(
     }
   }
   const updatedAt = (await latestUpdatedAt(windowStart, windowEnd)) ?? new Date(at).toISOString();
+  memCache = { at, days, lots, updatedAt };
   return { days, lots, updatedAt };
 }
 
@@ -505,7 +525,6 @@ export async function refreshVinylDay(
 
   const at = fresh.length ? Date.now() : (memCache?.at ?? Date.now());
   const lots = await mergeSources(windowStart, windowEnd, fresh);
-  memCache = { at, days, lots };
 
   if (fresh.length) {
     try {
@@ -515,6 +534,7 @@ export async function refreshVinylDay(
     }
   }
   const updatedAt = (await latestUpdatedAt(windowStart, windowEnd)) ?? new Date(at).toISOString();
+  memCache = { at, days, lots, updatedAt };
   return { days, lots, updatedAt };
 }
 

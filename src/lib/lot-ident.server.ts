@@ -17,8 +17,16 @@ export type LotIdentRow = {
 
 const PAGE = 1000;
 
+// Cache curto em memória: `getAllLotIdent` é chamada a cada iteração dos laços do cron
+// (`aiident`/`market`) — sempre a tabela INTEIRA. Invalidado a cada escrita
+// (`upsertLotIdent`). Reduz egress do Supabase / Active CPU da Vercel (ver
+// docs/economia-fase-1-egress-e-cpu.md).
+let allCache: { at: number; rows: LotIdentRow[] } | null = null;
+const ALL_TTL_MS = 30_000;
+
 /** Lê todas as identificações (single-user; poucas centenas de linhas). Best-effort. */
 export async function getAllLotIdent(): Promise<LotIdentRow[]> {
+  if (allCache && Date.now() - allCache.at < ALL_TTL_MS) return allCache.rows;
   const rows: LotIdentRow[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabaseAdmin
@@ -40,6 +48,7 @@ export async function getAllLotIdent(): Promise<LotIdentRow[]> {
     }
     if (batch.length < PAGE) break;
   }
+  allCache = { at: Date.now(), rows };
   return rows;
 }
 
@@ -62,5 +71,6 @@ export async function upsertLotIdent(rows: LotIdentRow[]): Promise<number> {
     console.error("[lot-ident] falha ao gravar identificações", error);
     throw new Error(`Não foi possível gravar as identificações: ${error.message}`);
   }
+  allCache = null;
   return payload.length;
 }

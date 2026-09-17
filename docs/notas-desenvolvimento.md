@@ -683,12 +683,23 @@ segue existindo, usado pela home ("Atualizar tudo").
   `docs/economia-migracao.md`). Varre em blocos até `nextPage:null`, enriquece por `offset`
   até `done:true`, depois laços curtos de `aiident` → `aieval` → `market`.
 - O **"Atualizar tudo"** manual na UI continua (chunk + enrich por cursor), sem mudança.
-- **Pendência conhecida (não corrigida nesta versão):** os steps `aieval`, `aiident` e `market`
-  ainda baixam `lot_ai`/`lot_ident`/`lot_market`/o snapshot inteiro de `lots` a cada chamada do
-  laço (mesmo padrão que causava o egress do `reident`, corrigido só parcialmente na Fase 1 —
-  ver `docs/economia-fase-1-egress-e-cpu.md`, seção "Verificar também"). Como essas tabelas só
-  crescem, isso deve seguir empurrando o egress do Supabase para cima; ainda não tem RPC de
-  anti-join equivalente à do `reident`.
+- **Corrigido em v0.60.2:** os steps `aieval`, `aiident` e `market` baixavam `lot_ai`/
+  `lot_ident`/o snapshot inteiro de `lots` a cada chamada do laço (mesmo padrão que causava o
+  egress do `reident`, ver `docs/economia-fase-1-egress-e-cpu.md`). Em vez de uma RPC de
+  anti-join (exigiria migration nova), a correção foi um **cache curto em memória (TTL 30s)**
+  na própria instância de function: `scrapeVinylLots(false)` (`leiloesbr-scrape.server.ts`,
+  `memCache`) e `getAllLotAi`/`getAllLotIdent` (`lot-ai.server.ts`/`lot-ident.server.ts`,
+  `allCache`) devolvem o resultado já lido em vez de reconsultar o banco, dentro do TTL.
+  Invalidado a cada escrita (`upsertLotAi`/`updateLotTags`/`upsertLotIdent`) para nunca servir
+  algo mais velho que a última gravação **desta instância**. Como o laço do cron chama esses
+  steps em sequência rápida (sem `sleep`, exceto `aieval`/`aiident` esperando batch), a mesma
+  instância "quente" da Vercel tende a atender várias chamadas seguidas e reaproveitar o cache.
+  Best-effort: se cair numa instância fria a cada chamada, funciona igual a antes (só sem o
+  ganho). `getAllLotMarket` (`lot-market.server.ts`) **não** foi cacheado de propósito — o
+  `market` grava nela a cada iteração e o próximo laço precisa ver essa escrita para não
+  reprocessar os mesmos lotes.
+  Mitigação complementar: laços do `refresh.yml` encolhidos (`aieval`/`aiident` 10→5,
+  `market` 30→12).
 
 ## IA (avaliação, identificação, modo)
 
@@ -1252,6 +1263,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.59.1      | Fix: lote ficava marcado "vigiando" na ferramenta mesmo depois de desvigiado direto no site do LeilõesBR (fora do app), até sair da janela de dias do acumulador. `mergeWatchedAccum` (`watched-accum.ts`) agora remove também um item ausente do `fresh` quando o leilão ainda não terminou (`auctionFinished`), não só quando o dia sai da janela |
 | v0.60.0      | Botão "refazer consulta" no painel de detalhes da nota da IA (hover no selo, cards e Análise): reavalia o lote na hora, ignorando o cache por título (`reevaluateLot` server fn → `evalLotsSync` direto + `upsertLotAi`), e atualiza o cache `["lot-ai"]` local com o resultado — ver seção "IA (avaliação, identificação, modo)" |
 | v0.60.1      | Cron 4x/dia → 2x/dia (`refresh.yml`, `0/3/9/15/21` → `10 3,17 * * *`) — Fluid Active CPU da Vercel estourou a cota do Hobby; egress do Supabase também segue acima da cota (ver `docs/economia-migracao.md`) |
+| v0.60.2      | `aieval`/`aiident`/`market` liam `lot_ai`/`lot_ident`/`lots` inteiros a cada chamada do laço (mesmo padrão de egress do `reident`) — cache curto (TTL 30s, invalidado por escrita) em `scrapeVinylLots`/`getAllLotAi`/`getAllLotIdent` + laços do `refresh.yml` encolhidos (aieval/aiident 10→5, market 30→12) |
 
 ## Pendências
 

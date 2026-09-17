@@ -57,6 +57,16 @@ da Vercel.
 Os outros steps do cron que rodam em laço longo (`market` 30×, `condition` 40×, `sales` 40×) —
 conferir se algum repete o mesmo padrão de "ler tudo para trabalhar pouco".
 
+**Confirmado e mitigado em v0.60.2:** `aieval`, `aiident` e `market` (`src/lib/cron.server.ts`)
+faziam exatamente esse padrão — `scrapeVinylLots(false)` (tabela `lots` inteira da janela) +
+`getAllLotAi`/`getAllLotIdent` (tabelas inteiras) a cada chamada do laço, até 10-30x por
+execução. Diferente do `reident`, não ganhou uma RPC de anti-join (exigiria migration nova);
+em vez disso, um **cache em memória de instância com TTL de 30s**, invalidado a cada escrita
+(`upsertLotAi`/`upsertLotIdent`/`updateLotTags`), evita reconsultar o banco quando a mesma
+function "quente" atende chamadas seguidas do laço. `condition`/`sales` NÃO foram auditados
+ainda (usam catálogo por leilão via HTTP externo, não necessariamente o mesmo padrão de
+tabela inteira) — continuam como pendência.
+
 ## O que fazer
 
 ### 1. Filtrar no banco, não no Node (o grosso do ganho)
