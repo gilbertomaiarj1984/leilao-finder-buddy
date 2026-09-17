@@ -1145,7 +1145,7 @@ ESLint/Prettier.)
   após a migração. Dados migrados via `pg_restore --data-only` (usuários do `auth` **não**
   migrados — login refeito com Google).
 
-## Infra — economia / saída dos free tiers (v0.48.2, NÃO iniciado)
+## Infra — economia / saída dos free tiers (Fase 1 em código; Fase 2 aprovada em v0.60.5)
 
 Planos e telemetria em **`docs/economia-migracao.md`** (índice), fases em
 `docs/economia-fase-1-egress-e-cpu.md` e `docs/economia-fase-2-vps-unico.md`. Resumo: banco
@@ -1165,8 +1165,15 @@ folgado (49/500 MB), mas **egress do Supabase já estourado** e **Active CPU da 
 - **Netlify e Neon descartados.** Netlify: timeout de 10 s mata os steps do cron e o `/api/live`
   (confirmado — o projeto conectado ao repo falha o deploy em todo PR). Neon: o gargalo é egress,
   não storage, e o Neon cobra CU-horas que o mesmo padrão queima igual.
-- **Fase 2 (~US$4/mês, VPS único) só se a Fase 1 não bastar.** Migrar antes leva o desperdício
-  junto. `vite.config.ts:9` já honra `SERVER_PRESET`, então trocar de host é env var, não código.
+- **Fase 2 (VPS único em São Paulo, R$ 37,59/mês) — plano fechado em v0.60.5/6, execução não iniciada.** Migração
+  completa (Postgres + Auth + Storage) em 6 fases reversíveis, numa branch **`vps`** paralela: a
+  `main` fica intocada na Vercel até o cutover, que é a Fase 6. A camada de dados sai por um
+  **shim `postgres.js`** que preserva o nome exportado `supabaseAdmin` e é ligado por
+  `DATABASE_URL` — os 15 arquivos de lógica e toda a UI não mudam, e reverter é apagar uma env
+  var. Auth vira OAuth Google direto (o contrato preservado é `context.claims.email`, então os 60
+  `assertAllowed` ficam intactos); Storage vira volume servido pelo Caddy. `vite.config.ts:9` já
+  honra `SERVER_PRESET`, então trocar de host é env var, não código. Roteiro completo, riscos e
+  verificação por fase em `docs/economia-fase-2-vps-unico.md`.
 - **Órfãos (rebaixado a item secundário):** o schema não tem FK nem `CASCADE`, então
   `lot_ai`/`lot_ident`/`lot_market`/`lot_condition` acumulam órfãos quando `lots` é podada. Com
   49/500 MB não é urgente, mas órfã em `lot_ident` é linha lida à toa pelo anti-join.
@@ -1272,6 +1279,10 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.60.2      | `aieval`/`aiident`/`market` liam `lot_ai`/`lot_ident`/`lots` inteiros a cada chamada do laço (mesmo padrão de egress do `reident`) — cache curto (TTL 30s, invalidado por escrita) em `scrapeVinylLots`/`getAllLotAi`/`getAllLotIdent` + laços do `refresh.yml` encolhidos (aieval/aiident 10→5, market 30→12) |
 | v0.60.3      | Mesmo fix estendido a `condition`/`sales` — `getAllLotCondition`/`readSeenAuctions` também liam tabela inteira a cada chamada do laço (`seen_auctions` nunca é podada, cresce para sempre); cache TTL 30s nas duas |
 | v0.60.4      | Mesmo fix no último caso recorrente: `getAllLotSales({ withOrig: false })` (sem `ids`) — usado por `getVinylSales` (Vinil Analytics) e pela padronização de grafia dentro de `reidentifyAllSales` — ganhou cache TTL 30s, invalidado por `upsertLotSales`. Varredura de padrões concluída: `collection.server.ts`/`wantlist.server.ts` também leem tabela inteira, mas só em página aberta pelo usuário (não em laço do cron) — prioridade baixa, não mexido |
+| v0.60.5      | Plano de migração para VPS único fechado e documentado (só documentação, sem mudança de código): `docs/economia-fase-2-vps-unico.md` reescrito como plano executável em 6 fases — shim `postgres.js` preservando `supabaseAdmin`, OAuth Google direto, Storage em volume, branch `vps` paralela com a `main` intocada até o cutover |
+| v0.60.6      | Provedor e SO fechados no plano de migração (só documentação): HostGator VPS Cloud OCI NVMe 4 em São Paulo (2 vCPU / 4 GB / 100 GB, 13 ms) com "SO Simples" Ubuntu LTS — os 4 GB removem o risco de OOM no `sharp` e os 2 vCPU tiram a disputa do cron com o Postgres |
+| v0.60.7      | Catálogo de Aplicações do provedor avaliado no plano (só documentação): "Docker" é atalho aceitável, **"Supabase" self-hosted é descartado** (12+ containers, ~3-4 GB, não cabe nos 4 GB junto com o app — e Realtime/Edge Functions nem são usados), K3S descartado |
+| v0.60.8      | Plano de migração passa a prever multi-app no VPS (só documentação): rede Docker externa compartilhada com o Caddy roteando por domínio, um Postgres só com bancos separados, `mem_limit` por serviço e orçamento de memória (~800 MB usados de 4 GB) — evita refatorar o compose depois |
 
 ## Pendências
 

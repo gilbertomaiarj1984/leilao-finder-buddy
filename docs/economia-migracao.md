@@ -28,11 +28,14 @@ apertados ao mesmo tempo: egress no Supabase, CPU na Vercel.
 
 | Fase | Documento | Custo | Status |
 |---|---|---|---|
-| 1 | [Cortar egress e Active CPU](./economia-fase-1-egress-e-cpu.md) | US$ 0 | **não iniciada — fazer primeiro** |
-| 2 | [VPS único (escape hatch)](./economia-fase-2-vps-unico.md) | ~US$ 4/mês | só se a Fase 1 não bastar |
+| 1 | [Cortar egress e Active CPU](./economia-fase-1-egress-e-cpu.md) | US$ 0 | **feita em código** (v0.48.4, v0.60.1–v0.60.4) — falta remedir |
+| 2 | [VPS único](./economia-fase-2-vps-unico.md) | R$ 37,59/mês | **plano fechado, execução não iniciada** |
 
-**A Fase 2 não deve ser executada antes da Fase 1.** Migrar com o padrão de leitura atual intacto
-leva o desperdício junto — só troca quem cobra a conta.
+A Fase 1 entrou em código mas o "passo 5 — medir de novo" nunca foi executado, e o usuário
+reporta que o estouro persiste. A **Fase 2 foi aprovada em 2026-09-17**: VPS HostGator em São Paulo
+(2 vCPU / 4 GB, 13 ms de latência) por R$ 37,59/mês, migração completa (Postgres, Auth e Storage)
+em fases reversíveis, com shim `postgres.js` preservando o nome `supabaseAdmin`, numa branch
+`vps` paralela — a `main` fica intocada na Vercel até o cutover. Plano executável completo no documento da Fase 2.
 
 ## Causa raiz
 
