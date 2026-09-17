@@ -87,8 +87,12 @@ jobs:
           port="${VPS_SSH_PORT:-22}"
           mkdir -p ~/.ssh
           ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          ssh -p "$port" "$VPS_USER@$VPS_HOST" "mkdir -p '$VPS_DEPLOY_PATH'"
+          ssh -p "$port" "$VPS_USER@$VPS_HOST" "mkdir -p '$VPS_DEPLOY_PATH/supabase-init'"
           scp -P "$port" docker-compose.yml Caddyfile "$VPS_USER@$VPS_HOST:$VPS_DEPLOY_PATH/"
+          # Só roda de fato num volume de dados novo (postgres:17-alpine, initdb.d) — não
+          # afeta um banco já existente. Nome com prefixo numérico: initdb.d roda em ordem
+          # alfabética, e supabase/setup.sql é re-executável (tudo IF NOT EXISTS).
+          scp -P "$port" supabase/setup.sql "$VPS_USER@$VPS_HOST:$VPS_DEPLOY_PATH/supabase-init/01-setup.sql"
 
       - name: Deploy (pull + up -d)
         env:

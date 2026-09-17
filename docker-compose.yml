@@ -66,6 +66,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-garimpo}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Roda uma vez, só quando o volume de dados nasce vazio (imagem oficial do
+      # Postgres): aplica o schema sem precisar de passo manual num deploy novo.
+      # supabase/setup.sql é copiado pro VPS pelo deploy.yml (é re-executável, tudo
+      # IF NOT EXISTS — rodar de novo à mão depois não quebra nada).
+      - ./supabase-init:/docker-entrypoint-initdb.d:ro
     networks:
       - default
     # Sem `ports:` de propósito — acesso administrativo só por túnel SSH
