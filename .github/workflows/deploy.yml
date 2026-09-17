@@ -1,0 +1,84 @@
+name: Deploy (VPS)
+
+# Fase 4 da migração para VPS (docs/economia-fase-2-vps-unico.md). Builda a imagem no
+# Actions (não no VPS — 2 vCPU/4 GB aguentaria, mas builda fora deixa o deploy rápido e
+# reproduzível), publica no GHCR e faz o VPS puxar. Só dispara na branch `vps` (ambiente
+# paralelo à `main`, que segue na Vercel até o cutover da Fase 6).
+
+on:
+  push:
+    branches: [vps]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login no GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build e push da imagem
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar chave SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Copiar compose/Caddyfile para o VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          ssh "$VPS_USER@$VPS_HOST" "mkdir -p '$VPS_DEPLOY_PATH'"
+          scp docker-compose.yml Caddyfile "$VPS_USER@$VPS_HOST:$VPS_DEPLOY_PATH/"
+
+      - name: Deploy (pull + up -d)
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          APP_IMAGE: ${{ env.IMAGE }}:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ssh "$VPS_USER@$VPS_HOST" "cd '$VPS_DEPLOY_PATH' && \
+            export APP_IMAGE='$APP_IMAGE' && \
+            docker compose pull && \
+            docker compose up -d --remove-orphans"

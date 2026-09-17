@@ -1200,7 +1200,7 @@ ESLint/Prettier.)
   após a migração. Dados migrados via `pg_restore --data-only` (usuários do `auth` **não**
   migrados — login refeito com Google).
 
-## Infra — economia / saída dos free tiers (Fase 1 em código; Fase 2 aprovada em v0.60.5)
+## Infra — economia / saída dos free tiers (Fases 1–4 em código, Fase 5/6 pendentes)
 
 Planos e telemetria em **`docs/economia-migracao.md`** (índice), fases em
 `docs/economia-fase-1-egress-e-cpu.md` e `docs/economia-fase-2-vps-unico.md`. Resumo: banco
@@ -1220,15 +1220,24 @@ folgado (49/500 MB), mas **egress do Supabase já estourado** e **Active CPU da 
 - **Netlify e Neon descartados.** Netlify: timeout de 10 s mata os steps do cron e o `/api/live`
   (confirmado — o projeto conectado ao repo falha o deploy em todo PR). Neon: o gargalo é egress,
   não storage, e o Neon cobra CU-horas que o mesmo padrão queima igual.
-- **Fase 2 (VPS único em São Paulo, R$ 37,59/mês) — plano fechado em v0.60.5/6, execução não iniciada.** Migração
-  completa (Postgres + Auth + Storage) em 6 fases reversíveis, numa branch **`vps`** paralela: a
-  `main` fica intocada na Vercel até o cutover, que é a Fase 6. A camada de dados sai por um
-  **shim `postgres.js`** que preserva o nome exportado `supabaseAdmin` e é ligado por
-  `DATABASE_URL` — os 15 arquivos de lógica e toda a UI não mudam, e reverter é apagar uma env
-  var. Auth vira OAuth Google direto (o contrato preservado é `context.claims.email`, então os 60
-  `assertAllowed` ficam intactos); Storage vira volume servido pelo Caddy. `vite.config.ts:9` já
-  honra `SERVER_PRESET`, então trocar de host é env var, não código. Roteiro completo, riscos e
-  verificação por fase em `docs/economia-fase-2-vps-unico.md`.
+- **Fase 2 (VPS único em São Paulo, R$ 37,59/mês) — plano fechado em v0.60.5/6, Fases 1–4
+  entregues em código (v0.62.0–v0.65.0), Fase 5/6 pendentes.** Migração completa (Postgres +
+  Auth + Storage + Host) em 6 fases reversíveis, numa branch **`vps`** paralela: a `main` fica
+  intocada na Vercel até o cutover, que é a Fase 6. A camada de dados saiu por um **shim
+  `postgres.js`** que preserva o nome exportado `supabaseAdmin` e é ligado por `DATABASE_URL` —
+  os 15 arquivos de lógica e toda a UI não mudaram. Auth virou OAuth Google direto (o contrato
+  preservado é `context.claims.email`, então os 60 `assertAllowed` ficaram intactos); Storage
+  virou volume em disco, servido pelo Node até a Fase 4 e pelo Caddy depois dela. `vite.config.ts:9`
+  já honrava `SERVER_PRESET`, então trocar de host (Fase 4) foi env var, não código: `Dockerfile`
+  multi-stage (`bun run build` com `SERVER_PRESET=node-server` → runtime `node:22-slim`, copiando
+  só o `.output` do Nitro, que já vem com `node_modules` rastreado por dependência — inclui o
+  binário nativo do `sharp`), `docker-compose.yml` (`caddy` + `app` + `postgres:17`, desenhado
+  para multi-app desde o início — rede Docker externa `proxy`, `mem_limit` por serviço),
+  `Caddyfile` (TLS automático, reverse proxy pro `app`, `file_server` pro volume de
+  `/collection/*`) e `.github/workflows/deploy.yml` (build → GHCR → SSH no VPS → `docker compose
+  pull && up -d`, disparado a cada push em `vps`). `version-bump.yml` passou a comparar também
+  contra `vps` (`branches: [main, vps]`), não só `main`. Roteiro completo, riscos e verificação
+  por fase em `docs/economia-fase-2-vps-unico.md`.
 - **Órfãos (rebaixado a item secundário):** o schema não tem FK nem `CASCADE`, então
   `lot_ai`/`lot_ident`/`lot_market`/`lot_condition` acumulam órfãos quando `lots` é podada. Com
   49/500 MB não é urgente, mas órfã em `lot_ident` é linha lida à toa pelo anti-join.
@@ -1345,6 +1354,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.62.0      | Migração para VPS, Fase 1 (`docs/economia-fase-2-vps-unico.md`): novo shim `postgres.js` (`src/lib/db.server.ts` conexão singleton lazy; `src/lib/db-query.server.ts` builder encadeável/thenable cobrindo `from/select/eq/neq/gte/lte/gt/lt/like/in/not/or/order/range/limit/single/maybeSingle/insert/update/delete/upsert` + `rpc`) reproduzindo a fatia do PostgrestQueryBuilder realmente usada. `client.server.ts`: com `DATABASE_URL` definida, `supabaseAdmin.from`/`.rpc` passam a falar direto com o Postgres via o shim; `.storage` continua no cliente Supabase (migra na Fase 3); sem `DATABASE_URL`, comportamento idêntico a antes. Nenhum import mudou nos 15 arquivos de lógica de negócio — reverter é apagar a env var. `upsert` replica a proteção do PostgREST contra colunas ausentes no payload (caso `orig_text` em `lot-sales.server.ts`): colunas fora de TODAS as linhas do lote não entram no `INSERT`/`ON CONFLICT UPDATE`. Validado contra Postgres real do VPS (dump/restore do Supabase); `types` customizado em `db.server.ts` corrige `date`/`timestamp`/`numeric` que o `postgres.js` devolvia como `Date`/string em vez de string/número (PostgREST) — sem isso, Compras quebrava e Analytics perdia valores nas médias |
 | v0.63.0      | Migração para VPS, Fase 2 (`docs/economia-fase-2-vps-unico.md`): Auth sai do Supabase, vira Google OAuth direto (authorization code + PKCE) implementado à mão. Novo `src/lib/auth.server.ts` — fluxo completo (`/api/auth/google/start`, `/api/auth/google/callback`, `/api/auth/logout`, tratados fora das server functions em `server.ts`, mesmo padrão de `handleCron`/`handleLiveProxy`) e cookie de sessão HttpOnly assinado por HMAC (`gs_session`, 30 dias), reaproveitando o padrão de `leiloesbr-live.server.ts` (cookie `lp_auth`). Novo `src/lib/auth.functions.ts` (`getSessionEmail`, sem middleware, pra não lançar quando não há sessão). `auth-middleware.ts` **reescrito com o mesmo nome/path** (`requireSupabaseAuth`) para validar o cookie em vez de Bearer JWT — os 60 call sites de `.middleware([requireSupabaseAuth])` não mudaram uma linha. `start.ts` perde o `attachSupabaseAuth` (cookie viaja sozinho, sem precisar de middleware client-side anexando `Authorization`). `_authenticated/route.tsx` passa a checar sessão no servidor (tira o `ssr: false`); `routes/auth.tsx` vira link simples pro `/api/auth/google/start` (sem PKCE no cliente). Removidos `auth-attacher.ts` e `client.ts` (cliente Supabase do navegador); **`api-fetch.ts` foi mantido**, ainda usado pelo cliente Supabase do `.storage` (Fase 3) — desvio do plano original, que previa remover os três juntos. Novas env: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET` |
 | v0.64.0      | Migração para VPS, Fase 3 (`docs/economia-fase-2-vps-unico.md`): fotos da Coleção saem do bucket `collection` do Supabase Storage, viram arquivos em disco (`COLLECTION_DIR`, default `./data/collection`). Novo `src/lib/collection-storage.server.ts` — `uploadCollectionFile`/`getCollectionPublicUrl`/`collectionPathFromUrl`/`removeCollectionFile` e `handleCollectionAssets` (serve `GET/HEAD /collection/*` com `Cache-Control: public, max-age=604800` e guarda contra path traversal); até a Fase 4 (Docker/Caddy) o próprio Node serve esses arquivos, registrado em `server.ts` no mesmo padrão de `handleCron`/`handleLiveProxy`/`handleGoogleAuth` — na Fase 4 o Caddy assume esse papel sem mudar este módulo. Os 3 usos de `supabaseAdmin.storage` em `collection.server.ts` (`uploadCollectionImage`, `listUncompressedCollectionImages`, `backfillCompressCollectionImage`) migrados; `compressCollectionImage` não muda. **Com Auth (Fase 2) e Storage (Fase 3) fora do Supabase, `@supabase/supabase-js` saiu do `package.json`** — `client.server.ts` virou só um wrapper de `createDbQueryClient()` (`DATABASE_URL` agora obrigatória, sem fallback pro Postgres do Supabase); `auth-attacher.ts`/`client.ts` (Fase 2) e agora `api-fetch.ts` removidos. Testado localmente sem precisar do VPS (upload/leitura/remoção/path-traversal via script direto no módulo) — dados reais das fotos migram no cutover (Fase 6), bucket do Supabase continua no ar até lá |
+| v0.65.0      | Migração para VPS, Fase 4 (`docs/economia-fase-2-vps-unico.md`): host sai da Vercel, vai pro Docker Compose num VPS. Novo `Dockerfile` (multi-stage: `oven/bun:1` builda com `SERVER_PRESET=node-server`, `node:22-slim` só copia o `.output` do Nitro — que já vem com `node_modules` rastreado por dependência, incluindo o binário nativo do `sharp`, sem reinstalar nada na imagem final). Novo `docker-compose.yml` (`caddy`/`app`/`postgres:17`) já desenhado para multi-app no mesmo VPS desde o início: rede Docker **externa** `proxy` (só o Caddy publica 80/443), `mem_limit` por serviço, Postgres sem porta publicada. Novo `Caddyfile` (TLS automático por `APP_DOMAIN`, reverse proxy pro `app`, `file_server` servindo `/collection/*` direto do volume — o mesmo `COLLECTION_DIR` do Node, agora também montado no Caddy). Novo `.github/workflows/deploy.yml`: builda a imagem no Actions (não no VPS) a cada push em `vps`, publica no GHCR e faz `docker compose pull && up -d` por SSH (`webfactory/ssh-agent`); secrets novos `VPS_HOST`/`VPS_USER`/`VPS_SSH_KEY`/`VPS_DEPLOY_PATH`. `version-bump.yml` passa a comparar também contra a base `vps` (antes só `main`), já que as fases da migração abrem PR pra lá. Ajustes de passagem: User-Agent do Discogs (`discogs.server.ts`) lê `PUBLIC_BASE_URL` em vez do domínio fixo da Vercel; `README.md`/`AGENTS.md`/`CLAUDE.md`/`.env.example` reescritos (ainda descreviam Supabase + Vercel, defasados desde a Fase 1). Sem mudança de código de produto — testado por build local da imagem (`docker build`) e leitura estática do compose/Caddyfile; deploy real (`workflow_dispatch` do `refresh.yml` contra o VPS, `/api/live`) fica para quem tem acesso à máquina, junto com a checagem de arquitetura (`uname -m`) já prevista no plano |
 
 ## Pendências
 

@@ -5,7 +5,7 @@ name: Version bump
 # aumentar em relação à base.
 on:
   pull_request:
-    branches: [main]
+    branches: [main, vps]
 
 jobs:
   check-version:

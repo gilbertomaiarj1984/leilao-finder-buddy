@@ -13,7 +13,9 @@ import { normalizeForMatch, parsePrice } from "./vinyl-parse";
 
 const BASE = "https://api.discogs.com";
 const SITE = "https://www.discogs.com";
-const UA = "GarimpoDeVinil/1.0 (+https://leilao-finder-buddy.vercel.app)";
+// PUBLIC_BASE_URL é o domínio real no VPS (Fase 4 da migração); sem ela (dev local),
+// cai no domínio antigo só como identificação — não afeta nenhuma chamada.
+const UA = `GarimpoDeVinil/1.0 (+${process.env["PUBLIC_BASE_URL"] || "https://leilao-finder-buddy.vercel.app"})`;
 const CURRENCY = "BRL";
 // Intervalo mínimo entre chamadas (60/min = 1/s; usamos folga de ~1.1s).
 const MIN_INTERVAL_MS = 1100;
