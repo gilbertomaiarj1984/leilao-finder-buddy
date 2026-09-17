@@ -75,23 +75,27 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
         run: |
           set -euo pipefail
+          port="${VPS_SSH_PORT:-22}"
           mkdir -p ~/.ssh
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          ssh "$VPS_USER@$VPS_HOST" "mkdir -p '$VPS_DEPLOY_PATH'"
-          scp docker-compose.yml Caddyfile "$VPS_USER@$VPS_HOST:$VPS_DEPLOY_PATH/"
+          ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          ssh -p "$port" "$VPS_USER@$VPS_HOST" "mkdir -p '$VPS_DEPLOY_PATH'"
+          scp -P "$port" docker-compose.yml Caddyfile "$VPS_USER@$VPS_HOST:$VPS_DEPLOY_PATH/"
 
       - name: Deploy (pull + up -d)
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
           APP_IMAGE: ${{ env.IMAGE }}:${{ github.sha }}
           BACKUP_IMAGE: ${{ env.BACKUP_IMAGE }}:${{ github.sha }}
         run: |
           set -euo pipefail
-          ssh "$VPS_USER@$VPS_HOST" "cd '$VPS_DEPLOY_PATH' && \
+          port="${VPS_SSH_PORT:-22}"
+          ssh -p "$port" "$VPS_USER@$VPS_HOST" "cd '$VPS_DEPLOY_PATH' && \
             export APP_IMAGE='$APP_IMAGE' BACKUP_IMAGE='$BACKUP_IMAGE' && \
             docker compose pull && \
             docker compose up -d --remove-orphans"

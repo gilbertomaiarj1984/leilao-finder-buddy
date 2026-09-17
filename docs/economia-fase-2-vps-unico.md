@@ -391,9 +391,9 @@ clicar/rodar, e como confirmar que deu certo antes de ir pro próximo.
 
 ### Progresso
 
-- [ ] 1. Contratar e preparar o VPS (`uname -m`, usuário `deploy`, Docker, UFW/fail2ban, rede `proxy`)
-- [ ] 2. Gerar a chave SSH do GitHub Actions
-- [ ] 3. Cadastrar os secrets no GitHub
+- [x] 1. Contratar e preparar o VPS (`uname -m`, usuário `deploy`, Docker, UFW/fail2ban, rede `proxy`) — x86_64, Ubuntu 22.04.5 LTS; SSH na porta 22022 (só chave, sem senha/root); UFW ativo (22022/80/443); fail2ban ativo; rede `proxy` já existia
+- [x] 2. Gerar a chave SSH do GitHub Actions (`deploy-garimpo-actions`, autorizada no VPS)
+- [x] 3. Cadastrar os secrets no GitHub (`VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_DEPLOY_PATH`, `VPS_SSH_PORT=22022`)
 - [ ] 4. Preparar o `.env` no VPS
 - [ ] 5. Cloudflare R2 (backup)
 - [ ] 6. healthchecks.io (monitoramento)
@@ -421,31 +421,76 @@ clicar/rodar, e como confirmar que deu certo antes de ir pro próximo.
    adduser deploy
    usermod -aG sudo deploy
    ```
+   Se criar o `deploy` **sem senha** (só acesso por chave SSH), o `sudo` dele vai pedir uma
+   senha que não existe. Resolver como root, uma vez:
+   ```sh
+   echo 'deploy ALL=(ALL) NOPASSWD:ALL' | tee /etc/sudoers.d/90-deploy-nopasswd
+   chmod 440 /etc/sudoers.d/90-deploy-nopasswd
+   visudo -c   # valida a sintaxe — deve responder "parsed OK"
+   ```
+   Seguro numa máquina de admin único cujo `deploy` só aceita SSH por chave (é exatamente o
+   estado depois do passo 5 abaixo).
 4. Instalar Docker + Compose plugin (script oficial):
    ```sh
    curl -fsSL https://get.docker.com | sh
    usermod -aG docker deploy
    ```
    Confirmar: `docker --version` e `docker compose version`.
-5. **Endurecer a máquina** (IP público, sem rede privada):
-   ```sh
-   # SSH só por chave, sem senha, sem root
-   sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-   sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
-   systemctl restart sshd
-
-   # UFW: só 22 (SSH), 80 e 443 (Caddy) — o Docker escreve direto no iptables, então
-   # NUNCA publicar outras portas no compose (o Postgres já não publica nenhuma).
-   apt-get update && apt-get install -y ufw fail2ban
-   ufw allow 22/tcp
-   ufw allow 80/tcp
-   ufw allow 443/tcp
-   ufw enable
-   systemctl enable --now fail2ban
-   ```
-   Antes de fechar a sessão root, **confirme que consegue entrar como `deploy` por chave
-   SSH** (`ssh deploy@<ip-do-vps>`) — só desative o `PasswordAuthentication` depois de
-   confirmar, para não se trancar para fora.
+5. **Endurecer a máquina** (IP público, sem rede privada). Nesta ordem exata, testando a
+   cada passo arriscado **numa segunda sessão, sem fechar a atual** — é o que evita se
+   trancar pra fora:
+   1. **(Opcional) Trocar a porta do SSH** — dificulta scans automatizados. Se for fazer,
+      faça ANTES do resto:
+      ```sh
+      sed -i 's/^#\?Port .*/Port 22022/' /etc/ssh/sshd_config   # escolha sua porta
+      ufw allow 22022/tcp   # libera a NOVA porta antes de reiniciar
+      systemctl restart sshd
+      ```
+      Teste numa segunda sessão (`ssh -p 22022 deploy@<ip-do-vps>`) antes de seguir. Só
+      depois de confirmar, remova a regra da porta 22 antiga (`ufw status numbered` +
+      `ufw delete <nº da regra 22/tcp>` — a 22/tcp costuma sobreviver separada para IPv6,
+      confirme as duas). Guarde esse número: vira o secret `VPS_SSH_PORT` no passo 3.
+   2. **SSH só por chave, sem senha, sem root** — só desative depois de confirmar que o
+      `deploy` entra por chave (`ssh deploy@<ip-do-vps>`, ou na porta nova se trocou):
+      ```sh
+      sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+      sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+      systemctl restart sshd
+      ```
+      ⚠️ **Pegadinha comum em imagens cloud-init** (a maioria dos provedores usa):
+      `/etc/ssh/sshd_config` normalmente tem `Include /etc/ssh/sshd_config.d/*.conf` bem no
+      topo, e um arquivo `50-cloud-init.conf` ali dentro costuma forçar
+      `PasswordAuthentication yes` de novo — como esse `Include` vem ANTES da edição acima
+      no arquivo principal, e o `sshd` usa o **primeiro valor encontrado** (não o último),
+      o cloud-init vence e a edição acima parece não ter feito efeito. Sintoma:
+      `sshd -T | grep -i passwordauthentication` continua respondendo `yes` mesmo depois do
+      `sed`. Diagnosticar com `sudo cat /etc/ssh/sshd_config.d/50-cloud-init.conf`
+      (permissão 600, precisa de `sudo` pra ler) e, se for isso, resolver com um drop-in que
+      entra ANTES na ordem alfabética (garantindo que seja o primeiro valor lido):
+      ```sh
+      printf 'PasswordAuthentication no\nPermitRootLogin no\n' | tee /etc/ssh/sshd_config.d/00-hardening.conf
+      chmod 600 /etc/ssh/sshd_config.d/00-hardening.conf
+      sshd -t && systemctl restart sshd   # sshd -t valida ANTES de reiniciar
+      ```
+      Confirme com `sshd -T | grep -iE "^(passwordauthentication|permitrootlogin)"` — as
+      duas devem responder `no` — e só então teste a reconexão por chave numa segunda
+      sessão.
+   3. **UFW**: só a porta do SSH (22 ou a que você escolheu), 80 e 443 (Caddy) — o Docker
+      escreve direto no iptables, então NUNCA publicar outras portas no compose (o Postgres
+      já não publica nenhuma). Se o `ufw` já vinha instalado mas **inativo** (comum em
+      imagens de VPS — confirme com `ufw status`), as regras abaixo não bastam sozinhas, é
+      preciso **habilitar**:
+      ```sh
+      apt-get update && apt-get install -y ufw fail2ban
+      ufw allow 22/tcp    # ou a porta escolhida no passo i
+      ufw allow 80/tcp
+      ufw allow 443/tcp
+      ufw default deny incoming
+      ufw default allow outgoing
+      ufw enable          # sem isso, "active" nunca aparece e NADA é filtrado
+      systemctl enable --now fail2ban
+      ufw status verbose  # confirma "Status: active" e só as portas esperadas
+      ```
 6. Criar a rede Docker externa compartilhada (uma vez só, serve para outros apps no mesmo
    VPS também):
    ```sh
@@ -491,6 +536,7 @@ um de cada vez:
 | `VPS_USER` | `deploy` (o usuário criado no passo 1.3) |
 | `VPS_SSH_KEY` | conteúdo INTEIRO do arquivo `deploy_garimpo` (chave privada, passo 2) |
 | `VPS_DEPLOY_PATH` | `/home/deploy/garimpo` (a pasta criada no passo 1.7) |
+| `VPS_SSH_PORT` | só se o SSH não estiver na porta 22 padrão (ex.: `22022`, se você trocou a porta por segurança) — sem esse secret, o `deploy.yml` cai pra 22 |
 | `HEALTHCHECKS_PING_URL` | opcional, ver seção 6 abaixo — pode deixar para depois |
 
 `APP_URL` e `CRON_TOKEN` (usados pelo `refresh.yml`) **já existem** desde antes da

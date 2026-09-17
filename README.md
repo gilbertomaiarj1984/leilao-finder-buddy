@@ -50,7 +50,8 @@ riscos e o roteiro completo das 6 fases da migração (Supabase/Vercel → VPS �
 2. `.github/workflows/deploy.yml` builda a imagem no Actions, publica no GHCR e faz
    `docker compose pull && docker compose up -d` no VPS via SSH, a cada push na
    branch `vps`. Secrets necessários no repositório: `VPS_HOST`, `VPS_USER`,
-   `VPS_SSH_KEY`, `VPS_DEPLOY_PATH`.
+   `VPS_SSH_KEY`, `VPS_DEPLOY_PATH`; `VPS_SSH_PORT` (opcional — só se o SSH não estiver
+   na porta 22 padrão).
 3. Postgres sem porta publicada (acesso administrativo só por túnel SSH); UFW liberando
    só 22/80/443 — ver "Endurecimento da máquina" no plano de migração.
 
