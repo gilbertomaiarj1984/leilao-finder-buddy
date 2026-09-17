@@ -119,10 +119,17 @@ const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo";
 
-// PUBLIC_BASE_URL (Fase 4 da migração para VPS) tem prioridade sobre `url.origin`: atrás do
-// Caddy, a conexão do Node com o container é HTTP puro (TLS só na borda), e o Nitro/h3 não
-// confia em X-Forwarded-Proto por padrão — `url.origin` vinha como "http://" mesmo com o site
-// servido em HTTPS, e o Google recusava o redirect_uri por mismatch de protocolo.
+// PUBLIC_BASE_URL (Fase 4 da migração para VPS) tem prioridade sobre `url.protocol`/`url.origin`
+// da requisição: atrás do Caddy, a conexão do Node com o container é HTTP puro (TLS só na
+// borda), e o Nitro/h3 não confia em X-Forwarded-Proto por padrão — o protocolo visto pelo
+// servidor vinha como "http:" mesmo com o site servido em HTTPS. Usado tanto pro redirect_uri
+// do Google (senão ele recusa por mismatch de protocolo) quanto pra decidir o `Secure` dos
+// cookies (senão eles saem sem `Secure` em produção, mesmo servidos em HTTPS pelo Caddy).
+function isSecureRequest(url: URL): boolean {
+  const base = process.env["PUBLIC_BASE_URL"];
+  return base ? base.startsWith("https:") : url.protocol === "https:";
+}
+
 function redirectUri(origin: string): string {
   const base = process.env["PUBLIC_BASE_URL"] || origin;
   return `${base.replace(/\/$/, "")}/api/auth/google/callback`;
@@ -153,12 +160,7 @@ async function startGoogleAuth(request: Request): Promise<Response> {
   const headers = new Headers({ location: authorizeUrl.toString() });
   headers.append(
     "set-cookie",
-    cookieHeader(
-      OAUTH_COOKIE,
-      oauthToken,
-      Math.floor(OAUTH_TTL_MS / 1000),
-      url.protocol === "https:",
-    ),
+    cookieHeader(OAUTH_COOKIE, oauthToken, Math.floor(OAUTH_TTL_MS / 1000), isSecureRequest(url)),
   );
   return new Response(null, { status: 302, headers });
 }
@@ -174,7 +176,7 @@ async function googleAuthCallback(request: Request): Promise<Response> {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const oauthCookie = readCookie(request, OAUTH_COOKIE);
-  const clearOauthCookie = cookieHeader(OAUTH_COOKIE, "", 0, url.protocol === "https:");
+  const clearOauthCookie = cookieHeader(OAUTH_COOKIE, "", 0, isSecureRequest(url));
 
   if (!code || !state || !oauthCookie) return errorRedirect(url.origin, "missing_code");
 
@@ -233,7 +235,7 @@ async function googleAuthCallback(request: Request): Promise<Response> {
       SESSION_COOKIE,
       sessionToken,
       Math.floor(SESSION_TTL_MS / 1000),
-      url.protocol === "https:",
+      isSecureRequest(url),
     ),
   );
   return new Response(null, { status: 302, headers });
@@ -242,7 +244,7 @@ async function googleAuthCallback(request: Request): Promise<Response> {
 function logout(request: Request): Response {
   const url = new URL(request.url);
   const headers = new Headers({ location: new URL("/auth", url.origin).toString() });
-  headers.append("set-cookie", cookieHeader(SESSION_COOKIE, "", 0, url.protocol === "https:"));
+  headers.append("set-cookie", cookieHeader(SESSION_COOKIE, "", 0, isSecureRequest(url)));
   return new Response(null, { status: 302, headers });
 }
 
