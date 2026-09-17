@@ -8,9 +8,11 @@ com **Supabase** como backend e deploy na **Vercel**.
 > nº de lote, cores, pendências). Este arquivo é só o resumo.
 
 > **Trabalho de infraestrutura/custo pendente:** ver `docs/economia-migracao.md` (índice) e
-> os dois planos de fase que ele aponta. Ainda não iniciados. Em resumo: o egress do Supabase
-> **já estourou** (9,14/5 GB) e o Active CPU da Vercel está em 79% — porque o cron lê tabelas
-> inteiras em laço. O banco em si está folgado (49/500 MB).
+> os dois planos de fase que ele aponta. VPS contratado, migração em andamento na branch `vps`
+> (base: `origin/main`) — Fase 1 (camada de dados) entregue em código, ainda não validada contra
+> o Postgres real do VPS. Em resumo: o egress do Supabase **já estourou** (9,14/5 GB) e o Active
+> CPU da Vercel está em 79% — porque o cron lê tabelas inteiras em laço. O banco em si está
+> folgado (49/500 MB).
 
 ## Visão geral
 

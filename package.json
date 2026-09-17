@@ -1,7 +1,7 @@
 {
   "name": "tanstack_start_ts",
   "private": true,
-  "version": "0.61.2",
+  "version": "0.62.0",
   "sideEffects": false,
   "type": "module",
   "scripts": {
@@ -31,6 +31,7 @@
     "cmdk": "^1.1.1",
     "lucide-react": "^0.575.0",
     "node-html-parser": "^9.0.1",
+    "postgres": "^3.4.9",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "sharp": "^0.33.5",
