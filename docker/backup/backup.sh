@@ -21,11 +21,13 @@ dump_once() {
   local ts file
   ts="$(date -u +%Y%m%dT%H%M%SZ)"
   file="/tmp/garimpo-${ts}.sql.gz"
+  # RETURN (não só o fim normal da função) garante a limpeza mesmo se o `aws s3 cp`
+  # falhar no meio — senão o .sql.gz fica pra sempre no /tmp do container de vida longa.
+  trap 'rm -f "$file"' RETURN
   echo "[backup] iniciando dump $ts"
   PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
     | gzip -9 > "$file"
   aws s3 cp "$file" "s3://${R2_BUCKET}/${file##*/}" --endpoint-url "$R2_ENDPOINT" --no-progress
-  rm -f "$file"
   echo "[backup] concluído $ts"
 }
 

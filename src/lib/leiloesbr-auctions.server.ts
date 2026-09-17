@@ -149,9 +149,12 @@ export async function pruneSeenAuctions(): Promise<{ pruned: number }> {
     const captured = await getSalesCaptured();
     if (!captured.size) return { pruned: 0 };
 
-    const cutoff = new Date(Date.now() - SEEN_AUCTIONS_RETENTION_DAYS * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .slice(0, 10);
+    // `day_key` é sempre a data em São Paulo (ver `todayDayKey`) — usar `.toISOString()` (UTC)
+    // aqui desalinharia o corte por até algumas horas perto da virada do dia.
+    const cutoffDate = new Date(Date.now() - SEEN_AUCTIONS_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    const cutoff = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
+      cutoffDate,
+    );
     const { data, error } = await supabaseAdmin
       .from("seen_auctions")
       .select("id_leilao")
