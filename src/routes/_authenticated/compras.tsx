@@ -1,7 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Calendar, List, RefreshCw, ShoppingBag, Store } from "lucide-react";
+import {
+  ArrowLeft,
+  Calendar,
+  ChevronDown,
+  ChevronUp,
+  List,
+  RefreshCw,
+  ShoppingBag,
+  Store,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -40,6 +49,12 @@ function groupByDay(purchases: Purchase[]): { day: string; purchases: Purchase[]
   return [...map.entries()]
     .map(([day, list]) => ({ day, purchases: list }))
     .sort((a, b) => b.day.localeCompare(a.day));
+}
+
+// `groupWatchedByHouse` exige `houseUrl` (usado noutras telas p/ "site da casa"); aqui não
+// exibimos esse link (Purchase não tem a URL da casa, só do lote), então só satisfazemos o tipo.
+function groupPurchasesByHouse(purchases: Purchase[]) {
+  return groupWatchedByHouse(purchases.map((p) => ({ ...p, houseUrl: p.url })));
 }
 
 function ComprasPage() {
@@ -83,11 +98,10 @@ function ComprasPage() {
   });
 
   const byDay = useMemo(() => groupByDay(purchases), [purchases]);
-  // `groupWatchedByHouse` exige `houseUrl` (usado noutras telas p/ "site da casa"); aqui não
-  // exibimos esse link (Purchase não tem a URL da casa, só do lote), então só satisfazemos o tipo.
-  const byHouse = useMemo(
-    () => groupWatchedByHouse(purchases.map((p) => ({ ...p, houseUrl: p.url }))),
-    [purchases],
+  const byHouse = useMemo(() => groupPurchasesByHouse(purchases), [purchases]);
+  const byHouseWithDays = useMemo(
+    () => byHouse.map((h) => ({ ...h, byDay: groupByDay(h.lots) })),
+    [byHouse],
   );
 
   return (
@@ -179,25 +193,19 @@ function ComprasPage() {
           </div>
         ) : viewMode === "day" ? (
           <div className="space-y-8">
-            {byDay.map((group) => (
-              <section key={group.day || "sem-data"}>
-                <h2 className="mb-3 text-sm font-semibold text-foreground">
-                  {dayHeaderLabel(group.day)}
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">
-                    ({group.purchases.length})
-                  </span>
-                </h2>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {group.purchases.map((p) => (
-                    <PurchaseCard key={p.id} purchase={p} />
-                  ))}
-                </div>
-              </section>
+            {byDay.map((group, index) => (
+              <DaySection
+                key={group.day || "sem-data"}
+                day={group.day}
+                purchases={group.purchases}
+                defaultOpen={index === 0}
+                nestByHouse
+              />
             ))}
           </div>
         ) : (
           <div className="space-y-8">
-            {byHouse.map((group) => (
+            {byHouseWithDays.map((group) => (
               <section key={group.house}>
                 <h2 className="mb-3 text-sm font-semibold text-foreground">
                   {group.house || "(casa não identificada)"}
@@ -205,9 +213,15 @@ function ComprasPage() {
                     ({group.lots.length})
                   </span>
                 </h2>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {group.lots.map((p) => (
-                    <PurchaseCard key={p.id} purchase={p} />
+                <div className="space-y-4">
+                  {group.byDay.map((dayGroup, index) => (
+                    <DaySection
+                      key={dayGroup.day || "sem-data"}
+                      day={dayGroup.day}
+                      purchases={dayGroup.purchases}
+                      defaultOpen={index === 0}
+                      nestByHouse={false}
+                    />
                   ))}
                 </div>
               </section>
@@ -216,6 +230,71 @@ function ComprasPage() {
         )}
       </div>
     </main>
+  );
+}
+
+function DaySection({
+  day,
+  purchases,
+  defaultOpen,
+  nestByHouse,
+}: {
+  day: string;
+  purchases: Purchase[];
+  defaultOpen: boolean;
+  nestByHouse: boolean; // true na visão "por dia" (sub-agrupa por casa); false dentro de "por casa"
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const houseGroups = useMemo(
+    () => (nestByHouse ? groupPurchasesByHouse(purchases) : null),
+    [nestByHouse, purchases],
+  );
+
+  return (
+    <section>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 text-left text-sm font-semibold text-foreground"
+      >
+        {open ? (
+          <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        )}
+        {dayHeaderLabel(day)}
+        <span className="text-xs font-normal text-muted-foreground">({purchases.length})</span>
+      </button>
+
+      {open ? (
+        <div className="mt-3">
+          {houseGroups ? (
+            <div className="space-y-4">
+              {houseGroups.map((hg) => (
+                <div key={hg.house || "sem-casa"}>
+                  <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+                    {hg.house || "(casa não identificada)"}
+                    <span className="ml-1.5">({hg.lots.length})</span>
+                  </h3>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {hg.lots.map((p) => (
+                      <PurchaseCard key={p.id} purchase={p} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {purchases.map((p) => (
+                <PurchaseCard key={p.id} purchase={p} />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
