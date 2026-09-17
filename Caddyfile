@@ -1,0 +1,19 @@
+# Fase 4 da migração para VPS (docs/economia-fase-2-vps-unico.md). TLS automático
+# (Let's Encrypt) por domínio; `{$APP_DOMAIN}` vem do .env do compose, fora do repo.
+#
+# /collection/* é servido direto do volume em disco (mesmos arquivos que o app grava
+# via COLLECTION_DIR), sem passar pelo Node — cache de 7 dias como já era em
+# collection-storage.server.ts, agora na borda. Tudo o mais vai por reverse proxy pro
+# serviço `app` (nome do serviço no docker-compose.yml, resolvido pela rede interna).
+
+{$APP_DOMAIN} {
+	handle_path /collection/* {
+		root * /data/collection
+		header Cache-Control "public, max-age=604800"
+		file_server
+	}
+
+	handle {
+		reverse_proxy app:3000
+	}
+}

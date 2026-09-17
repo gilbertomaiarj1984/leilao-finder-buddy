@@ -1,0 +1,69 @@
+# Fase 4 da migração para VPS (docs/economia-fase-2-vps-unico.md). Desenhado para o VPS
+# comportar mais de um app: o Caddy é o único serviço com portas publicadas e roteia por
+# domínio numa rede Docker EXTERNA (`proxy`, criada fora deste compose — ver README);
+# app/postgres não publicam porta nenhuma, só conversam dentro da rede interna deste
+# projeto. Um segundo app no mesmo VPS ganha seu próprio compose + Postgres (banco/usuário
+# separados na MESMA instância, não uma instância nova) e se conecta à mesma rede `proxy`.
+#
+# Criar a rede uma vez, antes do primeiro `docker compose up`:
+#   docker network create proxy
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    mem_limit: 128m
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - proxy
+      - default
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - collection_data:/data/collection:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+  app:
+    image: ${APP_IMAGE:-ghcr.io/gilbertomaiarj1984/leilao-finder-buddy:latest}
+    restart: unless-stopped
+    mem_limit: 512m
+    env_file:
+      - .env
+    environment:
+      COLLECTION_DIR: /data/collection
+    volumes:
+      - collection_data:/data/collection
+    networks:
+      - default
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-garimpo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-garimpo}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - default
+    # Sem `ports:` de propósito — acesso administrativo só por túnel SSH
+    # (ver "Endurecimento da máquina" em docs/economia-fase-2-vps-unico.md).
+
+networks:
+  proxy:
+    external: true
+  default:
+
+volumes:
+  postgres_data:
+  collection_data:
+  caddy_data:
+  caddy_config:
