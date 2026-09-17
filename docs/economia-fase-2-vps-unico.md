@@ -394,14 +394,14 @@ clicar/rodar, e como confirmar que deu certo antes de ir pro próximo.
 - [x] 1. Contratar e preparar o VPS (`uname -m`, usuário `deploy`, Docker, UFW/fail2ban, rede `proxy`) — x86_64, Ubuntu 22.04.5 LTS; SSH na porta 22022 (só chave, sem senha/root); UFW ativo (22022/80/443); fail2ban ativo; rede `proxy` já existia
 - [x] 2. Gerar a chave SSH do GitHub Actions (`deploy-garimpo-actions`, autorizada no VPS)
 - [x] 3. Cadastrar os secrets no GitHub (`VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_DEPLOY_PATH`, `VPS_SSH_PORT=22022`)
-- [ ] 4. Preparar o `.env` no VPS
-- [ ] 5. Cloudflare R2 (backup)
-- [ ] 6. healthchecks.io (monitoramento)
-- [ ] 7. Primeiro deploy (`workflow_dispatch` do `deploy.yml`)
-- [ ] 8. DNS + domínio do app
-- [ ] 9. Portainer (DNS próprio + primeiro acesso)
-- [ ] 10. Google OAuth para o novo domínio
-- [ ] 11. Validar antes do cutover
+- [x] 4. Preparar o `.env` no VPS — atenção: `.env` editado no Windows chegou com CRLF (quebrou o parser do compose, "unexpected character") e com uma aspa desbalanceada (`PORTAINER_DOMAIN="...` sem fechar) — `sed -i 's/\r$//'` resolveu o CRLF; `docker compose config --quiet` valida antes de subir
+- [x] 5. Cloudflare R2 (backup) — bucket `garimpo-backup`, lifecycle "Expire objects" 14 dias confirmado
+- [ ] 6. healthchecks.io (monitoramento) — pulado por ora (opcional), retomar antes do cutover
+- [x] 7. Primeiro deploy (`workflow_dispatch` do `deploy.yml`) — precisou de 3 fixes de código achados só rodando de verdade: `docker/setup-buildx-action@v3` (cache-to exige driver `docker-container`), `VPS_SSH_KEY` gerada sem passphrase (PowerShell `-N '""'` gera passphrase de fato, não vazia — gerar interativo, Enter em branco), e CRLF/aspas do `.env` acima
+- [x] 8. DNS + domínio do app — usando `sslip.io` (sem domínio próprio ainda): `143-95-214-240.sslip.io`, TLS automático do Caddy funcionou de primeira
+- [x] 9. Portainer (DNS próprio + primeiro acesso) — `painel-143-95-214-240.sslip.io`; setup token pego em `docker compose logs portainer`; Edge Compute pulado (não precisa, Docker é local)
+- [x] 10. Google OAuth para o novo domínio — precisou de um fix de código: atrás do Caddy o Nitro/h3 não confia em `X-Forwarded-Proto`, então `redirect_uri` saía como `http://` e o Google recusava mesmo com a URI certa cadastrada; `auth.server.ts` passou a priorizar `PUBLIC_BASE_URL` sobre `url.origin` (v0.68.2)
+- [x] 11. Validar antes do cutover — login Google funcionando confirmado; banco vazio é o esperado (Postgres deste ambiente é descartável, dados reais só entram no dump/restore da Fase 6). Falta ainda: testar upload de foto na Coleção e conferir um ciclo do `backup` (`docker compose logs backup`)
 - [ ] 12. Fase 6 — cutover (banco de produção, ponto de não-retorno no passo 8 dele)
 
 ### 1. Contratar e preparar o VPS
