@@ -23,8 +23,17 @@ function toTags(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
+// Cache curto em memória: `getAllLotAi` é chamada a cada iteração dos laços do cron
+// (`aieval`/`market`) e a cada abertura de página que mostra a nota da IA — sempre a
+// tabela INTEIRA. Invalidado a cada escrita (`upsertLotAi`/`updateLotTags`), então nunca
+// devolve algo mais velho que a última gravação desta instância. Reduz egress do Supabase
+// / Active CPU da Vercel (ver docs/economia-fase-1-egress-e-cpu.md).
+let allCache: { at: number; rows: LotAiRow[] } | null = null;
+const ALL_TTL_MS = 30_000;
+
 /** Lê todas as avaliações (single-user; poucas centenas de linhas). Best-effort. */
 export async function getAllLotAi(): Promise<LotAiRow[]> {
+  if (allCache && Date.now() - allCache.at < ALL_TTL_MS) return allCache.rows;
   const rows: LotAiRow[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabaseAdmin
@@ -48,6 +57,7 @@ export async function getAllLotAi(): Promise<LotAiRow[]> {
     }
     if (batch.length < PAGE) break;
   }
+  allCache = { at: Date.now(), rows };
   return rows;
 }
 
@@ -82,6 +92,7 @@ export async function updateLotTags(id: string, tags: string[]): Promise<string[
   if (!data || data.length === 0) {
     throw new Error("Este lote ainda não foi avaliado pela IA — não há como salvar tags nele.");
   }
+  allCache = null;
   // Devolve o que REALMENTE ficou gravado (jsonb), não o array computado.
   return toTags(data[0]?.tags);
 }
@@ -107,5 +118,6 @@ export async function upsertLotAi(rows: LotAiRow[]): Promise<number> {
     console.error("[lot-ai] falha ao gravar avaliações", error);
     throw new Error(`Não foi possível gravar as avaliações: ${error.message}`);
   }
+  allCache = null;
   return payload.length;
 }

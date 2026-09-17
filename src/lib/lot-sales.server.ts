@@ -64,6 +64,15 @@ function isMissingColumn(error: { code?: string; message?: string } | null): boo
   return (error.message ?? "").includes("orig_text");
 }
 
+// Cache curto do caso `{ withOrig: false }` SEM `ids` — a leitura da tabela INTEIRA (sem a
+// coluna mais pesada). É o caminho batido por `getVinylSales` (Vinil Analytics, a cada
+// abertura) e pela padronização de grafia dentro de `reidentifyAllSales` (até 15x por
+// execução do cron). Invalidado a cada escrita (`upsertLotSales`). O caso `{ ids }` e o
+// `withOrig: true` (só o backfill único de `bundle`) ficam de fora — não são o padrão
+// recorrente que pesa no egress.
+let noOrigCache: { at: number; rows: LotSaleRow[] } | null = null;
+const NO_ORIG_TTL_MS = 30_000;
+
 /**
  * Lê vendas de `lot_sales` (single-user; paginado). Best-effort. Tolera `orig_text` ausente
  * (banco sem a migração da coluna).
@@ -81,7 +90,12 @@ export async function getAllLotSales(opts?: {
   const ids = opts?.ids;
   if (ids && !ids.length) return [];
   let withOrig = opts?.withOrig ?? true;
+  const wantedNoOrig = !ids && !withOrig;
   const rows: LotSaleRow[] = [];
+
+  if (wantedNoOrig && noOrigCache && Date.now() - noOrigCache.at < NO_ORIG_TTL_MS) {
+    return noOrigCache.rows;
+  }
 
   if (ids) {
     for (;;) {
@@ -120,6 +134,7 @@ export async function getAllLotSales(opts?: {
       rows.push({ orig_text: "", bundle: false, ...r } as unknown as LotSaleRow);
     if (batch.length < PAGE) break;
   }
+  if (wantedNoOrig) noOrigCache = { at: Date.now(), rows };
   return rows;
 }
 
@@ -161,11 +176,13 @@ export async function upsertLotSales(
         console.error("[lot-sales] falha ao gravar vendas (sem orig_text)", retry.error);
         throw new Error(`Não foi possível gravar as vendas: ${retry.error.message}`);
       }
+      noOrigCache = null;
       return payload.length;
     }
     console.error("[lot-sales] falha ao gravar vendas", error);
     throw new Error(`Não foi possível gravar as vendas: ${error.message}`);
   }
+  noOrigCache = null;
   return payload.length;
 }
 
@@ -197,8 +214,19 @@ type SeenAuctionRow = {
   uf: string | null;
 };
 
+// Cache curto em memória: `readSeenAuctions` é chamada a cada iteração do laço `sales` do
+// cron (até 40x/execução) e `seen_auctions` NUNCA é podada (só cresce). Sem invalidação
+// explícita por escrita — quem grava ali é `recordAuctions` (`leiloesbr-auctions.server.ts`,
+// módulo separado); tolerável, porque um leilão novo/atualizado aparecer com até
+// `SEEN_TTL_MS` de atraso na captura de vendas não muda o resultado (a próxima chamada do
+// laço, ou a próxima execução do cron, pega). Mesmo padrão de `lot-ai.server.ts` (ver
+// docs/economia-fase-1-egress-e-cpu.md).
+let seenCache: { at: number; rows: SeenAuctionRow[] } | null = null;
+const SEEN_TTL_MS = 30_000;
+
 /** Lê os leilões conhecidos (durável; nunca podado) com o que a captura precisa. */
 async function readSeenAuctions(): Promise<SeenAuctionRow[]> {
+  if (seenCache && Date.now() - seenCache.at < SEEN_TTL_MS) return seenCache.rows;
   const out: SeenAuctionRow[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabaseAdmin
@@ -210,6 +238,7 @@ async function readSeenAuctions(): Promise<SeenAuctionRow[]> {
     out.push(...batch);
     if (batch.length < PAGE) break;
   }
+  seenCache = { at: Date.now(), rows: out };
   return out;
 }
 

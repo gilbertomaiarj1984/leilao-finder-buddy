@@ -57,6 +57,32 @@ da Vercel.
 Os outros steps do cron que rodam em laço longo (`market` 30×, `condition` 40×, `sales` 40×) —
 conferir se algum repete o mesmo padrão de "ler tudo para trabalhar pouco".
 
+**Confirmado e mitigado em v0.60.2/v0.60.3:** `aieval`, `aiident`, `market`, `condition` e
+`sales` faziam exatamente esse padrão:
+
+- `aieval`/`aiident`/`market` (`src/lib/cron.server.ts`) — `scrapeVinylLots(false)` (tabela
+  `lots` inteira da janela) + `getAllLotAi`/`getAllLotIdent` (tabelas inteiras), até 10-30x
+  por execução (v0.60.2).
+- `condition` (`enrichConditions`, `lot-condition.server.ts:119`) — `getAllLotCondition()`
+  inteira a cada chamada, até 40x por execução (v0.60.3).
+- `sales` (`captureFinishedSales`, `lot-sales.server.ts:428`) — `readSeenAuctions()`, que lê
+  `seen_auctions` **inteira e NUNCA podada** (só cresce, igual `lot_sales` antes do fix do
+  `reident`), até 40x por execução (v0.60.3).
+
+Diferente do `reident`, nenhum ganhou uma RPC de anti-join (exigiria migration nova); em vez
+disso, um **cache em memória de instância com TTL de 30s** por tabela (`scrapeVinylLots`,
+`getAllLotAi`, `getAllLotIdent`, `getAllLotCondition`, `readSeenAuctions`), invalidado a cada
+escrita quando a própria tabela é gravada pelo mesmo módulo (`upsertLotAi`/`upsertLotIdent`/
+`updateLotTags`/`upsertLotCondition`), evita reconsultar o banco quando a mesma function
+"quente" atende chamadas seguidas do laço. `readSeenAuctions` é exceção: não invalida por
+escrita porque quem grava em `seen_auctions` é outro módulo (`recordAuctions`,
+`leiloesbr-auctions.server.ts`) — tolerável, é best-effort e 30s de atraso não muda o
+resultado da captura de vendas.
+
+`getAllLotMarket` (`lot-market.server.ts`) continua **sem** cache de propósito — o `market`
+grava nela a cada iteração e precisa ver a escrita anterior para não reprocessar o mesmo lote
+no Discogs.
+
 ## O que fazer
 
 ### 1. Filtrar no banco, não no Node (o grosso do ganho)

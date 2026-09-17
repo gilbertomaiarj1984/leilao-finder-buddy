@@ -668,7 +668,7 @@ segue existindo, usado pela home ("Atualizar tudo").
   load há **migração única** localStorage → servidor. (Antes ficava só no localStorage → sumia
   ao trocar de navegador/dispositivo ou usar a URL de preview, de origem diferente.)
 
-## Atualização em background (cron 4×/dia)
+## Atualização em background (cron 2×/dia, v0.60.1)
 
 - **Endpoint** `/api/cron` (tratado direto em `src/server.ts`, FORA das server functions → sem
   Supabase/CSRF), protegido pelo segredo **`CRON_TOKEN`** (header `x-cron-token`; o fallback
@@ -677,10 +677,35 @@ segue existindo, usado pela home ("Atualizar tudo").
   (identificação IA), `aieval` (avaliação IA), `market` (Discogs), `condition` (estado
   pré-leilão), `sales` (captura de vendas), `reident` (reidentifica/padroniza o histórico de
   vendas pela IA), `salesdebug`/`catdebug` (diagnósticos).
-- **GitHub Actions** `.github/workflows/refresh.yml`: `cron: "0 3,9,15,21 * * *"` (UTC = BRT
-  00/06/12/18h) + `workflow_dispatch`. Varre em blocos até `nextPage:null`, enriquece por
-  `offset` até `done:true`, depois laços curtos de `aiident` → `aieval` → `market`.
-- O **"Atualizar tudo"** manual na UI continua (chunk + enrich por cursor).
+- **GitHub Actions** `.github/workflows/refresh.yml`: `cron: "10 3,17 * * *"` (UTC = BRT
+  00:10/14:00) + `workflow_dispatch`. Reduzido de 4x/dia (v0.60.0 e antes) para 2x/dia em
+  v0.60.1 — a Fluid Active CPU da Vercel estava estourando a cota do plano Hobby (ver
+  `docs/economia-migracao.md`). Varre em blocos até `nextPage:null`, enriquece por `offset`
+  até `done:true`, depois laços curtos de `aiident` → `aieval` → `market`.
+- O **"Atualizar tudo"** manual na UI continua (chunk + enrich por cursor), sem mudança.
+- **Corrigido em v0.60.2:** os steps `aieval`, `aiident` e `market` baixavam `lot_ai`/
+  `lot_ident`/o snapshot inteiro de `lots` a cada chamada do laço (mesmo padrão que causava o
+  egress do `reident`, ver `docs/economia-fase-1-egress-e-cpu.md`). Em vez de uma RPC de
+  anti-join (exigiria migration nova), a correção foi um **cache curto em memória (TTL 30s)**
+  na própria instância de function: `scrapeVinylLots(false)` (`leiloesbr-scrape.server.ts`,
+  `memCache`) e `getAllLotAi`/`getAllLotIdent` (`lot-ai.server.ts`/`lot-ident.server.ts`,
+  `allCache`) devolvem o resultado já lido em vez de reconsultar o banco, dentro do TTL.
+  Invalidado a cada escrita (`upsertLotAi`/`updateLotTags`/`upsertLotIdent`) para nunca servir
+  algo mais velho que a última gravação **desta instância**. Como o laço do cron chama esses
+  steps em sequência rápida (sem `sleep`, exceto `aieval`/`aiident` esperando batch), a mesma
+  instância "quente" da Vercel tende a atender várias chamadas seguidas e reaproveitar o cache.
+  Best-effort: se cair numa instância fria a cada chamada, funciona igual a antes (só sem o
+  ganho). `getAllLotMarket` (`lot-market.server.ts`) **não** foi cacheado de propósito — o
+  `market` grava nela a cada iteração e o próximo laço precisa ver essa escrita para não
+  reprocessar os mesmos lotes.
+  Mitigação complementar: laços do `refresh.yml` encolhidos (`aieval`/`aiident` 10→5,
+  `market` 30→12).
+- **v0.60.3:** mesma correção estendida a `condition` (`enrichConditions`, lia
+  `lot_condition` inteira a cada chamada) e `sales` (`captureFinishedSales`, lia
+  `seen_auctions` inteira — tabela **nunca podada**, cresce para sempre igual `lot_sales`
+  antes do fix do `reident`). Cache TTL 30s em `getAllLotCondition` (invalidado por
+  `upsertLotCondition`) e em `readSeenAuctions` (sem invalidação por escrita — quem grava
+  `seen_auctions` é outro módulo, `recordAuctions`; tolerável, best-effort).
 
 ## IA (avaliação, identificação, modo)
 
@@ -1243,6 +1268,10 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.59.0      | Aviso de "lance superado": toast (`sonner`) quando um lote com lance vira `status === "Coberto"` (`bidIsCovered`, `vinyl-parse.ts`), disparado pelo hook `useBidCoveredAlerts` (`bid-alerts.ts`) sobre o `bids.data` das queries `["vinyl-my-bids"]` já existentes em `index.tsx`/`analise.tsx`. Só funciona com o app aberto (nenhuma mudança em cron/DB) — a transição é detectada comparando com um snapshot do último `status` visto por lote, persistido em `localStorage` via `loadAccum`/`saveAccum` (mesmo helper de `watched-accum.ts`) |
 | v0.59.1      | Fix: lote ficava marcado "vigiando" na ferramenta mesmo depois de desvigiado direto no site do LeilõesBR (fora do app), até sair da janela de dias do acumulador. `mergeWatchedAccum` (`watched-accum.ts`) agora remove também um item ausente do `fresh` quando o leilão ainda não terminou (`auctionFinished`), não só quando o dia sai da janela |
 | v0.60.0      | Botão "refazer consulta" no painel de detalhes da nota da IA (hover no selo, cards e Análise): reavalia o lote na hora, ignorando o cache por título (`reevaluateLot` server fn → `evalLotsSync` direto + `upsertLotAi`), e atualiza o cache `["lot-ai"]` local com o resultado — ver seção "IA (avaliação, identificação, modo)" |
+| v0.60.1      | Cron 4x/dia → 2x/dia (`refresh.yml`, `0/3/9/15/21` → `10 3,17 * * *`) — Fluid Active CPU da Vercel estourou a cota do Hobby; egress do Supabase também segue acima da cota (ver `docs/economia-migracao.md`) |
+| v0.60.2      | `aieval`/`aiident`/`market` liam `lot_ai`/`lot_ident`/`lots` inteiros a cada chamada do laço (mesmo padrão de egress do `reident`) — cache curto (TTL 30s, invalidado por escrita) em `scrapeVinylLots`/`getAllLotAi`/`getAllLotIdent` + laços do `refresh.yml` encolhidos (aieval/aiident 10→5, market 30→12) |
+| v0.60.3      | Mesmo fix estendido a `condition`/`sales` — `getAllLotCondition`/`readSeenAuctions` também liam tabela inteira a cada chamada do laço (`seen_auctions` nunca é podada, cresce para sempre); cache TTL 30s nas duas |
+| v0.60.4      | Mesmo fix no último caso recorrente: `getAllLotSales({ withOrig: false })` (sem `ids`) — usado por `getVinylSales` (Vinil Analytics) e pela padronização de grafia dentro de `reidentifyAllSales` — ganhou cache TTL 30s, invalidado por `upsertLotSales`. Varredura de padrões concluída: `collection.server.ts`/`wantlist.server.ts` também leem tabela inteira, mas só em página aberta pelo usuário (não em laço do cron) — prioridade baixa, não mexido |
 
 ## Pendências
 
