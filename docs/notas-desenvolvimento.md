@@ -995,7 +995,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   lotes. Preço em `<b class="pb-1 …">` (classe composta), data = data do leilão, casa do
   `.ellipsis-overflow` (l=6 não traz `pesq-uf`). Testado com card real via `bun -e`.
 
-## Compras do usuário (`purchases`, v0.61.0–1)
+## Compras do usuário (`purchases`, v0.61.1–2)
 
 - **Histórico de "Minhas compras" (vinil), PERSISTIDO** — diferente de Vigia/Lances (sempre lidos
   ao vivo, sem tabela). Página `_authenticated/compras.tsx` (menu **Compras** no header do
@@ -1004,7 +1004,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   **por dia** (agrupado por `won_date`) e **por casa** (`groupWatchedByHouse`, reaproveitado de
   `grouping.ts` sem alteração — `Purchase` já tem `house`/`lote`, `houseUrl` recebe a URL do lote
   por conveniência de tipo, mas não é usada como "site da casa" na UI).
-- **Agrupamento aninhado, sem misturar dia/casa (v0.61.1):** cada visão traz a outra dimensão
+- **Agrupamento aninhado, sem misturar dia/casa (v0.61.2):** cada visão traz a outra dimensão
   como sub-agrupamento — "por dia" separa as compras de cada dia por sub-cabeçalho de casa; "por
   casa" separa as de cada casa por sub-seção de dia (`groupPurchasesByHouse`/`groupByDay`
   reaproveitados nos dois sentidos). "Dia" é a unidade **colapsável** recorrente nas duas visões
@@ -1339,8 +1339,9 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.60.7      | Catálogo de Aplicações do provedor avaliado no plano (só documentação): "Docker" é atalho aceitável, **"Supabase" self-hosted é descartado** (12+ containers, ~3-4 GB, não cabe nos 4 GB junto com o app — e Realtime/Edge Functions nem são usados), K3S descartado |
 | v0.60.8      | Plano de migração passa a prever multi-app no VPS (só documentação): rede Docker externa compartilhada com o Caddy roteando por domínio, um Postgres só com bancos separados, `mem_limit` por serviço e orçamento de memória (~800 MB usados de 4 GB) — evita refatorar o compose depois |
 | v0.60.9      | Fix: lote com lance dado aparecia na tela só como "Vigiando" (sem borda/status de lance). `mergeWatchedAccum` (`watched-accum.ts`) podava TODO item pela janela "hoje + próximos N dias" (`upcomingDayKeys`), mas em `MyBid` (lances) o campo `date` é o dia em que o LANCE foi dado (passado), não o do leilão — o item saía do acumulador assim que era mesclado, antes de chegar a `bids.data`/`LotCard`. Lances agora podam por uma janela de dias PASSADOS a partir da data do lance (`recentDayKeys`, novo espelho de `upcomingDayKeys` em `vinyl-parse.ts`; `BID_RETENTION_DAYS` = 14); vigiados continuam podando pela janela futura, sem mudança de comportamento |
-| v0.61.0      | Novo menu **Compras** (`/compras`, botão no header ao lado de Coleção/Analytics): histórico PERSISTIDO de "Minhas compras" (vinil), diferente de Vigia/Lances (lidos ao vivo). Nova tabela `purchases` (`supabase/setup.sql` + migration), sync incremental (`purchases.server.ts`: `syncPurchasesIncremental`, mesma descoberta de leilões vencidos via `wonAuctionIdsFromBids`/`l=4` da Coleção, mas gravação numa tabela própria — um lote pode aparecer em `purchases` E `collection_items`), novo `step=purchases` no cron/`refresh.yml`, e `purchases.functions.ts` (`getPurchases`/`scanPurchases`/`scanPurchasesFull`). UI com 3 visões por botão toggle (mesmo idioma de "Vigiados/Lances do dia"): mais recentes, por dia, por casa (`groupWatchedByHouse` reaproveitado) |
-| v0.61.1      | Compras: as visões "por dia" e "por casa" não podiam mais misturar as duas dimensões — cada uma agora traz a outra como sub-agrupamento aninhado (`DaySection`, `compras.tsx`): "por dia" separa cada dia em sub-cabeçalhos por casa; "por casa" separa cada casa em sub-seções por dia. "Dia" é a unidade colapsável recorrente nas duas visões (top-level em "por dia", aninhada dentro de cada casa em "por casa"), sempre com o dia mais recente aberto por padrão e os demais fechados (`useState` por instância, sem `useEffect` — a chave estável por dia preserva o toggle do usuário entre refetches) |
+| v0.61.0      | Abas gerais **Vigiados**/**Lances** (`index.tsx`) passam a agrupar por dia de forma recolhível — cabeçalho do dia (antes só rótulo) virou botão com chevron; dia atual (`days[0]`) começa aberto, os demais fechados por padrão (`watchedDayOpen`/`bidsDayOpen`, `Record<dayKey, boolean>` — só grava override quando o usuário clica) |
+| v0.61.1      | Novo menu **Compras** (`/compras`, botão no header ao lado de Coleção/Analytics): histórico PERSISTIDO de "Minhas compras" (vinil), diferente de Vigia/Lances (lidos ao vivo). Nova tabela `purchases` (`supabase/setup.sql` + migration), sync incremental (`purchases.server.ts`: `syncPurchasesIncremental`, mesma descoberta de leilões vencidos via `wonAuctionIdsFromBids`/`l=4` da Coleção, mas gravação numa tabela própria — um lote pode aparecer em `purchases` E `collection_items`), novo `step=purchases` no cron/`refresh.yml`, e `purchases.functions.ts` (`getPurchases`/`scanPurchases`/`scanPurchasesFull`). UI com 3 visões por botão toggle (mesmo idioma de "Vigiados/Lances do dia"): mais recentes, por dia, por casa (`groupWatchedByHouse` reaproveitado) |
+| v0.61.2      | Compras: as visões "por dia" e "por casa" não podiam mais misturar as duas dimensões — cada uma agora traz a outra como sub-agrupamento aninhado (`DaySection`, `compras.tsx`): "por dia" separa cada dia em sub-cabeçalhos por casa; "por casa" separa cada casa em sub-seções por dia. "Dia" é a unidade colapsável recorrente nas duas visões (top-level em "por dia", aninhada dentro de cada casa em "por casa"), sempre com o dia mais recente aberto por padrão e os demais fechados (`useState` por instância, sem `useEffect` — a chave estável por dia preserva o toggle do usuário entre refetches) |
 
 ## Pendências
 

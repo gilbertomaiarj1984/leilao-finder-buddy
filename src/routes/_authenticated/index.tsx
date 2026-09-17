@@ -309,6 +309,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const [searchDraft, setSearchDraft] = useState<string>("");
   const [watchedViewDay, setWatchedViewDay] = useState<string | null>(null);
   const [bidsViewDay, setBidsViewDay] = useState<string | null>(null);
+  // Estado de abertura dos grupos por dia nas abas gerais de Vigiados/Lances (chave =
+  // dayKey). Sem override explícito, o dia atual (days[0]) começa aberto e os demais
+  // fechados — só grava aqui quando o usuário clica, então o padrão segue acompanhando
+  // qual é "hoje" mesmo com o passar dos dias.
+  const [watchedDayOpen, setWatchedDayOpen] = useState<Record<string, boolean>>({});
+  const [bidsDayOpen, setBidsDayOpen] = useState<Record<string, boolean>>({});
   const [showFinishedDays, setShowFinishedDays] = useState<Set<string>>(new Set());
   const toggleShowFinished = (day: string) =>
     setShowFinishedDays((prev) => {
@@ -2154,6 +2160,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                           const idx = days.indexOf(dayKey);
                           const label = dayKey ? dayLabel(dayKey, idx >= 0 ? idx : 99) : "Sem data";
                           const houses = groupWatchedByHouse(dayLots);
+                          const isOpen = watchedDayOpen[dayKey] ?? dayKey === days[0];
                           return (
                             <section key={dayKey || "sem-data"} className="space-y-6">
                               <HideableBar
@@ -2161,91 +2168,108 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                 style={stickyBelowHeader}
                                 className="z-10 -mx-4"
                               >
-                                <div className="flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur sm:py-3">
+                                <button
+                                  type="button"
+                                  aria-expanded={isOpen}
+                                  onClick={() =>
+                                    setWatchedDayOpen((prev) => ({ ...prev, [dayKey]: !isOpen }))
+                                  }
+                                  className="flex w-full flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 text-left backdrop-blur sm:py-3"
+                                >
+                                  {isOpen ? (
+                                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                  ) : (
+                                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                  )}
                                   <span className="text-sm font-semibold text-foreground">
                                     {label}
                                   </span>
                                   <span className="text-xs text-muted-foreground">
                                     {dayLots.length} lote(s) vigiado(s) em {houses.length} casa(s)
                                   </span>
-                                </div>
+                                </button>
                               </HideableBar>
-                              {houses.map((houseGroup) => {
-                                const auctionInfo = houseAuctionInfo(dayKey, houseGroup.lots[0]);
-                                return (
-                                  <section key={houseGroup.house} className="space-y-3">
-                                    <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
-                                      <h2 className="text-xl font-semibold tracking-tight text-foreground">
-                                        {houseGroup.house}
-                                      </h2>
-                                      <Badge variant="secondary">
-                                        {houseGroup.lots.length} lote(s)
-                                      </Badge>
-                                      <HouseStatBadges
-                                        stats={computeHouseStats(
-                                          houseGroup.lots,
-                                          watchedIds,
-                                          bidStatusById,
-                                        )}
-                                      />
-                                      <AuctionStatusInline info={auctionInfo} />
-                                      <div className="ml-auto flex flex-wrap items-center gap-3">
-                                        {auctionInfo?.presencialUrl ? (
-                                          <a
-                                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                            href={auctionInfo.presencialUrl}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            title="Acompanhar o pregão presencial desta casa"
-                                          >
-                                            <Radio className="h-3 w-3" /> pregão presencial
-                                          </a>
-                                        ) : null}
-                                        <a
-                                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                          href={houseGroup.houseUrl}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                        >
-                                          site da casa <ExternalLink className="h-3 w-3" />
-                                        </a>
-                                      </div>
-                                    </div>
-                                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                      {houseGroup.lots.map((lot) => (
-                                        <LotCard
-                                          key={lot.id}
-                                          lot={{
-                                            ...lot,
-                                            dayKey: watchedDateToKey(lot.date) || lot.date,
-                                            watched: true,
-                                            myBid: myBidById.get(lot.idPeca),
-                                          }}
-                                          busy={pending === lot.idPeca}
-                                          ai={aiFor(lot)}
-                                          market={marketFor(lot)}
-                                          album={albumFor(lot)}
-                                          condition={conditionFor(lot)}
-                                          demand={demandFor(lot)}
-                                          owned={ownedFor(lot)}
-                                          onOpenOwned={() => setOwnedPanelLot(lot)}
-                                          onEditTags={editTags(lot.id)}
-                                          bidStatus={bidStatusById.get(lot.idPeca)}
-                                          sold={soldById.get(lot.id)}
-                                          onToggle={() =>
-                                            toggle.mutate({
-                                              idPeca: lot.idPeca,
-                                              idLeilao: lot.idLeilao,
-                                              base: lot.base,
-                                              watch: false,
-                                            })
-                                          }
-                                        />
-                                      ))}
-                                    </div>
-                                  </section>
-                                );
-                              })}
+                              {!isOpen
+                                ? null
+                                : houses.map((houseGroup) => {
+                                    const auctionInfo = houseAuctionInfo(
+                                      dayKey,
+                                      houseGroup.lots[0],
+                                    );
+                                    return (
+                                      <section key={houseGroup.house} className="space-y-3">
+                                        <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
+                                          <h2 className="text-xl font-semibold tracking-tight text-foreground">
+                                            {houseGroup.house}
+                                          </h2>
+                                          <Badge variant="secondary">
+                                            {houseGroup.lots.length} lote(s)
+                                          </Badge>
+                                          <HouseStatBadges
+                                            stats={computeHouseStats(
+                                              houseGroup.lots,
+                                              watchedIds,
+                                              bidStatusById,
+                                            )}
+                                          />
+                                          <AuctionStatusInline info={auctionInfo} />
+                                          <div className="ml-auto flex flex-wrap items-center gap-3">
+                                            {auctionInfo?.presencialUrl ? (
+                                              <a
+                                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                                href={auctionInfo.presencialUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                title="Acompanhar o pregão presencial desta casa"
+                                              >
+                                                <Radio className="h-3 w-3" /> pregão presencial
+                                              </a>
+                                            ) : null}
+                                            <a
+                                              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                              href={houseGroup.houseUrl}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                            >
+                                              site da casa <ExternalLink className="h-3 w-3" />
+                                            </a>
+                                          </div>
+                                        </div>
+                                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                          {houseGroup.lots.map((lot) => (
+                                            <LotCard
+                                              key={lot.id}
+                                              lot={{
+                                                ...lot,
+                                                dayKey: watchedDateToKey(lot.date) || lot.date,
+                                                watched: true,
+                                                myBid: myBidById.get(lot.idPeca),
+                                              }}
+                                              busy={pending === lot.idPeca}
+                                              ai={aiFor(lot)}
+                                              market={marketFor(lot)}
+                                              album={albumFor(lot)}
+                                              condition={conditionFor(lot)}
+                                              demand={demandFor(lot)}
+                                              owned={ownedFor(lot)}
+                                              onOpenOwned={() => setOwnedPanelLot(lot)}
+                                              onEditTags={editTags(lot.id)}
+                                              bidStatus={bidStatusById.get(lot.idPeca)}
+                                              sold={soldById.get(lot.id)}
+                                              onToggle={() =>
+                                                toggle.mutate({
+                                                  idPeca: lot.idPeca,
+                                                  idLeilao: lot.idLeilao,
+                                                  base: lot.base,
+                                                  watch: false,
+                                                })
+                                              }
+                                            />
+                                          ))}
+                                        </div>
+                                      </section>
+                                    );
+                                  })}
                             </section>
                           );
                         })}
@@ -2301,6 +2325,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                           const idx = days.indexOf(dayKey);
                           const label = dayKey ? dayLabel(dayKey, idx >= 0 ? idx : 99) : "Sem data";
                           const houses = groupWatchedByHouse(dayBids);
+                          const isOpen = bidsDayOpen[dayKey] ?? dayKey === days[0];
                           return (
                             <section key={dayKey || "sem-data"} className="space-y-6">
                               <HideableBar
@@ -2308,7 +2333,19 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                 style={stickyBelowHeader}
                                 className="z-10 -mx-4"
                               >
-                                <div className="flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur sm:py-3">
+                                <button
+                                  type="button"
+                                  aria-expanded={isOpen}
+                                  onClick={() =>
+                                    setBidsDayOpen((prev) => ({ ...prev, [dayKey]: !isOpen }))
+                                  }
+                                  className="flex w-full flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 text-left backdrop-blur sm:py-3"
+                                >
+                                  {isOpen ? (
+                                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                  ) : (
+                                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                  )}
                                   <span className="text-sm font-semibold text-foreground">
                                     {label}
                                   </span>
@@ -2316,20 +2353,22 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                     {dayBids.length} lance(s) em {houses.length} casa(s)
                                   </span>
                                   <BidStatBadges stats={computeBidStats(dayBids)} />
-                                </div>
+                                </button>
                               </HideableBar>
-                              <BidHouseSections
-                                houses={houses}
-                                pending={pending}
-                                loteById={loteById}
-                                priceById={priceById}
-                                nextBidById={nextBidById}
-                                albumById={albumById}
-                                soldById={soldById}
-                                ownedFor={ownedFor}
-                                onOpenOwned={(bid) => setOwnedPanelLot(bid)}
-                                onToggle={(bid) => toggle.mutate(bid)}
-                              />
+                              {isOpen ? (
+                                <BidHouseSections
+                                  houses={houses}
+                                  pending={pending}
+                                  loteById={loteById}
+                                  priceById={priceById}
+                                  nextBidById={nextBidById}
+                                  albumById={albumById}
+                                  soldById={soldById}
+                                  ownedFor={ownedFor}
+                                  onOpenOwned={(bid) => setOwnedPanelLot(bid)}
+                                  onToggle={(bid) => toggle.mutate(bid)}
+                                />
+                              ) : null}
                             </section>
                           );
                         })}
