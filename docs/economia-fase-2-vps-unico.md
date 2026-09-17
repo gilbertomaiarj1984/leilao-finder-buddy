@@ -126,6 +126,24 @@ atrapalham:
   ambiente vive num `docker-compose.yml` versionado no repo, partir de um SO limpo é mais
   previsível. Instalar Docker + Compose no Ubuntu são dois comandos.
 
+Do catálogo de Aplicações da HostGator, três merecem nota:
+
+- **"Docker"** — aceitável como atalho, já que é exatamente o que instalaríamos. Economiza dois
+  comandos em troca de herdar uma versão de Docker e uma base de Ubuntu não escolhidas. Se usar,
+  conferir `lsb_release -a` e `docker --version` antes de seguir; base antiga → voltar ao SO
+  Simples.
+- **"Supabase" — NÃO usar, apesar de tentador.** É a pergunta óbvia ("instalo o Supabase
+  self-hosted e não mudo nenhuma linha de código"), e a resposta é a mesma que já descartou essa
+  opção, agora com número: o stack são 12+ containers (Postgres, GoTrue, PostgREST, Realtime,
+  Storage, Kong, Studio, imgproxy, meta, analytics) consumindo **~3–4 GB sozinho** — não sobra
+  máquina para o app nos 4 GB contratados. Podar serviços até caber significa manter um compose
+  customizado, que é justo o trabalho que a instalação prometia evitar, e sem o ganho de
+  simplicidade do `postgres.js` falando direto com o Postgres na mesma rede Docker. Lembrando que
+  o app **não usa** Realtime nem Edge Functions, e usa RLS apenas como "negar tudo" — quase todo
+  esse stack seria peso morto.
+- **"Kubernetes K3S" — não.** Orquestrador para um único container de app é complexidade sem
+  contrapartida.
+
 **Backup continua obrigatório** (Fase 5, junto com a Fase 4): não há data protection gerenciada.
 
 > ⏰ **Marcar lembrete antes da renovação — agora importa mais.** A R$ 78,32/mês você estaria

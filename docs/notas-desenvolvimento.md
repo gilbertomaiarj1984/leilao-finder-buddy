@@ -1281,6 +1281,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.60.4      | Mesmo fix no último caso recorrente: `getAllLotSales({ withOrig: false })` (sem `ids`) — usado por `getVinylSales` (Vinil Analytics) e pela padronização de grafia dentro de `reidentifyAllSales` — ganhou cache TTL 30s, invalidado por `upsertLotSales`. Varredura de padrões concluída: `collection.server.ts`/`wantlist.server.ts` também leem tabela inteira, mas só em página aberta pelo usuário (não em laço do cron) — prioridade baixa, não mexido |
 | v0.60.5      | Plano de migração para VPS único fechado e documentado (só documentação, sem mudança de código): `docs/economia-fase-2-vps-unico.md` reescrito como plano executável em 6 fases — shim `postgres.js` preservando `supabaseAdmin`, OAuth Google direto, Storage em volume, branch `vps` paralela com a `main` intocada até o cutover |
 | v0.60.6      | Provedor e SO fechados no plano de migração (só documentação): HostGator VPS Cloud OCI NVMe 4 em São Paulo (2 vCPU / 4 GB / 100 GB, 13 ms) com "SO Simples" Ubuntu LTS — os 4 GB removem o risco de OOM no `sharp` e os 2 vCPU tiram a disputa do cron com o Postgres |
+| v0.60.7      | Catálogo de Aplicações do provedor avaliado no plano (só documentação): "Docker" é atalho aceitável, **"Supabase" self-hosted é descartado** (12+ containers, ~3-4 GB, não cabe nos 4 GB junto com o app — e Realtime/Edge Functions nem são usados), K3S descartado |
 
 ## Pendências
 
