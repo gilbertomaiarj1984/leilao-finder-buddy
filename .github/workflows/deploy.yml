@@ -1,9 +1,9 @@
 name: Deploy (VPS)
 
-# Fase 4 da migração para VPS (docs/economia-fase-2-vps-unico.md). Builda a imagem no
-# Actions (não no VPS — 2 vCPU/4 GB aguentaria, mas builda fora deixa o deploy rápido e
-# reproduzível), publica no GHCR e faz o VPS puxar. Só dispara na branch `vps` (ambiente
-# paralelo à `main`, que segue na Vercel até o cutover da Fase 6).
+# Fases 4/5 da migração para VPS (docs/economia-fase-2-vps-unico.md). Builda as imagens
+# (app + backup) no Actions (não no VPS — 2 vCPU/4 GB aguentaria, mas builda fora deixa o
+# deploy rápido e reproduzível), publica no GHCR e faz o VPS puxar. Só dispara na branch
+# `vps` (ambiente paralelo à `main`, que segue na Vercel até o cutover da Fase 6).
 
 on:
   push:
@@ -19,6 +19,7 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
+  BACKUP_IMAGE: ghcr.io/${{ github.repository }}-backup
 
 jobs:
   build-and-push:
@@ -36,7 +37,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build e push da imagem
+      - name: Build e push da imagem do app
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -46,6 +47,17 @@ jobs:
             ${{ env.IMAGE }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Build e push da imagem de backup (Fase 5)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./docker/backup
+          push: true
+          tags: |
+            ${{ env.BACKUP_IMAGE }}:latest
+            ${{ env.BACKUP_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha,scope=backup
+          cache-to: type=gha,mode=max,scope=backup
 
   deploy:
     needs: build-and-push
@@ -76,9 +88,10 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
           APP_IMAGE: ${{ env.IMAGE }}:${{ github.sha }}
+          BACKUP_IMAGE: ${{ env.BACKUP_IMAGE }}:${{ github.sha }}
         run: |
           set -euo pipefail
           ssh "$VPS_USER@$VPS_HOST" "cd '$VPS_DEPLOY_PATH' && \
-            export APP_IMAGE='$APP_IMAGE' && \
+            export APP_IMAGE='$APP_IMAGE' BACKUP_IMAGE='$BACKUP_IMAGE' && \
             docker compose pull && \
             docker compose up -d --remove-orphans"

@@ -54,6 +54,18 @@ riscos e o roteiro completo das 6 fases da migração (Supabase/Vercel → VPS �
 3. Postgres sem porta publicada (acesso administrativo só por túnel SSH); UFW liberando
    só 22/80/443 — ver "Endurecimento da máquina" no plano de migração.
 
+## Backup e monitoramento
+
+Serviço `backup` no compose (imagem própria em `docker/backup/`, também publicada pelo
+`deploy.yml`): `pg_dump` a cada 24h para o Cloudflare R2 (S3-compatible, free 10 GB) — ver
+`R2_*` em `.env.example`. A retenção (14 dias) é configurada como regra de **lifecycle no
+bucket** do R2, não no script. Backup não testado não é backup: restaurar o dump baixado
+num Postgres descartável de vez em quando.
+
+Monitoramento: `HEALTHCHECKS_PING_URL` (opcional, `.github/workflows/refresh.yml`) — ping
+de sucesso no fim da execução, `/fail` se qualquer chamada do cron falhar. Sem esse secret,
+os pings viram no-op.
+
 ## Banco de dados
 
 Postgres próprio (sem serviço gerenciado). Schema consolidado em

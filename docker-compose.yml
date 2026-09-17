@@ -7,6 +7,10 @@
 #
 # Criar a rede uma vez, antes do primeiro `docker compose up`:
 #   docker network create proxy
+#
+# `backup` (Fase 5) usa uma imagem própria (`docker/backup/Dockerfile`), buildada e
+# publicada pelo mesmo workflow que builda o `app` (`.github/workflows/deploy.yml`) — nunca
+# builda no VPS, mesma regra do `app`.
 
 services:
   caddy:
@@ -56,6 +60,24 @@ services:
       - default
     # Sem `ports:` de propósito — acesso administrativo só por túnel SSH
     # (ver "Endurecimento da máquina" em docs/economia-fase-2-vps-unico.md).
+
+  backup:
+    image: ${BACKUP_IMAGE:-ghcr.io/gilbertomaiarj1984/leilao-finder-buddy-backup:latest}
+    restart: unless-stopped
+    mem_limit: 128m
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-garimpo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-garimpo}
+      R2_ENDPOINT: ${R2_ENDPOINT:?defina R2_ENDPOINT no .env}
+      R2_BUCKET: ${R2_BUCKET:?defina R2_BUCKET no .env}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?defina R2_ACCESS_KEY_ID no .env}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?defina R2_SECRET_ACCESS_KEY no .env}
+    networks:
+      - default
+    depends_on:
+      - postgres
 
 networks:
   proxy:

@@ -18,8 +18,8 @@ leilão → artista, com vigia e lances sincronizados com a conta do usuário, a
 (via `postgres.js`) + **Google OAuth** direto, deploy em **VPS** (Docker Compose + Caddy, build
 via Vite + Nitro preset `node-server`), atualização periódica via **GitHub Actions**.
 Migração de Supabase/Vercel para VPS único documentada em
-`docs/economia-fase-2-vps-unico.md` (Fases 1–4 concluídas; faltam Fase 5 — backup/faxina — e
-Fase 6 — cutover).
+`docs/economia-fase-2-vps-unico.md` (Fases 1–5 concluídas em código; falta só a Fase 6 —
+cutover, que exige acesso ao VPS real).
 
 ## Comandos
 
@@ -101,10 +101,15 @@ migrações `.sql` não auto-aplicadas).
 - **Fotos da Coleção**: arquivos em disco (`COLLECTION_DIR`, volume Docker), servidos pelo
   Caddy em produção (`/collection/*`, `Cache-Control` 7 dias) — ver `Caddyfile` e
   `src/lib/collection-storage.server.ts`.
-- **Deploy**: `docker-compose.yml` (`caddy` + `app` + `postgres:17`) num VPS único;
-  `.github/workflows/deploy.yml` builda a imagem (`Dockerfile`, preset `node-server`) e
-  publica no GHCR a cada push na branch `vps`, depois faz `docker compose pull && up -d`
-  por SSH.
+- **Deploy**: `docker-compose.yml` (`caddy` + `app` + `postgres:17` + `backup`) num VPS único;
+  `.github/workflows/deploy.yml` builda as imagens (`Dockerfile` do app, preset
+  `node-server`; `docker/backup/Dockerfile` do backup) e publica no GHCR a cada push na
+  branch `vps`, depois faz `docker compose pull && up -d` por SSH.
+- **Backup/monitoramento**: `pg_dump` diário do serviço `backup` para o Cloudflare R2
+  (retenção por lifecycle no bucket, não no script); ping pro healthchecks.io no fim/erro
+  do `refresh.yml` (`HEALTHCHECKS_PING_URL`, opcional). FKs `ON DELETE CASCADE` de
+  `lot_ai`/`lot_ident`/`lot_market`/`lot_condition` para `lots(id)` — nunca `lot_sales`.
+  `seen_auctions` podada pelo `step=prune` do cron.
 
 Para a mecânica fina de cada área (parsing de catálogo, matching de coleção, grading, Discogs,
 Analytics, etc.) consultar as seções correspondentes em `docs/notas-desenvolvimento.md` — é
