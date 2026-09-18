@@ -17,6 +17,7 @@ const AI_BATCH_KEY = "ai_batch";
 const AI_IDENT_BATCH_KEY = "ai_ident_batch";
 const AI_MODE_KEY = "ai_mode";
 const AI_PROVIDER_KEY = "ai_provider";
+const GEMINI_MODEL_KEY = "gemini_model";
 const COLLECTION_LINKS_KEY = "collection_links";
 const COLLECTION_FEEDBACK_KEY = "collection_feedback";
 const SALES_CAPTURED_KEY = "sales_captured";
@@ -589,6 +590,67 @@ export async function setAiProvider(provider: AiProvider): Promise<{ savedAt: st
   if (error) {
     console.error("[app-state] não foi possível gravar o provedor de IA", error);
     throw new Error(`Não foi possível gravar o provedor de IA: ${error.message}`);
+  }
+  return { savedAt };
+}
+
+/**
+ * Modelo do Gemini escolhido pelo usuário. Global, um registro em `app_state`. Mesma lição do
+ * `AiProvider` acima: declarado localmente pro servidor não depender do client-safe
+ * `ai-provider.ts` — mantenha as duas listas em sincronia (`GEMINI_MODELS`/`GEMINI_MODEL_LABELS`
+ * lá). ⚠️ v0.69.2 tinha uma lista de 6 ids "prováveis" achados em busca na web — testado em
+ * produção pelo usuário no mesmo dia: `gemini-flash-lite-latest` e `gemini-3.5-flash-lite`
+ * voltam 400 INVALID_ARGUMENT (não existem); `gemini-3.1-flash-lite` funciona (confirmado).
+ * `gemini-3.7-flash`/`gemini-3.6-flash`/`gemini-3.1-pro` nunca testados, tirados da lista.
+ * v0.69.3 fica só com os TRÊS ids confirmados: `gemini-3.1-flash-lite` (padrão — mais barato
+ * sem prazo de desligamento anunciado), `gemini-2.5-flash-lite` (fallback de quota desde o
+ * v0.69.0, mais barato ainda, mas desliga em 16/out/2026) e `gemini-flash-latest` (padrão
+ * histórico desde o v0.27.0). Precedência: `app_state` → env `GEMINI_MODEL` → padrão de fábrica.
+ */
+const GEMINI_MODELS = [
+  "gemini-2.5-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-flash-latest",
+] as const;
+export type GeminiModel = (typeof GEMINI_MODELS)[number];
+
+function envDefaultGeminiModel(): GeminiModel {
+  const env = process.env["GEMINI_MODEL"];
+  return typeof env === "string" && (GEMINI_MODELS as readonly string[]).includes(env)
+    ? (env as GeminiModel)
+    : "gemini-3.1-flash-lite";
+}
+
+export async function getGeminiModel(): Promise<GeminiModel> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("app_state")
+      .select("value")
+      .eq("key", GEMINI_MODEL_KEY)
+      .maybeSingle();
+    if (error) throw error;
+    const value = data?.value;
+    if (typeof value === "string" && (GEMINI_MODELS as readonly string[]).includes(value)) {
+      return value as GeminiModel;
+    }
+    return envDefaultGeminiModel();
+  } catch (error) {
+    console.error("[app-state] não foi possível ler o modelo do Gemini (usando padrão)", error);
+    return envDefaultGeminiModel();
+  }
+}
+
+export async function setGeminiModel(model: GeminiModel): Promise<{ savedAt: string }> {
+  if (!(GEMINI_MODELS as readonly string[]).includes(model)) {
+    throw new Error(`Modelo de Gemini inválido: ${model}`);
+  }
+  const savedAt = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from("app_state")
+    .upsert({ key: GEMINI_MODEL_KEY, value: model, updated_at: savedAt }, { onConflict: "key" });
+  if (error) {
+    console.error("[app-state] não foi possível gravar o modelo do Gemini", error);
+    throw new Error(`Não foi possível gravar o modelo do Gemini: ${error.message}`);
   }
   return { savedAt };
 }
