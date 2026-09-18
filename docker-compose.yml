@@ -38,6 +38,7 @@ services:
     networks:
       - proxy
       - default
+      - dokploy-network
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - collection_data:/data/collection:ro
@@ -115,6 +116,10 @@ services:
 
 networks:
   proxy:
+    external: true
+  # Rede overlay criada pelo instalador do Dokploy (Fase 7) — o Caddy entra nela só pra
+  # alcançar o `dokploy-traefik` pelo nome, nada mais deste projeto usa essa rede.
+  dokploy-network:
     external: true
   default:
 

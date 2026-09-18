@@ -27,20 +27,28 @@
 	reverse_proxy portainer:9000
 }
 
-# Preview deployments (Dokploy) — wildcard próprio, nunca um path do domínio principal.
-# O Dokploy roda FORA deste compose (plataforma separada, instalada direto no VPS) com o
-# próprio Traefik em portas alternativas (nunca 80/443 — essas continuam só do Caddy) e
-# SEM ACME próprio: quem termina TLS pro subdomínio de preview é este Caddy (certificado
-# wildcard, precisa de DNS-01 com token de API do provedor de DNS em {$APP_DOMAIN} — ver
-# docs/economia-fase-2-vps-unico.md). O Traefik do Dokploy só roteia por Host header, em
-# HTTP puro, pros containers de cada PR. `dokploy-traefik` é o nome do serviço/container
-# do Traefik do Dokploy na rede `proxy` (conferir no `docker ps` do VPS depois de instalar
-# — ajustar aqui se o nome vier diferente).
+# Preview deployments (Dokploy, Fase 7) — subdomínio próprio, nunca um path do domínio
+# principal. Ambiente atual roda em sslip.io (sem domínio próprio ainda), então NÃO
+# precisa de wildcard/DNS-01: cada subdomínio (ex.: preview.143-95-214-240.sslip.io)
+# resolve sozinho pro IP embutido no nome, e o Caddy tira o certificado normal (HTTP-01,
+# igual {$APP_DOMAIN}/{$PORTAINER_DOMAIN}) pra cada um. Reavaliar pra DNS-01 + wildcard só
+# se um dia isso migrar pra domínio próprio.
+#
+# `dokploy-traefik` é um container standalone (não é serviço Swarm nem deste compose,
+# `docker run` direto pelo instalador do Dokploy) na rede `dokploy-network` (overlay
+# externa, criada pelo instalador) — por isso o Caddy também entra nela
+# (`docker-compose.yml`). Portas do Traefik do Dokploy foram remapeadas na instalação de
+# 80/443 (que já eram do Caddy) para **8081/8444** — ajustadas em
+# `/etc/dokploy/traefik/traefik.yml` (entryPoints) e na recriação do container
+# (`docker run -p 8081:8081 -p 8444:8444`) direto no VPS; não fica em nenhum arquivo deste
+# repo porque o Dokploy não é gerenciado por aqui. Achado na instalação: `api.insecure:
+# true` do Traefik cria um entrypoint interno `traefik` que já ocupa 8080 por padrão — por
+# isso 8081, não 8080, pro `web`.
 #
 # ⚠️ Nunca apontar o cron automático (`refresh.yml`/healthchecks) pra este domínio: a
 # sessão do leiloesbr é por origem (cookie em memória), então login simultâneo em preview
 # e produção derruba uma sessão na outra. Ação (lance/vigia) em preview só por clique
 # manual na UI, nunca automatizada.
 {$PREVIEW_DOMAIN} {
-	reverse_proxy dokploy-traefik:80
+	reverse_proxy dokploy-traefik:8081
 }

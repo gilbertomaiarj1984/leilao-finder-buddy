@@ -771,27 +771,72 @@ Backup não testado não é backup.
 
 ## Fase 7 (opcional, pós-cutover) — Preview deployments (Dokploy)
 
-Decisão registrada em conversa (não é código, é infra manual no VPS): usar **Dokploy** pra
-preview de PR (deploy efêmero por branch/PR, algo próximo do que a Vercel dava de graça). O
-**Portainer (Fase 5) continua** sendo o painel de containers/logs da produção — o Dokploy entra
-só pelo recurso que o Portainer não tem, preview automático por PR.
+Instalado e validado no VPS real em 2026-09-18. Usa **Dokploy** pra preview de PR (deploy
+efêmero por branch/PR, algo próximo do que a Vercel dava de graça). O **Portainer (Fase 5)
+continua** sendo o painel de containers/logs da produção — o Dokploy entra só pelo recurso que o
+Portainer não tem, preview automático por PR.
 
-**Por que Dokploy e não Coolify:** VPS de 2 vCPU/4 GB, stack atual já em ~800 MB + Portainer
-256 MB, margem real de ~2–2,4 GB. Coolify sozinho (painel + Postgres/Redis próprios + Traefik)
-já aperta essa margem antes de qualquer preview subir; Dokploy é bem mais magro (~300–500 MB).
-Não planejar mais de 1 preview simultânea.
+**Por que Dokploy e não Coolify:** VPS de 2 vCPU/4 GB, stack atual real (medido, não estimado)
+~112 MB entre app/postgres/caddy/portainer/backup, ~3,1 GB disponíveis. Dokploy é bem mais magro
+que Coolify (painel + Postgres/Redis próprios + Traefik). Não planejar mais de 1 preview
+simultânea mesmo assim.
 
-**Convivência com o Caddy (não negociável): o Dokploy nunca publica 80/443.** Ele roda fora
-deste `docker-compose.yml`, instalado direto no VPS, com o Traefik dele em portas alternativas
-(instalador expõe `HTTP_PORT`/`HTTPS_PORT`) e **sem ACME próprio**. O Caddy continua sendo a
-única borda pública, TLS incluído — ver o bloco novo `{$PREVIEW_DOMAIN}` no `Caddyfile`
-(`reverse_proxy dokploy-traefik:80`, HTTP puro pra dentro). Isso exige:
-- **DNS A wildcard** `*.preview.<domínio>` → IP do VPS.
-- **Certificado TLS wildcard no Caddy**: HTTP-01 não valida wildcard, precisa de **DNS-01**
-  (token de API do provedor de DNS) — configuração adicional no Caddy, fora do escopo deste
-  documento até alguém escolher o provedor de DNS de produção.
-- Confirmar no VPS, depois de instalar, o nome real do container/serviço do Traefik do Dokploy
-  (`docker ps`) — `dokploy-traefik` no Caddyfile é o nome padrão, mas pode variar por versão.
+**Domínio: sslip.io, sem DNS-01/wildcard.** O ambiente ainda não tem domínio próprio (produção
+está em `143-95-214-240.sslip.io`), e sslip.io resolve QUALQUER subdomínio sozinho pro IP
+embutido no nome — então `PREVIEW_DOMAIN` é só mais um domínio normal pro Caddy (mesmo
+mecanismo de certificado automático HTTP-01 que já usa pra `APP_DOMAIN`/`PORTAINER_DOMAIN`), sem
+precisar de wildcard nem de token de API de provedor de DNS. Reavaliar pra DNS-01 + wildcard só
+se um dia migrar pra domínio próprio.
+
+**Dokploy exige Docker Swarm** (`docker swarm init` — não afeta os containers do
+`docker-compose.yml`, que continuam rodando como containers standalone ao lado do Swarm). O
+instalador oficial (`curl -sSL https://dokploy.com/install.sh | sudo sh`) **verifica a porta 80
+antes de rodar e aborta se estiver ocupada** — precisou parar o Caddy (`docker compose stop
+caddy`) durante a instalação e religar depois.
+
+**Convivência com o Caddy: o Traefik do Dokploy não fica em 80/443 (essas são só do Caddy).**
+Descobertas da instalação real, nenhuma documentada oficialmente pelo Dokploy:
+- O Traefik do Dokploy **não é serviço Swarm nem deste compose** — é um container standalone
+  (`docker run` direto, nome `dokploy-traefik`) na rede overlay `dokploy-network` (criada pelo
+  instalador, `external: true`). Não existe uma opção do instalador nem um campo na UI do
+  painel (`Settings → Web Server`) pra mudar a porta 80/443 dele — só um editor de arquivo
+  (`Traefik File System` no menu) pro `traefik.yml`, que muda a porta **interna** do container,
+  não o mapeamento de porta do host. Pra isso, é preciso recriar o container manualmente:
+  ```sh
+  sudo docker rm -f dokploy-traefik
+  sudo docker run -d --name dokploy-traefik --restart always --network dokploy-network \
+    -v /etc/dokploy/traefik/traefik.yml:/etc/traefik/traefik.yml \
+    -v /etc/dokploy/traefik/dynamic:/etc/dokploy/traefik/dynamic \
+    -v /var/run/docker.sock:/var/run/docker.sock:ro \
+    -p 8081:8081/tcp -p 8444:8444/tcp -p 8444:8444/udp \
+    traefik:v3.6.7 traefik
+  ```
+  (portas exatas usadas no VPS real: **8081 HTTP / 8444 HTTPS**, com `entryPoints.web.address`
+  e `entryPoints.websecure.address` no `traefik.yml` batendo com essas portas).
+- ⚠️ **Não usar 8080** para o `web` do Traefik: `api.insecure: true` (que o instalador já deixa
+  ligado) cria um entrypoint interno chamado `traefik` que **já ocupa 8080 por padrão**,
+  brigando com qualquer coisa que você configure nessa mesma porta (erro visto de verdade:
+  `listen tcp :8080: bind: address already in use`, com o próprio Traefik em crash-loop).
+- O Caddy precisa entrar na rede `dokploy-network` pra alcançar `dokploy-traefik` pelo nome
+  (`docker-compose.yml`, serviço `caddy`) — são redes Docker diferentes, sem isso o
+  `reverse_proxy` nunca resolve.
+
+**⚠️ Incidente real de produção (v0.69.5, 2026-09-18): Caddy em crash-loop, app inteiro fora do
+ar.** Causa: o bloco `{$PREVIEW_DOMAIN}` foi ao ar (via `deploy.yml`, push normal na `vps`)
+antes de existir `PREVIEW_DOMAIN` no `.env` do VPS. Com a variável vazia, o Caddyfile vira um
+bloco `{ }` sem domínio nenhum, que o Caddy interpreta como tentativa de bloco de configuração
+global — e recusa a config inteira por esse bloco não ser o primeiro do arquivo
+(`server block without any key is global configuration, and if used, it must be first`).
+**Lição: nunca faça merge de um bloco `{$ENV_VAR}` novo no Caddyfile sem, no mesmo momento,
+garantir que a env já existe em produção** — `.env.example` agora tem um aviso em maiúsculas
+sobre isso. Corrigido setando `PREVIEW_DOMAIN` no `.env` do VPS e forçando recriação do
+container (`docker compose up -d --force-recreate caddy` — um `up -d` normal NÃO recria o
+container só porque o `.env` mudou).
+- **Cuidado extra ao editar `.env` por `echo ... >> .env` via SSH**: se o arquivo não termina
+  com quebra de linha (comum), o texto novo gruda na última linha existente, corrompendo as
+  duas variáveis silenciosamente. Aconteceu de verdade nesse mesmo incidente (`DISCOGS_TOKEN`
+  virou `DISCOGS_TOKEN=...PREVIEW_DOMAIN=...` numa linha só). Preferir heredoc/`sed` com
+  checagem, ou pelo menos `printf '\n%s\n' "VAR=valor" >> .env`.
 
 **Risco aceito, não mitigado por infra: preview aponta pro banco de produção E roda com
 credenciais reais do LeilõesBR/cron ativo** (decisão explícita — não é uma preview "somente
@@ -803,9 +848,17 @@ leitura"). Duas consequências práticas:
    na outra. Mitigação obrigatória: **o cron automático (`refresh.yml`, healthchecks) nunca
    aponta pro domínio de preview**, só pra produção. Login/ação em preview só por clique manual.
 
-**Pendente (trabalho manual no VPS, fora do alcance de uma sessão remota):**
-1. Instalar o Dokploy (script oficial, portas alternativas).
-2. DNS wildcard + certificado DNS-01 no Caddy.
-3. Conectar o repo no Dokploy, apontar preview builds pra branch base `vps`.
-4. Decidir e configurar o provedor de DNS pro desafio DNS-01 (Cloudflare é o candidato óbvio já
-   que aparece como opção no passo 8 deste documento).
+**Progresso (VPS real, `vpsbr-16094357`, IP `143.95.214.240`):**
+- [x] Swarm ativado, Dokploy v0.30.7 instalado, painel em `http://143.95.214.240:3000`
+  (conta admin `gilbertomaiarj@gmail.com` criada).
+- [x] Traefik do Dokploy recriado nas portas 8081/8444, Caddy religado, produção validada
+  (incidente do `PREVIEW_DOMAIN` vazio corrigido).
+- [x] `docker-compose.yml`/`Caddyfile`/`.env.example` do repo atualizados pra bater com a
+  instalação real (rede `dokploy-network`, porta 8081).
+- [ ] **Chaves rotacionadas**: `DISCOGS_TOKEN` (corrompido e recuperado durante o incidente) e,
+  por precaução (apareceram em texto puro numa sessão), `ANTHROPIC_API_KEY`/`GEMINI_API_KEY` —
+  gerar novas e atualizar o `.env` do VPS.
+- [ ] Conectar o repo no Dokploy (`Git` no menu lateral), criar o app de preview apontando pra
+  branch base `vps`.
+- [ ] Testar um preview de ponta a ponta (subdomínio sob `PREVIEW_DOMAIN`, TLS automático,
+  app respondendo).
