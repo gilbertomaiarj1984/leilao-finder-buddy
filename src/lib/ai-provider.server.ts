@@ -43,6 +43,12 @@ export type RunTextResult = {
 
 const ANTHROPIC_DEFAULT_MODEL = "claude-haiku-4-5";
 const GEMINI_DEFAULT_MODEL = "gemini-flash-latest";
+/**
+ * Modelo de downgrade quando o Gemini configurado (`GEMINI_MODEL`/padrão) bate em quota:
+ * o Flash-Lite tem cota gratuita própria e separada do Flash, então costuma sobreviver
+ * quando o Flash já estourou o free tier do dia.
+ */
+const GEMINI_FREE_FALLBACK_MODEL = "gemini-2.5-flash-lite";
 
 /** Modelo efetivo do provedor (override por env, senão o padrão barato). */
 export function providerModel(provider: AiProvider): string {
@@ -271,9 +277,24 @@ async function runGemini(req: AiRequest, model: string): Promise<string> {
 
 // --- Orquestração: geração de texto com failover -------------------------------------------
 
-async function runOne(req: AiRequest, provider: AiProvider): Promise<string> {
+async function runOne(req: AiRequest, provider: AiProvider): Promise<{ text: string; model: string }> {
   const model = providerModel(provider);
-  return provider === "gemini" ? runGemini(req, model) : runAnthropic(req, model);
+  if (provider === "anthropic") return { text: await runAnthropic(req, model), model };
+
+  try {
+    return { text: await runGemini(req, model), model };
+  } catch (error) {
+    // Downgrade DENTRO do Gemini antes de sair pro outro provedor: o Flash-Lite tem cota
+    // gratuita própria (separada do Flash) e costuma atender quando só o Flash estourou.
+    if (isQuotaError(error) && model !== GEMINI_FREE_FALLBACK_MODEL) {
+      console.error(
+        `[ai-provider] gemini (${model}) sem quota — tentando downgrade para ${GEMINI_FREE_FALLBACK_MODEL}`,
+        error,
+      );
+      return { text: await runGemini(req, GEMINI_FREE_FALLBACK_MODEL), model: GEMINI_FREE_FALLBACK_MODEL };
+    }
+    throw error;
+  }
 }
 
 /**
@@ -281,6 +302,8 @@ async function runOne(req: AiRequest, provider: AiProvider): Promise<string> {
  * **indisponibilidade transitória** (ex.: 503 "high demand" do Gemini) e houver outro provedor
  * configurado, **troca automaticamente** e tenta nele. Outros erros (400/401/403, prompt
  * bloqueado, parsing) propagam (o chamador trata por-item). Lança se nenhum provedor atender.
+ * No caso do Gemini, ANTES de trocar de provedor por quota, `runOne` já tenta um downgrade
+ * para o Flash-Lite (cota gratuita própria) — só cai pro Claude se o downgrade também falhar.
  */
 export async function runText(req: AiRequest, provider: AiProvider): Promise<RunTextResult> {
   // Ordem de tentativa: o pedido primeiro, depois os demais configurados (failover).
@@ -291,8 +314,8 @@ export async function runText(req: AiRequest, provider: AiProvider): Promise<Run
     const p = order[i]!;
     if (!providerConfigured(p)) continue;
     try {
-      const text = await runOne(req, p);
-      return { text, provider: p, model: providerModel(p), switched: p !== provider };
+      const { text, model } = await runOne(req, p);
+      return { text, provider: p, model, switched: p !== provider };
     } catch (error) {
       lastError = error;
       // Troca de provedor por quota/sem créditos OU indisponibilidade transitória; senão propaga.

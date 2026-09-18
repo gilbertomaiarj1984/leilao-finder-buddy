@@ -750,6 +750,12 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   transitórios ANTES de propagar — útil quando o Gemini é o único provedor. Motivo real:
   `503 UNAVAILABLE "This model is currently experiencing high demand"` do `gemini-flash-latest`.
   Erros não-transitórios/não-quota (400/401/403, prompt bloqueado, parsing) propagam (por-item).
+- **Downgrade de modelo dentro do Gemini antes do failover de provedor:** quando o Gemini
+  configurado (`GEMINI_MODEL`/padrão `gemini-flash-latest`) bate em `isQuotaError`, `runOne`
+  tenta primeiro **`gemini-2.5-flash-lite`** (cota gratuita própria, separada do Flash) antes de
+  desistir do Gemini e cair pro Claude — evita queimar o Claude quando o problema é só a cota
+  diária do Flash. Só propaga (e aciona o failover de provedor do `runText`) se o Flash-Lite
+  também falhar por quota, ou se o modelo pedido já era o próprio Flash-Lite (sem loop).
 - **Provedor PADRÃO** persistido em `app_state.ai_provider` (`getAiProvider`/`setAiProvider`;
   precedência: `app_state` → env `AI_PROVIDER` → `anthropic`). **Seletor único no header**
   (`AiProviderSelect`, na home, Coleção e Vinil Analytics) — é a **ÚNICA** forma de escolher a
@@ -1374,6 +1380,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.68.5      | Limpeza de sobras do Supabase que a migração deixou pra trás (achadas numa varredura, sem pedido específico): `leiloesbr-live.server.ts` (`proxySecret`) tinha um fallback morto pra `SUPABASE_SERVICE_ROLE_KEY`, que não existe mais em lugar nenhum — removido, cadeia vira `LIVE_PROXY_SECRET \|\| CRON_TOKEN`; `.env.example` atualizado pra combinar. `scripts/compress-collection-images.ts`: comentário do topo ainda descrevia o backfill como dependente de rede pro Supabase Storage e das env vars `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` — o script já usa `DATABASE_URL` (via `supabaseAdmin`) e baixa as fotos do próprio domínio público (`PUBLIC_BASE_URL`) desde a Fase 3, só o comentário estava desatualizado |
 | v0.68.6      | 3 achados de uma revisão de código pedida sobre toda a Fase 4-6 (Docker/Caddy/Postgres/backup/auth): **(1)** `auth.server.ts` decidia o `Secure` dos cookies (sessão, OAuth) por `url.protocol === "https:"` — atrás do Caddy isso é sempre `"http:"` (mesmo bug de protocolo já corrigido pro `redirect_uri` no v0.68.2, mas deixado passar nos cookies); novo `isSecureRequest()` compartilha a mesma prioridade de `PUBLIC_BASE_URL`, usado nas 4 chamadas de `cookieHeader`. **(2)** `docker/backup/backup.sh`: se o `aws s3 cp` falhasse, o `.sql.gz` nunca era removido (o `rm -f` vinha depois, sob `set -e`) — acumulava lixo em `/tmp` do container de vida longa a cada falha; trocado por `trap 'rm -f "$file"' RETURN`, que limpa em qualquer saída da função. **(3)** `pruneSeenAuctions` (`leiloesbr-auctions.server.ts`) calculava o corte de retenção com `.toISOString()` (UTC), enquanto `day_key` é sempre a data em São Paulo — desalinhava por algumas horas perto da virada do dia; corrigido pra usar o mesmo `Intl.DateTimeFormat` de `todayDayKey` |
 | v0.68.7      | Só documentação: cookie `Secure` do v0.68.6 revalidado no VPS real (DevTools confirmou o atributo marcado no `gs_session`) e o teste de restauração do backup ("backup não testado não é backup") executado contra o VPS real — dump mais recente baixado do R2, restaurado num Postgres descartável isolado (`docker run postgres:17`, sem tocar no banco de produção) via `psql -v ON_ERROR_STOP=1`, e conferido: as 12 tabelas do schema vieram todas e `collection_items` bateu com a linha esperada. Checklist de progresso (`docs/economia-fase-2-vps-unico.md`, passo 11) atualizado |
+| v0.69.0      | `ai-provider.server.ts`: antes de sair do Gemini por quota e cair pro Claude, `runOne` agora tenta um downgrade interno pro `gemini-2.5-flash-lite` (cota gratuita própria, separada do Flash) — só propaga (acionando o failover de provedor de `runText`) se o Flash-Lite também estourar quota, ou se o modelo pedido já era ele mesmo |
 
 ## Pendências
 
