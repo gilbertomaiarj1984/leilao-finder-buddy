@@ -858,7 +858,34 @@ leitura"). Duas consequências práticas:
 - [ ] **Chaves rotacionadas**: `DISCOGS_TOKEN` (corrompido e recuperado durante o incidente) e,
   por precaução (apareceram em texto puro numa sessão), `ANTHROPIC_API_KEY`/`GEMINI_API_KEY` —
   gerar novas e atualizar o `.env` do VPS.
-- [ ] Conectar o repo no Dokploy (`Git` no menu lateral), criar o app de preview apontando pra
-  branch base `vps`.
-- [ ] Testar um preview de ponta a ponta (subdomínio sob `PREVIEW_DOMAIN`, TLS automático,
-  app respondendo).
+- [x] Conectado o repo no Dokploy (GitHub App própria, "Only select repositories" só neste
+  repo), app `garimpo-preview` (tipo Compose, `./docker-compose.preview.yml`, branch `vps`).
+- [x] **Preview testada de ponta a ponta com sucesso**: login Google + Basic Auth funcionando,
+  dados reais da produção aparecendo (mesmo banco, `SELECT count(*) FROM lots` batendo).
+
+**⚠️ Achado grave durante a validação: DNS interno do Docker quebrado pra rede
+`garimpo_default`.** Depois de instalar o Dokploy (Swarm + múltiplas recriações de container),
+`getaddrinfo('postgres')` passou a falhar de dentro de QUALQUER container nessa rede — inclusive
+o `garimpo-app-1` de produção. A produção não sentiu na hora porque o pool de conexões do
+`postgres.js` já estava aberto de antes (não precisa re-resolver DNS pra manter uma conexão viva)
+— mas qualquer reconexão nova (reinício do app, do Postgres, ou a preview tentando conectar pela
+primeira vez) falhava. TCP direto por IP funcionava normal (`nc`/`net.connect` no IP do
+container OK), confirmando que era só a resolução de nome, não a rede em si.
+**Correção:** `cd ~/garimpo && sudo docker compose down && sudo docker compose up -d`
+(recriou TODOS os containers do projeto — a rede em si não foi recriada, "Resource is still in
+use" por causa da preview conectada nela, mas recriar os containers foi suficiente pra Docker
+re-registrar o DNS interno certinho). A preview precisou do mesmo tratamento (força recriação
+via `docker compose ... up -d --force-recreate` direto no diretório que o Dokploy usa,
+`/etc/dokploy/compose/<app>/code/` — os botões "Deploy"/"Rebuild" do painel não recriaram o
+container sozinhos quando não havia mudança de código).
+**Lição para o futuro:** se a preview (ou qualquer app novo no Dokploy) não conseguir resolver
+`postgres`/outro hostname da rede `garimpo_default`, suspeitar primeiro do DNS interno do Docker
+quebrado (não do compose/rede em si) — testar com `docker exec <container> node -e
+"require('dns').lookup('HOST',(e,a)=>console.log(e||a))"` antes de qualquer outra
+investigação, já que `getent hosts` se mostrou pouco confiável nessas imagens (retornou vazio
+até em containers que funcionavam).
+- [ ] **Chaves rotacionadas**: `DISCOGS_TOKEN` (corrompido e recuperado durante o incidente do
+  `.env`) e, por precaução (apareceram em texto puro numa sessão), `ANTHROPIC_API_KEY`/
+  `GEMINI_API_KEY` — gerar novas e atualizar o `.env` do VPS.
+- [ ] Automação real de "um subdomínio por PR" (TLS on-demand no Caddy) — escopo futuro,
+  deixado de fora de propósito nesta etapa (ver seção acima).
