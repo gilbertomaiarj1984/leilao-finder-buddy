@@ -48,6 +48,15 @@ export async function handleCron(request: Request): Promise<Response | null> {
   if (!tokensMatch(provided, token)) return json({ error: "unauthorized" }, 401);
 
   const step = url.searchParams.get("step") ?? "";
+  // Diagnóstico temporário (v0.69.2): step=prune falhava com 400 só quando chamado pelo
+  // GitHub Actions (funcionava normal via curl direto do VPS) — sem log nenhum (sucesso e
+  // "step inválido" são ambos silenciosos por design), não dava pra provar o que o servidor
+  // via de fato. Loga toda chamada; remover depois que o caso for entendido.
+  console.log("[cron] recebido", {
+    step,
+    search: url.search,
+    xff: request.headers.get("x-forwarded-for"),
+  });
   try {
     const { scrapeVinylChunk, enrichMissingLotes } = await import("./leiloesbr-scrape.server");
 
