@@ -904,6 +904,17 @@ até em containers que funcionavam).
   apps de PRs diferentes).
 - [ ] Testar dois apps de preview simultâneos (subdomínios diferentes) pra confirmar que o
   on-demand realmente atende N previews concorrentes, não só o primeiro domínio cadastrado.
-- [ ] Configurar o gatilho nativo do Dokploy pra criar/derrubar um app por PR automaticamente
-  (hoje o app de preview ainda é criado/apontado manualmente pra uma branch) — depende de
-  confirmar se a versão instalada (v0.30.7) suporta isso pra apps tipo "Compose".
+- [x] **Investigado e descartado, por ora: automação nativa de "um subdomínio por PR" do
+  Dokploy.** O recurso existe (aba "Preview Deployments", só em apps tipo **Application** — não
+  em "Compose", que só tem `Trigger Type` "On Push"/"On Tag"), com `Wildcard Domain` e opção de
+  anexar redes extras (`Advanced → Networks`, o mesmo mecanismo do `garimpo_default` que já
+  usamos no compose manual). **Bloqueio real, não de configuração:** cada PR ganharia um
+  subdomínio novo e imprevisível, e o **Google OAuth não aceita redirect URI com wildcard** —
+  cada domínio de callback precisa ser cadastrado manualmente no Google Cloud Console. Login
+  quebraria em toda preview nova até alguém cadastrar aquela URL específica na mão, o que anula
+  a vantagem de ser automático. **Decisão do usuário: manter o esquema atual** (um app de
+  preview fixo, `preview.143-95-214-240.sslip.io`, já com o redirect URI cadastrado e login
+  funcionando) — um preview de cada vez, redeployado manualmente ou por push, em vez de vários
+  em paralelo. Reavaliar só se um dia o app não depender mais de login Google (improvável) ou se
+  surgir um jeito de registrar redirect URIs dinamicamente via API do Google (não existe hoje
+  pra OAuth clients tipo "Web application").
