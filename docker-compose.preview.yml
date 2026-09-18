@@ -2,10 +2,18 @@
 # (modo "Compose" simples, fora do Swarm) pra subir o app de preview. NUNCA usado pelo
 # deploy.yml/produção — aquele continua no docker-compose.yml de sempre.
 #
+# TEMPLATE reutilizável por PR/branch: cada instância deste compose no Dokploy (um app
+# por PR) precisa das SUAS PRÓPRIAS `PREVIEW_DOMAIN` (subdomínio único, ex.:
+# `pr-42.preview.143-95-214-240.sslip.io`) e `PREVIEW_ROUTER_NAME` (slug único, ex.:
+# `pr-42`) nas envs do app no painel — nomes de router/service do Traefik colidem entre
+# apps diferentes se ficarem iguais. O Caddy aceita QUALQUER subdomínio sob
+# {$PREVIEW_DOMAIN} via TLS on-demand (ver Caddyfile), então não precisa cadastrar nada
+# lá por PR — só criar o app no Dokploy com essas duas envs diferentes.
+#
 # Duas redes externas, propositalmente, nenhuma criada por este arquivo:
 # - `dokploy-network`: pra o Traefik do Dokploy enxergar o container (roteamento por
-#   Host header, ver Caddyfile/{$PREVIEW_DOMAIN}). Sem `exposedByDefault` (traefik.yml),
-#   por isso os labels `traefik.*` explícitos abaixo.
+#   Host header, ver Caddyfile). Sem `exposedByDefault` (traefik.yml), por isso os labels
+#   `traefik.*` explícitos abaixo.
 # - `garimpo_default`: a rede do docker-compose.yml de PRODUÇÃO (nome do projeto compose
 #   `garimpo`, resolvido a partir do diretório `~/garimpo` no VPS) — decisão explícita de
 #   apontar a preview pro banco de produção de verdade, sem subir Postgres novo nem
@@ -44,9 +52,9 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=dokploy-network
-      - traefik.http.routers.garimpo-preview.rule=Host(`${PREVIEW_DOMAIN}`)
-      - traefik.http.routers.garimpo-preview.entrypoints=web
-      - traefik.http.services.garimpo-preview.loadbalancer.server.port=3000
+      - traefik.http.routers.${PREVIEW_ROUTER_NAME:-garimpo-preview}.rule=Host(`${PREVIEW_DOMAIN}`)
+      - traefik.http.routers.${PREVIEW_ROUTER_NAME:-garimpo-preview}.entrypoints=web
+      - traefik.http.services.${PREVIEW_ROUTER_NAME:-garimpo-preview}.loadbalancer.server.port=3000
 
 networks:
   dokploy-network:

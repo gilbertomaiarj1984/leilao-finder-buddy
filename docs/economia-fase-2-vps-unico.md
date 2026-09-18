@@ -781,12 +781,24 @@ Portainer não tem, preview automático por PR.
 que Coolify (painel + Postgres/Redis próprios + Traefik). Não planejar mais de 1 preview
 simultânea mesmo assim.
 
-**Domínio: sslip.io, sem DNS-01/wildcard.** O ambiente ainda não tem domínio próprio (produção
-está em `143-95-214-240.sslip.io`), e sslip.io resolve QUALQUER subdomínio sozinho pro IP
-embutido no nome — então `PREVIEW_DOMAIN` é só mais um domínio normal pro Caddy (mesmo
-mecanismo de certificado automático HTTP-01 que já usa pra `APP_DOMAIN`/`PORTAINER_DOMAIN`), sem
-precisar de wildcard nem de token de API de provedor de DNS. Reavaliar pra DNS-01 + wildcard só
-se um dia migrar pra domínio próprio.
+**Domínio: sslip.io + TLS "on-demand" no Caddy (não DNS-01/wildcard tradicional).** O ambiente
+ainda não tem domínio próprio (produção está em `143-95-214-240.sslip.io`), e sslip.io resolve
+QUALQUER subdomínio sozinho pro IP embutido no nome. Isso permite um preview de verdade **por
+PR**, cada um com seu próprio subdomínio (ex.: `pr-42.preview.143-95-214-240.sslip.io`), sem
+cadastrar cada um no Caddyfile: `on_demand_tls` (bloco de config global, topo do `Caddyfile`)
+deixa o Caddy emitir certificado HTTP-01 na hora, pra qualquer hostname que passe no "ask" — um
+endpoint interno (`:2020`, não publicado, só o próprio Caddy chama via loopback) que só aprova o
+domínio exato de `PREVIEW_DOMAIN` ou qualquer subdomínio dele (`{http.request.uri.query.domain}
+== "{$PREVIEW_DOMAIN}" || ....endsWith(".{$PREVIEW_DOMAIN}")`), rejeitando qualquer outro host
+que por acaso resolva pro IP do VPS. Validado localmente (`caddy validate`/`caddy run`, binário
+baixado direto, sem precisar do VPS) contra tentativas de burlar (`evilpreview.<domínio>`,
+`<domínio>.evil.com`) antes de ir pra produção — sempre validar sintaxe do Caddyfile assim antes
+de mandar pro VPS, depois do incidente do `PREVIEW_DOMAIN` vazio (v0.69.5). Reavaliar pra DNS-01
++ wildcard tradicional só se um dia migrar pra domínio próprio com volume alto o suficiente pra
+`on_demand_tls` não fazer mais sentido (tem rate limit do Let's Encrypt por trás do "ask").
+O catch-all `:443` do Caddy (qualquer SNI que não seja `{$APP_DOMAIN}`/`{$PORTAINER_DOMAIN}`)
+é quem aplica o Basic Auth e repassa pro Traefik do Dokploy — um único bloco cobre qualquer
+preview, não precisa mais de um bloco por domínio.
 
 **Dokploy exige Docker Swarm** (`docker swarm init` — não afeta os containers do
 `docker-compose.yml`, que continuam rodando como containers standalone ao lado do Swarm). O
@@ -855,9 +867,6 @@ leitura"). Duas consequências práticas:
   (incidente do `PREVIEW_DOMAIN` vazio corrigido).
 - [x] `docker-compose.yml`/`Caddyfile`/`.env.example` do repo atualizados pra bater com a
   instalação real (rede `dokploy-network`, porta 8081).
-- [ ] **Chaves rotacionadas**: `DISCOGS_TOKEN` (corrompido e recuperado durante o incidente) e,
-  por precaução (apareceram em texto puro numa sessão), `ANTHROPIC_API_KEY`/`GEMINI_API_KEY` —
-  gerar novas e atualizar o `.env` do VPS.
 - [x] Conectado o repo no Dokploy (GitHub App própria, "Only select repositories" só neste
   repo), app `garimpo-preview` (tipo Compose, `./docker-compose.preview.yml`, branch `vps`).
 - [x] **Preview testada de ponta a ponta com sucesso**: login Google + Basic Auth funcionando,
@@ -886,6 +895,15 @@ investigação, já que `getent hosts` se mostrou pouco confiável nessas imagen
 até em containers que funcionavam).
 - [ ] **Chaves rotacionadas**: `DISCOGS_TOKEN` (corrompido e recuperado durante o incidente do
   `.env`) e, por precaução (apareceram em texto puro numa sessão), `ANTHROPIC_API_KEY`/
-  `GEMINI_API_KEY` — gerar novas e atualizar o `.env` do VPS.
-- [ ] Automação real de "um subdomínio por PR" (TLS on-demand no Caddy) — escopo futuro,
-  deixado de fora de propósito nesta etapa (ver seção acima).
+  `GEMINI_API_KEY` — gerar novas e atualizar o `.env` do VPS. **Decisão do usuário: não fazer
+  por ora.**
+- [x] TLS "on-demand" no Caddy (`on_demand_tls` + endpoint `/ask-preview` interno) — validado
+  localmente (`caddy validate`/`caddy run`) e no VPS real, aceita qualquer subdomínio sob
+  `PREVIEW_DOMAIN` sem cadastrar no Caddyfile. `docker-compose.preview.yml` virou template
+  reutilizável (`PREVIEW_ROUTER_NAME` evita colisão de nome de router/service do Traefik entre
+  apps de PRs diferentes).
+- [ ] Testar dois apps de preview simultâneos (subdomínios diferentes) pra confirmar que o
+  on-demand realmente atende N previews concorrentes, não só o primeiro domínio cadastrado.
+- [ ] Configurar o gatilho nativo do Dokploy pra criar/derrubar um app por PR automaticamente
+  (hoje o app de preview ainda é criado/apontado manualmente pra uma branch) — depende de
+  confirmar se a versão instalada (v0.30.7) suporta isso pra apps tipo "Compose".
