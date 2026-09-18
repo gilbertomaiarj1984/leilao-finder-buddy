@@ -345,6 +345,35 @@ CREATE TRIGGER update_purchases_updated_at BEFORE UPDATE ON public.purchases
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- ---------------------------------------------------------------------
+-- FKs de limpeza (Fase 5 da migração para VPS): `lot_ai`/`lot_ident`/`lot_market`/
+-- `lot_condition` (todos com `id` = `lots.id`) viram órfãos quando `pruneOutOfWindow`
+-- apaga de `lots` os lotes fora da janela de dias. `ON DELETE CASCADE` evita isso dali
+-- pra frente. ⚠️ NUNCA cascatear `lot_sales` → `lots`: é o arquivo permanente de vendas.
+-- Idempotente: `pg_constraint` checado antes do `ADD CONSTRAINT` (que não tem
+-- `IF NOT EXISTS`); a limpeza dos órfãos já acumulados está em
+-- `supabase/migrations/20260917120000_orphans_fk_cascade.sql`.
+-- ---------------------------------------------------------------------
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'lot_ai_id_fkey') THEN
+    ALTER TABLE public.lot_ai
+      ADD CONSTRAINT lot_ai_id_fkey FOREIGN KEY (id) REFERENCES public.lots(id) ON DELETE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'lot_ident_id_fkey') THEN
+    ALTER TABLE public.lot_ident
+      ADD CONSTRAINT lot_ident_id_fkey FOREIGN KEY (id) REFERENCES public.lots(id) ON DELETE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'lot_market_id_fkey') THEN
+    ALTER TABLE public.lot_market
+      ADD CONSTRAINT lot_market_id_fkey FOREIGN KEY (id) REFERENCES public.lots(id) ON DELETE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'lot_condition_id_fkey') THEN
+    ALTER TABLE public.lot_condition
+      ADD CONSTRAINT lot_condition_id_fkey FOREIGN KEY (id) REFERENCES public.lots(id) ON DELETE CASCADE;
+  END IF;
+END $$;
+
+-- ---------------------------------------------------------------------
 -- Segurança: RLS on + acesso somente para service_role (estado final)
 -- ---------------------------------------------------------------------
 ALTER TABLE public.seen_auctions  ENABLE ROW LEVEL SECURITY;

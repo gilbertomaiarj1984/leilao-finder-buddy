@@ -376,6 +376,343 @@ Economia de ~R$ 212/mês contra ficar e pagar — e, mais relevante, sai da rota
 cotas sem trocar o problema de lugar. De quebra, 13 ms de latência contra os ~120 ms da Vercel
 de hoje.
 
+## Checklist manual — o que só você pode fazer (fora deste repo)
+
+Tudo até aqui (Fases 1–5) é código, já mesclado/revisável por PR. **Nada disso roda de
+verdade até estes passos serem feitos à mão**, com acesso ao VPS contratado, ao DNS do
+domínio, ao Google Cloud Console e às contas do Cloudflare R2/healthchecks.io — nenhuma
+sessão remota consegue fazer isso sozinha. Siga na ordem; cada bloco diz o que fazer, onde
+clicar/rodar, e como confirmar que deu certo antes de ir pro próximo.
+
+> ⚠️ **Estes passos são executados FORA deste repositório** (SSH no VPS, painéis externos)
+> — nenhuma sessão consegue confirmar sozinha o que já rodou. Por isso o progresso é
+> marcado aqui, **manualmente, a cada passo concluído** (trocar `[ ]` por `[x]` e commitar).
+> Uma sessão nova lê este bloco antes de perguntar "o que já foi feito" ou repetir passos.
+
+### Progresso
+
+- [x] 1. Contratar e preparar o VPS (`uname -m`, usuário `deploy`, Docker, UFW/fail2ban, rede `proxy`) — x86_64, Ubuntu 22.04.5 LTS; SSH na porta 22022 (só chave, sem senha/root); UFW ativo (22022/80/443); fail2ban ativo; rede `proxy` já existia
+- [x] 2. Gerar a chave SSH do GitHub Actions (`deploy-garimpo-actions`, autorizada no VPS)
+- [x] 3. Cadastrar os secrets no GitHub (`VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_DEPLOY_PATH`, `VPS_SSH_PORT=22022`)
+- [x] 4. Preparar o `.env` no VPS — atenção: `.env` editado no Windows chegou com CRLF (quebrou o parser do compose, "unexpected character") e com uma aspa desbalanceada (`PORTAINER_DOMAIN="...` sem fechar) — `sed -i 's/\r$//'` resolveu o CRLF; `docker compose config --quiet` valida antes de subir
+- [x] 5. Cloudflare R2 (backup) — bucket `garimpo-backup`, lifecycle "Expire objects" 14 dias confirmado
+- [ ] 6. healthchecks.io (monitoramento) — pulado por ora (opcional), retomar antes do cutover
+- [x] 7. Primeiro deploy (`workflow_dispatch` do `deploy.yml`) — precisou de 3 fixes de código achados só rodando de verdade: `docker/setup-buildx-action@v3` (cache-to exige driver `docker-container`), `VPS_SSH_KEY` gerada sem passphrase (PowerShell `-N '""'` gera passphrase de fato, não vazia — gerar interativo, Enter em branco), e CRLF/aspas do `.env` acima
+- [x] 8. DNS + domínio do app — usando `sslip.io` (sem domínio próprio ainda): `143-95-214-240.sslip.io`, TLS automático do Caddy funcionou de primeira
+- [x] 9. Portainer (DNS próprio + primeiro acesso) — `painel-143-95-214-240.sslip.io`; setup token pego em `docker compose logs portainer`; Edge Compute pulado (não precisa, Docker é local)
+- [x] 10. Google OAuth para o novo domínio — precisou de um fix de código: atrás do Caddy o Nitro/h3 não confia em `X-Forwarded-Proto`, então `redirect_uri` saía como `http://` e o Google recusava mesmo com a URI certa cadastrada; `auth.server.ts` passou a priorizar `PUBLIC_BASE_URL` sobre `url.origin` (v0.68.2)
+- [x] 11. Validar antes do cutover — login Google, sessão LeilõesBR (vigias/lances ao vivo), upload de foto na Coleção (disco + Caddy servindo) e um ciclo completo do `backup` (dump → upload pro R2) confirmados funcionando. Achado nesta passada: o Postgres novo nunca recebe o schema sozinho — corrigido (`docker-entrypoint-initdb.d` + `supabase/setup.sql` copiado pelo `deploy.yml`, v0.68.4); banco desta instância aplicado manualmente uma vez, já que o volume tinha nascido antes do fix. Teste de restauração do backup ("backup não testado não é backup") feito: baixado o dump mais recente do R2, restaurado num Postgres descartável (`docker run postgres:17` isolado) via `psql -v ON_ERROR_STOP=1`, e conferido — as 12 tabelas do schema vieram todas e `collection_items` bateu com a linha esperada (a foto de teste). Container e dump de teste descartados depois
+- [ ] 12. Fase 6 — cutover (banco de produção, ponto de não-retorno no passo 8 dele)
+
+### 1. Contratar e preparar o VPS
+
+1. Contratar o **HostGator "VPS Cloud / VPS OCI NVMe 4"** (2 vCPU / 4 GB / 100 GB, São Paulo),
+   SO **"SO Simples" → Ubuntu 24.04 LTS** (22.04 se 24.04 não estiver disponível).
+2. Assim que a máquina estiver de pé, conectar por SSH (`ssh root@<ip-do-vps>`, senha/chave
+   que o provedor mandou) e **checar a arquitetura antes de qualquer coisa**:
+   ```sh
+   uname -m
+   ```
+   - `x86_64` → segue tudo como está (as imagens do Dockerfile/`docker/backup` são x86_64).
+   - `aarch64` → **pare aqui e avise**: as imagens precisam ser rebuildadas para `arm64`
+     (o `sharp` do Dockerfile quebra em ARM se a imagem for x86_64). Não prossiga sem isso.
+3. Criar um usuário não-root com sudo (não usar root no dia a dia):
+   ```sh
+   adduser deploy
+   usermod -aG sudo deploy
+   ```
+   Se criar o `deploy` **sem senha** (só acesso por chave SSH), o `sudo` dele vai pedir uma
+   senha que não existe. Resolver como root, uma vez:
+   ```sh
+   echo 'deploy ALL=(ALL) NOPASSWD:ALL' | tee /etc/sudoers.d/90-deploy-nopasswd
+   chmod 440 /etc/sudoers.d/90-deploy-nopasswd
+   visudo -c   # valida a sintaxe — deve responder "parsed OK"
+   ```
+   Seguro numa máquina de admin único cujo `deploy` só aceita SSH por chave (é exatamente o
+   estado depois do passo 5 abaixo).
+4. Instalar Docker + Compose plugin (script oficial):
+   ```sh
+   curl -fsSL https://get.docker.com | sh
+   usermod -aG docker deploy
+   ```
+   Confirmar: `docker --version` e `docker compose version`.
+5. **Endurecer a máquina** (IP público, sem rede privada). Nesta ordem exata, testando a
+   cada passo arriscado **numa segunda sessão, sem fechar a atual** — é o que evita se
+   trancar pra fora:
+   1. **(Opcional) Trocar a porta do SSH** — dificulta scans automatizados. Se for fazer,
+      faça ANTES do resto:
+      ```sh
+      sed -i 's/^#\?Port .*/Port 22022/' /etc/ssh/sshd_config   # escolha sua porta
+      ufw allow 22022/tcp   # libera a NOVA porta antes de reiniciar
+      systemctl restart sshd
+      ```
+      Teste numa segunda sessão (`ssh -p 22022 deploy@<ip-do-vps>`) antes de seguir. Só
+      depois de confirmar, remova a regra da porta 22 antiga (`ufw status numbered` +
+      `ufw delete <nº da regra 22/tcp>` — a 22/tcp costuma sobreviver separada para IPv6,
+      confirme as duas). Guarde esse número: vira o secret `VPS_SSH_PORT` no passo 3.
+   2. **SSH só por chave, sem senha, sem root** — só desative depois de confirmar que o
+      `deploy` entra por chave (`ssh deploy@<ip-do-vps>`, ou na porta nova se trocou):
+      ```sh
+      sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+      sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+      systemctl restart sshd
+      ```
+      ⚠️ **Pegadinha comum em imagens cloud-init** (a maioria dos provedores usa):
+      `/etc/ssh/sshd_config` normalmente tem `Include /etc/ssh/sshd_config.d/*.conf` bem no
+      topo, e um arquivo `50-cloud-init.conf` ali dentro costuma forçar
+      `PasswordAuthentication yes` de novo — como esse `Include` vem ANTES da edição acima
+      no arquivo principal, e o `sshd` usa o **primeiro valor encontrado** (não o último),
+      o cloud-init vence e a edição acima parece não ter feito efeito. Sintoma:
+      `sshd -T | grep -i passwordauthentication` continua respondendo `yes` mesmo depois do
+      `sed`. Diagnosticar com `sudo cat /etc/ssh/sshd_config.d/50-cloud-init.conf`
+      (permissão 600, precisa de `sudo` pra ler) e, se for isso, resolver com um drop-in que
+      entra ANTES na ordem alfabética (garantindo que seja o primeiro valor lido):
+      ```sh
+      printf 'PasswordAuthentication no\nPermitRootLogin no\n' | tee /etc/ssh/sshd_config.d/00-hardening.conf
+      chmod 600 /etc/ssh/sshd_config.d/00-hardening.conf
+      sshd -t && systemctl restart sshd   # sshd -t valida ANTES de reiniciar
+      ```
+      Confirme com `sshd -T | grep -iE "^(passwordauthentication|permitrootlogin)"` — as
+      duas devem responder `no` — e só então teste a reconexão por chave numa segunda
+      sessão.
+   3. **UFW**: só a porta do SSH (22 ou a que você escolheu), 80 e 443 (Caddy) — o Docker
+      escreve direto no iptables, então NUNCA publicar outras portas no compose (o Postgres
+      já não publica nenhuma). Se o `ufw` já vinha instalado mas **inativo** (comum em
+      imagens de VPS — confirme com `ufw status`), as regras abaixo não bastam sozinhas, é
+      preciso **habilitar**:
+      ```sh
+      apt-get update && apt-get install -y ufw fail2ban
+      ufw allow 22/tcp    # ou a porta escolhida no passo i
+      ufw allow 80/tcp
+      ufw allow 443/tcp
+      ufw default deny incoming
+      ufw default allow outgoing
+      ufw enable          # sem isso, "active" nunca aparece e NADA é filtrado
+      systemctl enable --now fail2ban
+      ufw status verbose  # confirma "Status: active" e só as portas esperadas
+      ```
+6. Criar a rede Docker externa compartilhada (uma vez só, serve para outros apps no mesmo
+   VPS também):
+   ```sh
+   docker network create proxy
+   ```
+7. Criar a pasta de deploy (o caminho que você vai usar no secret `VPS_DEPLOY_PATH`, passo 3):
+   ```sh
+   mkdir -p /home/deploy/garimpo
+   chown deploy:deploy /home/deploy/garimpo
+   ```
+
+### 2. Gerar a chave SSH que o GitHub Actions vai usar
+
+No **seu computador** (não no VPS):
+
+```sh
+ssh-keygen -t ed25519 -C "deploy-garimpo" -f ./deploy_garimpo -N ""
+```
+
+Isso gera dois arquivos: `deploy_garimpo` (chave **privada**) e `deploy_garimpo.pub`
+(**pública**).
+
+1. Copiar a **pública** para o VPS:
+   ```sh
+   ssh-copy-id -i deploy_garimpo.pub deploy@<ip-do-vps>
+   ```
+   (ou, sem `ssh-copy-id`: `cat deploy_garimpo.pub | ssh deploy@<ip-do-vps> "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"`)
+2. Confirmar que funciona: `ssh -i deploy_garimpo deploy@<ip-do-vps>` deve entrar sem pedir
+   senha.
+3. Guardar o conteúdo de `deploy_garimpo` (a **privada**, arquivo inteiro incluindo as linhas
+   `-----BEGIN...-----`/`-----END...-----`) para o secret `VPS_SSH_KEY` no passo 3. **Depois
+   de cadastrar o secret, apague o arquivo `deploy_garimpo` local** (ou guarde num cofre de
+   senhas) — ele não precisa mais existir em texto plano no seu disco.
+
+### 3. Cadastrar os secrets no GitHub (Settings → Secrets and variables → Actions)
+
+No repositório, `Settings → Secrets and variables → Actions → New repository secret`,
+um de cada vez:
+
+| Secret | Valor |
+| --- | --- |
+| `VPS_HOST` | IP ou hostname do VPS (ex.: `123.45.67.89`) |
+| `VPS_USER` | `deploy` (o usuário criado no passo 1.3) |
+| `VPS_SSH_KEY` | conteúdo INTEIRO do arquivo `deploy_garimpo` (chave privada, passo 2) |
+| `VPS_DEPLOY_PATH` | `/home/deploy/garimpo` (a pasta criada no passo 1.7) |
+| `VPS_SSH_PORT` | só se o SSH não estiver na porta 22 padrão (ex.: `22022`, se você trocou a porta por segurança) — sem esse secret, o `deploy.yml` cai pra 22 |
+| `HEALTHCHECKS_PING_URL` | opcional, ver seção 6 abaixo — pode deixar para depois |
+
+`APP_URL` e `CRON_TOKEN` (usados pelo `refresh.yml`) **já existem** desde antes da
+migração — não mexer neles ainda; `APP_URL` só troca no cutover (Fase 6, passo 4 abaixo).
+
+### 4. Preparar o `.env` no VPS
+
+O `.env` **não é versionado** e **não** é copiado pelo `deploy.yml` — precisa existir na
+pasta de deploy (`VPS_DEPLOY_PATH`) ANTES do primeiro deploy, porque o `docker-compose.yml`
+(esse sim, copiado automaticamente) lê esse arquivo.
+
+1. No seu computador, copiar `.env.example` para `.env` e preencher **todos** os valores
+   (Postgres, Google OAuth, `LEILOESBR_EMAIL`/`LEILOESBR_SENHA`, chaves de IA, Discogs,
+   `POSTGRES_*`, `R2_*` — ver seção 5 abaixo para os valores do R2). `SESSION_SECRET` e
+   `CRON_TOKEN`: gerar com `openssl rand -hex 32` cada.
+2. Copiar esse `.env` preenchido para o VPS:
+   ```sh
+   scp -i deploy_garimpo .env deploy@<ip-do-vps>:/home/deploy/garimpo/.env
+   ```
+3. Ajustar a permissão (só o dono lê):
+   ```sh
+   ssh -i deploy_garimpo deploy@<ip-do-vps> "chmod 600 /home/deploy/garimpo/.env"
+   ```
+4. **Confirme que `DATABASE_URL` bate com `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`**
+   no mesmo arquivo — é o erro mais comum aqui (ex.:
+   `DATABASE_URL="postgresql://garimpo:SENHA@postgres:5432/garimpo"` com a mesma `SENHA` em
+   `POSTGRES_PASSWORD`).
+
+### 5. Cloudflare R2 (backup, Fase 5)
+
+1. No painel da Cloudflare → **R2 Object Storage** → criar um bucket (ex.: `garimpo-backup`).
+2. **Manage API Tokens → Create API Token**, permissão "Object Read & Write", escopo só
+   nesse bucket. Anote o **Access Key ID** e a **Secret Access Key** (só aparecem uma vez).
+3. O **endpoint** fica em `https://<account_id>.r2.cloudflarestorage.com` — o `<account_id>`
+   aparece na URL do painel do R2 (ou em Account Home → API → Account ID).
+4. Preencher no `.env` (passo 4 acima): `R2_ENDPOINT`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`,
+   `R2_SECRET_ACCESS_KEY`.
+5. **Configurar a retenção de 14 dias como regra de lifecycle do bucket** (o script de
+   backup não apaga nada sozinho, de propósito): no bucket → **Settings → Object Lifecycle
+   Rules → Add rule** → "Expire objects" após 14 dias, aplicar a todos os objetos.
+
+### 6. healthchecks.io (monitoramento, opcional mas recomendado)
+
+1. Criar conta free em https://healthchecks.io.
+2. **Add Check**, nome "Garimpo cron", período (schedule) um pouco maior que o intervalo
+   entre execuções do `refresh.yml` (hoje 2×/dia, ~12h de intervalo — configurar 13-14h de
+   "Period" ou "Grace Time" generoso, para não disparar alerta falso por atraso do runner).
+3. Copiar a **Ping URL** do check (formato `https://hc-ping.com/<uuid>`).
+4. Cadastrar como secret `HEALTHCHECKS_PING_URL` no GitHub (passo 3 acima).
+
+### 7. Primeiro deploy
+
+1. Com os secrets (passo 3) e o `.env` no VPS (passo 4) prontos, disparar o deploy manualmente:
+   no GitHub → **Actions → Deploy (VPS) → Run workflow** (branch `vps`).
+2. Acompanhar o log do workflow. Se falhar no SSH, confira `VPS_HOST`/`VPS_USER`/
+   `VPS_SSH_KEY` (passo 3) e se a chave pública foi mesmo copiada (passo 2.1).
+3. No VPS, confirmar que os containers subiram:
+   ```sh
+   ssh -i deploy_garimpo deploy@<ip-do-vps> "cd garimpo && docker compose ps"
+   ```
+   Espera-se `caddy`, `app`, `postgres`, `backup` todos `running`/`healthy`.
+4. **Ainda sem domínio/DNS apontado**, testar direto pelo IP não vai funcionar (o Caddy só
+   emite certificado TLS para o domínio configurado em `APP_DOMAIN`) — é normal, segue pro
+   próximo passo.
+5. O `deploy.yml` copia `supabase/setup.sql` pro VPS e o Postgres aplica sozinho **só quando
+   o volume de dados nasce vazio** (mecanismo `docker-entrypoint-initdb.d` da imagem oficial).
+   Se o volume já existia de uma tentativa anterior (por exemplo, você rodou `docker compose
+   up` antes deste PR existir), aplique à mão uma vez — é seguro rodar de novo, o script é
+   idempotente (`IF NOT EXISTS`):
+   ```sh
+   docker compose exec -T postgres psql -U garimpo -d garimpo < supabase-init/01-setup.sql
+   ```
+   Confirma com `docker compose exec postgres psql -U garimpo -d garimpo -c '\dt'` — espera-se
+   12 tabelas (`lots`, `collection_items`, `purchases`, etc.). Os erros `role "anon"/
+   "service_role" does not exist` e `relation "storage.buckets" does not exist` são
+   esperados e inofensivos — resíduo do tempo do Supabase, sem efeito no Postgres próprio.
+
+### 8. DNS + domínio
+
+1. No provedor de DNS do seu domínio, criar um registro **A** apontando o subdomínio
+   escolhido (ex.: `garimpo.seudominio.com`) para o **IP do VPS**.
+   - Se for usar Cloudflare na frente (opcional, só para esconder o IP): proxy **laranja**
+     ligado, modo SSL/TLS **"Full (strict)"** — senão o Caddy não consegue emitir o
+     certificado de origem.
+2. Preencher `APP_DOMAIN` no `.env` do VPS (passo 4) com esse mesmo domínio e rodar
+   `docker compose up -d` de novo no VPS (ou disparar o workflow de novo) para o Caddy
+   reler o `Caddyfile` com o domínio certo.
+3. Esperar a propagação do DNS (minutos a poucas horas) e então abrir
+   `https://garimpo.seudominio.com` no navegador — deve carregar a tela de login,
+   com certificado válido (cadeado verde).
+
+### 9. Portainer (painel de containers, Fase 5)
+
+1. Criar **outro** registro DNS **A** — um subdomínio **separado** do app (ex.:
+   `painel.seudominio.com`) apontando para o mesmo IP do VPS. Nunca reusar o domínio do
+   app: o Caddyfile já espera dois hosts distintos (`APP_DOMAIN` e `PORTAINER_DOMAIN`).
+2. Preencher `PORTAINER_DOMAIN` no `.env` do VPS (passo 4) com esse subdomínio e rodar
+   `docker compose up -d` de novo (ou disparar o workflow) para o Caddy e o Portainer
+   subirem com o domínio certo.
+3. Assim que o DNS propagar, abrir `https://painel.seudominio.com` — a PRIMEIRA coisa que
+   o Portainer pede é criar a senha do usuário `admin`. **Faça isso na hora**: por padrão
+   ele trava esse cadastro inicial depois de alguns minutos, e o único jeito de destravar é
+   reiniciar o container (`docker compose restart portainer`), apagando qualquer conta
+   parcialmente criada.
+4. Na tela seguinte, escolher "Get Started" / ambiente local (ele já enxerga o Docker do
+   host via `docker.sock`) — nenhuma configuração extra de cluster é necessária, é um VPS
+   único.
+5. **Restringir o acesso** (recomendado, não obrigatório): como esse painel controla
+   TODOS os containers da máquina (não só o Garimpo, se houver outros apps), considere uma
+   camada a mais além da senha — Cloudflare Access (se já usa Cloudflare na frente) ou uma
+   allowlist de IP no Caddyfile (`@allowed_ips remote_ip <seu-ip>` + `abort` fora dela) são
+   as opções mais simples.
+
+### 10. Google OAuth para o novo domínio
+
+No [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services →
+Credentials** → o OAuth Client ID já usado pelo app → **Authorized redirect URIs → Add URI**:
+
+```
+https://garimpo.seudominio.com/api/auth/google/callback
+```
+
+Não remover a URI antiga (da Vercel) ainda — só depois que o cutover (Fase 6) terminar e o
+domínio antigo for descomissionado.
+
+### 11. Validar antes do cutover
+
+Com o domínio no ar, ainda em PARALELO com a produção na Vercel (o cron continua batendo só
+na Vercel — não rode `workflow_dispatch` do `refresh.yml` contra os dois ao mesmo tempo):
+
+- Login com a conta Google autorizada funciona; qualquer outra conta é recusada.
+- Fotos da Coleção: subir uma foto de teste, conferir que aparece e que
+  `https://garimpo.seudominio.com/collection/<arquivo>` responde com `Cache-Control` de
+  7 dias.
+- `docker compose logs backup` mostra pelo menos um ciclo de `[backup] concluído` e o
+  arquivo aparece no bucket do R2.
+- Se cadastrou o `HEALTHCHECKS_PING_URL`: **não** dispare o `refresh.yml` contra este VPS
+  ainda (ele ainda não tem o banco de produção) — o ping real só faz sentido depois do
+  cutover.
+- **Backup restaurado de teste** (não pule isso): baixar o `.sql.gz` mais recente do bucket
+  e restaurar num Postgres descartável (`docker run --rm -e POSTGRES_PASSWORD=x -p
+  5433:5432 postgres:17-alpine` + `gunzip -c arquivo.sql.gz | psql -h localhost -p 5433 -U
+  postgres`). Backup não testado não é backup.
+
+### 12. Fase 6 — cutover (janela de ~30 min, banco de produção)
+
+Só depois de tudo acima validado. Nesta ordem, sem pular etapas:
+
+1. **Congelar a produção**: no repositório, `Actions → refresh.yml → ⋯ → Disable workflow`
+   (ou remover o `schedule:` num commit na `main`). Avisar para não usar o app durante a
+   janela.
+2. **Dump final** do Supabase (Supabase Dashboard → Database → Backups, ou
+   `pg_dump` direto na `DATABASE_URL` de produção) → copiar para o VPS → restaurar por
+   cima do Postgres do VPS:
+   ```sh
+   # no VPS, dentro da pasta de deploy
+   cat dump_final.sql | docker compose exec -T postgres psql -U garimpo -d garimpo
+   ```
+   (schema recriado do zero — não por cima do banco de teste da Fase 1-5; se precisar
+   recriar: `docker compose exec -T postgres psql -U garimpo -d garimpo` rodando o
+   conteúdo de `supabase/setup.sql` primeiro).
+3. **Sincronizar as fotos da Coleção**: baixar do bucket antigo do Supabase Storage tudo
+   que entrou depois do corte da Fase 3 e copiar para o volume `collection_data` do VPS;
+   reconferir as URLs em `collection_items` (devem apontar para
+   `https://garimpo.seudominio.com/collection/...`).
+4. **Apontar `APP_URL`**: atualizar o secret `APP_URL` no GitHub para
+   `https://garimpo.seudominio.com`.
+5. **Reabilitar o cron**: reativar o `refresh.yml` (reverter o passo 1) e disparar um
+   `workflow_dispatch` manual, acompanhando o log até o fim.
+6. **Validar** com a lista da seção Verificação abaixo, agora contra os dados reais.
+7. **Não desligar nada ainda.** Supabase e Vercel ficam de pé, intocados, por pelo menos
+   **uma semana** — reverter é só apontar o DNS de volta e reabilitar o `refresh.yml` velho.
+8. Depois desse período: mesclar `vps` → `main` (PR normal) e só então desligar
+   Supabase/Vercel — exportando um último dump do Supabase para guardar antes de encerrar
+   o projeto lá. Remover também a Authorized redirect URI antiga do Google Cloud Console.
+
 ## Verificação
 
 **Por fase, antes de mesclar:** `bun run build`, `bunx tsc --noEmit`, `bun run lint` (verde salvo

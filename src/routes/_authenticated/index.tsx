@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
   BarChart3,
@@ -67,7 +67,6 @@ import {
   type LotAi,
   type LotMarket,
 } from "@/components/vinyl/ai-score-utils";
-import { supabase } from "@/integrations/supabase/client";
 import {
   analyzeOnDemand,
   applyCollectionDecision,
@@ -159,7 +158,6 @@ const watchedQuery = { queryKey: ["vinyl-watched"] as const };
 const bidsQuery = { queryKey: ["vinyl-my-bids"] as const };
 
 function HomePage() {
-  const navigate = useNavigate();
   const queryClientForAuth = useQueryClient();
   const fetchAccess = useServerFn(getAccessStatus);
   const access = useQuery({
@@ -172,8 +170,10 @@ function HomePage() {
   async function signOut() {
     await queryClientForAuth.cancelQueries();
     queryClientForAuth.clear();
-    await supabase.auth.signOut();
-    void navigate({ to: "/auth", replace: true });
+    // /api/auth/logout limpa o cookie de sessão e redireciona pra /auth
+    // (tratado direto em server.ts — ver auth.server.ts); navegação de página
+    // inteira, não RPC de server function.
+    window.location.href = "/api/auth/logout";
   }
 
   if (access.isLoading) {
