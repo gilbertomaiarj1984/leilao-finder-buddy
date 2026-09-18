@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { isAiProvider, type AiProvider } from "./ai-provider";
+import { isAiProvider, isGeminiModel, type AiProvider, type GeminiModel } from "./ai-provider";
 
 export const getAccessStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -501,6 +501,30 @@ export const setAiProvider = createServerFn({ method: "POST" })
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { setAiProvider } = await import("./app-state.server");
     return await setAiProvider(data.provider);
+  });
+
+/** Modelo do Gemini escolhido (Flash-Lite/Flash/Pro, do mais barato ao mais caro). Global. */
+export const getGeminiModel = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<GeminiModel> => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getGeminiModel } = await import("./app-state.server");
+    return await getGeminiModel();
+  });
+
+/** Grava o modelo do Gemini escolhido (valida contra os modelos conhecidos). */
+export const setGeminiModel = createServerFn({ method: "POST" })
+  .inputValidator((input: { model?: string } | undefined) => {
+    if (!isGeminiModel(input?.model)) throw new Error("Modelo de Gemini inválido.");
+    return { model: input.model };
+  })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setGeminiModel } = await import("./app-state.server");
+    return await setGeminiModel(data.model);
   });
 
 /**

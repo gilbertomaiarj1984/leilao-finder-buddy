@@ -76,6 +76,7 @@ import {
   getAiProvider,
   getCollectionFeedback,
   getCollectionLinks,
+  getGeminiModel,
   getLotAi,
   getLotCondition,
   getLotIdent,
@@ -89,11 +90,17 @@ import {
   scrapeVinylChunk,
   setAiMode,
   setAiProvider,
+  setGeminiModel,
   setLotTags,
   setVerifiedHouses,
 } from "@/lib/leiloesbr.functions";
-import { AiProviderSelect } from "@/components/vinyl/ai-provider-controls";
-import { AI_PROVIDER_SHORT, formatFailoverTrail, type AiProvider } from "@/lib/ai-provider";
+import { AiProviderSelect, GeminiModelSelect } from "@/components/vinyl/ai-provider-controls";
+import {
+  AI_PROVIDER_SHORT,
+  formatFailoverTrail,
+  type AiProvider,
+  type GeminiModel,
+} from "@/lib/ai-provider";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import type { WatchedLot } from "@/lib/leiloesbr-watch.server";
 import type { MyBid } from "@/lib/leiloesbr-bids.server";
@@ -365,6 +372,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const runSetAiMode = useServerFn(setAiMode);
   const fetchAiProvider = useServerFn(getAiProvider);
   const runSetAiProvider = useServerFn(setAiProvider);
+  const fetchGeminiModel = useServerFn(getGeminiModel);
+  const runSetGeminiModel = useServerFn(setGeminiModel);
   const runAnalyze = useServerFn(analyzeOnDemand);
   const fetchCollection = useServerFn(getCollection);
   const fetchCollectionLinks = useServerFn(getCollectionLinks);
@@ -488,6 +497,26 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       .catch((error: unknown) => {
         queryClient.setQueryData(["ai-provider"], prev);
         toast.error((error as Error)?.message || "Não foi possível salvar o provedor de IA");
+      });
+  };
+
+  // Modelo do Gemini (Flash-Lite/Flash/Pro). Vale mesmo com Claude escolhido: o failover
+  // por falta de créditos pode acabar caindo no Gemini com esse modelo.
+  const geminiModelQuery = useQuery({
+    queryKey: ["gemini-model"] as const,
+    queryFn: () => fetchGeminiModel(),
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const geminiModel: GeminiModel = geminiModelQuery.data ?? "gemini-3.1-flash-lite";
+  const changeGeminiModel = (model: GeminiModel) => {
+    const prev = geminiModelQuery.data;
+    queryClient.setQueryData(["gemini-model"], model); // otimista
+    void runSetGeminiModel({ data: { model } })
+      .then(() => toast.success(`Modelo do Gemini: ${model}`))
+      .catch((error: unknown) => {
+        queryClient.setQueryData(["gemini-model"], prev);
+        toast.error((error as Error)?.message || "Não foi possível salvar o modelo do Gemini");
       });
   };
   // Análise SOB DEMANDA (botões por dia/casa). `analyzing` guarda a chave em execução:
@@ -2450,6 +2479,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               </Select>
             </div>
             <AiProviderSelect value={aiProvider} onChange={changeAiProvider} />
+            <GeminiModelSelect value={geminiModel} onChange={changeGeminiModel} />
             <Button
               variant="outline"
               size="sm"

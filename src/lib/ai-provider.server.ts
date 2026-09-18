@@ -49,17 +49,29 @@ export type RunTextResult = {
 // --- Configuração por provedor (chave de env + modelo, com override por env) ---------------
 
 const ANTHROPIC_DEFAULT_MODEL = "claude-haiku-4-5";
-const GEMINI_DEFAULT_MODEL = "gemini-flash-latest";
 /**
- * Modelo de downgrade quando o Gemini configurado (`GEMINI_MODEL`/padrão) bate em quota:
- * o Flash-Lite tem cota gratuita própria e separada do Flash, então costuma sobreviver
- * quando o Flash já estourou o free tier do dia.
+ * Modelo do Gemini padrão de fábrica: o ALIAS do Flash-Lite vigente (a Google reaponta pra
+ * versão atual — hoje o 3.1 — em vez de travar num id fixo que um dia é descontinuado).
+ * Espelha `DEFAULT_GEMINI_MODEL` de `ai-provider.ts` (client-safe, mesma lição do v0.24.x:
+ * este arquivo não importa de lá). É também o alvo do downgrade por quota logo abaixo.
  */
-const GEMINI_FREE_FALLBACK_MODEL = "gemini-2.5-flash-lite";
+const GEMINI_DEFAULT_MODEL = "gemini-flash-lite-latest";
+/**
+ * Modelo de downgrade quando o Gemini configurado/escolhido bate em quota: o Flash-Lite tem
+ * cota gratuita própria (separada do Flash/Pro) e costuma sobreviver quando o modelo pedido
+ * já estourou o free tier do dia. Igual ao padrão de fábrica — dá no mesmo modelo quando o
+ * usuário já está no mais barato (o guard em `runOne` evita o downgrade virar loop).
+ */
+const GEMINI_FREE_FALLBACK_MODEL = GEMINI_DEFAULT_MODEL;
 
-/** Modelo efetivo do provedor (override por env, senão o padrão barato). */
-export function providerModel(provider: AiProvider): string {
-  if (provider === "gemini") return process.env["GEMINI_MODEL"] || GEMINI_DEFAULT_MODEL;
+/**
+ * Modelo efetivo do provedor. Pro Gemini, `geminiModel` (a escolha do usuário, persistida em
+ * `app_state.gemini_model` — ver `resolveGeminiModel` em `ai-eval.server.ts`) tem prioridade;
+ * senão cai pro override por env (`GEMINI_MODEL`) e por último o padrão barato de fábrica.
+ */
+export function providerModel(provider: AiProvider, geminiModel?: string): string {
+  if (provider === "gemini")
+    return geminiModel || process.env["GEMINI_MODEL"] || GEMINI_DEFAULT_MODEL;
   return process.env["ANTHROPIC_MODEL"] || ANTHROPIC_DEFAULT_MODEL;
 }
 
@@ -287,8 +299,9 @@ async function runGemini(req: AiRequest, model: string): Promise<string> {
 async function runOne(
   req: AiRequest,
   provider: AiProvider,
+  geminiModel?: string,
 ): Promise<{ text: string; model: string }> {
-  const model = providerModel(provider);
+  const model = providerModel(provider, geminiModel);
   if (provider === "anthropic") return { text: await runAnthropic(req, model), model };
 
   try {
@@ -335,8 +348,14 @@ function attemptErrorMessage(error: unknown): string {
  * créditos/quota" → sucesso no próximo, se houver). Outros erros (400/401/403, prompt
  * bloqueado, parsing) propagam de imediato (o chamador trata por-item). Lança se nenhum
  * provedor atender, com a mensagem juntando o motivo de cada tentativa.
+ * `geminiModel` é a escolha do usuário pro Gemini (ver `resolveGeminiModel`); só é usada
+ * quando o provedor efetivamente tentado é o Gemini (no pedido OU no failover).
  */
-export async function runText(req: AiRequest, provider: AiProvider): Promise<RunTextResult> {
+export async function runText(
+  req: AiRequest,
+  provider: AiProvider,
+  geminiModel?: string,
+): Promise<RunTextResult> {
   // Ordem de tentativa: o pedido primeiro, depois os demais na ordem canônica (failover).
   const order = [
     provider,
@@ -355,7 +374,7 @@ export async function runText(req: AiRequest, provider: AiProvider): Promise<Run
       continue;
     }
     try {
-      const { text, model } = await runOne(req, p);
+      const { text, model } = await runOne(req, p, p === "gemini" ? geminiModel : undefined);
       return { text, provider: p, model, switched: p !== provider, attemptErrors };
     } catch (error) {
       // Troca de provedor por quota/sem créditos OU indisponibilidade transitória; senão propaga.

@@ -24,13 +24,13 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { AiProviderSelect } from "@/components/vinyl/ai-provider-controls";
+import { AiProviderSelect, GeminiModelSelect } from "@/components/vinyl/ai-provider-controls";
 import { scoreTone } from "@/components/vinyl/ai-score-utils";
 import { fmtMoney } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
-import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
+import { AI_PROVIDER_SHORT, type AiProvider, type GeminiModel } from "@/lib/ai-provider";
 import {
   type AlbumAgg,
   type AnalyticsAliases,
@@ -43,6 +43,7 @@ import {
   clearAnalyticsAlias,
   getAiProvider,
   getAnalyticsAliases,
+  getGeminiModel,
   getVinylSales,
   reidentifySales,
   setAiProvider,
@@ -51,6 +52,7 @@ import {
   setAnalyticsExcludedArtist,
   setAnalyticsExcludedSale,
   setAnalyticsSaleOverride,
+  setGeminiModel,
 } from "@/lib/leiloesbr.functions";
 import { normalizeForMatch } from "@/lib/vinyl-parse";
 
@@ -115,6 +117,8 @@ function VinilAnalyticsPage() {
   const runReident = useServerFn(reidentifySales);
   const fetchAiProvider = useServerFn(getAiProvider);
   const runSetAiProvider = useServerFn(setAiProvider);
+  const fetchGeminiModel = useServerFn(getGeminiModel);
+  const runSetGeminiModel = useServerFn(setGeminiModel);
   const fetchAliases = useServerFn(getAnalyticsAliases);
   const runSetArtistAlias = useServerFn(setAnalyticsArtistAlias);
   const runSetAlbumAlias = useServerFn(setAnalyticsAlbumAlias);
@@ -154,6 +158,26 @@ function VinilAnalyticsPage() {
       .catch((error: unknown) => {
         queryClient.setQueryData(["ai-provider"], prev);
         toast.error((error as Error)?.message || "Não foi possível salvar o provedor de IA");
+      });
+  };
+
+  // Modelo do Gemini (Flash-Lite/Flash/Pro) — vale mesmo com Claude escolhido: o failover
+  // por falta de créditos pode acabar caindo no Gemini com esse modelo.
+  const geminiModelQuery = useQuery({
+    queryKey: ["gemini-model"] as const,
+    queryFn: () => fetchGeminiModel(),
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const geminiModel: GeminiModel = geminiModelQuery.data ?? "gemini-3.1-flash-lite";
+  const changeGeminiModel = (model: GeminiModel) => {
+    const prev = geminiModelQuery.data;
+    queryClient.setQueryData(["gemini-model"], model); // otimista
+    void runSetGeminiModel({ data: { model } })
+      .then(() => toast.success(`Modelo do Gemini: ${model}`))
+      .catch((error: unknown) => {
+        queryClient.setQueryData(["gemini-model"], prev);
+        toast.error((error as Error)?.message || "Não foi possível salvar o modelo do Gemini");
       });
   };
 
@@ -428,6 +452,11 @@ function VinilAnalyticsPage() {
               <AiProviderSelect
                 value={aiProvider}
                 onChange={changeAiProvider}
+                disabled={reidentifying}
+              />
+              <GeminiModelSelect
+                value={geminiModel}
+                onChange={changeGeminiModel}
                 disabled={reidentifying}
               />
             </div>

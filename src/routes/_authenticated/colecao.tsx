@@ -42,9 +42,19 @@ import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import { GEMINI_IMPORT_PROMPT, parseCollectionBulkText } from "@/lib/collection-bulk";
 import { GRADE_ORDER } from "@/lib/grading";
-import { AiProviderSelect } from "@/components/vinyl/ai-provider-controls";
-import { AI_PROVIDER_SHORT, formatFailoverTrail, type AiProvider } from "@/lib/ai-provider";
-import { getAiProvider, setAiProvider } from "@/lib/leiloesbr.functions";
+import { AiProviderSelect, GeminiModelSelect } from "@/components/vinyl/ai-provider-controls";
+import {
+  AI_PROVIDER_SHORT,
+  formatFailoverTrail,
+  type AiProvider,
+  type GeminiModel,
+} from "@/lib/ai-provider";
+import {
+  getAiProvider,
+  getGeminiModel,
+  setAiProvider,
+  setGeminiModel,
+} from "@/lib/leiloesbr.functions";
 import type { CollectionItem, PendingWonLot } from "@/lib/collection.server";
 import {
   addCollectionItem,
@@ -241,6 +251,8 @@ function ColecaoPage() {
   const reprocess = useServerFn(reprocessCollectionItem);
   const fetchAiProvider = useServerFn(getAiProvider);
   const runSetAiProvider = useServerFn(setAiProvider);
+  const fetchGeminiModel = useServerFn(getGeminiModel);
+  const runSetGeminiModel = useServerFn(setGeminiModel);
   const updateItem = useServerFn(updateCollectionItem);
   const removeItem = useServerFn(deleteCollectionItem);
   const uploadImage = useServerFn(uploadCollectionImage);
@@ -279,6 +291,26 @@ function ColecaoPage() {
       .catch((e: unknown) => {
         queryClient.setQueryData(["ai-provider"], prev);
         toast.error((e as Error)?.message || "Não foi possível salvar o provedor de IA");
+      });
+  };
+
+  // Modelo do Gemini (Flash-Lite/Flash/Pro). Vale mesmo com Claude escolhido: o failover
+  // por falta de créditos pode acabar caindo no Gemini com esse modelo.
+  const geminiModelQuery = useQuery({
+    queryKey: ["gemini-model"] as const,
+    queryFn: () => fetchGeminiModel(),
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const geminiModel: GeminiModel = geminiModelQuery.data ?? "gemini-3.1-flash-lite";
+  const changeGeminiModel = (model: GeminiModel) => {
+    const prev = geminiModelQuery.data;
+    queryClient.setQueryData(["gemini-model"], model);
+    void runSetGeminiModel({ data: { model } })
+      .then(() => toast.success(`Modelo do Gemini: ${model}`))
+      .catch((e: unknown) => {
+        queryClient.setQueryData(["gemini-model"], prev);
+        toast.error((e as Error)?.message || "Não foi possível salvar o modelo do Gemini");
       });
   };
   // Avisa quando houve failover (o provedor pedido ficou sem créditos ou indisponível): mostra
@@ -640,6 +672,11 @@ function ColecaoPage() {
                 <AiProviderSelect
                   value={aiProvider}
                   onChange={changeAiProvider}
+                  disabled={identifying}
+                />
+                <GeminiModelSelect
+                  value={geminiModel}
+                  onChange={changeGeminiModel}
                   disabled={identifying}
                 />
               </div>

@@ -725,7 +725,8 @@ segue existindo, usado pela home ("Atualizar tudo").
 **Multi-provedor (v0.27.0):** o app usa **Claude (Anthropic)** OU **Gemini (Google)** — camada
 plugável em **`ai-provider.server.ts`** (+ metadados client-safe em `ai-provider.ts`). Modelos
 baratos por padrão: **`claude-haiku-4-5`** (`ANTHROPIC_API_KEY`, override `ANTHROPIC_MODEL`) e
-**`gemini-flash-latest`** (`GEMINI_API_KEY`, override `GEMINI_MODEL`). **Opcional:** sem NENHUMA
+**`gemini-flash-lite-latest`** (alias, `GEMINI_API_KEY`, override `GEMINI_MODEL`, mas a UI tem
+precedência — ver bullet do seletor de modelo abaixo). **Opcional:** sem NENHUMA
 chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer provedor").
 
 - **`runText(req, provider)`** é o ponto único: recebe uma requisição NEUTRA (`AiRequest`:
@@ -751,11 +752,14 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   `503 UNAVAILABLE "This model is currently experiencing high demand"` do `gemini-flash-latest`.
   Erros não-transitórios/não-quota (400/401/403, prompt bloqueado, parsing) propagam (por-item).
 - **Downgrade de modelo dentro do Gemini antes do failover de provedor:** quando o Gemini
-  configurado (`GEMINI_MODEL`/padrão `gemini-flash-latest`) bate em `isQuotaError`, `runOne`
-  tenta primeiro **`gemini-2.5-flash-lite`** (cota gratuita própria, separada do Flash) antes de
-  desistir do Gemini e cair pro Claude — evita queimar o Claude quando o problema é só a cota
-  diária do Flash. Só propaga (e aciona o failover de provedor do `runText`) se o Flash-Lite
-  também falhar por quota, ou se o modelo pedido já era o próprio Flash-Lite (sem loop).
+  escolhido/configurado bate em `isQuotaError`, `runOne` tenta primeiro
+  **`GEMINI_FREE_FALLBACK_MODEL`** (= `GEMINI_DEFAULT_MODEL`, hoje `gemini-flash-lite-latest`,
+  cota gratuita própria) antes de desistir do Gemini e cair pro Claude — evita queimar o Claude
+  quando o problema é só a cota diária do modelo escolhido (ex.: usuário travou `gemini-3.1-pro`
+  e ele estourou quota — tenta o Flash-Lite antes de ir pro Claude). Só propaga (e aciona o
+  failover de provedor do `runText`) se o Flash-Lite também falhar por quota, ou se o modelo
+  pedido já era ele mesmo (sem loop) — histórico: era `gemini-2.5-flash-lite` até o v0.69.2,
+  trocado junto com o padrão de fábrica por causa da descontinuação anunciada daquele modelo.
 - **Provedor PADRÃO** persistido em `app_state.ai_provider` (`getAiProvider`/`setAiProvider`;
   precedência: `app_state` → env `AI_PROVIDER` → `anthropic`). **Seletor único no header**
   (`AiProviderSelect`, na home, Coleção e Vinil Analytics) — é a **ÚNICA** forma de escolher a
@@ -764,6 +768,28 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   (o padrão em `app_state`). **NÃO existe mais o diálogo "qual IA usar?"** por ação
   (`AiProviderDialog`/`useAiProviderPicker` foram removidos no v0.41.0 — a seleção por ação se
   confundia; agora só o topo decide).
+- **Modelo do Gemini escolhível (v0.69.2):** `GeminiModelSelect` (`ai-provider-controls.tsx`),
+  ao lado do `AiProviderSelect` nas mesmas 3 telas — sempre visível, mesmo com Claude escolhido
+  (o failover por quota pode acabar caindo no Gemini). Lista `GEMINI_MODELS`/`GEMINI_MODEL_LABELS`
+  (`ai-provider.ts`), do MAIS BARATO pro MAIS CARO — checada por busca na web em set/2026, preço
+  aproximado por 1M tok in/out: `gemini-flash-lite-latest` (alias, padrão de fábrica) e
+  `gemini-3.1-flash-lite` (versão travada por trás do alias hoje) $0,25/$1,50,
+  `gemini-3.5-flash-lite` $0,30/$2,50, `gemini-3.7-flash` $0,75/$3,75, `gemini-3.6-flash`
+  $1,50/$7,50, `gemini-3.1-pro` $2,00/$12,00. **`gemini-flash-lite-latest` é um ALIAS** (a
+  Google reaponta pra versão Flash-Lite vigente, hoje o 3.1) — sobrevive a descontinuações,
+  por isso é o padrão de fábrica em vez de um id fixo; as versões `gemini-3.x-*` na lista
+  ficam como opção pra quem quiser TRAVAR um preço específico (o alias pode, no futuro,
+  passar a apontar pra algo mais caro que a versão travada). **Não** inclui a geração 2.5
+  inteira (`gemini-2.5-flash`/`gemini-2.5-flash-lite`, esse último o mais barato fixo de
+  todos, ~$0,10/$0,40) — a Google anunciou o desligamento de TODA a geração 2.5 pra
+  16/out/2026, então saiu da lista de opções. Persistido em `app_state.gemini_model`
+  (`getGeminiModel`/`setGeminiModel` em `app-state.server.ts`, MESMO padrão de precedência do
+  provedor: `app_state` → env `GEMINI_MODEL` → padrão de fábrica). Resolvido UMA VEZ por
+  rodada síncrona (não por lote) via `resolveGeminiModel()` (`ai-eval.server.ts`, mesmo padrão
+  de `resolveAiProvider`) dentro de cada função `*Sync` —
+  os chamadores (rotas sob demanda, cron, `lot-condition`/`lot-sales`) não precisaram mudar.
+  `runText`/`runOne` ganharam um 3º parâmetro opcional `geminiModel` que só é usado quando o
+  provedor efetivamente tentado (pedido OU failover) é o Gemini.
 - **Cron:** Claude usa **Batches** (assíncrono, ~50% mais barato); Gemini roda **síncrono** em
   bloco (`GEMINI_SYNC_CAP`, o laço do cron chama de novo até esgotar). Se o Claude estiver sem
   créditos no `submit`, o cron cai para o Gemini síncrono.
@@ -1382,6 +1408,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.68.7      | Só documentação: cookie `Secure` do v0.68.6 revalidado no VPS real (DevTools confirmou o atributo marcado no `gs_session`) e o teste de restauração do backup ("backup não testado não é backup") executado contra o VPS real — dump mais recente baixado do R2, restaurado num Postgres descartável isolado (`docker run postgres:17`, sem tocar no banco de produção) via `psql -v ON_ERROR_STOP=1`, e conferido: as 12 tabelas do schema vieram todas e `collection_items` bateu com a linha esperada. Checklist de progresso (`docs/economia-fase-2-vps-unico.md`, passo 11) atualizado |
 | v0.69.0      | `ai-provider.server.ts`: antes de sair do Gemini por quota e cair pro Claude, `runOne` agora tenta um downgrade interno pro `gemini-2.5-flash-lite` (cota gratuita própria, separada do Flash) — só propaga (acionando o failover de provedor de `runText`) se o Flash-Lite também estourar quota, ou se o modelo pedido já era ele mesmo |
 | v0.69.1      | Failover de IA (`runText`, `ai-provider.server.ts`) deixa de ser silencioso: percorre a ordem canônica dos provedores (hoje Claude → Gemini, pronta pra crescer) registrando um motivo claro por tentativa em `attemptErrors` — `"sem chave de API configurada"` pro que nem tem chave, `"sem créditos/quota"`/`"indisponível no momento"` pro que respondeu com erro — em vez de pular provedor sem chave em silêncio ou só dizer "trocou de provedor" no sucesso. Propagado por `evalLotsSync`/`identLotsSyncRows`/`identCollectionSync`/`conditionAiSync` (`SyncOutcome.attemptErrors`) e pelas rotas sob demanda (`analyzeOnDemand`, `reidentifyCollection`, `reidentifyCollectionItem`) até a UI: novo `formatFailoverTrail` (`ai-provider.ts`) monta o toast passo a passo (ex.: "Claude: sem chave de API configurada · Gemini: sem créditos/quota — usei Gemini") em `index.tsx`/`colecao.tsx`. Quando NENHUM provedor atende, a mensagem de erro final já vem com a trilha completa (o `throw` de `runText` junta os motivos), então os toasts de "IA não retornou" existentes passam a mostrar por que cada provedor falhou |
+| v0.69.2      | Modelo do Gemini virou escolhível na UI: novo `GeminiModelSelect` ao lado do `AiProviderSelect` (home, Coleção, Vinil Analytics), listando `GEMINI_MODELS` do mais barato ao mais caro (`ai-provider.ts`) — padrão de fábrica trocado pro alias `gemini-flash-lite-latest` (a Google reaponta pra versão Flash-Lite vigente, hoje o 3.1 — "seu modelo mais custo-efetivo" segundo o blog oficial — em vez de travar num id fixo que a Google descontinua; os ids `gemini-3.x-*`/`gemini-3.1-pro` ficam como opção pra quem quiser travar um preço). A geração 2.5 (`gemini-2.5-flash`/`-flash-lite`) saiu de qualquer lista nova por desligar inteira em 16/out/2026, mas o Flash-Lite 2.5 antigo foi substituído pelo próprio alias como `GEMINI_FREE_FALLBACK_MODEL` do downgrade por quota. Persistido em `app_state.gemini_model` (`getGeminiModel`/`setGeminiModel`, mesmo padrão de precedência do `ai_provider`), resolvido uma vez por rodada síncrona via `resolveGeminiModel()` (`ai-eval.server.ts`) e passado como 3º parâmetro opcional a `runText`/`runOne` |
 
 ## Pendências
 
