@@ -26,3 +26,21 @@
 {$PORTAINER_DOMAIN} {
 	reverse_proxy portainer:9000
 }
+
+# Preview deployments (Dokploy) — wildcard próprio, nunca um path do domínio principal.
+# O Dokploy roda FORA deste compose (plataforma separada, instalada direto no VPS) com o
+# próprio Traefik em portas alternativas (nunca 80/443 — essas continuam só do Caddy) e
+# SEM ACME próprio: quem termina TLS pro subdomínio de preview é este Caddy (certificado
+# wildcard, precisa de DNS-01 com token de API do provedor de DNS em {$APP_DOMAIN} — ver
+# docs/economia-fase-2-vps-unico.md). O Traefik do Dokploy só roteia por Host header, em
+# HTTP puro, pros containers de cada PR. `dokploy-traefik` é o nome do serviço/container
+# do Traefik do Dokploy na rede `proxy` (conferir no `docker ps` do VPS depois de instalar
+# — ajustar aqui se o nome vier diferente).
+#
+# ⚠️ Nunca apontar o cron automático (`refresh.yml`/healthchecks) pra este domínio: a
+# sessão do leiloesbr é por origem (cookie em memória), então login simultâneo em preview
+# e produção derruba uma sessão na outra. Ação (lance/vigia) em preview só por clique
+# manual na UI, nunca automatizada.
+{$PREVIEW_DOMAIN} {
+	reverse_proxy dokploy-traefik:80
+}

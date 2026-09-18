@@ -16,6 +16,11 @@
 # próprio (`PORTAINER_DOMAIN`). ⚠️ Tem acesso ao socket do Docker do HOST — enxerga e
 # controla TODOS os containers da máquina, não só os deste app (ver "Endurecimento da
 # máquina" em docs/economia-fase-2-vps-unico.md para o checklist de acesso).
+#
+# Preview deployments (Fase 7, opcional): Dokploy roda FORA deste compose (instalado direto
+# no VPS, plataforma própria) — não é um serviço aqui. O Caddy só repassa o subdomínio
+# `PREVIEW_DOMAIN` pro Traefik dele (ver bloco no Caddyfile). Ver
+# docs/economia-fase-2-vps-unico.md, seção "Fase 7".
 
 services:
   caddy:

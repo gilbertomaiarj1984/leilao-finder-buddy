@@ -768,3 +768,44 @@ Backup não testado não é backup.
   a Fase 1 como "não iniciada".
 - Módulo `*.server.ts` **não importa de módulo client-safe** (nem `import type`) — causou 404 de
   chunk em produção na v0.24.0.
+
+## Fase 7 (opcional, pós-cutover) — Preview deployments (Dokploy)
+
+Decisão registrada em conversa (não é código, é infra manual no VPS): usar **Dokploy** pra
+preview de PR (deploy efêmero por branch/PR, algo próximo do que a Vercel dava de graça). O
+**Portainer (Fase 5) continua** sendo o painel de containers/logs da produção — o Dokploy entra
+só pelo recurso que o Portainer não tem, preview automático por PR.
+
+**Por que Dokploy e não Coolify:** VPS de 2 vCPU/4 GB, stack atual já em ~800 MB + Portainer
+256 MB, margem real de ~2–2,4 GB. Coolify sozinho (painel + Postgres/Redis próprios + Traefik)
+já aperta essa margem antes de qualquer preview subir; Dokploy é bem mais magro (~300–500 MB).
+Não planejar mais de 1 preview simultânea.
+
+**Convivência com o Caddy (não negociável): o Dokploy nunca publica 80/443.** Ele roda fora
+deste `docker-compose.yml`, instalado direto no VPS, com o Traefik dele em portas alternativas
+(instalador expõe `HTTP_PORT`/`HTTPS_PORT`) e **sem ACME próprio**. O Caddy continua sendo a
+única borda pública, TLS incluído — ver o bloco novo `{$PREVIEW_DOMAIN}` no `Caddyfile`
+(`reverse_proxy dokploy-traefik:80`, HTTP puro pra dentro). Isso exige:
+- **DNS A wildcard** `*.preview.<domínio>` → IP do VPS.
+- **Certificado TLS wildcard no Caddy**: HTTP-01 não valida wildcard, precisa de **DNS-01**
+  (token de API do provedor de DNS) — configuração adicional no Caddy, fora do escopo deste
+  documento até alguém escolher o provedor de DNS de produção.
+- Confirmar no VPS, depois de instalar, o nome real do container/serviço do Traefik do Dokploy
+  (`docker ps`) — `dokploy-traefik` no Caddyfile é o nome padrão, mas pode variar por versão.
+
+**Risco aceito, não mitigado por infra: preview aponta pro banco de produção E roda com
+credenciais reais do LeilõesBR/cron ativo** (decisão explícita — não é uma preview "somente
+leitura"). Duas consequências práticas:
+1. Uma ação clicada na UI da preview (lance, vigia) é uma ação **real** na conta do usuário,
+   idêntica a fazer o mesmo na produção. Isso é aceito, não é bug.
+2. A sessão do leiloesbr é **por origem, cookie em memória** (ver "Scraping do LeilõesBR" em
+   `docs/notas-desenvolvimento.md`) — login simultâneo em produção e preview derruba uma sessão
+   na outra. Mitigação obrigatória: **o cron automático (`refresh.yml`, healthchecks) nunca
+   aponta pro domínio de preview**, só pra produção. Login/ação em preview só por clique manual.
+
+**Pendente (trabalho manual no VPS, fora do alcance de uma sessão remota):**
+1. Instalar o Dokploy (script oficial, portas alternativas).
+2. DNS wildcard + certificado DNS-01 no Caddy.
+3. Conectar o repo no Dokploy, apontar preview builds pra branch base `vps`.
+4. Decidir e configurar o provedor de DNS pro desafio DNS-01 (Cloudflare é o candidato óbvio já
+   que aparece como opção no passo 8 deste documento).
