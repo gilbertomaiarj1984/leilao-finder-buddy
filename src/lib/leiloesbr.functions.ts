@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { isAiProvider, type AiProvider } from "./ai-provider";
+import { isAiProvider, isGeminiModel, type AiProvider, type GeminiModel } from "./ai-provider";
 
 export const getAccessStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -503,6 +503,30 @@ export const setAiProvider = createServerFn({ method: "POST" })
     return await setAiProvider(data.provider);
   });
 
+/** Modelo do Gemini escolhido (Flash-Lite/Flash/Pro, do mais barato ao mais caro). Global. */
+export const getGeminiModel = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<GeminiModel> => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getGeminiModel } = await import("./app-state.server");
+    return await getGeminiModel();
+  });
+
+/** Grava o modelo do Gemini escolhido (valida contra os modelos conhecidos). */
+export const setGeminiModel = createServerFn({ method: "POST" })
+  .inputValidator((input: { model?: string } | undefined) => {
+    if (!isGeminiModel(input?.model)) throw new Error("Modelo de Gemini inválido.");
+    return { model: input.model };
+  })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setGeminiModel } = await import("./app-state.server");
+    return await setGeminiModel(data.model);
+  });
+
 /**
  * Análise SOB DEMANDA de um dia (e opcionalmente de UMA casa desse dia): avalia NA HORA,
  * de forma síncrona, só os lotes AINDA NÃO avaliados (reaproveita o cache por título).
@@ -552,10 +576,14 @@ export const analyzeOnDemand = createServerFn({ method: "POST" })
         switched: false,
         failed: 0,
         error: null,
+        attemptErrors: {},
       };
     }
 
-    const { rows, served, switched, failed, error } = await evalLotsSync(toEval, provider);
+    const { rows, served, switched, failed, error, attemptErrors } = await evalLotsSync(
+      toEval,
+      provider,
+    );
     const evaluated = await upsertLotAi(rows);
     return {
       evaluated,
@@ -568,6 +596,8 @@ export const analyzeOnDemand = createServerFn({ method: "POST" })
       // "a IA falhou" de "nada pendente" (evita o falso "já avaliado").
       failed,
       error,
+      // Motivo de cada provedor pulado/que falhou até o que atendeu (ver `runText`).
+      attemptErrors,
     };
   });
 

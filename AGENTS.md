@@ -48,3 +48,12 @@ com **Postgres** próprio como backend e deploy em **VPS** (Docker Compose + Cad
   falha o PR se a versão não subir. Coloque a versão no título do PR (ex.: `v0.2.0 — …`).
 - Rodapé de atribuição em qualquer post no GitHub; commits terminam com
   `Co-Authored-By: Claude ...`.
+- **Nunca editar `Caddyfile` sem validar a sintaxe antes de mandar pro VPS** — `deploy.yml`
+  aplica direto em produção a cada push na `vps`, sem passo de revisão manual no meio. Baixar o
+  binário oficial do Caddy (não precisa de Docker: `curl -fsSL -o caddy.tar.gz
+  "https://github.com/caddyserver/caddy/releases/download/vX.Y.Z/caddy_X.Y.Z_linux_amd64.tar.gz"`,
+  extrair, `caddy validate --config Caddyfile --adapter caddyfile` com as envs via `VAR=valor`
+  na frente do comando) e, se mexer em matcher/expressão/roteamento novo, também `caddy run`
+  numa porta alternativa (`http_port`/`https_port` no bloco global) pra testar de verdade antes
+  do push — já causou crash-loop de produção duas vezes (v0.69.5: env vazia virando bloco
+  Caddyfile inválido; ver `docs/economia-fase-2-vps-unico.md`, Fase 7).

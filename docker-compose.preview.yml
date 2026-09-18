@@ -1,0 +1,66 @@
+# Fase 7 (docs/economia-fase-2-vps-unico.md) — compose separado, usado SÓ pelo Dokploy
+# (modo "Compose" simples, fora do Swarm) pra subir o app de preview. NUNCA usado pelo
+# deploy.yml/produção — aquele continua no docker-compose.yml de sempre.
+#
+# TEMPLATE reutilizável por PR/branch: cada instância deste compose no Dokploy (um app
+# por PR) precisa das SUAS PRÓPRIAS `PREVIEW_DOMAIN` (subdomínio único, ex.:
+# `pr-42.preview.143-95-214-240.sslip.io`) e `PREVIEW_ROUTER_NAME` (slug único, ex.:
+# `pr-42`) nas envs do app no painel — nomes de router/service do Traefik colidem entre
+# apps diferentes se ficarem iguais. O Caddy aceita QUALQUER subdomínio sob
+# {$PREVIEW_DOMAIN} via TLS on-demand (ver Caddyfile), então não precisa cadastrar nada
+# lá por PR — só criar o app no Dokploy com essas duas envs diferentes.
+#
+# Duas redes externas, propositalmente, nenhuma criada por este arquivo:
+# - `dokploy-network`: pra o Traefik do Dokploy enxergar o container (roteamento por
+#   Host header, ver Caddyfile). Sem `exposedByDefault` (traefik.yml), por isso os labels
+#   `traefik.*` explícitos abaixo.
+# - `garimpo_default`: a rede do docker-compose.yml de PRODUÇÃO (nome do projeto compose
+#   `garimpo`, resolvido a partir do diretório `~/garimpo` no VPS) — decisão explícita de
+#   apontar a preview pro banco de produção de verdade, sem subir Postgres novo nem
+#   duplicar dado. Resolve o hostname `postgres` (alias que o compose de produção já
+#   registra nessa rede) sem precisar expor porta nem tocar no compose de produção.
+#
+# Roteamento em HTTP puro (entrypoint `web`, não `websecure`): quem termina TLS é o Caddy
+# da produção, não o Traefik do Dokploy — ver Caddyfile.
+#
+# ⚠️ Ver docs/economia-fase-2-vps-unico.md, seção "Fase 7", pro risco aceito (preview com
+# credenciais reais/cron ativo) e o motivo de NUNCA apontar o cron automático pra cá.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      SESSION_SECRET: ${SESSION_SECRET}
+      LEILOESBR_EMAIL: ${LEILOESBR_EMAIL}
+      LEILOESBR_SENHA: ${LEILOESBR_SENHA}
+      LIVE_PROXY_SECRET: ${LIVE_PROXY_SECRET}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      DISCOGS_TOKEN: ${DISCOGS_TOKEN}
+      COLLECTION_DIR: /data/collection
+    volumes:
+      - preview_collection_data:/data/collection
+    networks:
+      - dokploy-network
+      - garimpo_default
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.${PREVIEW_ROUTER_NAME:-garimpo-preview}.rule=Host(`${PREVIEW_DOMAIN}`)
+      - traefik.http.routers.${PREVIEW_ROUTER_NAME:-garimpo-preview}.entrypoints=web
+      - traefik.http.services.${PREVIEW_ROUTER_NAME:-garimpo-preview}.loadbalancer.server.port=3000
+
+networks:
+  dokploy-network:
+    external: true
+  garimpo_default:
+    external: true
+
+volumes:
+  preview_collection_data:

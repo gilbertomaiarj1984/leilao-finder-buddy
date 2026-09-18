@@ -147,7 +147,13 @@ jobs:
           echo "== Faxina de seen_auctions (Fase 5 da migração para VPS) =="
           # Remove leilões cujas vendas já foram capturadas e fora da janela de retenção —
           # tabela nunca era podada antes, só crescia. 1 chamada, idempotente.
-          res="$(call "/api/cron?step=prune")"
+          # Diagnóstico (v0.69.4): esta chamada específica NÃO usa `call()` (que tem -f,
+          # suprime o corpo em 4xx/5xx) — vem falhando com 400 só por aqui (GitHub Actions),
+          # nunca via curl direto do VPS; -w imprime o corpo (com receivedStep/receivedSearch
+          # ecoados pelo servidor) e o status HTTP, e o `|| true` impede que o `set -e` do
+          # step aborte antes de imprimir. Reverter pro `call()` normal depois que o caso for
+          # entendido.
+          res="$(curl -sS --max-time 120 --retry 3 --retry-delay 5 -H "x-cron-token: $CRON_TOKEN" -w '\nHTTP_STATUS:%{http_code}' "$base/api/cron?step=prune" || true)"
           echo "prune: $res"
 
           echo "Concluído."

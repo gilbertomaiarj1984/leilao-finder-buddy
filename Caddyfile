@@ -7,6 +7,20 @@
 # collection-storage.server.ts, agora na borda. Tudo o mais vai por reverse proxy pro
 # serviço `app` (nome do serviço no docker-compose.yml, resolvido pela rede interna).
 
+# Bloco de configuração global (Caddyfile exige que seja o PRIMEIRO bloco do arquivo,
+# nunca mover pra baixo — um bloco sem chave em qualquer outra posição já derrubou a
+# config inteira uma vez, v0.69.5). `on_demand_tls` é o que permite QUALQUER subdomínio
+# de preview (Fase 7, um por PR) tirar certificado na hora, sem cadastrar cada um no
+# Caddyfile — ver bloco `:12020`/`:2020` mais abaixo pra entender o "ask" (obrigatório:
+# sem ele, qualquer domínio que resolva pro IP do VPS conseguiria pedir certificado
+# através do seu Caddy, o que gastaria limite de emissão do Let's Encrypt à toa e
+# poderia ser abusado por terceiros).
+{
+	on_demand_tls {
+		ask http://localhost:2020/ask-preview
+	}
+}
+
 {$APP_DOMAIN} {
 	handle_path /collection/* {
 		root * /data/collection
@@ -25,4 +39,62 @@
 # docs/economia-fase-2-vps-unico.md antes de expor esse domínio ao público.
 {$PORTAINER_DOMAIN} {
 	reverse_proxy portainer:9000
+}
+
+# Preview deployments (Dokploy, Fase 7) — QUALQUER subdomínio sob {$PREVIEW_DOMAIN}, um
+# por PR/branch, sem cadastrar cada um aqui (TLS "on-demand", bloco de config global no
+# topo do arquivo). Ambiente atual roda em sslip.io (sem domínio próprio ainda), então
+# nenhum subdomínio precisa de registro DNS — qualquer coisa.{$PREVIEW_DOMAIN} já resolve
+# sozinho pro IP embutido no nome. Reavaliar pra DNS-01 + wildcard de verdade só se um dia
+# isso migrar pra domínio próprio (on-demand deixa de fazer sentido, HTTP-01 por hostname
+# vira caro em volume — não é o caso aqui).
+#
+# `dokploy-traefik` é um container standalone (não é serviço Swarm nem deste compose,
+# `docker run` direto pelo instalador do Dokploy) na rede `dokploy-network` (overlay
+# externa, criada pelo instalador) — por isso o Caddy também entra nela
+# (`docker-compose.yml`). Portas do Traefik do Dokploy foram remapeadas na instalação de
+# 80/443 (que já eram do Caddy) para **8081/8444** — ajustadas em
+# `/etc/dokploy/traefik/traefik.yml` (entryPoints) e na recriação do container
+# (`docker run -p 8081:8081 -p 8444:8444`) direto no VPS; não fica em nenhum arquivo deste
+# repo porque o Dokploy não é gerenciado por aqui. Achado na instalação: `api.insecure:
+# true` do Traefik cria um entrypoint interno `traefik` que já ocupa 8080 por padrão — por
+# isso 8081, não 8080, pro `web`.
+#
+# ⚠️ Nunca apontar o cron automático (`refresh.yml`/healthchecks) pra nenhum subdomínio de
+# preview: a sessão do leiloesbr é por origem (cookie em memória), então login simultâneo
+# em preview e produção derruba uma sessão na outra. Ação (lance/vigia) em preview só por
+# clique manual na UI, nunca automatizada.
+#
+# Basic Auth extra (usuário "preview") na frente de tudo: um certificado emitido pro
+# subdomínio já entra no log público de Certificate Transparency, então bots de varredura
+# acham a URL em minutos mesmo sem DNS público "de propósito" — confirmado na prática
+# (`leakix`/scanners batendo aqui menos de 15 min depois do primeiro certificado). Hash
+# bcrypt gerado com `docker run --rm caddy:2-alpine caddy hash-password`; senha guardada
+# fora do repo. Trocar o hash aqui (e a senha, claro) se um dia vazar/for compartilhada.
+#
+# Endpoint interno do "ask" do on_demand_tls (não publicado — só o Caddy chama a si mesmo
+# via loopback, `docker-compose.yml` não expõe porta nenhuma pra isso). Só libera emissão
+# de certificado pro domínio exato de {$PREVIEW_DOMAIN} ou qualquer coisa.{$PREVIEW_DOMAIN}
+# — testado localmente (`caddy validate`/`caddy run` fora do VPS) contra tentativas óbvias
+# de burlar (`evilpreview.<domínio>`, `<domínio>.evil.com`), ambas corretamente bloqueadas.
+:2020 {
+	handle /ask-preview {
+		@allowed expression `{http.request.uri.query.domain} == "{$PREVIEW_DOMAIN}" || {http.request.uri.query.domain}.endsWith(".{$PREVIEW_DOMAIN}")`
+		respond @allowed 200
+		respond 403
+	}
+}
+
+# Catch-all HTTPS: qualquer SNI que não bateu com {$APP_DOMAIN}/{$PORTAINER_DOMAIN} cai
+# aqui. O `on_demand_tls` (global, topo do arquivo) só emite certificado se o "ask" acima
+# aprovar — então na prática só hosts sob {$PREVIEW_DOMAIN} chegam a ter TLS válido pra
+# passar daqui pra frente.
+:443 {
+	tls {
+		on_demand
+	}
+	basic_auth {
+		preview $2a$14$3efAPxZyk4IEeWqFksxrluwpL9p6M64uIb8gG0JjKN3hYt6tjEAm2
+	}
+	reverse_proxy dokploy-traefik:8081
 }

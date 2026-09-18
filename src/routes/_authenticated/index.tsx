@@ -76,6 +76,7 @@ import {
   getAiProvider,
   getCollectionFeedback,
   getCollectionLinks,
+  getGeminiModel,
   getLotAi,
   getLotCondition,
   getLotIdent,
@@ -89,11 +90,17 @@ import {
   scrapeVinylChunk,
   setAiMode,
   setAiProvider,
+  setGeminiModel,
   setLotTags,
   setVerifiedHouses,
 } from "@/lib/leiloesbr.functions";
-import { AiProviderSelect } from "@/components/vinyl/ai-provider-controls";
-import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
+import { AiProviderSelect, GeminiModelSelect } from "@/components/vinyl/ai-provider-controls";
+import {
+  AI_PROVIDER_SHORT,
+  formatFailoverTrail,
+  type AiProvider,
+  type GeminiModel,
+} from "@/lib/ai-provider";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import type { WatchedLot } from "@/lib/leiloesbr-watch.server";
 import type { MyBid } from "@/lib/leiloesbr-bids.server";
@@ -365,6 +372,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const runSetAiMode = useServerFn(setAiMode);
   const fetchAiProvider = useServerFn(getAiProvider);
   const runSetAiProvider = useServerFn(setAiProvider);
+  const fetchGeminiModel = useServerFn(getGeminiModel);
+  const runSetGeminiModel = useServerFn(setGeminiModel);
   const runAnalyze = useServerFn(analyzeOnDemand);
   const fetchCollection = useServerFn(getCollection);
   const fetchCollectionLinks = useServerFn(getCollectionLinks);
@@ -490,6 +499,26 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         toast.error((error as Error)?.message || "Não foi possível salvar o provedor de IA");
       });
   };
+
+  // Modelo do Gemini (Flash-Lite/Flash/Pro). Vale mesmo com Claude escolhido: o failover
+  // por falta de créditos pode acabar caindo no Gemini com esse modelo.
+  const geminiModelQuery = useQuery({
+    queryKey: ["gemini-model"] as const,
+    queryFn: () => fetchGeminiModel(),
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const geminiModel: GeminiModel = geminiModelQuery.data ?? "gemini-3.1-flash-lite";
+  const changeGeminiModel = (model: GeminiModel) => {
+    const prev = geminiModelQuery.data;
+    queryClient.setQueryData(["gemini-model"], model); // otimista
+    void runSetGeminiModel({ data: { model } })
+      .then(() => toast.success(`Modelo do Gemini: ${model}`))
+      .catch((error: unknown) => {
+        queryClient.setQueryData(["gemini-model"], prev);
+        toast.error((error as Error)?.message || "Não foi possível salvar o modelo do Gemini");
+      });
+  };
   // Análise SOB DEMANDA (botões por dia/casa). `analyzing` guarda a chave em execução:
   // o dia (`day`) ou a casa (`${day}|${casa}`). Roda em laço até esgotar os não avaliados
   // (ou parar de progredir), depois revalida o cache ["lot-ai"] para as notas aparecerem.
@@ -505,6 +534,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       let failed = 0;
       let lastError: string | null = null;
       let switchedTo: AiProvider | null = null;
+      let attemptErrors: Partial<Record<AiProvider, string>> = {};
       try {
         for (let guard = 0; guard < 60; guard += 1) {
           const res = await runAnalyze({
@@ -514,15 +544,20 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           failed += res.failed ?? 0;
           if (res.error) lastError = res.error;
           if (res.switched && res.served) switchedTo = res.served;
+          if (res.attemptErrors) attemptErrors = { ...attemptErrors, ...res.attemptErrors };
           // Para quando não sobra nada OU quando a rodada não avaliou nada (lotes que
           // falham sempre voltariam ao "pendente" e causariam laço infinito).
           if (res.remaining === 0 || res.evaluated === 0) break;
         }
         await queryClient.invalidateQueries({ queryKey: ["lot-ai"] });
-        // Avisa se houve failover (o provedor pedido ficou sem créditos ou indisponível).
+        // Avisa se houve failover: mostra o motivo de CADA provedor pulado (ex.: "Claude: sem
+        // chave de API configurada · Gemini: sem créditos/quota") em vez de um "trocou" genérico.
+        const trail = formatFailoverTrail(attemptErrors);
         if (switchedTo && switchedTo !== provider) {
           toast.warning(
-            `${AI_PROVIDER_SHORT[provider]} indisponível — usei ${AI_PROVIDER_SHORT[switchedTo]}`,
+            trail
+              ? `${trail} — usei ${AI_PROVIDER_SHORT[switchedTo]}`
+              : `${AI_PROVIDER_SHORT[provider]} indisponível — usei ${AI_PROVIDER_SHORT[switchedTo]}`,
           );
         }
         if (evaluated) {
@@ -2444,6 +2479,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               </Select>
             </div>
             <AiProviderSelect value={aiProvider} onChange={changeAiProvider} />
+            <GeminiModelSelect value={geminiModel} onChange={changeGeminiModel} />
             <Button
               variant="outline"
               size="sm"

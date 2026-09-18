@@ -484,6 +484,13 @@ export async function handleCron(request: Request): Promise<Response | null> {
       {
         error:
           "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|purchases|backfillbundle|compressimages|prune|salesdebug|catdebug)",
+        // Diagnóstico (v0.69.4): step=prune vinha falhando com 400 só quando chamado pelo
+        // GitHub Actions (curl direto do VPS sempre respondia 200). Sem log de acesso no
+        // Caddy nem log de aplicação chegando no `docker logs` (Nitro usa logger próprio,
+        // não captura `console.log` cru), a única forma de provar o que o servidor recebeu
+        // é ecoar de volta no corpo — remover depois que o caso for entendido.
+        receivedStep: step,
+        receivedSearch: url.search,
       },
       400,
     );

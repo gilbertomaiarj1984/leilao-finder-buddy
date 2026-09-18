@@ -768,3 +768,153 @@ Backup não testado não é backup.
   a Fase 1 como "não iniciada".
 - Módulo `*.server.ts` **não importa de módulo client-safe** (nem `import type`) — causou 404 de
   chunk em produção na v0.24.0.
+
+## Fase 7 (opcional, pós-cutover) — Preview deployments (Dokploy)
+
+Instalado e validado no VPS real em 2026-09-18. Usa **Dokploy** pra preview de PR (deploy
+efêmero por branch/PR, algo próximo do que a Vercel dava de graça). O **Portainer (Fase 5)
+continua** sendo o painel de containers/logs da produção — o Dokploy entra só pelo recurso que o
+Portainer não tem, preview automático por PR.
+
+**Por que Dokploy e não Coolify:** VPS de 2 vCPU/4 GB, stack atual real (medido, não estimado)
+~112 MB entre app/postgres/caddy/portainer/backup, ~3,1 GB disponíveis. Dokploy é bem mais magro
+que Coolify (painel + Postgres/Redis próprios + Traefik). Não planejar mais de 1 preview
+simultânea mesmo assim.
+
+**Domínio: sslip.io + TLS "on-demand" no Caddy (não DNS-01/wildcard tradicional).** O ambiente
+ainda não tem domínio próprio (produção está em `143-95-214-240.sslip.io`), e sslip.io resolve
+QUALQUER subdomínio sozinho pro IP embutido no nome. Isso permite um preview de verdade **por
+PR**, cada um com seu próprio subdomínio (ex.: `pr-42.preview.143-95-214-240.sslip.io`), sem
+cadastrar cada um no Caddyfile: `on_demand_tls` (bloco de config global, topo do `Caddyfile`)
+deixa o Caddy emitir certificado HTTP-01 na hora, pra qualquer hostname que passe no "ask" — um
+endpoint interno (`:2020`, não publicado, só o próprio Caddy chama via loopback) que só aprova o
+domínio exato de `PREVIEW_DOMAIN` ou qualquer subdomínio dele (`{http.request.uri.query.domain}
+== "{$PREVIEW_DOMAIN}" || ....endsWith(".{$PREVIEW_DOMAIN}")`), rejeitando qualquer outro host
+que por acaso resolva pro IP do VPS. Validado localmente (`caddy validate`/`caddy run`, binário
+baixado direto, sem precisar do VPS) contra tentativas de burlar (`evilpreview.<domínio>`,
+`<domínio>.evil.com`) antes de ir pra produção — sempre validar sintaxe do Caddyfile assim antes
+de mandar pro VPS, depois do incidente do `PREVIEW_DOMAIN` vazio (v0.69.5). Reavaliar pra DNS-01
++ wildcard tradicional só se um dia migrar pra domínio próprio com volume alto o suficiente pra
+`on_demand_tls` não fazer mais sentido (tem rate limit do Let's Encrypt por trás do "ask").
+O catch-all `:443` do Caddy (qualquer SNI que não seja `{$APP_DOMAIN}`/`{$PORTAINER_DOMAIN}`)
+é quem aplica o Basic Auth e repassa pro Traefik do Dokploy — um único bloco cobre qualquer
+preview, não precisa mais de um bloco por domínio.
+
+**Dokploy exige Docker Swarm** (`docker swarm init` — não afeta os containers do
+`docker-compose.yml`, que continuam rodando como containers standalone ao lado do Swarm). O
+instalador oficial (`curl -sSL https://dokploy.com/install.sh | sudo sh`) **verifica a porta 80
+antes de rodar e aborta se estiver ocupada** — precisou parar o Caddy (`docker compose stop
+caddy`) durante a instalação e religar depois.
+
+**Convivência com o Caddy: o Traefik do Dokploy não fica em 80/443 (essas são só do Caddy).**
+Descobertas da instalação real, nenhuma documentada oficialmente pelo Dokploy:
+- O Traefik do Dokploy **não é serviço Swarm nem deste compose** — é um container standalone
+  (`docker run` direto, nome `dokploy-traefik`) na rede overlay `dokploy-network` (criada pelo
+  instalador, `external: true`). Não existe uma opção do instalador nem um campo na UI do
+  painel (`Settings → Web Server`) pra mudar a porta 80/443 dele — só um editor de arquivo
+  (`Traefik File System` no menu) pro `traefik.yml`, que muda a porta **interna** do container,
+  não o mapeamento de porta do host. Pra isso, é preciso recriar o container manualmente:
+  ```sh
+  sudo docker rm -f dokploy-traefik
+  sudo docker run -d --name dokploy-traefik --restart always --network dokploy-network \
+    -v /etc/dokploy/traefik/traefik.yml:/etc/traefik/traefik.yml \
+    -v /etc/dokploy/traefik/dynamic:/etc/dokploy/traefik/dynamic \
+    -v /var/run/docker.sock:/var/run/docker.sock:ro \
+    -p 8081:8081/tcp -p 8444:8444/tcp -p 8444:8444/udp \
+    traefik:v3.6.7 traefik
+  ```
+  (portas exatas usadas no VPS real: **8081 HTTP / 8444 HTTPS**, com `entryPoints.web.address`
+  e `entryPoints.websecure.address` no `traefik.yml` batendo com essas portas).
+- ⚠️ **Não usar 8080** para o `web` do Traefik: `api.insecure: true` (que o instalador já deixa
+  ligado) cria um entrypoint interno chamado `traefik` que **já ocupa 8080 por padrão**,
+  brigando com qualquer coisa que você configure nessa mesma porta (erro visto de verdade:
+  `listen tcp :8080: bind: address already in use`, com o próprio Traefik em crash-loop).
+- O Caddy precisa entrar na rede `dokploy-network` pra alcançar `dokploy-traefik` pelo nome
+  (`docker-compose.yml`, serviço `caddy`) — são redes Docker diferentes, sem isso o
+  `reverse_proxy` nunca resolve.
+
+**⚠️ Incidente real de produção (v0.69.5, 2026-09-18): Caddy em crash-loop, app inteiro fora do
+ar.** Causa: o bloco `{$PREVIEW_DOMAIN}` foi ao ar (via `deploy.yml`, push normal na `vps`)
+antes de existir `PREVIEW_DOMAIN` no `.env` do VPS. Com a variável vazia, o Caddyfile vira um
+bloco `{ }` sem domínio nenhum, que o Caddy interpreta como tentativa de bloco de configuração
+global — e recusa a config inteira por esse bloco não ser o primeiro do arquivo
+(`server block without any key is global configuration, and if used, it must be first`).
+**Lição: nunca faça merge de um bloco `{$ENV_VAR}` novo no Caddyfile sem, no mesmo momento,
+garantir que a env já existe em produção** — `.env.example` agora tem um aviso em maiúsculas
+sobre isso. Corrigido setando `PREVIEW_DOMAIN` no `.env` do VPS e forçando recriação do
+container (`docker compose up -d --force-recreate caddy` — um `up -d` normal NÃO recria o
+container só porque o `.env` mudou).
+- **Cuidado extra ao editar `.env` por `echo ... >> .env` via SSH**: se o arquivo não termina
+  com quebra de linha (comum), o texto novo gruda na última linha existente, corrompendo as
+  duas variáveis silenciosamente. Aconteceu de verdade nesse mesmo incidente (`DISCOGS_TOKEN`
+  virou `DISCOGS_TOKEN=...PREVIEW_DOMAIN=...` numa linha só). Preferir heredoc/`sed` com
+  checagem, ou pelo menos `printf '\n%s\n' "VAR=valor" >> .env`.
+
+**Risco aceito, não mitigado por infra: preview aponta pro banco de produção E roda com
+credenciais reais do LeilõesBR/cron ativo** (decisão explícita — não é uma preview "somente
+leitura"). Duas consequências práticas:
+1. Uma ação clicada na UI da preview (lance, vigia) é uma ação **real** na conta do usuário,
+   idêntica a fazer o mesmo na produção. Isso é aceito, não é bug.
+2. A sessão do leiloesbr é **por origem, cookie em memória** (ver "Scraping do LeilõesBR" em
+   `docs/notas-desenvolvimento.md`) — login simultâneo em produção e preview derruba uma sessão
+   na outra. Mitigação obrigatória: **o cron automático (`refresh.yml`, healthchecks) nunca
+   aponta pro domínio de preview**, só pra produção. Login/ação em preview só por clique manual.
+
+**Progresso (VPS real, `vpsbr-16094357`, IP `143.95.214.240`):**
+- [x] Swarm ativado, Dokploy v0.30.7 instalado, painel em `http://143.95.214.240:3000`
+  (conta admin `gilbertomaiarj@gmail.com` criada).
+- [x] Traefik do Dokploy recriado nas portas 8081/8444, Caddy religado, produção validada
+  (incidente do `PREVIEW_DOMAIN` vazio corrigido).
+- [x] `docker-compose.yml`/`Caddyfile`/`.env.example` do repo atualizados pra bater com a
+  instalação real (rede `dokploy-network`, porta 8081).
+- [x] Conectado o repo no Dokploy (GitHub App própria, "Only select repositories" só neste
+  repo), app `garimpo-preview` (tipo Compose, `./docker-compose.preview.yml`, branch `vps`).
+- [x] **Preview testada de ponta a ponta com sucesso**: login Google + Basic Auth funcionando,
+  dados reais da produção aparecendo (mesmo banco, `SELECT count(*) FROM lots` batendo).
+
+**⚠️ Achado grave durante a validação: DNS interno do Docker quebrado pra rede
+`garimpo_default`.** Depois de instalar o Dokploy (Swarm + múltiplas recriações de container),
+`getaddrinfo('postgres')` passou a falhar de dentro de QUALQUER container nessa rede — inclusive
+o `garimpo-app-1` de produção. A produção não sentiu na hora porque o pool de conexões do
+`postgres.js` já estava aberto de antes (não precisa re-resolver DNS pra manter uma conexão viva)
+— mas qualquer reconexão nova (reinício do app, do Postgres, ou a preview tentando conectar pela
+primeira vez) falhava. TCP direto por IP funcionava normal (`nc`/`net.connect` no IP do
+container OK), confirmando que era só a resolução de nome, não a rede em si.
+**Correção:** `cd ~/garimpo && sudo docker compose down && sudo docker compose up -d`
+(recriou TODOS os containers do projeto — a rede em si não foi recriada, "Resource is still in
+use" por causa da preview conectada nela, mas recriar os containers foi suficiente pra Docker
+re-registrar o DNS interno certinho). A preview precisou do mesmo tratamento (força recriação
+via `docker compose ... up -d --force-recreate` direto no diretório que o Dokploy usa,
+`/etc/dokploy/compose/<app>/code/` — os botões "Deploy"/"Rebuild" do painel não recriaram o
+container sozinhos quando não havia mudança de código).
+**Lição para o futuro:** se a preview (ou qualquer app novo no Dokploy) não conseguir resolver
+`postgres`/outro hostname da rede `garimpo_default`, suspeitar primeiro do DNS interno do Docker
+quebrado (não do compose/rede em si) — testar com `docker exec <container> node -e
+"require('dns').lookup('HOST',(e,a)=>console.log(e||a))"` antes de qualquer outra
+investigação, já que `getent hosts` se mostrou pouco confiável nessas imagens (retornou vazio
+até em containers que funcionavam).
+- [ ] **Chaves rotacionadas**: `DISCOGS_TOKEN` (corrompido e recuperado durante o incidente do
+  `.env`) e, por precaução (apareceram em texto puro numa sessão), `ANTHROPIC_API_KEY`/
+  `GEMINI_API_KEY` — gerar novas e atualizar o `.env` do VPS. **Decisão do usuário: não fazer
+  por ora.**
+- [x] TLS "on-demand" no Caddy (`on_demand_tls` + endpoint `/ask-preview` interno) — validado
+  localmente (`caddy validate`/`caddy run`) e no VPS real, aceita qualquer subdomínio sob
+  `PREVIEW_DOMAIN` sem cadastrar no Caddyfile. `docker-compose.preview.yml` virou template
+  reutilizável (`PREVIEW_ROUTER_NAME` evita colisão de nome de router/service do Traefik entre
+  apps de PRs diferentes).
+- [ ] Testar dois apps de preview simultâneos (subdomínios diferentes) pra confirmar que o
+  on-demand realmente atende N previews concorrentes, não só o primeiro domínio cadastrado.
+- [x] **Investigado e descartado, por ora: automação nativa de "um subdomínio por PR" do
+  Dokploy.** O recurso existe (aba "Preview Deployments", só em apps tipo **Application** — não
+  em "Compose", que só tem `Trigger Type` "On Push"/"On Tag"), com `Wildcard Domain` e opção de
+  anexar redes extras (`Advanced → Networks`, o mesmo mecanismo do `garimpo_default` que já
+  usamos no compose manual). **Bloqueio real, não de configuração:** cada PR ganharia um
+  subdomínio novo e imprevisível, e o **Google OAuth não aceita redirect URI com wildcard** —
+  cada domínio de callback precisa ser cadastrado manualmente no Google Cloud Console. Login
+  quebraria em toda preview nova até alguém cadastrar aquela URL específica na mão, o que anula
+  a vantagem de ser automático. **Decisão do usuário: manter o esquema atual** (um app de
+  preview fixo, `preview.143-95-214-240.sslip.io`, já com o redirect URI cadastrado e login
+  funcionando) — um preview de cada vez, redeployado manualmente ou por push, em vez de vários
+  em paralelo. Reavaliar só se um dia o app não depender mais de login Google (improvável) ou se
+  surgir um jeito de registrar redirect URIs dinamicamente via API do Google (não existe hoje
+  pra OAuth clients tipo "Web application").

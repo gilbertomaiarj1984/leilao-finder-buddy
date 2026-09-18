@@ -556,6 +556,8 @@ export type ReidentifyResult = {
   // "a IA falhou" de "nada para atualizar".
   failed: number;
   error: string | null;
+  // Motivo de cada provedor pulado/que falhou até o que atendeu (ver `runText`).
+  attemptErrors: Partial<Record<AiProvider, string>>;
 };
 
 /** Um disco "ainda não identificado": sem artista, ou caído no balde de não classificados. */
@@ -639,6 +641,7 @@ export async function reidentifyCollection(
       switched: false,
       failed: 0,
       error: null,
+      attemptErrors: {},
     };
   }
 
@@ -661,6 +664,7 @@ export async function reidentifyCollection(
     switched,
     failed,
     error: aiError,
+    attemptErrors,
   } = await identCollectionSync(
     aiNeeded.map((i) => ({
       id: i.id,
@@ -716,6 +720,7 @@ export async function reidentifyCollection(
     switched,
     failed,
     error: aiError,
+    attemptErrors,
   };
 }
 
@@ -735,6 +740,7 @@ export async function reidentifyCollectionItem(
   switched: boolean;
   // Motivo quando a IA NÃO retornou nada (vazio/erro) — a UI distingue de "nada a mudar".
   error: string | null;
+  attemptErrors: Partial<Record<AiProvider, string>>;
 }> {
   const { aiConfigured, identCollectionSync } = await import("./ai-eval.server");
   if (!aiConfigured()) {
@@ -746,13 +752,13 @@ export async function reidentifyCollectionItem(
   // Conjuntos ("lote com N discos") → categoria "Lote" pelo título, sem gastar IA.
   if (isDiscBundle(item.title)) {
     if (item.artist === LOTE_LABEL)
-      return { updated: false, served: null, switched: false, error: null };
+      return { updated: false, served: null, switched: false, error: null, attemptErrors: {} };
     const { error } = await supabaseAdmin
       .from("collection_items")
       .update({ artist: LOTE_LABEL })
       .eq("id", id);
     if (error) throw new Error(`Não foi possível gravar: ${error.message}`);
-    return { updated: true, served: null, switched: false, error: null };
+    return { updated: true, served: null, switched: false, error: null, attemptErrors: {} };
   }
 
   const {
@@ -760,6 +766,7 @@ export async function reidentifyCollectionItem(
     served,
     switched,
     error: aiError,
+    attemptErrors,
   } = await identCollectionSync(
     [
       {
@@ -787,10 +794,11 @@ export async function reidentifyCollectionItem(
   const mergedTags = mergeTags(item.tags, r?.tags);
   if (mergedTags) patch.tags = mergedTags;
 
-  if (!Object.keys(patch).length) return { updated: false, served, switched, error: aiError };
+  if (!Object.keys(patch).length)
+    return { updated: false, served, switched, error: aiError, attemptErrors };
   const { error } = await supabaseAdmin.from("collection_items").update(patch).eq("id", id);
   if (error) throw new Error(`Não foi possível gravar: ${error.message}`);
-  return { updated: true, served, switched, error: null };
+  return { updated: true, served, switched, error: null, attemptErrors };
 }
 
 /** Campos editáveis de um disco (usado por add e update). */
