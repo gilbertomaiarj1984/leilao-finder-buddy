@@ -2,12 +2,15 @@ name: Deploy (VPS)
 
 # Fases 4/5 da migração para VPS (docs/economia-fase-2-vps-unico.md). Builda as imagens
 # (app + backup) no Actions (não no VPS — 2 vCPU/4 GB aguentaria, mas builda fora deixa o
-# deploy rápido e reproduzível), publica no GHCR e faz o VPS puxar. Só dispara na branch
-# `vps` (ambiente paralelo à `main`, que segue na Vercel até o cutover da Fase 6).
+# deploy rápido e reproduzível), publica no GHCR e faz o VPS puxar. Dispara em push pra
+# `vps` OU `main` — pós-cutover da Fase 6 (`main` sincronizado com `vps`), qualquer PR
+# mesclado numa das duas já reflete em produção; `vps` continua existindo em paralelo
+# enquanto durar trabalho experimental lá (ex.: Fase 7/preview deployments) sem tocar
+# `main` ainda.
 
 on:
   push:
-    branches: [vps]
+    branches: [vps, main]
     paths-ignore:
       - "docs/**"
       - "**.md"
