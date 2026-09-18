@@ -50,19 +50,21 @@ export type RunTextResult = {
 
 const ANTHROPIC_DEFAULT_MODEL = "claude-haiku-4-5";
 /**
- * Modelo do Gemini padrão de fábrica: o ALIAS do Flash-Lite vigente (a Google reaponta pra
- * versão atual — hoje o 3.1 — em vez de travar num id fixo que um dia é descontinuado).
- * Espelha `DEFAULT_GEMINI_MODEL` de `ai-provider.ts` (client-safe, mesma lição do v0.24.x:
- * este arquivo não importa de lá). É também o alvo do downgrade por quota logo abaixo.
+ * Modelo do Gemini padrão de fábrica: `gemini-3.1-flash-lite`, o mais barato CONFIRMADO
+ * rodando de verdade (ver comentário grande em `ai-provider.ts` — `gemini-flash-lite-latest`
+ * e `gemini-3.5-flash-lite` voltaram 400 INVALID_ARGUMENT em produção no v0.69.2, revertido
+ * no v0.69.3). Espelha `DEFAULT_GEMINI_MODEL` de `ai-provider.ts` (client-safe, mesma lição
+ * do v0.24.x: este arquivo não importa de lá).
  */
-const GEMINI_DEFAULT_MODEL = "gemini-flash-lite-latest";
+const GEMINI_DEFAULT_MODEL = "gemini-3.1-flash-lite";
 /**
- * Modelo de downgrade quando o Gemini configurado/escolhido bate em quota: o Flash-Lite tem
- * cota gratuita própria (separada do Flash/Pro) e costuma sobreviver quando o modelo pedido
- * já estourou o free tier do dia. Igual ao padrão de fábrica — dá no mesmo modelo quando o
- * usuário já está no mais barato (o guard em `runOne` evita o downgrade virar loop).
+ * Modelo de downgrade quando o Gemini configurado/escolhido bate em quota: o Flash-Lite 2.5
+ * tem cota gratuita própria (separada de todo o resto) e costuma sobreviver quando o modelo
+ * pedido já estourou o free tier do dia — mais barato ainda que o padrão de fábrica acima
+ * (mas com desligamento anunciado pra 16/out/2026, daí não ser o padrão). O guard em `runOne`
+ * evita o downgrade virar loop quando o usuário já escolheu este mesmo modelo.
  */
-const GEMINI_FREE_FALLBACK_MODEL = GEMINI_DEFAULT_MODEL;
+const GEMINI_FREE_FALLBACK_MODEL = "gemini-2.5-flash-lite";
 
 /**
  * Modelo efetivo do provedor. Pro Gemini, `geminiModel` (a escolha do usuário, persistida em
