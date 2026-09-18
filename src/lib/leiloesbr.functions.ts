@@ -552,10 +552,14 @@ export const analyzeOnDemand = createServerFn({ method: "POST" })
         switched: false,
         failed: 0,
         error: null,
+        attemptErrors: {},
       };
     }
 
-    const { rows, served, switched, failed, error } = await evalLotsSync(toEval, provider);
+    const { rows, served, switched, failed, error, attemptErrors } = await evalLotsSync(
+      toEval,
+      provider,
+    );
     const evaluated = await upsertLotAi(rows);
     return {
       evaluated,
@@ -568,6 +572,8 @@ export const analyzeOnDemand = createServerFn({ method: "POST" })
       // "a IA falhou" de "nada pendente" (evita o falso "já avaliado").
       failed,
       error,
+      // Motivo de cada provedor pulado/que falhou até o que atendeu (ver `runText`).
+      attemptErrors,
     };
   });
 

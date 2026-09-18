@@ -428,21 +428,35 @@ export type SyncOutcome<T> = {
   switched: boolean;
   failed: number;
   error: string | null;
+  /** Motivo de cada provedor pulado/que falhou no caminho até o que atendeu (ver `runText`). */
+  attemptErrors: Partial<Record<AiProvider, string>>;
 };
 
-/** Acumula, entre os workers concorrentes, o provedor que atendeu e se houve troca. */
+/** Acumula, entre os workers concorrentes, o provedor que atendeu, se houve troca e por quê. */
 class ProviderTracker {
   private used = new Set<AiProvider>();
+  private attemptErrors: Partial<Record<AiProvider, string>> = {};
   switched = false;
-  note(provider: AiProvider, switched: boolean) {
+  note(
+    provider: AiProvider,
+    switched: boolean,
+    attemptErrors: Partial<Record<AiProvider, string>>,
+  ) {
     this.used.add(provider);
     if (switched) this.switched = true;
+    // Primeiro motivo registrado pra cada provedor prevalece (workers concorrentes veem o mesmo).
+    for (const [p, reason] of Object.entries(attemptErrors) as Array<[AiProvider, string]>) {
+      if (!this.attemptErrors[p]) this.attemptErrors[p] = reason;
+    }
   }
   served(requested: AiProvider): AiProvider | null {
     if (!this.used.size) return null;
     if (this.used.has(requested)) return requested;
     // Failover: devolve o provedor alternativo que efetivamente atendeu.
     return [...this.used][0] ?? null;
+  }
+  errors(): Partial<Record<AiProvider, string>> {
+    return this.attemptErrors;
   }
 }
 
@@ -457,7 +471,8 @@ export async function evalLotsSync(
   lots: EvalLot[],
   provider: AiProvider,
 ): Promise<SyncOutcome<LotAiRow>> {
-  if (!lots.length) return { rows: [], served: null, switched: false, failed: 0, error: null };
+  if (!lots.length)
+    return { rows: [], served: null, switched: false, failed: 0, error: null, attemptErrors: {} };
   const rows: LotAiRow[] = [];
   const tracker = new ProviderTracker();
   let failed = 0;
@@ -472,7 +487,7 @@ export async function evalLotsSync(
       if (!lot) return;
       try {
         const r = await runText(buildEvalRequest(lot), provider);
-        tracker.note(r.provider, r.switched);
+        tracker.note(r.provider, r.switched, r.attemptErrors);
         const parsed = parseEvalObject(r.text);
         if (parsed) {
           rows.push({
@@ -504,6 +519,7 @@ export async function evalLotsSync(
     switched: tracker.switched,
     failed,
     error: firstError,
+    attemptErrors: tracker.errors(),
   };
 }
 
@@ -564,7 +580,8 @@ export async function identLotsSyncRows(
   withImage: boolean,
   provider: AiProvider,
 ): Promise<SyncOutcome<LotIdentRow>> {
-  if (!lots.length) return { rows: [], served: null, switched: false, failed: 0, error: null };
+  if (!lots.length)
+    return { rows: [], served: null, switched: false, failed: 0, error: null, attemptErrors: {} };
   const rows: LotIdentRow[] = [];
   const tracker = new ProviderTracker();
   const source: "title" | "image" = withImage ? "image" : "title";
@@ -580,7 +597,7 @@ export async function identLotsSyncRows(
       if (!lot) return;
       try {
         const r = await runText(buildIdentRequest(lot, withImage), provider);
-        tracker.note(r.provider, r.switched);
+        tracker.note(r.provider, r.switched, r.attemptErrors);
         const parsed = parseIdentObject(r.text);
         if (parsed) {
           rows.push({
@@ -610,6 +627,7 @@ export async function identLotsSyncRows(
     switched: tracker.switched,
     failed,
     error: firstError,
+    attemptErrors: tracker.errors(),
   };
 }
 
@@ -752,7 +770,8 @@ export async function identCollectionSync(
   inputs: CollectionIdentInput[],
   provider: AiProvider,
 ): Promise<SyncOutcome<CollectionIdentResult>> {
-  if (!inputs.length) return { rows: [], served: null, switched: false, failed: 0, error: null };
+  if (!inputs.length)
+    return { rows: [], served: null, switched: false, failed: 0, error: null, attemptErrors: {} };
   const rows: CollectionIdentResult[] = [];
   const tracker = new ProviderTracker();
   let failed = 0;
@@ -767,7 +786,7 @@ export async function identCollectionSync(
       if (!input) return;
       try {
         const r = await runText(buildCollectionRequest(input), provider);
-        tracker.note(r.provider, r.switched);
+        tracker.note(r.provider, r.switched, r.attemptErrors);
         const parsed = parseCollectionIdentObject(r.text);
         if (parsed) rows.push({ id: input.id, ...parsed });
       } catch (error) {
@@ -787,6 +806,7 @@ export async function identCollectionSync(
     switched: tracker.switched,
     failed,
     error: firstError,
+    attemptErrors: tracker.errors(),
   };
 }
 
@@ -877,7 +897,8 @@ export async function conditionAiSync(
   items: { id: string; text: string }[],
   provider: AiProvider,
 ): Promise<SyncOutcome<ConditionAiResult>> {
-  if (!items.length) return { rows: [], served: null, switched: false, failed: 0, error: null };
+  if (!items.length)
+    return { rows: [], served: null, switched: false, failed: 0, error: null, attemptErrors: {} };
   const rows: ConditionAiResult[] = [];
   const tracker = new ProviderTracker();
   let failed = 0;
@@ -892,7 +913,7 @@ export async function conditionAiSync(
       if (!item) return;
       try {
         const r = await runText(buildConditionRequest(item.text), provider);
-        tracker.note(r.provider, r.switched);
+        tracker.note(r.provider, r.switched, r.attemptErrors);
         const parsed = parseConditionAiObject(r.text);
         if (parsed) rows.push({ id: item.id, ...parsed, model: r.model });
       } catch (error) {
@@ -912,6 +933,7 @@ export async function conditionAiSync(
     switched: tracker.switched,
     failed,
     error: firstError,
+    attemptErrors: tracker.errors(),
   };
 }
 

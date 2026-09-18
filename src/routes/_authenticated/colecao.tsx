@@ -43,7 +43,7 @@ import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import { GEMINI_IMPORT_PROMPT, parseCollectionBulkText } from "@/lib/collection-bulk";
 import { GRADE_ORDER } from "@/lib/grading";
 import { AiProviderSelect } from "@/components/vinyl/ai-provider-controls";
-import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
+import { AI_PROVIDER_SHORT, formatFailoverTrail, type AiProvider } from "@/lib/ai-provider";
 import { getAiProvider, setAiProvider } from "@/lib/leiloesbr.functions";
 import type { CollectionItem, PendingWonLot } from "@/lib/collection.server";
 import {
@@ -281,14 +281,22 @@ function ColecaoPage() {
         toast.error((e as Error)?.message || "Não foi possível salvar o provedor de IA");
       });
   };
-  // Avisa quando houve failover (o provedor pedido ficou sem créditos ou indisponível).
+  // Avisa quando houve failover (o provedor pedido ficou sem créditos ou indisponível): mostra
+  // o motivo de CADA provedor pulado até o que atendeu, não um "trocou" genérico.
   const notifySwitch = (
     asked: AiProvider,
-    res: { switched?: boolean; served?: AiProvider | null },
+    res: {
+      switched?: boolean;
+      served?: AiProvider | null;
+      attemptErrors?: Partial<Record<AiProvider, string>>;
+    },
   ) => {
     if (res.switched && res.served && res.served !== asked) {
+      const trail = formatFailoverTrail(res.attemptErrors ?? {});
       toast.warning(
-        `${AI_PROVIDER_SHORT[asked]} indisponível — usei ${AI_PROVIDER_SHORT[res.served]}`,
+        trail
+          ? `${trail} — usei ${AI_PROVIDER_SHORT[res.served]}`
+          : `${AI_PROVIDER_SHORT[asked]} indisponível — usei ${AI_PROVIDER_SHORT[res.served]}`,
       );
     }
   };
@@ -347,6 +355,7 @@ function ColecaoPage() {
       let lastError: string | null = null;
       let offset = 0;
       let switchedTo: AiProvider | null = null;
+      let attemptErrors: Partial<Record<AiProvider, string>> = {};
       for (let guard = 0; guard < 500; guard++) {
         const res = (await identify({
           data: { offset, max: 12, onlyUnidentified, provider },
@@ -360,16 +369,18 @@ function ColecaoPage() {
           switched: boolean;
           failed: number;
           error: string | null;
+          attemptErrors?: Partial<Record<AiProvider, string>>;
         };
         total += res.identified;
         failed += res.failed ?? 0;
         if (res.error) lastError = res.error;
         offset = res.nextOffset;
         if (res.switched && res.served) switchedTo = res.served;
+        if (res.attemptErrors) attemptErrors = { ...attemptErrors, ...res.attemptErrors };
         void invalidate();
         if (res.done || res.processed === 0) break;
       }
-      notifySwitch(provider, { switched: !!switchedTo, served: switchedTo });
+      notifySwitch(provider, { switched: !!switchedTo, served: switchedTo, attemptErrors });
       if (total > 0) {
         toast.success(`${total} disco(s) atualizado(s) pela IA.`);
       } else if (failed > 0) {
@@ -461,7 +472,13 @@ function ColecaoPage() {
   const reprocessMut = useMutation({
     mutationFn: (vars: { id: string; provider: AiProvider }) => reprocess({ data: vars }),
     onSuccess: (
-      res: { updated: boolean; served: AiProvider | null; switched: boolean; error: string | null },
+      res: {
+        updated: boolean;
+        served: AiProvider | null;
+        switched: boolean;
+        error: string | null;
+        attemptErrors?: Partial<Record<AiProvider, string>>;
+      },
       vars,
     ) => {
       void invalidate();

@@ -37,6 +37,13 @@ export type RunTextResult = {
   model: string;
   /** true quando o provedor pedido falhou por quota e o failover atendeu com outro. */
   switched: boolean;
+  /**
+   * Motivo de cada provedor tentado ANTES do que atendeu (ou de todos, se nenhum atendeu) —
+   * ex.: `{ anthropic: "sem chave de API configurada", gemini: "sem créditos (429)" }`. Serve
+   * pra UI mostrar, passo a passo, por que pulou de um provedor pro outro em vez de um
+   * "trocou de provedor" genérico.
+   */
+  attemptErrors: Partial<Record<AiProvider, string>>;
 };
 
 // --- Configuração por provedor (chave de env + modelo, com override por env) ---------------
@@ -277,7 +284,10 @@ async function runGemini(req: AiRequest, model: string): Promise<string> {
 
 // --- Orquestração: geração de texto com failover -------------------------------------------
 
-async function runOne(req: AiRequest, provider: AiProvider): Promise<{ text: string; model: string }> {
+async function runOne(
+  req: AiRequest,
+  provider: AiProvider,
+): Promise<{ text: string; model: string }> {
   const model = providerModel(provider);
   if (provider === "anthropic") return { text: await runAnthropic(req, model), model };
 
@@ -291,40 +301,75 @@ async function runOne(req: AiRequest, provider: AiProvider): Promise<{ text: str
         `[ai-provider] gemini (${model}) sem quota — tentando downgrade para ${GEMINI_FREE_FALLBACK_MODEL}`,
         error,
       );
-      return { text: await runGemini(req, GEMINI_FREE_FALLBACK_MODEL), model: GEMINI_FREE_FALLBACK_MODEL };
+      return {
+        text: await runGemini(req, GEMINI_FREE_FALLBACK_MODEL),
+        model: GEMINI_FREE_FALLBACK_MODEL,
+      };
     }
     throw error;
   }
 }
 
+/** Rótulo curto do provedor pra mensagem de erro (evita puxar `ai-provider.ts` client-safe). */
+function providerLabel(provider: AiProvider): string {
+  return provider === "gemini" ? "Gemini" : "Claude";
+}
+
+/** Resume o motivo de uma falha numa frase curta e legível pro usuário final. */
+function attemptErrorMessage(error: unknown): string {
+  if (isQuotaError(error)) return "sem créditos/quota";
+  if (isTransientError(error)) return "indisponível no momento (tente de novo em instantes)";
+  const msg = (error as Error)?.message || String(error);
+  return msg.slice(0, 200);
+}
+
 /**
  * Gera texto no provedor pedido; se ele falhar por **quota/sem créditos** OU por
  * **indisponibilidade transitória** (ex.: 503 "high demand" do Gemini) e houver outro provedor
- * configurado, **troca automaticamente** e tenta nele. Outros erros (400/401/403, prompt
- * bloqueado, parsing) propagam (o chamador trata por-item). Lança se nenhum provedor atender.
- * No caso do Gemini, ANTES de trocar de provedor por quota, `runOne` já tenta um downgrade
- * para o Flash-Lite (cota gratuita própria) — só cai pro Claude se o downgrade também falhar.
+ * configurado, **troca automaticamente** e tenta nele — na ORDEM CANÔNICA dos provedores
+ * (`AI_PROVIDERS`, hoje Claude → Gemini; dá pra crescer a lista sem mexer nesta função). No
+ * caso do Gemini, ANTES de trocar de provedor por quota, `runOne` já tenta um downgrade para o
+ * Flash-Lite (cota gratuita própria) — só cai pro Claude se o downgrade também falhar.
+ * Cada provedor pulado (sem chave) ou que falhou vira uma entrada clara em `attemptErrors`,
+ * pra UI mostrar o passo a passo ("Claude: sem chave de API configurada" → "Gemini: sem
+ * créditos/quota" → sucesso no próximo, se houver). Outros erros (400/401/403, prompt
+ * bloqueado, parsing) propagam de imediato (o chamador trata por-item). Lança se nenhum
+ * provedor atender, com a mensagem juntando o motivo de cada tentativa.
  */
 export async function runText(req: AiRequest, provider: AiProvider): Promise<RunTextResult> {
-  // Ordem de tentativa: o pedido primeiro, depois os demais configurados (failover).
-  const order = [provider, ...configuredProviders().filter((p) => p !== provider)];
-  let lastError: unknown = null;
+  // Ordem de tentativa: o pedido primeiro, depois os demais na ordem canônica (failover).
+  const order = [
+    provider,
+    ...configuredProviders().filter((p) => p !== provider),
+    ...(["anthropic", "gemini"] as AiProvider[]).filter(
+      (p) => p !== provider && !providerConfigured(p),
+    ),
+  ];
+  const attemptErrors: Partial<Record<AiProvider, string>> = {};
 
   for (let i = 0; i < order.length; i += 1) {
     const p = order[i]!;
-    if (!providerConfigured(p)) continue;
+    if (!providerConfigured(p)) {
+      attemptErrors[p] = "sem chave de API configurada";
+      console.error(`[ai-provider] ${providerLabel(p)} sem chave de API configurada — pulando`);
+      continue;
+    }
     try {
       const { text, model } = await runOne(req, p);
-      return { text, provider: p, model, switched: p !== provider };
+      return { text, provider: p, model, switched: p !== provider, attemptErrors };
     } catch (error) {
-      lastError = error;
       // Troca de provedor por quota/sem créditos OU indisponibilidade transitória; senão propaga.
       if (!isQuotaError(error) && !isTransientError(error)) throw error;
+      attemptErrors[p] = attemptErrorMessage(error);
       console.error(
-        `[ai-provider] ${p} indisponível (quota/transitório) — tentando failover`,
+        `[ai-provider] ${providerLabel(p)} indisponível (quota/transitório) — tentando failover`,
         error,
       );
     }
   }
-  throw lastError ?? new Error("Nenhum provedor de IA configurado");
+
+  const trail = order
+    .map((p) => `${providerLabel(p)}: ${attemptErrors[p] ?? "erro desconhecido"}`)
+    .join(" · ");
+  throw new Error(`Nenhum provedor de IA atendeu — ${trail}`);
 }

@@ -32,3 +32,15 @@ export const AI_PROVIDER_SHORT: Record<AiProvider, string> = {
 export function isAiProvider(value: unknown): value is AiProvider {
   return typeof value === "string" && (AI_PROVIDERS as readonly string[]).includes(value);
 }
+
+/**
+ * Monta uma frase curta com o motivo de cada provedor pulado/que falhou até a IA responder —
+ * ex.: `"Claude: sem chave de API configurada · Gemini: sem créditos/quota"`. Devolve `""`
+ * quando não houve nenhuma tentativa falha (uso direto, sem failover). Usada pela UI (toasts)
+ * em vez do genérico "trocou de provedor", pra deixar claro POR QUE pulou de um pro outro.
+ */
+export function formatFailoverTrail(attemptErrors: Partial<Record<AiProvider, string>>): string {
+  return AI_PROVIDERS.filter((p) => attemptErrors[p])
+    .map((p) => `${AI_PROVIDER_SHORT[p]}: ${attemptErrors[p]}`)
+    .join(" · ");
+}

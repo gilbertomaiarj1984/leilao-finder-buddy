@@ -93,7 +93,7 @@ import {
   setVerifiedHouses,
 } from "@/lib/leiloesbr.functions";
 import { AiProviderSelect } from "@/components/vinyl/ai-provider-controls";
-import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
+import { AI_PROVIDER_SHORT, formatFailoverTrail, type AiProvider } from "@/lib/ai-provider";
 import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import type { WatchedLot } from "@/lib/leiloesbr-watch.server";
 import type { MyBid } from "@/lib/leiloesbr-bids.server";
@@ -505,6 +505,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       let failed = 0;
       let lastError: string | null = null;
       let switchedTo: AiProvider | null = null;
+      let attemptErrors: Partial<Record<AiProvider, string>> = {};
       try {
         for (let guard = 0; guard < 60; guard += 1) {
           const res = await runAnalyze({
@@ -514,15 +515,20 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           failed += res.failed ?? 0;
           if (res.error) lastError = res.error;
           if (res.switched && res.served) switchedTo = res.served;
+          if (res.attemptErrors) attemptErrors = { ...attemptErrors, ...res.attemptErrors };
           // Para quando não sobra nada OU quando a rodada não avaliou nada (lotes que
           // falham sempre voltariam ao "pendente" e causariam laço infinito).
           if (res.remaining === 0 || res.evaluated === 0) break;
         }
         await queryClient.invalidateQueries({ queryKey: ["lot-ai"] });
-        // Avisa se houve failover (o provedor pedido ficou sem créditos ou indisponível).
+        // Avisa se houve failover: mostra o motivo de CADA provedor pulado (ex.: "Claude: sem
+        // chave de API configurada · Gemini: sem créditos/quota") em vez de um "trocou" genérico.
+        const trail = formatFailoverTrail(attemptErrors);
         if (switchedTo && switchedTo !== provider) {
           toast.warning(
-            `${AI_PROVIDER_SHORT[provider]} indisponível — usei ${AI_PROVIDER_SHORT[switchedTo]}`,
+            trail
+              ? `${trail} — usei ${AI_PROVIDER_SHORT[switchedTo]}`
+              : `${AI_PROVIDER_SHORT[provider]} indisponível — usei ${AI_PROVIDER_SHORT[switchedTo]}`,
           );
         }
         if (evaluated) {
