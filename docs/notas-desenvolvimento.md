@@ -1450,35 +1450,52 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
     `previewapp` tem alias próprio (`previewapp`, IP `172.19.0.7`), sem colisão nenhuma. Ou
     seja, a resposta com `hostname` link-local **só pode ter vindo do próprio `garimpo-app-1`**
     — não existe hoje um terceiro container capaz de responder pelo alias `app`.
-  - **Correlação observada, não confirmada como causa**: o boot inferido do processo que falhou
-    (`uptimeSec` na hora da falha, 18:25:08 UTC, aponta pro processo ter começado ~18:20:19–35)
-    cai dentro da janela de execução do deploy do v0.69.17 (`deploy.yml` run #37,
-    18:19:57–18:21:49 UTC) — ou seja, esse `garimpo-app-1` específico muito provavelmente foi
-    recriado por aquele deploy. **Mas isso é um confundidor conhecido, não prova de causa**: o
-    método de teste desta sessão (empurrar um commit → `deploy.yml` dispara sozinho → rodar
-    `workflow_dispatch` do `refresh.yml` na sequência pra checar) garante que TODO teste caia
-    perto de um deploy, então essa proximidade não distingue "deploy causa o bug" de "só
-    testamos logo depois de cada deploy". O v0.69.16 já tinha **descartado explicitamente** a
-    teoria de corrida simples com deploy (reproduziu minutos depois, sem deploy em andamento) —
-    esta sessão não tem evidência forte o suficiente pra reabrir essa teoria, só o registro de
-    que a suspeita voltou a aparecer e vale reavaliar se acontecer de novo LONGE de qualquer
-    deploy (inclusive `workflow_dispatch` manual do `deploy.yml`).
-  - Nem alias colidido nem deploy simultâneo simples explicam por que o PRÓPRIO `garimpo-app-1`
-    teria `hostname` link-local e `DATABASE_URL` ausente — variáveis de `env_file` são lidas na
-    criação do container e não deveriam variar depois. Continua em aberto se é um bug real do
-    Docker daemon (rede/namespace mal inicializado num boot específico, mesma família de
-    fragilidade já documentada em v0.69.10 — "DNS interno do Docker quebrado" — causada pela
-    convivência Swarm/Dokploy + Compose no mesmo host) ou outra causa ainda não cogitada.
+  - **Teoria de corrida com deploy, DESCARTADA DE VEZ**: reproduzido de novo (`refresh.yml`
+    #135, `workflow_dispatch` disparado direto pela API do GitHub) **30 minutos depois do último
+    deploy** (`deploy.yml` run #37 terminou 18:21:49 UTC; run #135 rodou 18:51:07–18:53:21 UTC,
+    sem nenhum deploy no meio) — a resposta 500 veio de novo, com o mesmo padrão:
+    `hostname: "169.254.64.71"` (link-local, IP diferente do anterior — consistente com um
+    self-assign novo a cada boot), `hasDatabaseUrl: false`, `pid: 4`, `uptimeSec` ~94–110. Não é
+    deploy, não é colisão de alias (já descartada acima) — é o próprio `garimpo-app-1` mesmo,
+    confirmado de novo.
+  - **Achado novo: os dois boots inferidos ficam ~31 minutos um do outro.** Fazendo a mesma conta
+    (horário do log menos `uptimeSec`) pras duas falhas: run #134 → processo começou ~18:20:19
+    UTC; run #135 → processo começou ~18:51:14 UTC. Diferença: **30min55s**, muito perto de um
+    intervalo redondo de 30 minutos. Com só 2 pontos não dá pra confirmar periodicidade (pode ser
+    coincidência), mas é forte o suficiente pra suspeitar de **algo no HOST rodando a cada ~30min
+    e reiniciando/recriando o `garimpo-app-1`** — não o cron deste repo, não o `deploy.yml`
+    (nenhum dos dois roda nesse intervalo). Candidatos a checar: crontab do usuário `deploy` e do
+    `root`, timers do systemd, alguma rotina de monitoramento/reconciliação do Dokploy (que
+    convive no mesmo Docker daemon) ou um watchdog de memória de terceiros instalado no VPS.
+  - **Teoria alternativa (não exclui a de cima): pressão de memória.** As duas falhas aconteceram
+    logo depois do step `chunk` (varredura pesada, 1500–1600 lotes raspados por rodada) — o `app`
+    tem `mem_limit: 512m` (`docker-compose.yml`), um limite apertado pra esse volume de parsing
+    HTML. Se o container é OOM-killed e o Docker o reinicia via `restart: unless-stopped`, o
+    processo reseta (pid volta a contar do zero dentro do namespace do container — bate com o
+    `pid: 4` idêntico nas duas falhas, sinal de um processo novo com a mesma árvore de init) — mas
+    isso sozinho não deveria derrubar `DATABASE_URL` (`env_file` é lido na criação do container,
+    não deveria mudar num restart do mesmo container). Só faz sentido combinado com alguma
+    fragilidade do Docker daemon nesse VPS (mesma família do "DNS interno quebrado" documentado
+    em v0.69.10, causada pela convivência Swarm/Dokploy + Compose).
+  - **Monitor rodando ao vivo na VPS desde 18:50:12 UTC** (`~/monitor-aieval.sh`, ver comandos
+    abaixo) — cobre exatamente o boot da falha do run #135 (~18:51:14 UTC). Esse log deve conter a
+    prova direta (uma linha de `StartedAt`/`RestartCount`/`PID` diferente da anterior bem naquele
+    segundo) — ainda não lido, fica pro próximo passo assim que houver acesso à VPS.
   - **Próximos passos, só possíveis com acesso ao VPS**:
-    1. Na PRÓXIMA falha, rodar imediatamente (mesmo minuto) `docker inspect garimpo-app-1
-       --format '{{.State.StartedAt}} {{.RestartCount}} {{json .NetworkSettings.Networks}}'`
-       pra saber se o container que respondeu É o `garimpo-app-1` atual (bate o `StartedAt` com
-       o `uptimeSec` do diagnóstico) ou se já foi substituído — hoje isso só dá pra inferir
-       por horário, não confirmar.
-    2. Repetir o teste **bem longe de qualquer deploy** (nem push, nem `workflow_dispatch` do
-       `deploy.yml` na última meia hora) pra eliminar de vez o confundidor acima.
-    3. `journalctl -u docker --since ... --until ...` / `dmesg` no horário de uma falha
-       confirmada, procurando erro de rede/namespace do container nesse boot.
+    1. Ler `~/monitor-aieval.log` e `~/docker-events-aieval.log` (monitor já rodando, iniciado
+       18:50:12 UTC) — procurar por volta de **18:51:10–18:51:20 UTC** por uma mudança de
+       `StartedAt`/`RestartCount`/`PID`/`ip` do `garimpo-app-1`, e no log de eventos por
+       `die`/`start`/`kill`/`oom` no container nesse mesmo instante.
+    2. `docker inspect garimpo-app-1 --format 'OOMKilled={{.State.OOMKilled}}  RestartCount={{.RestartCount}}'`
+       — se `OOMKilled: true` ou `RestartCount` maior que o observado antes do teste (era 0 às
+       18:21:46), confirma a teoria de pressão de memória.
+    3. `crontab -l` (usuário `deploy` e `root`, este com `sudo crontab -l -u root`) e
+       `systemctl list-timers --all` — procurar qualquer rotina de ~30 minutos.
+    4. `journalctl -u docker --since "2026-09-19 18:50:00" --until "2026-09-19 18:54:00"` —
+       cobre exatamente a janela da falha do run #135.
+    5. Se a periodicidade de 30 min se confirmar (2 pontos não bastam), repetir o teste
+       novamente ~30 min depois de uma falha confirmada, sem nenhum deploy no meio, pra ver se
+       bate de novo.
   - **Mitigação estrutural recomendada, independente da causa raiz** (não implementada, código
     ainda não tocado): dar ao `reverse_proxy app:3000` do Caddyfile um **health check ativo**
     (`health_uri`/`health_interval`, suportado pelo `reverse_proxy` do Caddy) contra um endpoint
