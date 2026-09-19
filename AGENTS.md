@@ -7,15 +7,12 @@ com **Postgres** próprio como backend e deploy em **VPS** (Docker Compose + Cad
 > continuidade entre sessões (arquitetura, mecânica do scraping, baseline do painel,
 > nº de lote, cores, pendências). Este arquivo é só o resumo.
 
-> **Trabalho de infraestrutura/custo pendente:** ver `docs/economia-migracao.md` (índice) e
-> os dois planos de fase que ele aponta. Migração em andamento na branch `vps` (base:
-> `origin/main`) — Fases 1 (camada de dados), 2 (Auth: Google OAuth direto), 3 (Storage: fotos
-> da Coleção em disco), 4 (Host: Docker Compose + Caddy no VPS) e 5 (backup/monitoramento/
-> faxina) entregues em código. Falta só a Fase 6 (cutover — migrar o banco de verdade, apontar
-> o DNS, mesclar `vps` → `main`), que exige acesso ao VPS real e não é algo que uma sessão
-> remota consiga fazer sozinha — ver o passo a passo manual em
-> `docs/economia-fase-2-vps-unico.md`. Até lá, produção continua no Supabase/Vercel; o
-> ambiente do VPS existe em paralelo, só validado por quem testa manualmente.
+> **Migração pra VPS concluída (Fase 6, cutover feito).** `main` voltou a ser a branch de
+> produção/trabalho padrão — **não usar `vps` como base pra novo trabalho** (ela só segue viva
+> em paralelo enquanto durar a Fase 7/preview deployments via Dokploy, trabalho de outra sessão;
+> sincronizar com `main` de vez em quando, não abrir PR novo contra ela). Ver
+> `docs/economia-fase-2-vps-unico.md` pra histórico completo do cutover e achados de produção
+> pós-migração (ex.: colisão de alias de rede com o preview do Dokploy).
 
 ## Visão geral
 
@@ -28,17 +25,18 @@ com **Postgres** próprio como backend e deploy em **VPS** (Docker Compose + Cad
   tratado direto em `src/server.ts` (fora das server functions), protegido por
   `CRON_TOKEN`; workflow em `.github/workflows/refresh.yml`.
 - Deploy: `Dockerfile` + `docker-compose.yml` + `Caddyfile`, publicado via
-  `.github/workflows/deploy.yml` (push na branch `vps` → build → GHCR → SSH no VPS).
+  `.github/workflows/deploy.yml` (push na branch `main` — ou `vps`, ainda usada pela Fase 7 —
+  → build → GHCR → SSH no VPS).
 - Roteamento file-based do TanStack Start — ver `src/routes/README.md`.
 - Variáveis de ambiente: ver `.env.example`.
 
 ## Convenções de trabalho
 
 - **Responder em português** ao interagir com o usuário.
-- **Recriar a branch de trabalho a partir de `origin/vps` antes de cada tarefa**
-  (a `vps` é a branch base durante a migração — ver aviso acima; ela pode receber
-  commits de outras sessões/PRs. Volta a ser `origin/main` depois do cutover da Fase 6).
-- Fluxo: branch de trabalho → PR **para `vps`** → merge.
+- **Recriar a branch de trabalho a partir de `origin/main` antes de cada tarefa**
+  (pós-cutover da Fase 6 — ver aviso acima; `main` é a branch de produção/base agora).
+  **Não usar `vps` como base pra trabalho novo.**
+- Fluxo: branch de trabalho → PR **para `main`** → merge.
 - **Atualizar `docs/notas-desenvolvimento.md` antes de mesclar QUALQUER PR** (mudanças de
   arquitetura/mecânica na seção certa, uma linha no histórico de versões, pendências resolvidas
   saem da lista).
