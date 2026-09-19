@@ -1431,7 +1431,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.69.15     | Segundo bug real de produção, diferente do v0.69.14 (a colisão de rede já foi corrigida e confirmada — a preview foi recriada como `previewapp`): `step=aieval` volta 500 quando chamado pelo `refresh.yml` via GitHub Actions logo em seguida do `enrich`, mas funciona normal (200) testado isolado direto do VPS — mesmo padrão de "só falha via Actions" já visto no `prune`. `call()` (com `-f`) suprime o corpo do erro, então não dá pra ver a mensagem real ainda. Aplicada a mesma técnica de diagnóstico do `prune` (v0.69.3/v0.69.6) só nesse loop do `refresh.yml`: curl sem `-f`, `HTTP_STATUS` extraído por um marcador (`===HTTPSTATUS===`, robusto a `===` dentro do JSON — testado isolado), e o loop para (sem abortar o resto do cron) em vez de `set -e` matar a run inteira. Próxima falha deve trazer a mensagem de erro real do `catch` de `handleCron` |
 | v0.69.16     | A mensagem real do v0.69.15 veio: `"Missing DATABASE_URL environment variable."` (`db.server.ts`) — intermitente e sem explicação ainda. Descartadas duas teorias: (1) corrida com um deploy simultâneo (reproduziu de novo minutos depois, sem nenhum deploy em andamento); (2) requisição batendo no container de preview por engano (a rede está limpa — só um alias `app`, `previewapp` distinto — e o preview TAMBÉM tem `DATABASE_URL` configurado, então nem explicaria o erro). Um teste direto no `localhost:3000` do próprio container de produção, rodado segundos antes/depois da falha via Actions, sempre funciona — o processo em si tem a env var (confirmado também por `printenv`). Ainda não dá pra saber se é sempre o MESMO processo Node respondendo, então o `catch` de `handleCron` (`cron.server.ts`) passa a incluir `pid`/`uptimeSec`/`hostname`/`hasDatabaseUrl` no corpo de qualquer erro 500 — remover depois que o caso for entendido |
 | v0.69.17     | Só documentação: `main` mesclada com `vps` de novo (4 commits, #190) e — decisão do usuário — **`main` volta a ser a branch de trabalho padrão** a partir de agora (não `vps`). `AGENTS.md`/`CLAUDE.md` atualizados: aviso de migração trocado por um registro do cutover concluído, convenção de branch de trabalho volta a apontar pra `origin/main`, `deploy.yml` documentado como disparando em `main` (produção) ou `vps` (ainda usada pela Fase 7/preview deployments, trabalho paralelo de outra sessão) |
-| v0.69.18     | Só documentação: auditoria da migração pedida pelo usuário. `notas-desenvolvimento.md` tinha ficado pra trás em dois pontos desde o cutover (v0.69.13): a seção "Infra — economia" ainda dizia "Fase 6 pendente"/"só falta o cutover" (a Fase 6 já tinha sido concluída e `vps` já mesclada em `main`) e a seção Pendências dizia "nenhuma pendência em aberto" sem citar o bug real do `step=aieval` (500 intermitente, em aberto desde v0.69.15/16). Ambos corrigidos. `README.md` também corrigido (dizia que o deploy disparava só em push pra `vps`, já dispara em `vps` OU `main` desde v0.69.13). De quebra, reproduzido o bug do `aieval` de novo (`refresh.yml` #134, já na `main`) com o diagnóstico do v0.69.16 ativo: a resposta 500 trouxe `hostname: "169.254.46.219"` (link-local) e `hasDatabaseUrl: false`, evidência nova de que a resposta não vem nem do `app` de produção nem do `previewapp` (os dois sempre têm `DATABASE_URL`) — aponta pra um terceiro container não rastreado neste repo respondendo pelo alias `app` na rede `garimpo_default`, provável sobra da instalação/depuração do Swarm/Dokploy (Fase 7). Comandos de diagnóstico e a mitigação estrutural cogitada (alias de rede explícito e menos genérico pro `app`) registrados em Pendências — seguir só com acesso ao VPS |
+| v0.69.18     | Só documentação: auditoria da migração pedida pelo usuário. `notas-desenvolvimento.md` tinha ficado pra trás em dois pontos desde o cutover (v0.69.13): a seção "Infra — economia" ainda dizia "Fase 6 pendente"/"só falta o cutover" e a seção Pendências dizia "nenhuma pendência em aberto" sem citar o bug do `step=aieval` (500 intermitente, em aberto desde v0.69.15/16). Ambos corrigidos. `README.md` também corrigido (deploy já dispara em `vps` OU `main` desde v0.69.13, não só `vps`). Investigação do `aieval` retomada: reproduzido de novo (`refresh.yml` #134, já na `main`) com `hostname: "169.254.46.219"` (link-local) + `hasDatabaseUrl: false` no corpo do 500 — hipótese inicial de colisão de alias com um terceiro container foi **testada e descartada** com `docker ps -a`/`docker inspect` reais do VPS (só existe UM container com alias `app`, o `garimpo-app-1` de produção; `previewapp` tem alias próprio, sem colisão). Ou seja, a resposta com hostname link-local só pode ter vindo do próprio `garimpo-app-1` — mecanismo ainda não entendido (variáveis de `env_file` não deveriam variar entre boots do mesmo container). Notada uma correlação temporal com o deploy do v0.69.17 (não confirmada como causa — o próprio método de teste desta sessão garante proximidade com deploys, mesmo confundidor que o v0.69.16 já tinha descartado numa rodada anterior). Próximos passos (`docker inspect` no instante da falha, teste longe de qualquer deploy, `journalctl`/`dmesg`) e mitigação estrutural recomendada (health check ativo do Caddy contra `/api/health`, independente da causa raiz) registrados em Pendências |
 
 ## Pendências
 
@@ -1439,36 +1439,54 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 
 - **🔴 `step=aieval` do cron volta 500 "Missing DATABASE_URL environment variable" de forma
   intermitente, só via GitHub Actions (v0.69.15/16, não é o mesmo bug do v0.69.14 — aquele já
-  foi corrigido e confirmado).** Investigação decorrente desta sessão (2026-09-19), rodando
-  `refresh.yml` #134 na `main` já com o diagnóstico do v0.69.16 (`pid`/`uptimeSec`/`hostname`/
-  `hasDatabaseUrl` no corpo do erro): a resposta trouxe `hostname: "169.254.46.219"` (endereço
-  **link-local/APIPA**, fora de qualquer sub-rede Docker esperada) com `hasDatabaseUrl: false`
-  e `pid: 4`, `uptimeSec` ~273–289 (mesmo processo respondendo nas 4 tentativas do `curl
-  --retry`, não é flake de rede). Isso **não bate com nenhum dos dois containers conhecidos**:
-  o `app` de produção usa `env_file: .env` (sempre tem `DATABASE_URL`) e o `previewapp` também
-  recebe `DATABASE_URL` explícito (`docker-compose.preview.yml`) — logo a resposta veio de um
-  **terceiro container**, não rastreado em nenhum compose deste repo, que por algum motivo
-  responde na mesma rede/alias que o Caddy usa pra `reverse_proxy app:3000`. Hipótese mais
-  provável, dado o histórico da Fase 7 (DNS interno do Docker quebrado após instalar
-  Swarm/Dokploy, v0.69.10; colisão de alias `app`↔preview, v0.69.14): um container órfão —
-  sobra de algum `docker run`/teste manual feito durante a depuração da Fase 7, ou um
-  contêiner recriado pelo Dokploy — está compartilhando o alias `app` na rede
-  `garimpo_default` (o DNS embutido do Docker faz round-robin entre containers com o mesmo
-  alias) ou tem uma interface de rede mal configurada que caiu no fallback link-local depois
-  da instalação do Swarm. **Próximo passo, só possível com acesso ao VPS** (nenhuma sessão
-  remota consegue confirmar sozinha):
-  ```sh
-  docker ps -a   # procurar container extra, não gerenciado pelos dois compose conhecidos
-  for c in $(docker ps -q); do
-    docker inspect "$c" --format '{{.Name}} aliases_garimpo_default={{index .NetworkSettings.Networks "garimpo_default" "Aliases"}} ip={{index .NetworkSettings.Networks "garimpo_default" "IPAddress"}}' 2>/dev/null
-  done
-  ```
-  Procurar qualquer container com alias `app` além do `garimpo-app-1` de produção, e qualquer
-  container cujo IP na rede não bata com a sub-rede configurada (sinal do fallback
-  link-local). Considerar como mitigação estrutural (não implementada ainda, pendente decisão):
-  dar ao serviço `app` de produção um `network_alias` explícito e menos genérico (ex.:
-  `garimpo-app`) em vez de depender do alias automático pelo nome do serviço — fecha essa
-  classe de colisão pra qualquer container futuro que por acidente suba com o nome `app`.
+  foi corrigido e confirmado).** Investigação decorrente desta sessão (2026-09-19):
+  - Reproduzido de novo (`refresh.yml` #134, já na `main`) com o diagnóstico do v0.69.16 ativo:
+    a resposta 500 trouxe `hostname: "169.254.46.219"` (endereço **link-local/APIPA**, fora de
+    qualquer sub-rede Docker esperada), `hasDatabaseUrl: false`, `pid: 4`, `uptimeSec` ~273–289
+    (mesmo processo nas 4 tentativas do `curl --retry`, não é flake de rede).
+  - **Hipótese de colisão de alias `app`↔container órfão, DESCARTADA**: `docker ps -a` +
+    `docker inspect` (rodado pelo usuário direto no VPS) confirmam que só existe UM container
+    com alias `app` na rede `garimpo_default` (`garimpo-app-1`, IP normal `172.19.0.5`); o
+    `previewapp` tem alias próprio (`previewapp`, IP `172.19.0.7`), sem colisão nenhuma. Ou
+    seja, a resposta com `hostname` link-local **só pode ter vindo do próprio `garimpo-app-1`**
+    — não existe hoje um terceiro container capaz de responder pelo alias `app`.
+  - **Correlação observada, não confirmada como causa**: o boot inferido do processo que falhou
+    (`uptimeSec` na hora da falha, 18:25:08 UTC, aponta pro processo ter começado ~18:20:19–35)
+    cai dentro da janela de execução do deploy do v0.69.17 (`deploy.yml` run #37,
+    18:19:57–18:21:49 UTC) — ou seja, esse `garimpo-app-1` específico muito provavelmente foi
+    recriado por aquele deploy. **Mas isso é um confundidor conhecido, não prova de causa**: o
+    método de teste desta sessão (empurrar um commit → `deploy.yml` dispara sozinho → rodar
+    `workflow_dispatch` do `refresh.yml` na sequência pra checar) garante que TODO teste caia
+    perto de um deploy, então essa proximidade não distingue "deploy causa o bug" de "só
+    testamos logo depois de cada deploy". O v0.69.16 já tinha **descartado explicitamente** a
+    teoria de corrida simples com deploy (reproduziu minutos depois, sem deploy em andamento) —
+    esta sessão não tem evidência forte o suficiente pra reabrir essa teoria, só o registro de
+    que a suspeita voltou a aparecer e vale reavaliar se acontecer de novo LONGE de qualquer
+    deploy (inclusive `workflow_dispatch` manual do `deploy.yml`).
+  - Nem alias colidido nem deploy simultâneo simples explicam por que o PRÓPRIO `garimpo-app-1`
+    teria `hostname` link-local e `DATABASE_URL` ausente — variáveis de `env_file` são lidas na
+    criação do container e não deveriam variar depois. Continua em aberto se é um bug real do
+    Docker daemon (rede/namespace mal inicializado num boot específico, mesma família de
+    fragilidade já documentada em v0.69.10 — "DNS interno do Docker quebrado" — causada pela
+    convivência Swarm/Dokploy + Compose no mesmo host) ou outra causa ainda não cogitada.
+  - **Próximos passos, só possíveis com acesso ao VPS**:
+    1. Na PRÓXIMA falha, rodar imediatamente (mesmo minuto) `docker inspect garimpo-app-1
+       --format '{{.State.StartedAt}} {{.RestartCount}} {{json .NetworkSettings.Networks}}'`
+       pra saber se o container que respondeu É o `garimpo-app-1` atual (bate o `StartedAt` com
+       o `uptimeSec` do diagnóstico) ou se já foi substituído — hoje isso só dá pra inferir
+       por horário, não confirmar.
+    2. Repetir o teste **bem longe de qualquer deploy** (nem push, nem `workflow_dispatch` do
+       `deploy.yml` na última meia hora) pra eliminar de vez o confundidor acima.
+    3. `journalctl -u docker --since ... --until ...` / `dmesg` no horário de uma falha
+       confirmada, procurando erro de rede/namespace do container nesse boot.
+  - **Mitigação estrutural recomendada, independente da causa raiz** (não implementada, código
+    ainda não tocado): dar ao `reverse_proxy app:3000` do Caddyfile um **health check ativo**
+    (`health_uri`/`health_interval`, suportado pelo `reverse_proxy` do Caddy) contra um endpoint
+    leve tipo `/api/health` que confirme `DATABASE_URL`/conexão com o Postgres — assim o Caddy
+    (e por tabela o cron) nunca envia tráfego pra uma instância do `app` num estado ruim,
+    qualquer que seja a causa. Menor risco que perseguir a causa raiz de um glitch raro de rede
+    do Docker; mexe no Caddyfile, então precisa da validação de sintaxe local de sempre
+    (`caddy validate`/`caddy run`) antes do push, por regra do `AGENTS.md`.
 
   _(Itens mais antigos desta seção — lance pelo app, upload de foto em massa, peso da sondagem
   na nota e imagem pelo CDN do catálogo — foram **cancelados/descartados**.)_
