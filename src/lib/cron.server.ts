@@ -496,6 +496,21 @@ export async function handleCron(request: Request): Promise<Response | null> {
     );
   } catch (error) {
     console.error("[cron] falha", error);
-    return json({ error: (error as Error)?.message ?? "cron failed" }, 500);
+    // Diagnóstico (v0.69.16): step=aieval vem voltando 500 "Missing DATABASE_URL" só
+    // via GitHub Actions, mesmo com a var confirmada presente no container (printenv) e
+    // um teste direto no localhost do mesmo container funcionando logo antes/depois —
+    // intermitente, sem explicação ainda. PID/uptime/hostname ajudam a saber se é sempre
+    // o MESMO processo/container respondendo (contra a teoria de request batendo em
+    // outro container por engano) — remover depois que o caso for entendido.
+    return json(
+      {
+        error: (error as Error)?.message ?? "cron failed",
+        pid: process.pid,
+        uptimeSec: Math.round(process.uptime()),
+        hostname: (await import("node:os")).hostname(),
+        hasDatabaseUrl: Boolean(process.env["DATABASE_URL"]),
+      },
+      500,
+    );
   }
 }
