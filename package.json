@@ -1,7 +1,7 @@
 {
   "name": "tanstack_start_ts",
   "private": true,
-  "version": "0.69.17",
+  "version": "0.69.18",
   "sideEffects": false,
   "type": "module",
   "scripts": {

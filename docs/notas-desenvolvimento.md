@@ -1234,7 +1234,7 @@ ESLint/Prettier.)
   após a migração. Dados migrados via `pg_restore --data-only` (usuários do `auth` **não**
   migrados — login refeito com Google).
 
-## Infra — economia / saída dos free tiers (Fases 1–5 em código, Fase 6 pendente)
+## Infra — economia / saída dos free tiers (migração para VPS concluída, Fase 6 feita)
 
 Planos e telemetria em **`docs/economia-migracao.md`** (índice), fases em
 `docs/economia-fase-1-egress-e-cpu.md` e `docs/economia-fase-2-vps-unico.md`. Resumo: banco
@@ -1254,11 +1254,16 @@ folgado (49/500 MB), mas **egress do Supabase já estourado** e **Active CPU da 
 - **Netlify e Neon descartados.** Netlify: timeout de 10 s mata os steps do cron e o `/api/live`
   (confirmado — o projeto conectado ao repo falha o deploy em todo PR). Neon: o gargalo é egress,
   não storage, e o Neon cobra CU-horas que o mesmo padrão queima igual.
-- **Fase 2 (VPS único em São Paulo, R$ 37,59/mês) — plano fechado em v0.60.5/6, Fases 1–5
-  entregues em código (v0.62.0–v0.68.6), só falta a Fase 6 (cutover).** Migração completa
-  (Postgres + Auth + Storage + Host + backup/faxina) em 6 fases reversíveis, numa branch
-  **`vps`** paralela: a `main` fica intocada na Vercel até o cutover, que é a Fase 6. A camada de dados saiu por um **shim
-  `postgres.js`** que preserva o nome exportado `supabaseAdmin` e é ligado por `DATABASE_URL` —
+- **Fase 2 (VPS único em São Paulo, R$ 37,59/mês) — plano fechado em v0.60.5/6, Fases 1–6
+  concluídas (v0.62.0–v0.69.13), cutover feito e `vps` mesclada em `main`.** Migração completa
+  (Postgres + Auth + Storage + Host + backup/faxina) em 6 fases, executadas numa branch
+  **`vps`** paralela enquanto a `main` ficou intocada na Vercel; a Fase 6 (cutover, v0.69.13)
+  migrou o banco de produção real pro VPS e mesclou `vps` → `main` — `main` voltou a ser a
+  branch de trabalho/produção padrão (v0.69.17), Supabase/Vercel mantidos de pé só como rede
+  de reversão (sem prazo definido pra desligar). `vps` segue viva em paralelo só pelo trabalho
+  experimental da Fase 7 (preview deployments via Dokploy, abaixo). A camada de dados saiu por
+  um **shim `postgres.js`** que preserva o nome exportado `supabaseAdmin` e é ligado por
+  `DATABASE_URL` —
   os 15 arquivos de lógica e toda a UI não mudaram. Auth virou OAuth Google direto (o contrato
   preservado é `context.claims.email`, então os 60 `assertAllowed` ficaram intactos); Storage
   virou volume em disco, servido pelo Node até a Fase 4 e pelo Caddy depois dela. `vite.config.ts:9`
@@ -1426,13 +1431,47 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.69.15     | Segundo bug real de produção, diferente do v0.69.14 (a colisão de rede já foi corrigida e confirmada — a preview foi recriada como `previewapp`): `step=aieval` volta 500 quando chamado pelo `refresh.yml` via GitHub Actions logo em seguida do `enrich`, mas funciona normal (200) testado isolado direto do VPS — mesmo padrão de "só falha via Actions" já visto no `prune`. `call()` (com `-f`) suprime o corpo do erro, então não dá pra ver a mensagem real ainda. Aplicada a mesma técnica de diagnóstico do `prune` (v0.69.3/v0.69.6) só nesse loop do `refresh.yml`: curl sem `-f`, `HTTP_STATUS` extraído por um marcador (`===HTTPSTATUS===`, robusto a `===` dentro do JSON — testado isolado), e o loop para (sem abortar o resto do cron) em vez de `set -e` matar a run inteira. Próxima falha deve trazer a mensagem de erro real do `catch` de `handleCron` |
 | v0.69.16     | A mensagem real do v0.69.15 veio: `"Missing DATABASE_URL environment variable."` (`db.server.ts`) — intermitente e sem explicação ainda. Descartadas duas teorias: (1) corrida com um deploy simultâneo (reproduziu de novo minutos depois, sem nenhum deploy em andamento); (2) requisição batendo no container de preview por engano (a rede está limpa — só um alias `app`, `previewapp` distinto — e o preview TAMBÉM tem `DATABASE_URL` configurado, então nem explicaria o erro). Um teste direto no `localhost:3000` do próprio container de produção, rodado segundos antes/depois da falha via Actions, sempre funciona — o processo em si tem a env var (confirmado também por `printenv`). Ainda não dá pra saber se é sempre o MESMO processo Node respondendo, então o `catch` de `handleCron` (`cron.server.ts`) passa a incluir `pid`/`uptimeSec`/`hostname`/`hasDatabaseUrl` no corpo de qualquer erro 500 — remover depois que o caso for entendido |
 | v0.69.17     | Só documentação: `main` mesclada com `vps` de novo (4 commits, #190) e — decisão do usuário — **`main` volta a ser a branch de trabalho padrão** a partir de agora (não `vps`). `AGENTS.md`/`CLAUDE.md` atualizados: aviso de migração trocado por um registro do cutover concluído, convenção de branch de trabalho volta a apontar pra `origin/main`, `deploy.yml` documentado como disparando em `main` (produção) ou `vps` (ainda usada pela Fase 7/preview deployments, trabalho paralelo de outra sessão) |
+| v0.69.18     | Só documentação: auditoria da migração pedida pelo usuário. `notas-desenvolvimento.md` tinha ficado pra trás em dois pontos desde o cutover (v0.69.13): a seção "Infra — economia" ainda dizia "Fase 6 pendente"/"só falta o cutover" (a Fase 6 já tinha sido concluída e `vps` já mesclada em `main`) e a seção Pendências dizia "nenhuma pendência em aberto" sem citar o bug real do `step=aieval` (500 intermitente, em aberto desde v0.69.15/16). Ambos corrigidos. `README.md` também corrigido (dizia que o deploy disparava só em push pra `vps`, já dispara em `vps` OU `main` desde v0.69.13). De quebra, reproduzido o bug do `aieval` de novo (`refresh.yml` #134, já na `main`) com o diagnóstico do v0.69.16 ativo: a resposta 500 trouxe `hostname: "169.254.46.219"` (link-local) e `hasDatabaseUrl: false`, evidência nova de que a resposta não vem nem do `app` de produção nem do `previewapp` (os dois sempre têm `DATABASE_URL`) — aponta pra um terceiro container não rastreado neste repo respondendo pelo alias `app` na rede `garimpo_default`, provável sobra da instalação/depuração do Swarm/Dokploy (Fase 7). Comandos de diagnóstico e a mitigação estrutural cogitada (alias de rede explícito e menos genérico pro `app`) registrados em Pendências — seguir só com acesso ao VPS |
 
 ## Pendências
 
 **Produto / código (em aberto)**
 
-- _Nenhuma pendência em aberto._ (Os itens anteriores — lance pelo app, upload de foto em massa,
-  peso da sondagem na nota e imagem pelo CDN do catálogo — foram **cancelados/descartados**.)
+- **🔴 `step=aieval` do cron volta 500 "Missing DATABASE_URL environment variable" de forma
+  intermitente, só via GitHub Actions (v0.69.15/16, não é o mesmo bug do v0.69.14 — aquele já
+  foi corrigido e confirmado).** Investigação decorrente desta sessão (2026-09-19), rodando
+  `refresh.yml` #134 na `main` já com o diagnóstico do v0.69.16 (`pid`/`uptimeSec`/`hostname`/
+  `hasDatabaseUrl` no corpo do erro): a resposta trouxe `hostname: "169.254.46.219"` (endereço
+  **link-local/APIPA**, fora de qualquer sub-rede Docker esperada) com `hasDatabaseUrl: false`
+  e `pid: 4`, `uptimeSec` ~273–289 (mesmo processo respondendo nas 4 tentativas do `curl
+  --retry`, não é flake de rede). Isso **não bate com nenhum dos dois containers conhecidos**:
+  o `app` de produção usa `env_file: .env` (sempre tem `DATABASE_URL`) e o `previewapp` também
+  recebe `DATABASE_URL` explícito (`docker-compose.preview.yml`) — logo a resposta veio de um
+  **terceiro container**, não rastreado em nenhum compose deste repo, que por algum motivo
+  responde na mesma rede/alias que o Caddy usa pra `reverse_proxy app:3000`. Hipótese mais
+  provável, dado o histórico da Fase 7 (DNS interno do Docker quebrado após instalar
+  Swarm/Dokploy, v0.69.10; colisão de alias `app`↔preview, v0.69.14): um container órfão —
+  sobra de algum `docker run`/teste manual feito durante a depuração da Fase 7, ou um
+  contêiner recriado pelo Dokploy — está compartilhando o alias `app` na rede
+  `garimpo_default` (o DNS embutido do Docker faz round-robin entre containers com o mesmo
+  alias) ou tem uma interface de rede mal configurada que caiu no fallback link-local depois
+  da instalação do Swarm. **Próximo passo, só possível com acesso ao VPS** (nenhuma sessão
+  remota consegue confirmar sozinha):
+  ```sh
+  docker ps -a   # procurar container extra, não gerenciado pelos dois compose conhecidos
+  for c in $(docker ps -q); do
+    docker inspect "$c" --format '{{.Name}} aliases_garimpo_default={{index .NetworkSettings.Networks "garimpo_default" "Aliases"}} ip={{index .NetworkSettings.Networks "garimpo_default" "IPAddress"}}' 2>/dev/null
+  done
+  ```
+  Procurar qualquer container com alias `app` além do `garimpo-app-1` de produção, e qualquer
+  container cujo IP na rede não bata com a sub-rede configurada (sinal do fallback
+  link-local). Considerar como mitigação estrutural (não implementada ainda, pendente decisão):
+  dar ao serviço `app` de produção um `network_alias` explícito e menos genérico (ex.:
+  `garimpo-app`) em vez de depender do alias automático pelo nome do serviço — fecha essa
+  classe de colisão pra qualquer container futuro que por acidente suba com o nome `app`.
+
+  _(Itens mais antigos desta seção — lance pelo app, upload de foto em massa, peso da sondagem
+  na nota e imagem pelo CDN do catálogo — foram **cancelados/descartados**.)_
 
 **Roadmap — novos provedores de IA (avaliado, não iniciado)**
 

@@ -48,8 +48,9 @@ riscos e o roteiro completo das 6 fases da migração (Supabase/Vercel → VPS �
    apps no mesmo host) e uma pasta com `docker-compose.yml` + `Caddyfile` (copiados
    pelo workflow de deploy) + um `.env` (a partir de `.env.example`, permissão `600`).
 2. `.github/workflows/deploy.yml` builda a imagem no Actions, publica no GHCR e faz
-   `docker compose pull && docker compose up -d` no VPS via SSH, a cada push na
-   branch `vps`. Secrets necessários no repositório: `VPS_HOST`, `VPS_USER`,
+   `docker compose pull && docker compose up -d` no VPS via SSH, a cada push nas
+   branches `main` (produção) ou `vps` (ainda usada pela Fase 7/preview deployments).
+   Secrets necessários no repositório: `VPS_HOST`, `VPS_USER`,
    `VPS_SSH_KEY`, `VPS_DEPLOY_PATH`; `VPS_SSH_PORT` (opcional — só se o SSH não estiver
    na porta 22 padrão).
 3. Postgres sem porta publicada (acesso administrativo só por túnel SSH); UFW liberando
