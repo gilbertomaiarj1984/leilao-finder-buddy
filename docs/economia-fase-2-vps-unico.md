@@ -918,3 +918,18 @@ até em containers que funcionavam).
   em paralelo. Reavaliar só se um dia o app não depender mais de login Google (improvável) ou se
   surgir um jeito de registrar redirect URIs dinamicamente via API do Google (não existe hoje
   pra OAuth clients tipo "Web application").
+- [x] **Bug real de produção causado pelo preview (v0.69.14), achado e corrigido**: o compose de
+  preview tinha um serviço chamado `app` — o Compose registra o nome do serviço como alias de
+  rede automaticamente, e como esse compose entra de propósito tanto em `garimpo_default`
+  (produção) quanto em `dokploy-network`, e o Caddy de produção está nas duas também, o alias
+  `app` ficou duplicado — o Caddy (`reverse_proxy app:3000`) passou a resolver, de forma
+  ambígua, ora pro container de produção, ora pro de preview. Sintoma real: o cron (`refresh.yml`
+  via GitHub Actions) começou a voltar 500/503 "CRON_TOKEN não configurado" no meio de uma
+  rodada — o `.env` do preview não tem essa var. Mitigado no VPS com `docker network disconnect`
+  do container de preview das duas redes (produção confirmada voltando a 200); corrigido no
+  código renomeando o serviço pra `previewapp` em `docker-compose.preview.yml`. **Lição**: um
+  serviço de compose que entra numa rede externa COMPARTILHADA com outro ambiente nunca pode ter
+  o mesmo nome de serviço que já existe lá — o nome vira alias de rede automaticamente, e a
+  colisão é silenciosa (sem erro nenhum, só resolução de DNS ambígua/instável). Pendente: recriar
+  o container de preview no Dokploy com o compose atualizado (fica inoperante, sem rede
+  nenhuma, até lá).
