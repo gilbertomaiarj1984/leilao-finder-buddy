@@ -25,9 +25,19 @@
 #
 # ⚠️ Ver docs/economia-fase-2-vps-unico.md, seção "Fase 7", pro risco aceito (preview com
 # credenciais reais/cron ativo) e o motivo de NUNCA apontar o cron automático pra cá.
+#
+# ⚠️⚠️ O serviço NUNCA pode se chamar `app` (achado real de produção, v0.69.14): o Compose
+# registra o nome do serviço como alias de rede automaticamente — em `garimpo_default`
+# (rede COMPARTILHADA com a produção), um serviço `app` aqui colide com o alias `app` que o
+# `docker-compose.yml` de produção já usa (`reverse_proxy app:3000` no Caddyfile). Isso
+# deixou o DNS interno do Docker ambíguo entre os dois containers: o Caddy passou a
+# resolver `app` ora pra produção, ora pro preview, derrubando aleatoriamente qualquer
+# chamada de produção (viu-se com `step=aieval` do cron voltando 500/503 "CRON_TOKEN não
+# configurado" — o env do container de PREVIEW, não o de produção). `previewapp` evita a
+# colisão sem perder a resolução de `postgres` (alias diferente, intocado).
 
 services:
-  app:
+  previewapp:
     build:
       context: .
       dockerfile: Dockerfile
