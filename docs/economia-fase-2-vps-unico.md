@@ -402,7 +402,7 @@ clicar/rodar, e como confirmar que deu certo antes de ir pro próximo.
 - [x] 9. Portainer (DNS próprio + primeiro acesso) — `painel-143-95-214-240.sslip.io`; setup token pego em `docker compose logs portainer`; Edge Compute pulado (não precisa, Docker é local)
 - [x] 10. Google OAuth para o novo domínio — precisou de um fix de código: atrás do Caddy o Nitro/h3 não confia em `X-Forwarded-Proto`, então `redirect_uri` saía como `http://` e o Google recusava mesmo com a URI certa cadastrada; `auth.server.ts` passou a priorizar `PUBLIC_BASE_URL` sobre `url.origin` (v0.68.2)
 - [x] 11. Validar antes do cutover — login Google, sessão LeilõesBR (vigias/lances ao vivo), upload de foto na Coleção (disco + Caddy servindo) e um ciclo completo do `backup` (dump → upload pro R2) confirmados funcionando. Achado nesta passada: o Postgres novo nunca recebe o schema sozinho — corrigido (`docker-entrypoint-initdb.d` + `supabase/setup.sql` copiado pelo `deploy.yml`, v0.68.4); banco desta instância aplicado manualmente uma vez, já que o volume tinha nascido antes do fix. Teste de restauração do backup ("backup não testado não é backup") feito: baixado o dump mais recente do R2, restaurado num Postgres descartável (`docker run postgres:17` isolado) via `psql -v ON_ERROR_STOP=1`, e conferido — as 12 tabelas do schema vieram todas e `collection_items` bateu com a linha esperada (a foto de teste). Container e dump de teste descartados depois
-- [ ] 12. Fase 6 — cutover (banco de produção, ponto de não-retorno no passo 8 dele)
+- [x] 12. Fase 6 — cutover: banco de produção real restaurado e validado no VPS (dump do Supabase via connection pooler, 3020 lotes/122 Coleção/204 Wantlist/66 Compras), fotos da Coleção migradas do Supabase Storage (92 arquivos), cron reabilitado e validado com dados reais (IA processando de verdade), e passo 8 (merge `vps` → `main`) feito antes do fim da janela de 1 semana — decisão do usuário, com Supabase/Vercel mantidos de pé como rede de reversão. `deploy.yml` dispara em `vps` e `main`. Falta só: decidir quando desligar Supabase/Vercel de vez (sem prazo fixado) e remover a Authorized redirect URI antiga do Google Cloud Console nesse momento
 
 ### 1. Contratar e preparar o VPS
 
@@ -918,3 +918,18 @@ até em containers que funcionavam).
   em paralelo. Reavaliar só se um dia o app não depender mais de login Google (improvável) ou se
   surgir um jeito de registrar redirect URIs dinamicamente via API do Google (não existe hoje
   pra OAuth clients tipo "Web application").
+- [x] **Bug real de produção causado pelo preview (v0.69.14), achado e corrigido**: o compose de
+  preview tinha um serviço chamado `app` — o Compose registra o nome do serviço como alias de
+  rede automaticamente, e como esse compose entra de propósito tanto em `garimpo_default`
+  (produção) quanto em `dokploy-network`, e o Caddy de produção está nas duas também, o alias
+  `app` ficou duplicado — o Caddy (`reverse_proxy app:3000`) passou a resolver, de forma
+  ambígua, ora pro container de produção, ora pro de preview. Sintoma real: o cron (`refresh.yml`
+  via GitHub Actions) começou a voltar 500/503 "CRON_TOKEN não configurado" no meio de uma
+  rodada — o `.env` do preview não tem essa var. Mitigado no VPS com `docker network disconnect`
+  do container de preview das duas redes (produção confirmada voltando a 200); corrigido no
+  código renomeando o serviço pra `previewapp` em `docker-compose.preview.yml`. **Lição**: um
+  serviço de compose que entra numa rede externa COMPARTILHADA com outro ambiente nunca pode ter
+  o mesmo nome de serviço que já existe lá — o nome vira alias de rede automaticamente, e a
+  colisão é silenciosa (sem erro nenhum, só resolução de DNS ambígua/instável). Pendente: recriar
+  o container de preview no Dokploy com o compose atualizado (fica inoperante, sem rede
+  nenhuma, até lá).
