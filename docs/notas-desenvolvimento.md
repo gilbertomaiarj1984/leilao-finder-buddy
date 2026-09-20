@@ -1440,107 +1440,32 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.69.24     | **Mistério não resolvido, registrado pra continuidade**: com o `caddy reload` do v0.69.23 confirmado rodando sem erro no log do deploy (`"using config from file"` + `"adapted config to JSON"`, exit 0 — `garimpo-caddy-1` nem chegou a ser recriado nesse deploy, `garimpo-app-1`/`garimpo-backup-1` sim, porque a tag da imagem muda a cada deploy), a run `#139` do `refresh.yml` reproduziu o bug de novo (`hostname: "169.254.73.67"`) e **o header `X-Debug-Upstream` continuou ausente**. Ou seja: o `reload` roda sem erro, mas ou (a) não está de fato aplicando a config nova no processo do Caddy, ou (b) a config está aplicada mas por algum motivo o `header_down` não é adicionado nessa resposta específica de falha — nenhuma das duas hipóteses tem explicação óbvia (não é comportamento documentado do Caddy pular `header_down` em respostas de erro do upstream). Tentativa de checar direto do domínio público bloqueada pelo proxy de saída deste ambiente (403). **Próximo passo, só possível com acesso à VPS**: checar a config AO VIVO do Caddy via API admin (não o que está no disco) — `docker exec garimpo-caddy-1 wget -qO- http://localhost:2019/config/ | grep -o "X-Debug-Upstream"`. Se não aparecer: o reload não está realmente aplicando (investigar por quê — talvez a API admin não esteja no endereço padrão, ou precise de `--address`). Se aparecer: o mistério é mais fundo, no comportamento do `header_down` sob falha, e vale tentar a alternativa de log de acesso completo (`log { output file ... }`) em vez de header |
 | v0.69.25     | **Confirmado que o `caddy reload` FUNCIONA de verdade** (log do próprio Caddy mostra `"admin.api","msg":"received request","uri":"/load"` seguido de `"load complete"` a cada deploy) — a suspeita (a) do v0.69.24 (reload não aplicando) cai. **Achado real, mas que acabou sendo outro confundidor, não o mistério do `aieval`**: o log do Caddy mostra dois eventos genuínos de `"dial tcp 172.19.0.5:3000: connect: connection refused"` — mas ao cruzar os timestamps com os eventos de rede (`sbJoin`) do `garimpo-app-1` no `journalctl`, **os 4 "recreate" do container hoje batem EXATAMENTE com os 4 deploys desta sessão** (PRs #192–195, um por merge — a tag `APP_IMAGE:${{ github.sha }}` muda a cada deploy, então `garimpo-app-1` é recriado em TODO deploy, sempre). Os dois "connection refused" são só o gap normal de alguns ms trocando de container durante um recreate — nada misterioso, e o `RestartCount` nunca passou de 0 porque cada recreate é um container NOVO (reseta a contagem), não um crash-loop do mesmo container. **Isso reabre uma dúvida importante sobre os testes de HOJE** (`#137`/`#138`/`#139`): como fiz 4 deploys em ~40min nesta sessão, todo teste de hoje caiu perto demais de algum deploy meu — o mesmo confundidor que a run `#136` de ONTEM (genuinamente ~56min longe de qualquer deploy) já tinha descartado. A teoria de "periodicidade ~27–31min" do v0.69.19 foi construída em cima de `#134`/`#135`/`#136` de ontem — **essas continuam válidas** (135 e 136 confirmados sem deploy por perto na hora), mas não deve ganhar mais pontos de dado a partir dos testes de hoje, que estão contaminados. **Decisão**: parar de disparar deploys por um tempo (mínimo ~30-40min sem nenhum push/deploy) antes do próximo teste, pra finalmente conseguir uma reprodução limpa com o header/health-check já confirmadamente ativos |
 | v0.69.26     | **A janela limpa apareceu de graça**: o `schedule` normal do GitHub disparou a run `#140` às 08:30 UTC, **5 horas depois do último deploy** (bem mais que os 30-40min planejados) — reproduziu o bug de novo (`hostname: "169.254.51.151"`) e **o header `X-Debug-Upstream` continuou ausente**, mesmo com o reload confirmado ativo há 5h. Isso praticamente descarta de vez a suspeita (a) do v0.69.24/25 (reload não aplicado) — não sobra tempo suficiente pra explicar 5h de config "desatualizada". **Testado localmente e CONFIRMADO que `header_down` funciona normal**: Caddy real + backend fake devolvendo o corpo JSON idêntico ao bug (500 "Missing DATABASE_URL...") → o header aparece certinho na resposta E no log de acesso. Ou seja: **a suspeita (b) também cai** — não é um problema do Caddy pular `header_down` em erros. Testado também que `curl -D` + `--retry` (exatamente como o `refresh.yml` usa, sem `--retry-all-errors`) captura o header corretamente em todas as 4 tentativas contra um servidor de teste local. **Conclusão desta rodada**: com as duas hipóteses de Caddy descartadas por teste direto, a suspeita migra pra fora do Caddy inteiramente — a requisição que falha pode não estar nem chegando nesse Caddy/site block. Implementado `curl -v` na chamada do `aieval` (`refresh.yml`), capturando o handshake de rede real (IP conectado, certificado TLS servido) — testado localmente sob `set -euo pipefail` (sobrevive, mesmo padrão de proteção do v0.69.22). Isso deve mostrar, na próxima falha, se o GitHub Actions está de fato conectando no IP certo do VPS com o certificado certo, ou se há algo de DNS/roteamento do lado de fora que nem chega a ser problema do Caddy |
+| v0.69.27     | **🎯 CAUSA RAIZ ENCONTRADA — fecha a investigação do bug do `aieval` aberta desde v0.69.15.** A run `#141` reproduziu a falha de novo e o `curl -v` (v0.69.26) revelou tudo na primeira tentativa: `Connected to leilao-finder-buddy.vercel.app (64.29.17.195) port 443`, `subject: CN=*.vercel.app`. **O secret `APP_URL` do GitHub Actions nunca foi atualizado pro domínio do VPS no cutover da Fase 6** — continua apontando pra Vercel. Isso explica cada peça do mistério de uma vez: hostname link-local (`169.254.x.x`) é o padrão normal de runtime serverless da AWS Lambda por trás do Vercel; `hasDatabaseUrl: false` porque `DATABASE_URL` é uma env exclusiva do VPS, nunca cadastrada no painel da Vercel; o corpo do erro bate exatamente com o código atual porque **a Vercel nunca parou de fazer auto-deploy deste repo** (confirmado pelos comentários do bot `vercel[bot]` aparecendo em TODOS os PRs desta sessão, #192–197) — a Vercel está rodando o código mais recente, só que com o ambiente antigo (sem `DATABASE_URL`). O checklist de progresso do cutover (`docs/economia-fase-2-vps-unico.md`, item 12) foi marcado `[x]` dizendo "cron reabilitado e validado com dados reais" — mas isso validou o cron rodando MANUALMENTE contra o VPS na época; **o secret `APP_URL` em si, usado pelo `refresh.yml` de verdade, nunca foi trocado**. Ou seja: possivelmente NENHUMA chamada do cron 2×/dia desde o cutover (v0.69.13) chegou de fato no VPS — tudo foi pra Vercel, que ainda tem `SUPABASE_*`/Postgres antigo configurado o suficiente pra `chunk`/`enrich` (scraping + persistência) parecerem funcionar normalmente na maior parte do tempo, mas falha especificamente onde o código exige `DATABASE_URL` sem fallback (só a partir do `client.server.ts` pós-v0.64.0). **Ação necessária, só o usuário pode fazer** (secret do GitHub, fora do alcance de qualquer sessão): trocar o secret `APP_URL` em Settings → Secrets and variables → Actions pra `https://143-95-214-240.sslip.io` (o `APP_DOMAIN` real do VPS). Recomendado também, depois de confirmar que o cron passa a bater no VPS: desligar de vez o auto-deploy da Vercel pra este repo (Vercel → Project Settings → Git → desconectar), já que ele não serve mais nenhum propósito e só criou essa armadilha — e reforçar no checklist de cutover que "cron validado" precisa checar o secret em si, não só um teste manual |
 
 ## Pendências
 
 **Produto / código (em aberto)**
 
-- **🔴 `step=aieval` do cron volta 500 "Missing DATABASE_URL environment variable" de forma
-  intermitente, só via GitHub Actions (v0.69.15/16, não é o mesmo bug do v0.69.14 — aquele já
-  foi corrigido e confirmado).** Investigação decorrente desta sessão (2026-09-19):
-  - Reproduzido de novo (`refresh.yml` #134, já na `main`) com o diagnóstico do v0.69.16 ativo:
-    a resposta 500 trouxe `hostname: "169.254.46.219"` (endereço **link-local/APIPA**, fora de
-    qualquer sub-rede Docker esperada), `hasDatabaseUrl: false`, `pid: 4`, `uptimeSec` ~273–289
-    (mesmo processo nas 4 tentativas do `curl --retry`, não é flake de rede).
-  - **Hipótese de colisão de alias `app`↔container órfão, DESCARTADA**: `docker ps -a` +
-    `docker inspect` (rodado pelo usuário direto no VPS) confirmam que só existe UM container
-    com alias `app` na rede `garimpo_default` (`garimpo-app-1`, IP normal `172.19.0.5`); o
-    `previewapp` tem alias próprio (`previewapp`, IP `172.19.0.7`), sem colisão nenhuma. Ou
-    seja, a resposta com `hostname` link-local **só pode ter vindo do próprio `garimpo-app-1`**
-    — não existe hoje um terceiro container capaz de responder pelo alias `app`.
-  - **Teoria de corrida com deploy, DESCARTADA DE VEZ**: reproduzido de novo (`refresh.yml`
-    #135, `workflow_dispatch` disparado direto pela API do GitHub) **30 minutos depois do último
-    deploy** (`deploy.yml` run #37 terminou 18:21:49 UTC; run #135 rodou 18:51:07–18:53:21 UTC,
-    sem nenhum deploy no meio) — a resposta 500 veio de novo, com o mesmo padrão:
-    `hostname: "169.254.64.71"` (link-local, IP diferente do anterior — consistente com um
-    self-assign novo a cada boot), `hasDatabaseUrl: false`, `pid: 4`, `uptimeSec` ~94–110. Não é
-    deploy, não é colisão de alias (já descartada acima) — é o próprio `garimpo-app-1` mesmo,
-    confirmado de novo.
-  - **Terceiro ponto de dados, e o mais forte: `refresh.yml` #136 falhou disparado pelo
-    `schedule` normal do GitHub** (não por mim, não `workflow_dispatch`) às 19:17:58–19:20:05
-    UTC — quase **1h depois do último deploy**, prova de que é bug real de produção, não
-    artefato dos testes manuais desta sessão. Mesmo padrão de sempre: `hostname:
-    "169.254.31.101"` (link-local, terceiro IP diferente), `pid: 4`, `hasDatabaseUrl: false`,
-    `uptimeSec` ~88–104 → processo começou ~19:18:03 UTC.
-  - **Achado: os três boots inferidos ficam ~27–31 minutos um do outro, não é exatamente 30min
-    fixo.** run #134 → ~18:20:19 UTC; run #135 → ~18:51:14 UTC (Δ 30min55s); run #136 →
-    ~19:18:03 UTC (Δ 26min49s desde o #135). Faixa de 27–31 min, não um período cravado — pode
-    ser um timer com jitter (ex.: `OnUnitActiveSec` do systemd, que conta a partir do FIM do
-    ciclo anterior, cujo tempo de execução varia) ou uma rotina de monitoramento com intervalo
-    aproximado. Três pontos independentes (dois deles sem NENHUMA ação minha ou de deploy por
-    perto) são evidência forte o suficiente pra tratar isso como **muito provavelmente real**,
-    não coincidência: **algo no HOST reinicia/recria o `garimpo-app-1` a cada ~27–31min** — não
-    é o cron deste repo, não é o `deploy.yml` (nenhum dos dois roda nesse intervalo). Candidatos
-    a checar: crontab do usuário `deploy` e do `root`, timers do systemd, alguma rotina de
-    monitoramento/reconciliação do Dokploy (que convive no mesmo Docker daemon) ou um watchdog
-    de memória/uptime de terceiros já instalado no VPS (da HostGator ou de uma sessão anterior).
-  - **Teoria do restart/pressão de memória, DESCARTADA COM PROVA DIRETA.** Monitor rodando ao vivo
-    na VPS (`~/monitor-aieval.sh`, amostra a cada 3s) + `docker events` sem filtro cobrindo as duas
-    janelas exatas (com o fuso corrigido — ver nota abaixo) mostram **zero eventos** de
-    `create`/`start`/`die`/`kill` do `garimpo-app-1` ou de qualquer container além do healthcheck
-    interno do próprio Dokploy (irrelevante, roda a cada ~30s o tempo todo checando a porta 3000
-    DELE MESMO). `docker inspect` confirma `OOMKilled: false`, `RestartCount: 0`,
-    `StartedAt` idêntico (18:21:46 UTC) do início ao fim de ambas as janelas. `crontab`/systemd
-    timers do host são só os padrões do Ubuntu, nada de ~30min. **O `garimpo-app-1` nunca mudou,
-    nunca reiniciou.**
-    > ⚠️ Pegadinha nossa nessa rodada: `docker events` mostra os timestamps em **hora LOCAL do
-    > servidor (-03:00)**, não UTC, e `journalctl --since "<data> <hora>"` sem fuso explícito
-    > também interpreta como hora local — os horários das falhas foram calculados em UTC, então a
-    > primeira leitura desses dois logs mirou a janela errada (3h de diferença). Corrigido relendo
-    > o mesmo log já capturado com o horário local certo (UTC − 3h) e refazendo o `journalctl` com
-    > `"... UTC"` explícito no `--since`/`--until` — mesmo resultado (nada relevante). **Lição:**
-    > sempre que cruzar horário de falha (calculado em UTC) com `docker events`/`journalctl` nesse
-    > VPS, ou usar `--since`/`--until` com sufixo `UTC` explícito, ou converter pra hora local
-    > (`America/Sao_Paulo`, UTC−3, sem horário de verão) antes de grepar.
-  - **`previewapp` também DESCARTADO, com prova direta.** `docker exec` + `curl` direto no IP
-    interno do `previewapp` (`172.19.0.7:3000/api/cron?step=aieval`, 10 tentativas) devolve
-    **sempre** `{"error":"CRON_TOKEN não configurado no servidor"}` (503) — nunca a mensagem de
-    `DATABASE_URL`. Motivo: `handleCron` (`cron.server.ts:43-45`) checa `CRON_TOKEN` **antes** de
-    qualquer outra coisa, inclusive antes de tocar o banco — como o `previewapp` não tem
-    `CRON_TOKEN` configurado (confirmado, `docker-compose.preview.yml` não passa essa var de
-    propósito), ele **nunca chegaria** ao ponto de checar `DATABASE_URL`. Ou seja, pra alguém
-    responder com "Missing DATABASE_URL", precisa ter um `CRON_TOKEN` que BATE com o da produção
-    — o que já elimina qualquer container que não seja uma cópia fiel do ambiente de produção.
-  - **`garimpo-app-1` também DESCARTADO, com prova direta.** Hostname real, ao vivo, agora:
-    `9d31f48b0373` (hash curto do container ID, o padrão normal do Docker) — **nunca** bate com
-    nenhum dos três `169.254.x.x` vistos nas falhas. 25 chamadas diretas ao IP interno
-    (`172.19.0.5:3000`), incluindo 5 rodadas simulando a carga real (`chunk` ×1 pesado antes de
-    cada `aieval`), **100% sucesso**, `DATABASE_URL` sempre presente.
-  - **Situação atual: nenhum container conhecido pode ter produzido a resposta observada, e não
-    há rastro de um terceiro em lugar nenhum.** Toda pista a nível de Docker/host/VPS foi seguida
-    e descartada com evidência direta (não só inferência). Como `chunk`/`enrich` sempre têm
-    sucesso via Caddy+GitHub Actions (todo run mostra isso) mas `aieval` falha especificamente
-    nesse caminho às vezes — e nunca falha indo direto no IP do container, mesmo replicando a
-    carga — a suspeita agora recai sobre o **próprio Caddy ou o caminho de rede entre ele e o
-    `app`** (TLS, keep-alive/pool de conexões, resolução de "app" no momento exato da falha), não
-    mais sobre qual container está de pé.
-  - **Implementado (v0.69.21): health check ativo do Caddy + header de diagnóstico.** Novo
-    `/api/health` (`src/lib/health.server.ts`) confirma `DATABASE_URL`/`CRON_TOKEN` presentes e
-    faz um `select 1` no Postgres. `Caddyfile`: `reverse_proxy app:3000` ganha `health_uri
-    /api/health` (10s/5s) — o Caddy nunca mais deveria rotear tráfego pra uma instância do `app`
-    num estado ruim, qualquer que seja a causa — e `header_down X-Debug-Upstream
-    {http.reverse_proxy.upstream.address}` (temporário, remover quando o caso for entendido): na
-    próxima falha, o header da resposta mostra exatamente o IP:porta que o Caddy discou, sem
-    precisar de log/parsing. Validado localmente antes do push (`caddy validate` + `caddy run`
-    numa porta alternativa, JSON adaptado conferido) por regra do `AGENTS.md` — `deploy.yml`
-    aplica direto em produção, sem revisão manual no meio.
-  - **Ainda em aberto, aguardando a próxima falha real (via cron 2×/dia ou teste manual) pós-
-    deploy desta mitigação**: (1) se o `health_uri` sozinho já resolve na prática (Caddy passa a
-    recusar a requisição com 502 em vez de repassar uma resposta ruim — melhora o sintoma, ainda
-    não explica a causa); (2) o header `X-Debug-Upstream` na resposta de uma falha real, que
-    finalmente prova pra qual IP:porta o Caddy mandou a requisição — o dado que fecha esta
-    investigação. Verificar rodando `curl -i` (não só `-s`) contra `$APP_URL/api/cron?step=aieval`
-    na próxima reprodução, ou inspecionando os headers da resposta que o `refresh.yml` já loga.
+- **✅ RESOLVIDO (v0.69.27) — `step=aieval` voltando 500 "Missing DATABASE_URL" (aberto desde
+  v0.69.15).** Causa raiz: **o secret `APP_URL` do GitHub Actions nunca foi atualizado pro
+  domínio do VPS no cutover da Fase 6** — continua apontando pra Vercel
+  (`leilao-finder-buddy.vercel.app`), confirmado com `curl -v` (ver Histórico de versões,
+  v0.69.27, pra investigação completa — dezenas de teorias de Docker/rede/Caddy testadas e
+  descartadas com prova direta antes de chegar aqui). A Vercel nunca parou de receber auto-deploy
+  deste repo, então roda o código atual — só que sem `DATABASE_URL` (env exclusiva do VPS).
+  **Ação pendente, só o usuário pode fazer** (secret do GitHub, fora do alcance de qualquer
+  sessão): trocar `APP_URL` em Settings → Secrets and variables → Actions pra
+  `https://143-95-214-240.sslip.io`. Depois de confirmar (algumas rodadas de cron 2×/dia sem
+  reproduzir a falha), considerar desconectar o auto-deploy da Vercel pra este repo de vez
+  (Project Settings → Git) — não serve mais nenhum propósito e é exatamente o que causou essa
+  armadilha.
+  - Mitigações que ficam valendo, mesmo com a causa raiz resolvida: `/api/health`
+    (`src/lib/health.server.ts`) + `health_uri` ativo no Caddy (v0.69.21) — proteção estrutural
+    de baixo custo, útil independente da causa.
+  - Instrumentação temporária a **remover** depois que o secret for trocado e confirmado: o
+    header `X-Debug-Upstream` no `Caddyfile` e o `-v`/`-D` na chamada do `aieval` em
+    `refresh.yml` (v0.69.21/26) — nenhum dos dois é mais necessário uma vez que o tráfego
+    realmente for pro VPS.
 
   _(Itens mais antigos desta seção — lance pelo app, upload de foto em massa, peso da sondagem
   na nota e imagem pelo CDN do catálogo — foram **cancelados/descartados**.)_
