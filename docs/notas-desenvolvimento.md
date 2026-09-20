@@ -1434,6 +1434,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.69.18     | Só documentação: auditoria da migração pedida pelo usuário. `notas-desenvolvimento.md` tinha ficado pra trás em dois pontos desde o cutover (v0.69.13): a seção "Infra — economia" ainda dizia "Fase 6 pendente"/"só falta o cutover" e a seção Pendências dizia "nenhuma pendência em aberto" sem citar o bug do `step=aieval` (500 intermitente, em aberto desde v0.69.15/16). Ambos corrigidos. `README.md` também corrigido (deploy já dispara em `vps` OU `main` desde v0.69.13, não só `vps`). Investigação do `aieval` retomada: reproduzido de novo (`refresh.yml` #134, já na `main`) com `hostname: "169.254.46.219"` (link-local) + `hasDatabaseUrl: false` no corpo do 500 — hipótese inicial de colisão de alias com um terceiro container foi **testada e descartada** com `docker ps -a`/`docker inspect` reais do VPS (só existe UM container com alias `app`, o `garimpo-app-1` de produção; `previewapp` tem alias próprio, sem colisão). Ou seja, a resposta com hostname link-local só pode ter vindo do próprio `garimpo-app-1` — mecanismo ainda não entendido (variáveis de `env_file` não deveriam variar entre boots do mesmo container). Notada uma correlação temporal com o deploy do v0.69.17 (não confirmada como causa — o próprio método de teste desta sessão garante proximidade com deploys, mesmo confundidor que o v0.69.16 já tinha descartado numa rodada anterior). Próximos passos (`docker inspect` no instante da falha, teste longe de qualquer deploy, `journalctl`/`dmesg`) e mitigação estrutural recomendada (health check ativo do Caddy contra `/api/health`, independente da causa raiz) registrados em Pendências |
 | v0.69.19     | Só documentação: mais 2 reproduções do bug do `aieval`, confirmando de vez que não é corrida com deploy. `refresh.yml` #135 disparado via API (workflow_dispatch) 30min depois do último deploy, sem nada no meio — falhou igual (`hostname: "169.254.64.71"`). #136 disparado pelo `schedule` normal do GitHub (produção real, ninguém acionou manualmente) quase 1h depois do último deploy — falhou de novo (`hostname: "169.254.31.101"`). Calculando o boot inferido pelas 3 falhas (#134/#135/#136): ~18:20:19, ~18:51:14 e ~19:18:03 UTC — intervalos de 30min55s e 26min49s, faixa de 27–31min, não cravado em 30 exatos mas forte demais pra ser coincidência com 3 pontos independentes (2 deles sem deploy nem ação manual por perto). Hipótese líder agora: algo no HOST (cron/systemd timer/rotina de monitoramento, não este repo) reinicia/recria o `garimpo-app-1` nesse intervalo. Monitor de estado (`~/monitor-aieval.sh`) ligado na VPS desde antes da falha do #135, ainda não lido (sessão sem acesso à VPS no momento) |
 | v0.69.20     | Só documentação: hipótese de restart/pressão de memória do v0.69.19 **descartada com prova direta** — monitor + `docker events` (cobrindo as janelas exatas, depois de corrigir um erro de fuso horário nosso: `docker events`/`journalctl` mostram hora LOCAL do servidor, não UTC) não mostram nenhum evento de `create`/`start`/`die` do `garimpo-app-1` nas duas falhas; `OOMKilled: false`, `RestartCount: 0`, `StartedAt` idêntico do início ao fim. `previewapp` também descartado com prova direta: `docker exec`+`curl` no seu IP interno sempre devolve "CRON_TOKEN não configurado" (503), nunca "Missing DATABASE_URL" — como `handleCron` checa `CRON_TOKEN` antes de tudo (`cron.server.ts:43-45`), o preview nunca chegaria a esse ponto. `garimpo-app-1` também descartado: hostname real ao vivo é um hash normal de container (nunca bate com os `169.254.x.x` das falhas), e 25 chamadas diretas ao seu IP interno — incluindo 5 simulando a carga real do `chunk` — tiveram 100% de sucesso. Conclusão: nenhum container conhecido explica a resposta observada; a suspeita migra do "qual container está de pé" pro **próprio Caddy ou o caminho de rede entre ele e o `app`** (TLS, keep-alive, resolução de DNS no momento exato), já que `chunk`/`enrich` nunca falham nesse mesmo caminho externo mas `aieval` falha às vezes. Próximo passo proposto (não implementado): header de resposta no Caddyfile expondo `{http.reverse_proxy.upstream.address}` pra provar, na próxima falha, pra qual IP o Caddy realmente mandou a requisição |
+| v0.69.21     | Implementado o próximo passo do v0.69.20. Novo `src/lib/health.server.ts` (`handleHealth`, endpoint `/api/health`, sem token — só expõe booleans): confirma `DATABASE_URL`/`CRON_TOKEN` presentes e faz um `select 1` no Postgres antes de responder `{ok:true}`; registrado em `server.ts` como os demais handlers fora das server functions. `Caddyfile`: `reverse_proxy app:3000` ganha `health_uri /api/health` (`health_interval 10s`, `health_timeout 5s` — health check ATIVO do Caddy, evita rotear pra uma instância num estado ruim, qualquer que seja a causa do bug do `aieval`) e `header_down X-Debug-Upstream {http.reverse_proxy.upstream.address}` (diagnóstico temporário — expõe na resposta, sem precisar de log, pra qual IP:porta o Caddy realmente discou; remover depois que o caso for entendido). Validado localmente antes do push, por regra do `AGENTS.md`: `caddy validate` (sintaxe OK) e `caddy run` numa porta alternativa (subiu limpo, health checker e header confirmados no JSON adaptado — `dial tcp: lookup app` e o erro do ACME contra o Let's Encrypt são esperados fora do VPS/sem o container `app` de verdade). `tsc --noEmit`, `lint` e `build` verdes |
 
 ## Pendências
 
@@ -1518,22 +1519,23 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
     carga — a suspeita agora recai sobre o **próprio Caddy ou o caminho de rede entre ele e o
     `app`** (TLS, keep-alive/pool de conexões, resolução de "app" no momento exato da falha), não
     mais sobre qual container está de pé.
-  - **Próximo passo proposto (ainda não implementado): instrumentar o Caddy pra provar pra qual
-    IP ele mandou a requisição que falhou.** Como o Caddy não tem log de acesso configurado hoje
-    (`docker logs garimpo-caddy-1` não mostra nada nas janelas de falha, confirmado), a forma mais
-    direta e de menor risco é acrescentar ao bloco `reverse_proxy app:3000` do `Caddyfile` um
-    header de resposta com o placeholder nativo do Caddy `{http.reverse_proxy.upstream.address}`
-    (ex.: `header_down X-Debug-Upstream {http.reverse_proxy.upstream.address}`) — na próxima
-    falha, o header da resposta mostra exatamente o IP:porta que o Caddy discou, sem precisar de
-    arquivo de log nem parsing. Mexe no Caddyfile de produção, então segue a regra do `AGENTS.md`:
-    validar sintaxe local (`caddy validate`/`caddy run`, binário oficial, sem Docker) antes do
-    push — `deploy.yml` aplica direto, sem revisão manual no meio.
-  - **Mitigação estrutural recomendada, independente da causa raiz** (não implementada): dar ao
-    `reverse_proxy app:3000` do Caddyfile um **health check ativo** (`health_uri`/`health_interval`,
-    suportado nativamente) contra um endpoint leve tipo `/api/health` que confirme
-    `DATABASE_URL`/conexão com o Postgres — assim o Caddy (e por tabela o cron) nunca envia
-    tráfego pra uma instância do `app` num estado ruim, qualquer que seja a causa. Mesma regra de
-    validação de Caddyfile acima.
+  - **Implementado (v0.69.21): health check ativo do Caddy + header de diagnóstico.** Novo
+    `/api/health` (`src/lib/health.server.ts`) confirma `DATABASE_URL`/`CRON_TOKEN` presentes e
+    faz um `select 1` no Postgres. `Caddyfile`: `reverse_proxy app:3000` ganha `health_uri
+    /api/health` (10s/5s) — o Caddy nunca mais deveria rotear tráfego pra uma instância do `app`
+    num estado ruim, qualquer que seja a causa — e `header_down X-Debug-Upstream
+    {http.reverse_proxy.upstream.address}` (temporário, remover quando o caso for entendido): na
+    próxima falha, o header da resposta mostra exatamente o IP:porta que o Caddy discou, sem
+    precisar de log/parsing. Validado localmente antes do push (`caddy validate` + `caddy run`
+    numa porta alternativa, JSON adaptado conferido) por regra do `AGENTS.md` — `deploy.yml`
+    aplica direto em produção, sem revisão manual no meio.
+  - **Ainda em aberto, aguardando a próxima falha real (via cron 2×/dia ou teste manual) pós-
+    deploy desta mitigação**: (1) se o `health_uri` sozinho já resolve na prática (Caddy passa a
+    recusar a requisição com 502 em vez de repassar uma resposta ruim — melhora o sintoma, ainda
+    não explica a causa); (2) o header `X-Debug-Upstream` na resposta de uma falha real, que
+    finalmente prova pra qual IP:porta o Caddy mandou a requisição — o dado que fecha esta
+    investigação. Verificar rodando `curl -i` (não só `-s`) contra `$APP_URL/api/cron?step=aieval`
+    na próxima reprodução, ou inspecionando os headers da resposta que o `refresh.yml` já loga.
 
   _(Itens mais antigos desta seção — lance pelo app, upload de foto em massa, peso da sondagem
   na nota e imagem pelo CDN do catálogo — foram **cancelados/descartados**.)_
