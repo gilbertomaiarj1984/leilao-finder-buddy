@@ -98,6 +98,15 @@ jobs:
           scp -P "$port" supabase/setup.sql "$VPS_USER@$VPS_HOST:$VPS_DEPLOY_PATH/supabase-init/01-setup.sql"
 
       - name: Deploy (pull + up -d)
+        # `docker compose up -d` NÃO recria/reinicia um serviço só porque o CONTEÚDO de um
+        # arquivo montado via bind mount mudou (o Caddyfile é montado assim) — Compose decide
+        # recriar comparando a definição do serviço no compose file, não o conteúdo dos
+        # volumes. Mesma classe de bug já vista neste projeto (v0.69.5/v0.69.8: `.env`
+        # mudou e precisou de `--force-recreate` na mão). Achado investigando por que o header
+        # `X-Debug-Upstream` (v0.69.21) nunca aparecia mesmo depois do deploy — o Caddy seguia
+        # rodando a config ANTIGA. `caddy reload` recarrega a config em tempo real (zero
+        # downtime, sem derrubar conexões), então todo deploy garante o Caddyfile atualizado
+        # de verdade, não só copiado pro disco.
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -111,4 +120,5 @@ jobs:
           ssh -p "$port" "$VPS_USER@$VPS_HOST" "cd '$VPS_DEPLOY_PATH' && \
             export APP_IMAGE='$APP_IMAGE' BACKUP_IMAGE='$BACKUP_IMAGE' && \
             docker compose pull && \
-            docker compose up -d --remove-orphans"
+            docker compose up -d --remove-orphans && \
+            docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile"
