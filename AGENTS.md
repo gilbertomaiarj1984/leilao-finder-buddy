@@ -55,3 +55,10 @@ com **Postgres** próprio como backend e deploy em **VPS** (Docker Compose + Cad
   numa porta alternativa (`http_port`/`https_port` no bloco global) pra testar de verdade antes
   do push — já causou crash-loop de produção duas vezes (v0.69.5: env vazia virando bloco
   Caddyfile inválido; ver `docs/economia-fase-2-vps-unico.md`, Fase 7).
+- **Uma mudança de `Caddyfile` só vale de verdade em produção depois do `caddy reload`
+  no `deploy.yml`** — `docker compose up -d` não recria/reinicia um serviço só porque o
+  CONTEÚDO de um arquivo montado via bind mount mudou (mesma classe de bug do `.env`,
+  v0.69.5/v0.69.8). Achado com um bug de verdade no v0.69.21-23: o Caddy ficou rodando a
+  config antiga por 3 deploys seguidos sem ninguém perceber, porque o arquivo no disco do
+  VPS mudava mas o processo nunca recarregava. `deploy.yml` já faz `docker compose exec
+  caddy caddy reload` depois do `up -d` — não remover isso.
