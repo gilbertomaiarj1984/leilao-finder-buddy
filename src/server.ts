@@ -47,6 +47,12 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      // Health check pro Caddy (reverse_proxy health_uri) — confirma DATABASE_URL/CRON_TOKEN
+      // presentes e o Postgres respondendo antes de qualquer outra rota. Barato, sem segredo.
+      const { handleHealth } = await import("./lib/health.server");
+      const healthResponse = await handleHealth(request);
+      if (healthResponse) return healthResponse;
+
       // Proxy autenticado do pregão ao vivo (abre já logado dentro do app), fora do
       // fluxo de server functions. Retorna cedo quando o caminho for /api/live/*.
       const { handleLiveProxy } = await import("./lib/leiloesbr-live.server");
