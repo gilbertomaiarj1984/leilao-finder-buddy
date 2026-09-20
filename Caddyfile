@@ -28,21 +28,18 @@
 		file_server
 	}
 
-	# `health_uri`: investigação do bug intermitente do `step=aieval` do cron (500
-	# "Missing DATABASE_URL", só via GitHub Actions — docs/notas-desenvolvimento.md,
-	# "Pendências") descartou com prova direta todo container conhecido como origem —
-	# sobra suspeita no próprio caminho Caddy→app. Health check ativo contra
-	# `/api/health` (`src/lib/health.server.ts`) evita que o Caddy roteie tráfego pra
-	# uma instância num estado ruim, qualquer que seja a causa. `header_down` com o
-	# placeholder nativo `{http.reverse_proxy.upstream.address}` expõe, na resposta,
-	# pra qual IP:porta o Caddy realmente discou — prova direta na próxima falha, sem
-	# precisar de arquivo de log. Remover o header quando o caso for entendido.
+	# `health_uri`: mitigação estrutural que sobrou da investigação do bug do
+	# `step=aieval` (500 "Missing DATABASE_URL" intermitente via GitHub Actions,
+	# v0.69.15-27 — causa raiz era o secret `APP_URL` apontando pra Vercel, não pra
+	# este VPS; ver docs/notas-desenvolvimento.md, histórico de versões). Health
+	# check ativo contra `/api/health` (`src/lib/health.server.ts`) evita que o
+	# Caddy roteie tráfego pra uma instância num estado ruim, qualquer que seja a
+	# causa — vale a pena manter mesmo com o caso fechado.
 	handle {
 		reverse_proxy app:3000 {
 			health_uri /api/health
 			health_interval 10s
 			health_timeout 5s
-			header_down X-Debug-Upstream {http.reverse_proxy.upstream.address}
 		}
 	}
 }
