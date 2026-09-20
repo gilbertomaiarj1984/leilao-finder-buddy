@@ -1432,6 +1432,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.69.16     | A mensagem real do v0.69.15 veio: `"Missing DATABASE_URL environment variable."` (`db.server.ts`) — intermitente e sem explicação ainda. Descartadas duas teorias: (1) corrida com um deploy simultâneo (reproduziu de novo minutos depois, sem nenhum deploy em andamento); (2) requisição batendo no container de preview por engano (a rede está limpa — só um alias `app`, `previewapp` distinto — e o preview TAMBÉM tem `DATABASE_URL` configurado, então nem explicaria o erro). Um teste direto no `localhost:3000` do próprio container de produção, rodado segundos antes/depois da falha via Actions, sempre funciona — o processo em si tem a env var (confirmado também por `printenv`). Ainda não dá pra saber se é sempre o MESMO processo Node respondendo, então o `catch` de `handleCron` (`cron.server.ts`) passa a incluir `pid`/`uptimeSec`/`hostname`/`hasDatabaseUrl` no corpo de qualquer erro 500 — remover depois que o caso for entendido |
 | v0.69.17     | Só documentação: `main` mesclada com `vps` de novo (4 commits, #190) e — decisão do usuário — **`main` volta a ser a branch de trabalho padrão** a partir de agora (não `vps`). `AGENTS.md`/`CLAUDE.md` atualizados: aviso de migração trocado por um registro do cutover concluído, convenção de branch de trabalho volta a apontar pra `origin/main`, `deploy.yml` documentado como disparando em `main` (produção) ou `vps` (ainda usada pela Fase 7/preview deployments, trabalho paralelo de outra sessão) |
 | v0.69.18     | Só documentação: auditoria da migração pedida pelo usuário. `notas-desenvolvimento.md` tinha ficado pra trás em dois pontos desde o cutover (v0.69.13): a seção "Infra — economia" ainda dizia "Fase 6 pendente"/"só falta o cutover" e a seção Pendências dizia "nenhuma pendência em aberto" sem citar o bug do `step=aieval` (500 intermitente, em aberto desde v0.69.15/16). Ambos corrigidos. `README.md` também corrigido (deploy já dispara em `vps` OU `main` desde v0.69.13, não só `vps`). Investigação do `aieval` retomada: reproduzido de novo (`refresh.yml` #134, já na `main`) com `hostname: "169.254.46.219"` (link-local) + `hasDatabaseUrl: false` no corpo do 500 — hipótese inicial de colisão de alias com um terceiro container foi **testada e descartada** com `docker ps -a`/`docker inspect` reais do VPS (só existe UM container com alias `app`, o `garimpo-app-1` de produção; `previewapp` tem alias próprio, sem colisão). Ou seja, a resposta com hostname link-local só pode ter vindo do próprio `garimpo-app-1` — mecanismo ainda não entendido (variáveis de `env_file` não deveriam variar entre boots do mesmo container). Notada uma correlação temporal com o deploy do v0.69.17 (não confirmada como causa — o próprio método de teste desta sessão garante proximidade com deploys, mesmo confundidor que o v0.69.16 já tinha descartado numa rodada anterior). Próximos passos (`docker inspect` no instante da falha, teste longe de qualquer deploy, `journalctl`/`dmesg`) e mitigação estrutural recomendada (health check ativo do Caddy contra `/api/health`, independente da causa raiz) registrados em Pendências |
+| v0.69.19     | Só documentação: mais 2 reproduções do bug do `aieval`, confirmando de vez que não é corrida com deploy. `refresh.yml` #135 disparado via API (workflow_dispatch) 30min depois do último deploy, sem nada no meio — falhou igual (`hostname: "169.254.64.71"`). #136 disparado pelo `schedule` normal do GitHub (produção real, ninguém acionou manualmente) quase 1h depois do último deploy — falhou de novo (`hostname: "169.254.31.101"`). Calculando o boot inferido pelas 3 falhas (#134/#135/#136): ~18:20:19, ~18:51:14 e ~19:18:03 UTC — intervalos de 30min55s e 26min49s, faixa de 27–31min, não cravado em 30 exatos mas forte demais pra ser coincidência com 3 pontos independentes (2 deles sem deploy nem ação manual por perto). Hipótese líder agora: algo no HOST (cron/systemd timer/rotina de monitoramento, não este repo) reinicia/recria o `garimpo-app-1` nesse intervalo. Monitor de estado (`~/monitor-aieval.sh`) ligado na VPS desde antes da falha do #135, ainda não lido (sessão sem acesso à VPS no momento) |
 
 ## Pendências
 
@@ -1458,15 +1459,24 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
     self-assign novo a cada boot), `hasDatabaseUrl: false`, `pid: 4`, `uptimeSec` ~94–110. Não é
     deploy, não é colisão de alias (já descartada acima) — é o próprio `garimpo-app-1` mesmo,
     confirmado de novo.
-  - **Achado novo: os dois boots inferidos ficam ~31 minutos um do outro.** Fazendo a mesma conta
-    (horário do log menos `uptimeSec`) pras duas falhas: run #134 → processo começou ~18:20:19
-    UTC; run #135 → processo começou ~18:51:14 UTC. Diferença: **30min55s**, muito perto de um
-    intervalo redondo de 30 minutos. Com só 2 pontos não dá pra confirmar periodicidade (pode ser
-    coincidência), mas é forte o suficiente pra suspeitar de **algo no HOST rodando a cada ~30min
-    e reiniciando/recriando o `garimpo-app-1`** — não o cron deste repo, não o `deploy.yml`
-    (nenhum dos dois roda nesse intervalo). Candidatos a checar: crontab do usuário `deploy` e do
-    `root`, timers do systemd, alguma rotina de monitoramento/reconciliação do Dokploy (que
-    convive no mesmo Docker daemon) ou um watchdog de memória de terceiros instalado no VPS.
+  - **Terceiro ponto de dados, e o mais forte: `refresh.yml` #136 falhou disparado pelo
+    `schedule` normal do GitHub** (não por mim, não `workflow_dispatch`) às 19:17:58–19:20:05
+    UTC — quase **1h depois do último deploy**, prova de que é bug real de produção, não
+    artefato dos testes manuais desta sessão. Mesmo padrão de sempre: `hostname:
+    "169.254.31.101"` (link-local, terceiro IP diferente), `pid: 4`, `hasDatabaseUrl: false`,
+    `uptimeSec` ~88–104 → processo começou ~19:18:03 UTC.
+  - **Achado: os três boots inferidos ficam ~27–31 minutos um do outro, não é exatamente 30min
+    fixo.** run #134 → ~18:20:19 UTC; run #135 → ~18:51:14 UTC (Δ 30min55s); run #136 →
+    ~19:18:03 UTC (Δ 26min49s desde o #135). Faixa de 27–31 min, não um período cravado — pode
+    ser um timer com jitter (ex.: `OnUnitActiveSec` do systemd, que conta a partir do FIM do
+    ciclo anterior, cujo tempo de execução varia) ou uma rotina de monitoramento com intervalo
+    aproximado. Três pontos independentes (dois deles sem NENHUMA ação minha ou de deploy por
+    perto) são evidência forte o suficiente pra tratar isso como **muito provavelmente real**,
+    não coincidência: **algo no HOST reinicia/recria o `garimpo-app-1` a cada ~27–31min** — não
+    é o cron deste repo, não é o `deploy.yml` (nenhum dos dois roda nesse intervalo). Candidatos
+    a checar: crontab do usuário `deploy` e do `root`, timers do systemd, alguma rotina de
+    monitoramento/reconciliação do Dokploy (que convive no mesmo Docker daemon) ou um watchdog
+    de memória/uptime de terceiros já instalado no VPS (da HostGator ou de uma sessão anterior).
   - **Teoria alternativa (não exclui a de cima): pressão de memória.** As duas falhas aconteceram
     logo depois do step `chunk` (varredura pesada, 1500–1600 lotes raspados por rodada) — o `app`
     tem `mem_limit: 512m` (`docker-compose.yml`), um limite apertado pra esse volume de parsing
@@ -1491,11 +1501,13 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
        18:21:46), confirma a teoria de pressão de memória.
     3. `crontab -l` (usuário `deploy` e `root`, este com `sudo crontab -l -u root`) e
        `systemctl list-timers --all` — procurar qualquer rotina de ~30 minutos.
-    4. `journalctl -u docker --since "2026-09-19 18:50:00" --until "2026-09-19 18:54:00"` —
-       cobre exatamente a janela da falha do run #135.
-    5. Se a periodicidade de 30 min se confirmar (2 pontos não bastam), repetir o teste
-       novamente ~30 min depois de uma falha confirmada, sem nenhum deploy no meio, pra ver se
-       bate de novo.
+    4. `journalctl -u docker --since "2026-09-19 18:50:00" --until "2026-09-19 19:21:00"` —
+       cobre as janelas das falhas dos runs #135 (~18:51:14) E #136 (~19:18:03) numa passada só.
+    5. Periodicidade já tem 3 pontos (27–31min) — mais um teste serve só de confirmação extra,
+       não é mais essencial. Prioridade agora é achar a ROTINA (passo 3) e ler o monitor
+       (passo 1), que já cobre a janela do #135 mas não a do #136 (foi encerrado antes) — se
+       ainda estiver rodando, é isso; senão, religar o monitor e aguardar o próximo ciclo natural
+       (2×/dia, `10 3,17 * * *` UTC) ou disparar de novo pra pegar a janela ao vivo.
   - **Mitigação estrutural recomendada, independente da causa raiz** (não implementada, código
     ainda não tocado): dar ao `reverse_proxy app:3000` do Caddyfile um **health check ativo**
     (`health_uri`/`health_interval`, suportado pelo `reverse_proxy` do Caddy) contra um endpoint
