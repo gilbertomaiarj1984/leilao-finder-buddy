@@ -403,6 +403,14 @@ clicar/rodar, e como confirmar que deu certo antes de ir pro próximo.
 - [x] 10. Google OAuth para o novo domínio — precisou de um fix de código: atrás do Caddy o Nitro/h3 não confia em `X-Forwarded-Proto`, então `redirect_uri` saía como `http://` e o Google recusava mesmo com a URI certa cadastrada; `auth.server.ts` passou a priorizar `PUBLIC_BASE_URL` sobre `url.origin` (v0.68.2)
 - [x] 11. Validar antes do cutover — login Google, sessão LeilõesBR (vigias/lances ao vivo), upload de foto na Coleção (disco + Caddy servindo) e um ciclo completo do `backup` (dump → upload pro R2) confirmados funcionando. Achado nesta passada: o Postgres novo nunca recebe o schema sozinho — corrigido (`docker-entrypoint-initdb.d` + `supabase/setup.sql` copiado pelo `deploy.yml`, v0.68.4); banco desta instância aplicado manualmente uma vez, já que o volume tinha nascido antes do fix. Teste de restauração do backup ("backup não testado não é backup") feito: baixado o dump mais recente do R2, restaurado num Postgres descartável (`docker run postgres:17` isolado) via `psql -v ON_ERROR_STOP=1`, e conferido — as 12 tabelas do schema vieram todas e `collection_items` bateu com a linha esperada (a foto de teste). Container e dump de teste descartados depois
 - [x] 12. Fase 6 — cutover: banco de produção real restaurado e validado no VPS (dump do Supabase via connection pooler, 3020 lotes/122 Coleção/204 Wantlist/66 Compras), fotos da Coleção migradas do Supabase Storage (92 arquivos), cron reabilitado e validado com dados reais (IA processando de verdade), e passo 8 (merge `vps` → `main`) feito antes do fim da janela de 1 semana — decisão do usuário, com Supabase/Vercel mantidos de pé como rede de reversão. `deploy.yml` dispara em `vps` e `main`. Falta só: decidir quando desligar Supabase/Vercel de vez (sem prazo fixado) e remover a Authorized redirect URI antiga do Google Cloud Console nesse momento
+  > ⚠️ **Achado tardio (v0.69.27, 2026-09-20): o secret `APP_URL` do GitHub Actions NUNCA foi
+  > trocado pro domínio do VPS** — "cron reabilitado e validado" acima foi um teste manual
+  > da época, não uma checagem do secret em si. Resultado: possivelmente todo o cron 2×/dia
+  > desde o cutover bateu na Vercel (ainda com auto-deploy ligado neste repo), não no VPS —
+  > causa raiz do bug do `step=aieval` (ver `notas-desenvolvimento.md`, Pendências). **Ação
+  > pendente, só o usuário**: trocar `APP_URL` pra `https://143-95-214-240.sslip.io` em
+  > Settings → Secrets and variables → Actions. Lição pro próximo cutover: "cron validado"
+  > tem que checar o secret usado de verdade pelo workflow, não só um teste manual paralelo.
 
 ### 1. Contratar e preparar o VPS
 
