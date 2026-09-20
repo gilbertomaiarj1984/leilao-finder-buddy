@@ -1442,38 +1442,44 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.69.26     | **A janela limpa apareceu de graça**: o `schedule` normal do GitHub disparou a run `#140` às 08:30 UTC, **5 horas depois do último deploy** (bem mais que os 30-40min planejados) — reproduziu o bug de novo (`hostname: "169.254.51.151"`) e **o header `X-Debug-Upstream` continuou ausente**, mesmo com o reload confirmado ativo há 5h. Isso praticamente descarta de vez a suspeita (a) do v0.69.24/25 (reload não aplicado) — não sobra tempo suficiente pra explicar 5h de config "desatualizada". **Testado localmente e CONFIRMADO que `header_down` funciona normal**: Caddy real + backend fake devolvendo o corpo JSON idêntico ao bug (500 "Missing DATABASE_URL...") → o header aparece certinho na resposta E no log de acesso. Ou seja: **a suspeita (b) também cai** — não é um problema do Caddy pular `header_down` em erros. Testado também que `curl -D` + `--retry` (exatamente como o `refresh.yml` usa, sem `--retry-all-errors`) captura o header corretamente em todas as 4 tentativas contra um servidor de teste local. **Conclusão desta rodada**: com as duas hipóteses de Caddy descartadas por teste direto, a suspeita migra pra fora do Caddy inteiramente — a requisição que falha pode não estar nem chegando nesse Caddy/site block. Implementado `curl -v` na chamada do `aieval` (`refresh.yml`), capturando o handshake de rede real (IP conectado, certificado TLS servido) — testado localmente sob `set -euo pipefail` (sobrevive, mesmo padrão de proteção do v0.69.22). Isso deve mostrar, na próxima falha, se o GitHub Actions está de fato conectando no IP certo do VPS com o certificado certo, ou se há algo de DNS/roteamento do lado de fora que nem chega a ser problema do Caddy |
 | v0.69.27     | **🎯 CAUSA RAIZ ENCONTRADA — fecha a investigação do bug do `aieval` aberta desde v0.69.15.** A run `#141` reproduziu a falha de novo e o `curl -v` (v0.69.26) revelou tudo na primeira tentativa: `Connected to leilao-finder-buddy.vercel.app (64.29.17.195) port 443`, `subject: CN=*.vercel.app`. **O secret `APP_URL` do GitHub Actions nunca foi atualizado pro domínio do VPS no cutover da Fase 6** — continua apontando pra Vercel. Isso explica cada peça do mistério de uma vez: hostname link-local (`169.254.x.x`) é o padrão normal de runtime serverless da AWS Lambda por trás do Vercel; `hasDatabaseUrl: false` porque `DATABASE_URL` é uma env exclusiva do VPS, nunca cadastrada no painel da Vercel; o corpo do erro bate exatamente com o código atual porque **a Vercel nunca parou de fazer auto-deploy deste repo** (confirmado pelos comentários do bot `vercel[bot]` aparecendo em TODOS os PRs desta sessão, #192–197) — a Vercel está rodando o código mais recente, só que com o ambiente antigo (sem `DATABASE_URL`). O checklist de progresso do cutover (`docs/economia-fase-2-vps-unico.md`, item 12) foi marcado `[x]` dizendo "cron reabilitado e validado com dados reais" — mas isso validou o cron rodando MANUALMENTE contra o VPS na época; **o secret `APP_URL` em si, usado pelo `refresh.yml` de verdade, nunca foi trocado**. Ou seja: possivelmente NENHUMA chamada do cron 2×/dia desde o cutover (v0.69.13) chegou de fato no VPS — tudo foi pra Vercel, que ainda tem `SUPABASE_*`/Postgres antigo configurado o suficiente pra `chunk`/`enrich` (scraping + persistência) parecerem funcionar normalmente na maior parte do tempo, mas falha especificamente onde o código exige `DATABASE_URL` sem fallback (só a partir do `client.server.ts` pós-v0.64.0). **Ação necessária, só o usuário pode fazer** (secret do GitHub, fora do alcance de qualquer sessão): trocar o secret `APP_URL` em Settings → Secrets and variables → Actions pra `https://143-95-214-240.sslip.io` (o `APP_DOMAIN` real do VPS). Recomendado também, depois de confirmar que o cron passa a bater no VPS: desligar de vez o auto-deploy da Vercel pra este repo (Vercel → Project Settings → Git → desconectar), já que ele não serve mais nenhum propósito e só criou essa armadilha — e reforçar no checklist de cutover que "cron validado" precisa checar o secret em si, não só um teste manual |
 | v0.69.28     | **Secret `APP_URL` trocado pelo usuário pra `https://143-95-214-240.sslip.io` — confirmado que a troca funcionou.** Na run `#143` (`workflow_dispatch`), o primeiro `curl` do `refresh.yml` (`step=chunk`) já não conecta mais na Vercel — chega de fato no VPS —, mas volta **401 Unauthorized** de cara, sem nem chegar no `aieval`. Como `handleCron` (`cron.server.ts`) checa o `CRON_TOKEN` ANTES de qualquer outra coisa (inclusive antes do acesso a banco), um 401 nesse ponto só pode ser mismatch entre o `CRON_TOKEN` do secret do GitHub Actions e o `CRON_TOKEN` configurado no `.env` do VPS — **segundo secret que também nunca foi sincronizado no cutover da Fase 6**, mesma classe de problema do `APP_URL` (v0.69.27), só que só apareceu agora porque o `APP_URL` era o bloqueador anterior (a requisição nem chegava a testar o token). É evidência POSITIVA de que a correção do `APP_URL` está certa. Ação pendente, só o usuário pode fazer: comparar (sem colar o valor em texto puro no chat) o `CRON_TOKEN` de `/home/deploy/garimpo/.env` na VPS com o secret `CRON_TOKEN` em Settings → Secrets and variables → Actions, e igualar os dois |
+| v0.69.29     | **✅ CONFIRMAÇÃO FINAL — bug do `aieval` (aberto desde v0.69.15) totalmente resolvido.** Usuário igualou o `CRON_TOKEN` da VPS com o secret do GitHub Actions; a run `#144` (`workflow_dispatch`) completou TODOS os steps do `refresh.yml` com sucesso (chunk, enrich, aieval, aiident, market, condition, sales, reident, purchases, prune), sem nenhum 401/500 — inclusive o `step=prune`, que também tinha um diagnóstico de "só falha via GitHub Actions" aberto desde v0.69.4 e era a MESMA causa raiz. Prova definitiva no `aieval`: `x-debug-upstream: tcp/app:3000` + `conn-info: Connected to 143-95-214-240.sslip.io ... subject: CN=143-95-214-240.sslip.io` — o cron finalmente bate no `garimpo-app-1` de verdade, nunca mais na Vercel. Removida TODA a instrumentação temporária de diagnóstico (header `X-Debug-Upstream` no `Caddyfile`, `curl -v`/`-D` no `aieval`, `curl` cru no `prune` — ambos voltam a usar `call()` padrão) e TODAS as referências ativas à Vercel do código/docs (pedido do usuário assim que a correção fosse confirmada): `vercel.json` removido, `.vercel` tirado de `.gitignore`/`.dockerignore`, comentários em `vite.config.ts`/`discogs.server.ts`/`leiloesbr-scrape.server.ts`/`lot-ai.server.ts`/`lot-ident.server.ts`/`lot-sales.server.ts` reescritos sem menção à Vercel, `CLAUDE.md` atualizado (cutover já concluído, não "falta a Fase 6"), `.env.example` corrigido (chaves de IA/Discogs são lidas do `.env` do VPS, não mais "Environment Variables da Vercel"). Mantido só o registro histórico da migração (`economia-fase-2-vps-unico.md`/`economia-migracao.md`/`README.md`) — não é instrução ativa, é o porquê da arquitetura atual |
 
 ## Pendências
 
 **Produto / código (em aberto)**
 
-- **✅ RESOLVIDO (v0.69.27/28) — `step=aieval` voltando 500 "Missing DATABASE_URL" (aberto desde
-  v0.69.15).** Causa raiz: **o secret `APP_URL` do GitHub Actions nunca foi atualizado pro
-  domínio do VPS no cutover da Fase 6** — continuava apontando pra Vercel
-  (`leilao-finder-buddy.vercel.app`), confirmado com `curl -v` (ver Histórico de versões,
-  v0.69.27, pra investigação completa — dezenas de teorias de Docker/rede/Caddy testadas e
-  descartadas com prova direta antes de chegar aqui). A Vercel nunca parou de receber auto-deploy
-  deste repo, então rodava o código atual — só que sem `DATABASE_URL` (env exclusiva do VPS).
-  Secret trocado pelo usuário pra `https://143-95-214-240.sslip.io` e confirmado funcionando na
-  run `#143` (v0.69.28) — a requisição já não vai mais pra Vercel.
-  - Depois de confirmar (algumas rodadas de cron 2×/dia sem reproduzir a falha original),
-    considerar desconectar o auto-deploy da Vercel pra este repo de vez (Project Settings →
-    Git) — não serve mais nenhum propósito e é exatamente o que causou essa armadilha.
-  - Mitigações que ficam valendo, mesmo com a causa raiz resolvida: `/api/health`
+- **✅ RESOLVIDO DE VEZ (v0.69.27–29) — `step=aieval` voltando 500 "Missing DATABASE_URL" (aberto
+  desde v0.69.15).** Causa raiz: **dois secrets do GitHub Actions nunca foram atualizados pro
+  VPS no cutover da Fase 6** — `APP_URL` continuava apontando pra Vercel
+  (`leilao-finder-buddy.vercel.app`, corrigido v0.69.27/28) e, uma vez corrigido esse, apareceu
+  o segundo: `CRON_TOKEN` também divergente entre o secret do GitHub e o `.env` do VPS (401,
+  achado/corrigido v0.69.28/29). A Vercel nunca parou de receber auto-deploy deste repo, então
+  rodava o código atual — só que sem `DATABASE_URL` (env exclusiva do VPS). **Confirmado
+  resolvido de vez na run `#144`**: todos os steps do `refresh.yml` completam com sucesso,
+  `aieval` responde 200 com `conn-info` apontando pro domínio real do VPS
+  (`143-95-214-240.sslip.io`), nunca mais pra Vercel (ver Histórico de versões, v0.69.27–29,
+  pra investigação completa).
+  - Mitigação que fica valendo, mesmo com a causa raiz resolvida: `/api/health`
     (`src/lib/health.server.ts`) + `health_uri` ativo no Caddy (v0.69.21) — proteção estrutural
     de baixo custo, útil independente da causa.
+  - Instrumentação temporária de diagnóstico **removida** (v0.69.29): header `X-Debug-Upstream`
+    no `Caddyfile` e `-v`/`-D` na chamada do `aieval`/`prune` em `refresh.yml` (v0.69.4/21/26) —
+    nenhum dos dois é mais necessário, o tráfego já vai pro VPS de verdade.
 
-- **🔴 EM ABERTO (achado em v0.69.28) — `CRON_TOKEN` do GitHub Actions não bate com o do VPS.**
-  Consequência direta de corrigir o `APP_URL`: agora a requisição chega no VPS de verdade, mas
-  volta 401 Unauthorized logo no primeiro step (`chunk`) — mesma classe de problema do
-  `APP_URL` (secret nunca sincronizado no cutover da Fase 6), só que só ficou visível agora que
-  o bloqueador anterior saiu do caminho. **Ação pendente, só o usuário pode fazer**: comparar
-  (sem colar o valor em texto puro no chat) `CRON_TOKEN` de `/home/deploy/garimpo/.env` na VPS
-  com o secret `CRON_TOKEN` em Settings → Secrets and variables → Actions, e igualar os dois.
-  - Instrumentação temporária a **remover** depois que o secret for trocado e confirmado: o
-    header `X-Debug-Upstream` no `Caddyfile` e o `-v`/`-D` na chamada do `aieval` em
-    `refresh.yml` (v0.69.21/26) — nenhum dos dois é mais necessário uma vez que o tráfego
-    realmente for pro VPS.
+- **✅ FEITO (v0.69.29) — remoção de TODAS as referências ativas à Vercel do código/docs**,
+  pedido explícito do usuário assim que o bug do `aieval` foi confirmado resolvido. Removidos:
+  `vercel.json`, entrada `.vercel` em `.gitignore`/`.dockerignore`, menção a `vercel.app` no
+  User-Agent do Discogs (`discogs.server.ts`), comentários citando Vercel em
+  `vite.config.ts`/`leiloesbr-scrape.server.ts`/`lot-ai.server.ts`/`lot-ident.server.ts`/
+  `lot-sales.server.ts`, instruções desatualizadas em `.env.example` (chaves de IA/Discogs
+  agora documentadas como lidas do `.env` do VPS, não mais "Environment Variables da Vercel"),
+  e o parágrafo do `CLAUDE.md` que ainda dizia "falta a Fase 6" (cutover já concluído desde
+  v0.69.13). Mantido de propósito o registro **histórico** da migração (`README.md`,
+  `docs/economia-fase-2-vps-unico.md`, `docs/economia-migracao.md`,
+  `docs/economia-fase-1-egress-e-cpu.md`) — essas menções não são instrução ativa, são o
+  porquê da arquitetura atual (VPS único). Recomendado ao usuário, como próximo passo fora do
+  alcance de qualquer sessão: desconectar de vez o auto-deploy da Vercel pra este repo (Vercel
+  → Project Settings → Git) — não serve mais nenhum propósito.
 
   _(Itens mais antigos desta seção — lance pelo app, upload de foto em massa, peso da sondagem
   na nota e imagem pelo CDN do catálogo — foram **cancelados/descartados**.)_

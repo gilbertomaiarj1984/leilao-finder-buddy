@@ -21,12 +21,12 @@ const MAX_PAGES = 150; // teto de páginas por varredura (janela maior = mais p�
 let memCache: { at: number; days: string[]; lots: VinylLot[]; updatedAt: string | null } | null =
   null;
 
-// TTL curto para pular a releitura da tabela `lots` (janela inteira) quando a mesma
-// instância de function atende chamadas em sequência rápida — é o caso do laço do cron
+// TTL curto para pular a releitura da tabela `lots` (janela inteira) quando o mesmo
+// processo atende chamadas em sequência rápida — é o caso do laço do cron
 // (`aieval`/`aiident`/`market` chamam `scrapeVinylLots(false)` a cada iteração) e de
-// navegação normal no app. Reduz egress do Supabase / Active CPU da Vercel sem mudar o
-// resultado visível (a mesma janela não muda de um segundo para o outro). Best-effort: se
-// a instância for fria (memCache vazio), cai no caminho normal de sempre.
+// navegação normal no app. Reduz consultas ao Postgres sem mudar o resultado visível
+// (a mesma janela não muda de um segundo para o outro). Best-effort: se o cache em
+// memória estiver vazio (ex.: logo após um restart), cai no caminho normal de sempre.
 const SNAPSHOT_TTL_MS = 30_000;
 
 function listUrl(page: number): string {

@@ -621,8 +621,9 @@ const REIDENT_CAP = 25;
  *
  * **Egress (Fase 1)**: no modo GLOBAL, o alvo da IA vem de uma RPC de anti-join no banco
  * (`getUnidentifiedLotSales`) em vez de baixar `lot_sales`+`lot_ident` inteiras a cada chamada —
- * essa era a causa raiz do egress do Supabase e do Active CPU da Vercel (ver
- * docs/economia-fase-1-egress-e-cpu.md). A padronização (2) ainda lê o histórico inteiro (precisa
+ * essa era a causa raiz do consumo excessivo de rede/CPU nos free tiers usados antes da
+ * migração pra VPS (ver docs/economia-fase-1-egress-e-cpu.md). A padronização (2) ainda lê o
+ * histórico inteiro (precisa
  * comparar grafias de TODAS as vendas), mas sem `orig_text` — a coluna mais pesada por linha, que
  * essa etapa não usa.
  */
