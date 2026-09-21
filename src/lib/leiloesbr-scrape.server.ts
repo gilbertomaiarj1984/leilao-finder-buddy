@@ -132,11 +132,25 @@ function sortLots(lots: VinylLot[]): VinylLot[] {
 }
 
 /**
- * Percorre as páginas (op=3, decrescentes por data — os dias mais próximos ficam
- * nas ÚLTIMAS páginas) coletando lotes de vinil que passem em `keep`, parando
- * assim que uma página inteira já está além de `stopDay`.
+ * Percorre as páginas (op=3) coletando lotes de vinil que passem em `keep`, até
+ * `MAX_PAGES` ou o fim da listagem.
+ *
+ * ⚠️ NÃO paramos mais cedo ao achar uma página cujo dia mínimo já passou de
+ * `stopDay` — a suposição de que a ordenação das páginas é estritamente
+ * monotônica por data (comentário antigo: "os dias mais próximos ficam nas
+ * ÚLTIMAS páginas") não se sustenta na prática. Achado real (2026-09-21): o dia
+ * 24/9 aparecia com 0 lotes na ferramenta enquanto 21/22/23/25 tinham centenas
+ * cada, e casas confirmadas com lotes reais de vinil nesse dia ("Peça Única
+ * Colecionismo", "Livros Universo") simplesmente não apareciam. Causa: leilões
+ * ficam intercalados na listagem (não ordenados só por data), então uma página
+ * com `minDay > stopDay` não garante que TODAS as páginas seguintes também
+ * estejam fora da janela — só que aquela página específica está. Parar ali
+ * pulava para sempre as páginas restantes (nunca escaneadas), mesmo que
+ * contivessem dias dentro da janela. `MAX_PAGES` (150) já é a proteção contra
+ * varredura descontrolada; o filtro por `dayKey`/`keep` por item continua
+ * sendo quem decide o que entra, não mais um corte por página.
  */
-async function scrapePages(keep: (lot: VinylLot) => boolean, stopDay: string): Promise<VinylLot[]> {
+async function scrapePages(keep: (lot: VinylLot) => boolean): Promise<VinylLot[]> {
   const firstHtml = await fetchPage(1);
   const total = lastPage(firstHtml);
   const byId = new Map<string, VinylLot>();
@@ -155,8 +169,6 @@ async function scrapePages(keep: (lot: VinylLot) => boolean, stopDay: string): P
       if (looksNonVinyl(lot.title)) continue;
       if (keep(lot)) byId.set(lot.id, lot);
     }
-    const minDay = lots.reduce((min, lot) => (lot.dayKey < min ? lot.dayKey : min), "9999-99-99");
-    if (minDay > stopDay) break;
   }
   return [...byId.values()];
 }
@@ -494,10 +506,7 @@ export async function scrapeVinylLots(
 
   let fresh: VinylLot[] = [];
   try {
-    fresh = await scrapePages(
-      (lot) => lot.dayKey >= windowStart && lot.dayKey <= windowEnd,
-      windowEnd,
-    );
+    fresh = await scrapePages((lot) => lot.dayKey >= windowStart && lot.dayKey <= windowEnd);
   } catch (error) {
     console.error("[leiloesbr] varredura falhou; usando o que já temos", error);
   }
@@ -530,7 +539,7 @@ export async function refreshVinylDay(
 
   let fresh: VinylLot[] = [];
   try {
-    fresh = await scrapePages((lot) => lot.dayKey === day, day);
+    fresh = await scrapePages((lot) => lot.dayKey === day);
   } catch (error) {
     console.error("[leiloesbr] varredura do dia falhou", error);
   }
@@ -573,9 +582,13 @@ export async function scrapeVinylChunk(
     start = total;
   }
 
+  // ⚠️ NÃO paramos mais cedo ao achar uma página cujo dia mínimo já passou da janela
+  // (ver `scrapePages` acima, mesmo achado/fix) — a listagem intercala leilões, não é
+  // estritamente ordenada por data, então uma página "fora da janela" não garante que
+  // as páginas seguintes (números menores) também estejam. Sempre varremos até `end`
+  // (ou `page=1`); o filtro por `dayKey` dentro do loop decide o que entra.
   const end = Math.max(start - size + 1, 1);
   const byId = new Map<string, VinylLot>();
-  let passedWindow = false;
   for (let page = start; page >= end; page -= 1) {
     let html: string;
     try {
@@ -589,12 +602,6 @@ export async function scrapeVinylChunk(
       if (lot.dayKey < windowStart || lot.dayKey > windowEnd) continue;
       if (looksNonVinyl(lot.title)) continue;
       byId.set(lot.id, lot);
-    }
-    // Páginas decrescentes por data: ao passar do fim da janela, terminamos.
-    const minDay = lots.reduce((min, lot) => (lot.dayKey < min ? lot.dayKey : min), "9999-99-99");
-    if (minDay > windowEnd) {
-      passedWindow = true;
-      break;
     }
   }
 
@@ -610,7 +617,7 @@ export async function scrapeVinylChunk(
     }
   }
 
-  const nextPage = passedWindow || end <= 1 ? null : end - 1;
+  const nextPage = end <= 1 ? null : end - 1;
   if (nextPage == null) {
     try {
       await pruneOutOfWindow(windowStart, windowEnd);
