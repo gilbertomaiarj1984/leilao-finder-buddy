@@ -484,6 +484,19 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await findLotDebug(q));
     }
 
+    // Diagnóstico nível 2 (`findlot` não achou nada na categoria vinil): busca por
+    // texto livre (`pesquisa`, filtrado no servidor) e OPCIONALMENTE sem travar a
+    // categoria (`lockToVinyl=0`) — acha o mesmo idLeilao em QUALQUER categoria da
+    // LeilõesBR, pra confirmar se está categorizado fora de "Disco de Vinil".
+    if (step === "findlot2") {
+      const { findLotSearch } = await import("./leiloesbr-scrape.server");
+      const idLeilao = url.searchParams.get("idLeilao")?.trim();
+      const pesquisa = url.searchParams.get("pesquisa")?.trim() ?? "";
+      const lockToVinyl = url.searchParams.get("lockToVinyl") !== "0";
+      if (!idLeilao) return json({ error: "informe ?idLeilao=<...>&pesquisa=<termo>" }, 400);
+      return json(await findLotSearch(idLeilao, pesquisa, lockToVinyl));
+    }
+
     // Fase 5 da migração para VPS (docs/economia-fase-2-vps-unico.md): poda
     // `seen_auctions` (leilões com vendas já capturadas e fora da janela de retenção).
     // Barato — 1 SELECT + 1 DELETE por rodada; roda 1x por execução do cron.
@@ -495,7 +508,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     return json(
       {
         error:
-          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|purchases|backfillbundle|compressimages|prune|salesdebug|catdebug|findlot)",
+          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|purchases|backfillbundle|compressimages|prune|salesdebug|catdebug|findlot|findlot2)",
         // Diagnóstico (v0.69.4): step=prune vinha falhando com 400 só quando chamado pelo
         // GitHub Actions (curl direto do VPS sempre respondia 200). Sem log de acesso no
         // Caddy nem log de aplicação chegando no `docker logs` (Nitro usa logger próprio,
