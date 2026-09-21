@@ -1125,8 +1125,16 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         }
       }
       saveAccum(WATCHED_ACCUM_STORAGE_KEY, watchedAccumRef.current!);
+      // NÃO invalida ["vinyl-watched"] aqui: a conta do LeilõesBR pode demorar a refletir o
+      // toggle que acabou de ser confirmado (ver `toggleWatchOnSite`), e um refetch imediato
+      // trazia a lista "atrasada" (sem o lote recém-vigiado, ou ainda com o recém-desvigiado) —
+      // o `mergeWatchedAccum` então desfazia a atualização otimista acima (apagava o vigiado
+      // novo por "sumiu do fresh e o leilão não terminou", ou reinseria o desvigiado por ainda
+      // vir no fresh), fazendo o card voltar ao estado errado mesmo com o LeilõesBR já
+      // confirmado. O estado que acabamos de gravar já é autoritativo (veio da resposta do
+      // próprio endpoint de toggle); o próximo refetch natural (`staleTime`, refresh manual etc.)
+      // reconcilia quando a conta do LeilõesBR já tiver atualizado.
       queryClient.setQueryData(watchedQuery.queryKey, [...watchedAccumRef.current!.values()]);
-      void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
       toast.success(result.watched ? "Lote vigiado no LeilõesBR" : "Vigia removida no LeilõesBR");
     },
     onError: (error: Error) => toast.error(error.message || "Não foi possível sincronizar a vigia"),
