@@ -227,6 +227,77 @@ export async function findLotDebug(
   return { query, totalPages: total, scannedPages: scanned, matches };
 }
 
+function listUrlSearch(page: number, pesquisa: string, lockToVinyl: boolean): string {
+  const params = new URLSearchParams({
+    pesquisa,
+    op: "3",
+    v: String(PER_PAGE),
+    b: "0",
+    pag: String(page),
+  });
+  const base = `${BASE_URL}/busca_andamento.asp?${params.toString()}`;
+  return lockToVinyl ? `${base}&tp=${VINYL_CATEGORY}` : base;
+}
+
+async function fetchPageSearch(
+  page: number,
+  pesquisa: string,
+  lockToVinyl: boolean,
+): Promise<string> {
+  return await publicFetch(listUrlSearch(page, pesquisa, lockToVinyl), {});
+}
+
+/**
+ * Diagnóstico nível 2: para o caso em que `findLotDebug` NÃO achou o idLeilao em
+ * NENHUMA página da categoria "Disco de Vinil" (mesmo a casa marcando o item como
+ * vinil no catálogo DELA — categoria interna da casa, não necessariamente a mesma
+ * tag que ela manda pra LeilõesBR). Aqui usamos `pesquisa` (busca por texto livre do
+ * próprio site, filtrada no SERVIDOR — mantém o total de páginas viável) e
+ * OPCIONALMENTE sem travar `tp=` (categoria), pra achar o mesmo `idLeilao` em
+ * QUALQUER categoria. Se achar aqui com `lockToVinyl:false` mas `findLotDebug` não
+ * achou nada, confirma que o item está categorizado FORA de "Disco de Vinil" na
+ * LeilõesBR (decisão da casa/plataforma, não um bug nosso). Não persiste nada.
+ */
+export async function findLotSearch(
+  idLeilao: string,
+  pesquisa: string,
+  lockToVinyl: boolean,
+): Promise<{
+  idLeilao: string;
+  pesquisa: string;
+  lockToVinyl: boolean;
+  totalPages: number;
+  scannedPages: number;
+  matches: FindLotMatch[];
+}> {
+  const firstHtml = await fetchPageSearch(1, pesquisa, lockToVinyl);
+  const total = lastPage(firstHtml);
+  const matches: FindLotMatch[] = [];
+  let scanned = 0;
+  for (let page = total; page >= 1 && scanned < MAX_PAGES; page -= 1) {
+    scanned += 1;
+    let html: string;
+    try {
+      html = await fetchPageSearch(page, pesquisa, lockToVinyl);
+    } catch {
+      continue;
+    }
+    for (const lot of parseCards(html)) {
+      if (lot.idLeilao !== idLeilao) continue;
+      matches.push({
+        page,
+        idLeilao: lot.idLeilao,
+        house: lot.house,
+        title: lot.title,
+        dayKey: lot.dayKey,
+        url: lot.url,
+        wouldKeep: !looksNonVinyl(lot.title),
+      });
+    }
+  }
+  return { idLeilao, pesquisa, lockToVinyl, totalPages: total, scannedPages: scanned, matches };
+}
+
 /** Faz upsert dos lotes no banco e registra os leilões vistos (best-effort). */
 // ⚠️ O upsert de `lots` abaixo NÃO tem try/catch ao redor de si — propositalmente.
 // `supabaseAdmin.from(...).upsert(...)` (o shim em `db-query.server.ts`) NUNCA lança:

@@ -1444,6 +1444,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.69.28     | **Achado mais fundo do bug de perda de lotes**: `persistLots` (`leiloesbr-scrape.server.ts`) fazia `await supabaseAdmin.from("lots").upsert(...)` sem checar `{ error }` — o shim `db-query.server.ts` tem contrato de NUNCA lançar (erro do Postgres vira `{ data: null, error }` resolvido, igual PostgREST), então o `try/catch` ao redor da chamada nunca disparava e `scrapeVinylChunk`/`enrichMissingLotes` reportavam sucesso mesmo quando nada foi gravado (ex.: rodando contra ambiente sem `DATABASE_URL`, caso do v0.69.27). Diferente do `aieval` (que sempre checa `error` e relança, por isso é o único que estourava 500), `chunk`/`enrich` mascaravam a falha por trás de um HTTP 200 com `scraped`/`updated` contando o que foi RASPADO do site, não o que foi GRAVADO no banco — cron rodando 2×/dia desde o cutover da Fase 6 sem persistir um lote sequer, sem nenhum log. Corrigido: `persistLots` checa `error` e relança (try/catch morto removido); `scrapeVinylChunk`/`enrichMissingLotes` devolvem `persisted: boolean`; `refresh.yml` aborta a run (+ ping de falha no healthchecks.io) em `persisted:false` em vez de seguir o laço até o fim. Não troca o secret `APP_URL` (v0.69.27, ainda pendente só o usuário) — só torna a perda visível em vez de silenciosa a partir de agora |
 | v0.69.30     | **Confirmado em produção que o `APP_URL` já tinha sido trocado pelo usuário** (runs `#151`/`#152` do `refresh.yml`, 2026-09-21: todos os steps verdes, `chunk`/`enrich` com `persisted:true`, `aieval` conectando direto no domínio do VPS). Ao validar os números pós-fix, o usuário achou um bug DIFERENTE e mais antigo (não causado pela migração — código já existia em 10/09, bem antes da Fase 1): a varredura geral (`scrapePages`/`scrapeVinylChunk`) parava de escanear páginas assim que achava uma cujo dia mínimo já tinha passado da janela, assumindo ordenação estritamente monotônica por data — mas a listagem intercala leilões, então isso deixava dias inteiros de fora sem nenhum log (dia 24/9 com 0 lotes cercado de dias com centenas; casa Abreu Colecionismo com só 125 dos 198 lotes reais do dia 22, confirmados no catálogo dela e por casas com histórico normal na base como RT Leilões e Artes). Reproduzido de forma determinística: duas rodadas completas do cron pararam exatamente no mesmo intervalo de páginas. Corrigido: removido o corte antecipado por `minDay` em `scrapePages`/`scrapeVinylChunk` — a varredura agora sempre vai até `MAX_PAGES`/`page=1`, só o filtro por `dayKey` item a item decide o que entra na janela |
 | v0.69.31     | Validado em produção que o fix de paginação (v0.69.30) funcionou (run `#153`: sequência de páginas `93→78→63→48→33→18→3→null`, cobrindo o intervalo antes pulado). Mesmo assim o usuário reportou um lote específico do dia 24/9 ainda ausente (casa "Coisa Antiga Leilões", idLeilao 65152) — caso NOVO, de natureza diferente do bug de paginação já corrigido. Sem acesso de rede aos sites de leilão nem ao banco de produção no ambiente de dev, criada ferramenta de diagnóstico pra decidir se é categorização da própria LeilõesBR (fora do nosso controle) ou um filtro nosso descartando por engano: `findLotDebug` (`leiloesbr-scrape.server.ts`) + `step=findlot&q=<idLeilao ou casa>` (`cron.server.ts`) varre toda a listagem geral (mesma categoria, sem filtro de dia/`looksNonVinyl`) e reporta cada ocorrência encontrada; novo workflow `debug-cron.yml` (`workflow_dispatch`, input `querystring`) chama qualquer step de diagnóstico do `/api/cron` avulso, sem rodar a cadeia pesada do `refresh.yml`. Investigação em andamento — ver Pendências |
+| v0.69.32     | `step=findlot&q=65152` rodado em produção: varreu as 93 páginas da categoria "Disco de Vinil" da LeilõesBR de ponta a ponta e não achou NENHUMA ocorrência do leilão 65152 — descarta bug nosso (paginação/filtro/parse) pra esse caso específico. Usuário então trouxe achado novo: no catálogo PRÓPRIO da casa "Coisa Antiga Leilões", o leilão 65152 tem 401 itens, 319 categorizados como "Disco de vinil" pelo filtro do site DELA — ou seja, a categorização interna da casa não está batendo com a tag `tp=` que a nossa busca geral usa (ou não chega na LeilõesBR). Adicionado `findLotSearch`/`step=findlot2&idLeilao=<...>&pesquisa=<termo>&lockToVinyl=0\|1` (`leiloesbr-scrape.server.ts`/`cron.server.ts`): busca por texto livre (filtrado no servidor, mantém o total de páginas viável) e opcionalmente SEM travar a categoria, pra achar o mesmo idLeilao em qualquer categoria da LeilõesBR. Investigação em andamento — ver Pendências |
 
 ## Pendências
 
@@ -1528,23 +1529,32 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
   sido percebido porque, até a persistência ser corrigida, o app servia um retrato congelado
   de dados antigos e ninguém conferia a distribuição por dia de uma varredura fresca dia a dia.
 
-- **🔎 EM INVESTIGAÇÃO (2026-09-21, v0.69.31) — mesmo após o fix de paginação acima, usuário
+- **🔎 EM INVESTIGAÇÃO (2026-09-21, v0.69.31/32) — mesmo após o fix de paginação acima, usuário
   reportou um lote específico do dia 24/9 ainda ausente da ferramenta**: casa "Coisa Antiga
   Leilões", `https://www.coisaantigaleiloes.com.br/catalogo.asp?Num=65152` (idLeilao 65152).
   A run `#153` (v0.69.30, pós-fix) já varreu a listagem geral até o fim (93→3→null, cobrindo
   o intervalo antes pulado), então o caso muda de natureza: não é mais o corte antecipado por
-  página. Hipóteses em aberto: (a) a casa categoriza o item fora de "Disco de vinil" (`tp=`) na
-  própria LeilõesBR — dado de fora, nada a corrigir no nosso scraper; (b) o item está na
-  categoria certa mas cai em algum filtro nosso (`looksNonVinyl`, parse de `dayKey` via
-  `parseInfoLine`, etc.) — bug nosso, corrigível. **Ferramenta nova pra decidir isso sem precisar
-  de acesso de rede/banco no ambiente de dev**: `step=findlot&q=<idLeilao ou pedaço do nome da
-  casa/URL>` (`leiloesbr-scrape.server.ts#findLotDebug`, roteado em `cron.server.ts`) — varre
-  TODAS as páginas da listagem geral (mesma categoria travada, sem filtro de dia/
-  `looksNonVinyl`) e devolve cada ocorrência encontrada (página, casa, título, `dayKey`, e se
-  passaria em `looksNonVinyl`). Chamada avulsa via novo workflow `debug-cron.yml`
-  (`workflow_dispatch` com input `querystring`, ex.: `step=findlot&q=65152`) — não roda a cadeia
-  pesada do `refresh.yml`, só uma chamada HTTP ao `/api/cron`. Próximo passo: rodar
-  `step=findlot&q=65152` em produção e ler o resultado.
+  página. **Ferramenta de diagnóstico** (`findLotDebug`, `leiloesbr-scrape.server.ts`,
+  `step=findlot&q=<idLeilao ou casa/URL>` em `cron.server.ts`; chamada avulsa via novo workflow
+  `debug-cron.yml`, `workflow_dispatch` com input `querystring`, sem rodar a cadeia pesada do
+  `refresh.yml`) rodada em produção (`step=findlot&q=65152`): varreu as 93 páginas da categoria
+  "Disco de Vinil" da LeilõesBR de ponta a ponta e **não achou NENHUMA ocorrência** do leilão
+  65152 (`matches: []`) — descarta bug nosso (paginação/`looksNonVinyl`/parse de `dayKey`) pra
+  esse caso: o item simplesmente não está na categoria vinil da LeilõesBR.
+  ⚠️ **Achado adicional do usuário que reabre a investigação**: no catálogo PRÓPRIO da casa
+  (`coisaantigaleiloes.com.br/catalogo.asp?Num=65152`), o leilão tem 401 itens, dos quais **319
+  categorizados como "Disco de vinil"** (e 82 como "Música") pelos filtros do site DELA. Ou seja,
+  a casa marca esses 319 itens como vinil no catálogo próprio, mas nenhum deles aparece na busca
+  geral da LeilõesBR filtrada por `tp="Disco de vinil"` — a categoria interna da casa não está
+  batendo com a tag que chega na LeilõesBR (ou não chega nenhuma). **Ferramenta nível 2**
+  (`findLotSearch`, `step=findlot2&idLeilao=<...>&pesquisa=<termo>&lockToVinyl=0|1`): busca por
+  texto livre (`pesquisa`, filtrado no servidor — mantém o total de páginas viável mesmo sem
+  travar categoria) e OPCIONALMENTE sem o `tp=` de categoria, pra achar o mesmo idLeilao em
+  QUALQUER categoria da LeilõesBR — se achar com `lockToVinyl=0` mas não com `findlot`, confirma
+  categorização de fora (nada a corrigir no scraper); se não achar em lugar nenhum, o leilão
+  pode nem estar exposto na busca geral (ex.: leilão futuro que só aparece perto da data, ou
+  fora da plataforma agregadora). Próximo passo: rodar `step=findlot2` em produção com um termo
+  de busca real (ex. um título de item visto no catálogo da casa) e decidir com o resultado.
 
   _(Itens mais antigos desta seção — lance pelo app, upload de foto em massa, peso da sondagem
   na nota e imagem pelo CDN do catálogo — foram **cancelados/descartados**.)_
