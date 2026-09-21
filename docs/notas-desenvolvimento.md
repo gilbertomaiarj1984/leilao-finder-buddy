@@ -1449,6 +1449,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.69.33     | **Fechamento do bug do `aieval` (v0.69.27/29) e limpeza pós-migração**: removida TODA a instrumentação temporária de diagnóstico usada pra caçar o bug (header `X-Debug-Upstream` no `Caddyfile`, `curl -v`/`-D` no `aieval`/`prune` do `refresh.yml` — ambos voltam a usar `call()` padrão) e TODAS as referências ativas à Vercel do código/docs (pedido do usuário assim que a correção foi confirmada em produção): `vercel.json` removido, `.vercel` tirado de `.gitignore`/`.dockerignore`, comentários em `vite.config.ts`/`discogs.server.ts`/`leiloesbr-scrape.server.ts`/`lot-ai.server.ts`/`lot-ident.server.ts`/`lot-sales.server.ts` reescritos sem menção à Vercel, `CLAUDE.md` atualizado (cutover já concluído, não "falta a Fase 6"), `.env.example` corrigido (chaves de IA/Discogs são lidas do `.env` do VPS, não mais "Environment Variables da Vercel"). Mantido só o registro histórico da migração (`economia-fase-2-vps-unico.md`/`economia-migracao.md`/`README.md`) — não é instrução ativa, é o porquê da arquitetura atual. Usuário confirmou nesta janela que também já removeu o auto-deploy da Vercel pro repo e a Authorized redirect URI antiga (Google Cloud Console) — ambas ações fora do alcance de qualquer sessão |
 | v0.69.34     | `step=findlot2&idLeilao=65152&pesquisa=Ray Charles&lockToVinyl=0` rodado em produção: achou o item de primeira (1 página, texto filtrado no servidor) — leilão 65152 está saudável na listagem geral (dayKey correto, passaria no filtro de vinil), só não está marcado com `tp="Disco de Vinil"`. Confirma categorização de fora, fora do nosso scraper. Usuário trouxe pista nova: no catálogo da casa, o filtro "Disco de vinil" grava `tipo=\|129\|` (código numérico local), diferente do `tp=` hex da LeilõesBR — podem ser esquemas de categoria diferentes. Adicionado `findLotByCategory`/`step=findlotcat&idLeilao=<...>&tp=<...>&pesquisa=<termo>` (testa qualquer `tp=` cru direto na busca geral) e `findLotRawCard`/`step=findlotraw` (HTML bruto do card, pra quando os campos já extraídos não bastarem). Investigação em andamento — ver Pendências |
 | v0.69.35     | `step=findlotcat&tp=\|129\|` confirmado: código numérico da casa não é reconhecido pela busca geral da LeilõesBR. Usuário achou a saída: a página `busca_andamento.asp?tp=<vinil>` mostra uma seção "GALERIAS" (casas com código `ga=<n>` que filtra só aquela casa) — plano aprovado pra usar isso como mecanismo de DESCOBERTA. Achado central da pesquisa: `fetchCatalogData(domain, idLeilao)` (`leiloesbr-catalog.server.ts`, já existente) já busca o catálogo INTEIRO de um leilão conhecido tentando `Tipo=129` (o mesmo código da casa) e caindo pro catálogo completo se vier vazio — ou seja, o problema é só descobrir o `idLeilao`, não buscar os lotes dele. Fase 1 (diagnóstico, ainda não validada em produção): `listGalleries`/`step=galleries[&tp=<...>\|tp=none]` (tenta extrair a seção GALERIAS, sempre devolve `rawSnippet` do HTML bruto pra ajustar o parser) e `step=catalogdebug&domain=<...>&idLeilao=<...>` (chama `fetchCatalogData` direto, isola descoberta de extração). Investigação em andamento — ver Pendências |
+| v0.69.36     | `step=galleries` rodado em produção contra v0.69.35: `galleries: []` (parser regex não achou nada), mas o `rawSnippet` confirmou a estrutura real do HTML — `<ul id="comboGalerias">` com um `<li>` por galeria, checkbox (`value="<código>"`) e `<label>` (nome) em `<div>`s irmãos, não aninhados; o regex antigo só olhava o texto logo após o `<input>` e sempre batia em espaço em branco entre tags. `listGalleries` reescrita pra usar `node-html-parser` (`querySelectorAll`/`querySelector`, mesmo parser de `parseCard`/`parseCards`) — `#comboGalerias li` com fallback pra `.lista-subcats-item`, extrai `input[value]` + `label` por item. `rawSnippet` aumentado pra 8000 chars. Ainda não validado em produção — ver Pendências |
 
 ## Pendências
 
@@ -1610,6 +1611,27 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
   produção, ler o `rawSnippet`, confirmar/ajustar o parser e checar se "Coisa Antiga Leilões"
   aparece na lista — reportar ao usuário e AGUARDAR antes de implementar a Fase 2 (enumeração
   por galeria).
+  ✅ **Rodado em produção (v0.69.35)**: `galleries: []` (parser heurístico por regex não achou
+  NADA), mas o `rawSnippet` devolvido confirmou a estrutura REAL do HTML — um
+  `<ul id="comboGalerias">` com um `<li class="lista-subcats-item">` por galeria, cada um com
+  `<input type="checkbox" class="ga" value="<código>" name="gaval" id="ga<n>">` e um
+  `<label for="ga<n>">Nome da Casa</label>` num `<div>` IRMÃO (não aninhado dentro do mesmo
+  elemento do checkbox) — por isso o regex antigo, que só olhava o primeiro `>texto<` logo
+  após o `<input>`, sempre batia em espaço em branco entre tags e descartava todas as
+  galerias. Lista alfabética confirmada visível no trecho: Abreu Colecionismo (546), Alberto
+  Lopes - Leiloeiro Público (199), Antiguera Leilões (610), Antiques MP (886), Bastos Leilões
+  (536), Baú das Antiguidades (1032), Baú do Gordo (1093), Bolorini Leilões (166), Brechó Chic
+  Leilões (306), Bruce Angeiras Leilões (299), Catavento Discos (662)... — "Coisa Antiga
+  Leilões" ainda não apareceu no trecho de 6000 chars devolvido (a lista é alfabética e o corte
+  ficou na letra C antes de chegar em "Coisa"), não confirma ausência.
+  🔧 **v0.69.36**: `listGalleries` reescrita pra usar `node-html-parser`
+  (`querySelectorAll`/`querySelector`, o mesmo parser já usado por `parseCard`/`parseCards`
+  neste arquivo) em vez de regex — busca `#comboGalerias li` (com fallback pra
+  `.lista-subcats-item` caso o id mude), extrai `input[type="checkbox"][value]` e `label` de
+  cada item, independente de espaço/ordem de atributos entre os dois. `rawSnippet` aumentado
+  para 8000 chars. Ainda não validado em produção — próximo passo: rodar
+  `step=galleries&tp=|446973636F2064652076696E696C|` de novo e conferir se agora vem a lista
+  completa de galerias com "Coisa Antiga Leilões" nela.
 
   _(Itens mais antigos desta seção — lance pelo app, upload de foto em massa, peso da sondagem
   na nota e imagem pelo CDN do catálogo — foram **cancelados/descartados**.)_
