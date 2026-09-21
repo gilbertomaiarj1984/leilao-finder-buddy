@@ -1453,6 +1453,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.69.37     | `step=galleries` revalidado em produção: parser DOM funcionou, 68 galerias extraídas, "Coisa Antiga Leilões" achada (`ga=356`). Implementada a Fase 2 (enumeração por galeria): descoberto que `fetchCatalogData` não serve pra criar `VinylLot`s novos (sem `image`/`price`/`dayKey`/`artist` — só enriquece lotes já existentes); abordagem adotada reaproveita `fetchPageSearch`/`parseCards` (mesma função da listagem geral) paginando por `ga=<código>` em vez de `tp=<categoria>`, filtrando por título (`looksNonVinyl`) em vez de tag da plataforma. Adicionado `listGalleryAuctions(galleryCode)`, `scanGalleries(offset, count, tp?)`/`step=galleryscan` (chunked como `chunk`/`enrich`) em `leiloesbr-scrape.server.ts`/`cron.server.ts`. Ainda não testado em produção — ver Pendências |
 | v0.69.38     | Fix: link "site da casa" ia pro link genérico da casa na LeilõesBR (scrapado da listagem geral), não pro catálogo do leilão específico do grupo — novo `catalogUrlFromLot({idLeilao, url})` (`vinyl-parse.ts`, mesma extração de `presencialUrlFromLot`) monta `<domínio>/catalogo.asp?Num=<idLeilao>`; `houseAuctionInfo` (`grouping.ts`) passa a expor `catalogUrl`. Aplicado nos 4 lugares que renderizam "site da casa": lista principal por dia e Vigiados do dia (`index.tsx`, via `auctionInfo.catalogUrl`), Análise por dia (`analise.tsx`, direto de `group.lots[0]`) e Lances por casa (`bid-house-sections.tsx`, direto de `houseGroup.lots[0]`) — todos com fallback pro `houseUrl` antigo quando o lote não casa o padrão LeilõesBR |
 | v0.69.39     | Fix: clicar em "Vigiar" confirmava a vigia no LeilõesBR (toast de sucesso) mas o card voltava a mostrar "Vigiar" pouco depois, mesmo a casa já mostrando o lote como vigiado — causa era o `void queryClient.invalidateQueries({queryKey: watchedQuery.queryKey})` disparado logo após o `toggle.onSuccess` (`index.tsx`): a página de conta do LeilõesBR (`conta_site.asp?l=8`) demora a refletir o toggle que acabou de ser confirmado por `vigiar_peca.asp`, então o refetch imediato trazia a lista "atrasada" (sem o lote recém-vigiado) e o `mergeWatchedAccum` (`watched-accum.ts`) apagava a entrada otimista que tínhamos acabado de gravar (regra "sumiu do fresh + leilão não terminado = vigia removida de fato"); o mesmo problema existia na direção contrária (desvigiar reaparecendo). Removido o invalidate logo após o toggle — o estado gravado ali já é autoritativo (veio da resposta do próprio endpoint de toggle, com retry até confirmar); a reconciliação com a conta acontece no próximo refetch natural (`staleTime`/refresh manual), quando o LeilõesBR já tiver atualizado |
+| v0.69.40     | `step=galleryscan` testado isolado em produção contra "Coisa Antiga Leilões" (`ga=356`, índice 14): achou 323 lotes (bate com os ~319 marcados vinil no catálogo da casa), `persisted:true`; `findlot2` confirma o leilão 65152 saudável. Descoberta por galeria validada fim a fim — integrada ao `refresh.yml` (nova seção `step=galleryscan`, chunked `offset`/`count=3`, entre "Varredura em blocos" e "Preenchimento de nº de lote"), passa a rodar 2x/dia. Investigação considerada resolvida — ver Pendências |
 
 ## Pendências
 
@@ -1659,6 +1660,19 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
   Próximo passo: testar `step=galleryscan` isolado (via `debug-cron.yml`) contra a galeria da
   "Coisa Antiga Leilões" (`ga=356`) especificamente, conferindo se o leilão 65152 aparece com
   ~319 lotes e campos completos — só depois disso considerar adicionar ao `refresh.yml`.
+  ✅ **Teste isolado rodado em produção (v0.69.37)**: `step=galleryscan&offset=14&count=1`
+  (índice 14 = "Coisa Antiga Leilões", confirmado estável entre duas chamadas de
+  `step=galleries`) achou **323 lotes** dessa casa — bate com os ~319 que o usuário viu
+  marcados "Disco de vinil" no catálogo dela — com `persisted:true`. `step=findlot2` no
+  leilão 65152 (o caso original) confirma o item saudável. Descoberta por galeria validada
+  fim a fim.
+  🏁 **v0.69.40 — integrado ao `refresh.yml`**: nova seção `step=galleryscan` (chunked,
+  `offset`/`count=3`, mesmo padrão de `chunk`/`enrich`) adicionada ao `refresh.yml`, logo
+  APÓS "Varredura em blocos" e ANTES de "Preenchimento de nº de lote" — os lotes descobertos
+  por galeria entram na mesma passada de `enrich`/`sales`/`condition` que já roda depois, sem
+  lógica nova ali. Passa a rodar 2x/dia junto com o resto do cron. Investigação considerada
+  **resolvida**; falta só confirmar num ciclo real do `refresh.yml` (agendado ou
+  `workflow_dispatch`) que a seção roda até `done:true` sem `persisted:false`.
 
   _(Itens mais antigos desta seção — lance pelo app, upload de foto em massa, peso da sondagem
   na nota e imagem pelo CDN do catálogo — foram **cancelados/descartados**.)_

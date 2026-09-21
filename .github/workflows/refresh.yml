@@ -60,6 +60,29 @@ jobs:
             from="$next"
           done
 
+          echo "== Descoberta por galeria (categorização da casa não bate com tp= da LeilõesBR) =="
+          # Fecha o gap achado v0.69.31-37 (notas-desenvolvimento.md, Pendências): a categoria
+          # "Disco de Vinil" que `chunk` acima usa (`tp=`) não bate com a marcação de TODAS as
+          # casas — algumas ficam de fora da varredura geral por completo, mesmo com itens
+          # saudáveis na LeilõesBR. `step=galleryscan` varre cada "galeria" (casa) listada por
+          # `busca_andamento.asp?tp=<vinil>` direto por `ga=<código>` (sem travar `tp=`),
+          # filtrando por TÍTULO em vez de categoria da plataforma — mesmo formato de VinylLot
+          # completo da varredura geral, upsert de sempre. Roda ANTES do `enrich` abaixo de
+          # propósito: os lotes recém-descobertos aqui já entram na mesma passada de nº de lote.
+          off=0
+          for i in $(seq 1 25); do
+            res="$(call "/api/cron?step=galleryscan&offset=$off&count=3")"
+            echo "galleryscan $i (offset $off): $res"
+            if [ "$(echo "$res" | jq -r '.persisted')" = "false" ]; then
+              echo "galleryscan $i: persisted=false — banco não gravou o bloco, abortando"
+              ping_healthcheck fail; exit 1
+            fi
+            done="$(echo "$res" | jq -r '.done')"
+            [ "$done" = "true" ] && break
+            off="$(echo "$res" | jq -r '.nextOffset')"
+            [ "$off" = "null" ] && break
+          done
+
           echo "== Preenchimento de nº de lote (catálogos) =="
           off=0
           for i in $(seq 1 60); do
