@@ -1448,6 +1448,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.69.32     | `step=findlot&q=65152` rodado em produção: varreu as 93 páginas da categoria "Disco de Vinil" da LeilõesBR de ponta a ponta e não achou NENHUMA ocorrência do leilão 65152 — descarta bug nosso (paginação/filtro/parse) pra esse caso específico. Usuário então trouxe achado novo: no catálogo PRÓPRIO da casa "Coisa Antiga Leilões", o leilão 65152 tem 401 itens, 319 categorizados como "Disco de vinil" pelo filtro do site DELA — ou seja, a categorização interna da casa não está batendo com a tag `tp=` que a nossa busca geral usa (ou não chega na LeilõesBR). Adicionado `findLotSearch`/`step=findlot2&idLeilao=<...>&pesquisa=<termo>&lockToVinyl=0\|1` (`leiloesbr-scrape.server.ts`/`cron.server.ts`): busca por texto livre (filtrado no servidor, mantém o total de páginas viável) e opcionalmente SEM travar a categoria, pra achar o mesmo idLeilao em qualquer categoria da LeilõesBR. Investigação em andamento — ver Pendências |
 | v0.69.33     | **Fechamento do bug do `aieval` (v0.69.27/29) e limpeza pós-migração**: removida TODA a instrumentação temporária de diagnóstico usada pra caçar o bug (header `X-Debug-Upstream` no `Caddyfile`, `curl -v`/`-D` no `aieval`/`prune` do `refresh.yml` — ambos voltam a usar `call()` padrão) e TODAS as referências ativas à Vercel do código/docs (pedido do usuário assim que a correção foi confirmada em produção): `vercel.json` removido, `.vercel` tirado de `.gitignore`/`.dockerignore`, comentários em `vite.config.ts`/`discogs.server.ts`/`leiloesbr-scrape.server.ts`/`lot-ai.server.ts`/`lot-ident.server.ts`/`lot-sales.server.ts` reescritos sem menção à Vercel, `CLAUDE.md` atualizado (cutover já concluído, não "falta a Fase 6"), `.env.example` corrigido (chaves de IA/Discogs são lidas do `.env` do VPS, não mais "Environment Variables da Vercel"). Mantido só o registro histórico da migração (`economia-fase-2-vps-unico.md`/`economia-migracao.md`/`README.md`) — não é instrução ativa, é o porquê da arquitetura atual. Usuário confirmou nesta janela que também já removeu o auto-deploy da Vercel pro repo e a Authorized redirect URI antiga (Google Cloud Console) — ambas ações fora do alcance de qualquer sessão |
 | v0.69.34     | `step=findlot2&idLeilao=65152&pesquisa=Ray Charles&lockToVinyl=0` rodado em produção: achou o item de primeira (1 página, texto filtrado no servidor) — leilão 65152 está saudável na listagem geral (dayKey correto, passaria no filtro de vinil), só não está marcado com `tp="Disco de Vinil"`. Confirma categorização de fora, fora do nosso scraper. Usuário trouxe pista nova: no catálogo da casa, o filtro "Disco de vinil" grava `tipo=\|129\|` (código numérico local), diferente do `tp=` hex da LeilõesBR — podem ser esquemas de categoria diferentes. Adicionado `findLotByCategory`/`step=findlotcat&idLeilao=<...>&tp=<...>&pesquisa=<termo>` (testa qualquer `tp=` cru direto na busca geral) e `findLotRawCard`/`step=findlotraw` (HTML bruto do card, pra quando os campos já extraídos não bastarem). Investigação em andamento — ver Pendências |
+| v0.69.35     | `step=findlotcat&tp=\|129\|` confirmado: código numérico da casa não é reconhecido pela busca geral da LeilõesBR. Usuário achou a saída: a página `busca_andamento.asp?tp=<vinil>` mostra uma seção "GALERIAS" (casas com código `ga=<n>` que filtra só aquela casa) — plano aprovado pra usar isso como mecanismo de DESCOBERTA. Achado central da pesquisa: `fetchCatalogData(domain, idLeilao)` (`leiloesbr-catalog.server.ts`, já existente) já busca o catálogo INTEIRO de um leilão conhecido tentando `Tipo=129` (o mesmo código da casa) e caindo pro catálogo completo se vier vazio — ou seja, o problema é só descobrir o `idLeilao`, não buscar os lotes dele. Fase 1 (diagnóstico, ainda não validada em produção): `listGalleries`/`step=galleries[&tp=<...>\|tp=none]` (tenta extrair a seção GALERIAS, sempre devolve `rawSnippet` do HTML bruto pra ajustar o parser) e `step=catalogdebug&domain=<...>&idLeilao=<...>` (chama `fetchCatalogData` direto, isola descoberta de extração). Investigação em andamento — ver Pendências |
 
 ## Pendências
 
@@ -1551,7 +1552,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
   sido percebido porque, até a persistência ser corrigida, o app servia um retrato congelado
   de dados antigos e ninguém conferia a distribuição por dia de uma varredura fresca dia a dia.
 
-- **🔎 EM INVESTIGAÇÃO (2026-09-21, v0.69.31/32/34) — mesmo após o fix de paginação acima,
+- **🔎 EM INVESTIGAÇÃO (2026-09-21, v0.69.31/32/34/35) — mesmo após o fix de paginação acima,
   usuário reportou um lote específico do dia 24/9 ainda ausente da ferramenta**: casa "Coisa
   Antiga Leilões", `https://www.coisaantigaleiloes.com.br/catalogo.asp?Num=65152` (idLeilao
   65152). A run `#153` (v0.69.30, pós-fix) já varreu a listagem geral até o fim (93→3→null,
@@ -1580,13 +1581,35 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
   (texto "Disco de vinil" em hex) que a LeilõesBR usa na busca geral. Podem ser esquemas de
   categoria DIFERENTES (numérico por casa vs. texto/hex da plataforma). **Ferramenta nível 4**
   (`findLotByCategory`, `step=findlotcat&idLeilao=<...>&tp=<...>&pesquisa=<termo>`): testa
-  qualquer `tp=` CRU (ex.: `|129|`) direto na busca geral da LeilõesBR. Também adicionada
-  **ferramenta nível 3** (`findLotRawCard`, `step=findlotraw&idLeilao=<...>&pesquisa=<termo>&
-  lockToVinyl=0|1`): devolve o HTML bruto do card que bate o idLeilao (truncado), útil se as
-  próximas hipóteses exigirem inspecionar o markup em vez de só os campos já extraídos por
-  `parseCard` (que hoje não captura NENHUM campo de categoria). Próximo passo: rodar
-  `step=findlotcat&idLeilao=65152&tp=|129|&pesquisa=Ray%20Charles` em produção e ver se esse
-  código numérico também filtra na busca geral da LeilõesBR.
+  qualquer `tp=` CRU (ex.: `|129|`) direto na busca geral da LeilõesBR — rodada com
+  `tp=|129|&pesquisa=Ray Charles`, **não achou nada** (`matches: []`): o código numérico da
+  casa NÃO é reconhecido como categoria pela busca geral da LeilõesBR (esquemas mesmo
+  diferentes, confirmado). Também adicionada **ferramenta nível 3** (`findLotRawCard`,
+  `step=findlotraw&idLeilao=<...>&pesquisa=<termo>&lockToVinyl=0|1`): devolve o HTML bruto do
+  card que bate o idLeilao (truncado), útil se alguma hipótese futura exigir inspecionar o
+  markup em vez de só os campos já extraídos por `parseCard` (que hoje não captura NENHUM
+  campo de categoria) — ainda não usada.
+  💡 **Saída encontrada pelo usuário (v0.69.35, plano em `docs/notas-desenvolvimento.md`
+  aprovado)**: ao navegar `busca_andamento.asp?tp=<vinil>` sem `pesquisa`, a página mostra uma
+  seção **"GALERIAS"** — checkboxes com CADA CASA que tem itens na categoria filtrada, cada
+  uma com um código `ga=<n>` que filtra `busca_andamento.asp?ga=<n>&tp=<vinil>` só pra aquela
+  casa. Isolando o problema: o gap é PURAMENTE de descoberta — `fetchCatalogData(domain,
+  idLeilao)` (`leiloesbr-catalog.server.ts`, já existente, usada por `enrich`/`condition`/
+  `sales`) já busca o catálogo INTEIRO de um leilão conhecido tentando `Tipo=129` (o mesmo
+  "129" que a casa usa!) e caindo pro catálogo completo se vier vazio (v0.34.0) — ou seja, uma
+  vez que a gente SAIBA que o leilão 65152 existe, o pipeline de extração já funciona; só falta
+  descobrir o `idLeilao` quando a categoria da LeilõesBR não bate. Adicionadas duas ferramentas
+  de diagnóstico (Fase 1 do plano, ainda não validadas contra produção): `listGalleries(tp)` /
+  `step=galleries[&tp=<...>|tp=none]` — tenta extrair a seção GALERIAS (best-effort, a
+  estrutura exata do HTML nunca foi inspecionada neste ambiente sem rede; sempre devolve
+  também um `rawSnippet` do HTML bruto ao redor da palavra "galeria" pra ajustar o parser com
+  dado real) — e `step=catalogdebug&domain=<...>&idLeilao=<...>`, que chama
+  `fetchCatalogData` direto com parâmetros arbitrários (isola "descoberta" de "extração": se
+  `catalogdebug` pro leilão 65152 trouxer os ~319 itens certos, confirma que só falta a
+  descoberta). Próximo passo: rodar `step=galleries&tp=|446973636F2064652076696E696C|` em
+  produção, ler o `rawSnippet`, confirmar/ajustar o parser e checar se "Coisa Antiga Leilões"
+  aparece na lista — reportar ao usuário e AGUARDAR antes de implementar a Fase 2 (enumeração
+  por galeria).
 
   _(Itens mais antigos desta seção — lance pelo app, upload de foto em massa, peso da sondagem
   na nota e imagem pelo CDN do catálogo — foram **cancelados/descartados**.)_

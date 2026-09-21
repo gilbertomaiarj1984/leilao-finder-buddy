@@ -522,6 +522,35 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await findLotByCategory(idLeilao, pesquisa, tp));
     }
 
+    // Diagnóstico (Fase 1 da investigação por "galeria" — ver notas-desenvolvimento.md,
+    // Pendências): tenta extrair a seção "GALERIAS" (casas + código `ga=`) da página 1 de
+    // busca_andamento.asp. ?tp=none → sem filtro de categoria; ?tp=<...> → categoria custom;
+    // sem `tp` → categoria vinil padrão.
+    if (step === "galleries") {
+      const { listGalleries } = await import("./leiloesbr-scrape.server");
+      const tpParam = url.searchParams.get("tp");
+      if (tpParam === "none") return json(await listGalleries(null));
+      return json(await listGalleries(tpParam ?? undefined));
+    }
+
+    // Diagnóstico: chama fetchCatalogData(domain, idLeilao) direto (já usado por
+    // enrich/condition/sales) — confirma que, uma vez conhecido o idLeilao, o catálogo da
+    // casa já traz os itens certos (isola "descoberta" de "extração").
+    if (step === "catalogdebug") {
+      const { fetchCatalogData } = await import("./leiloesbr-catalog.server");
+      const domain = url.searchParams.get("domain")?.trim();
+      const idLeilao = url.searchParams.get("idLeilao")?.trim();
+      if (!domain || !idLeilao) return json({ error: "informe ?domain=<...>&idLeilao=<...>" }, 400);
+      const map = await fetchCatalogData(domain, idLeilao);
+      const entries = [...map.entries()];
+      return json({
+        domain,
+        idLeilao,
+        total: entries.length,
+        sample: entries.slice(0, 5).map(([id, lot]) => ({ id, ...lot })),
+      });
+    }
+
     // Fase 5 da migração para VPS (docs/economia-fase-2-vps-unico.md): poda
     // `seen_auctions` (leilões com vendas já capturadas e fora da janela de retenção).
     // Barato — 1 SELECT + 1 DELETE por rodada; roda 1x por execução do cron.
@@ -533,7 +562,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     return json(
       {
         error:
-          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|purchases|backfillbundle|compressimages|prune|salesdebug|catdebug|findlot|findlot2|findlotraw|findlotcat)",
+          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|purchases|backfillbundle|compressimages|prune|salesdebug|catdebug|findlot|findlot2|findlotraw|findlotcat|galleries|catalogdebug)",
         // Diagnóstico (v0.69.4): step=prune vinha falhando com 400 só quando chamado pelo
         // GitHub Actions (curl direto do VPS sempre respondia 200). Sem log de acesso no
         // Caddy nem log de aplicação chegando no `docker logs` (Nitro usa logger próprio,
