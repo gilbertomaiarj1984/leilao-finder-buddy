@@ -227,7 +227,9 @@ export async function findLotDebug(
   return { query, totalPages: total, scannedPages: scanned, matches };
 }
 
-function listUrlSearch(page: number, pesquisa: string, lockToVinyl: boolean): string {
+// `tp` é passado CRU (sem URL-encode dos `|`) igual ao resto do arquivo — é assim que o
+// próprio site usa (ex.: VINYL_CATEGORY acima); `null` = sem filtro de categoria nenhum.
+function listUrlSearch(page: number, pesquisa: string, tp: string | null): string {
   const params = new URLSearchParams({
     pesquisa,
     op: "3",
@@ -236,15 +238,11 @@ function listUrlSearch(page: number, pesquisa: string, lockToVinyl: boolean): st
     pag: String(page),
   });
   const base = `${BASE_URL}/busca_andamento.asp?${params.toString()}`;
-  return lockToVinyl ? `${base}&tp=${VINYL_CATEGORY}` : base;
+  return tp ? `${base}&tp=${tp}` : base;
 }
 
-async function fetchPageSearch(
-  page: number,
-  pesquisa: string,
-  lockToVinyl: boolean,
-): Promise<string> {
-  return await publicFetch(listUrlSearch(page, pesquisa, lockToVinyl), {});
+async function fetchPageSearch(page: number, pesquisa: string, tp: string | null): Promise<string> {
+  return await publicFetch(listUrlSearch(page, pesquisa, tp), {});
 }
 
 /**
@@ -270,7 +268,8 @@ export async function findLotSearch(
   scannedPages: number;
   matches: FindLotMatch[];
 }> {
-  const firstHtml = await fetchPageSearch(1, pesquisa, lockToVinyl);
+  const tp = lockToVinyl ? VINYL_CATEGORY : null;
+  const firstHtml = await fetchPageSearch(1, pesquisa, tp);
   const total = lastPage(firstHtml);
   const matches: FindLotMatch[] = [];
   let scanned = 0;
@@ -278,7 +277,7 @@ export async function findLotSearch(
     scanned += 1;
     let html: string;
     try {
-      html = await fetchPageSearch(page, pesquisa, lockToVinyl);
+      html = await fetchPageSearch(page, pesquisa, tp);
     } catch {
       continue;
     }
@@ -296,6 +295,98 @@ export async function findLotSearch(
     }
   }
   return { idLeilao, pesquisa, lockToVinyl, totalPages: total, scannedPages: scanned, matches };
+}
+
+/**
+ * Diagnóstico nível 3: `findLotSearch` confirmou que um `idLeilao` está na listagem
+ * geral (com `pesquisa`, sem travar categoria) mas fora de "Disco de Vinil" — porém
+ * `VinylLot`/`parseCard` não capturam NENHUM campo de categoria (não existia motivo
+ * até agora). Aqui devolvemos o HTML BRUTO do(s) card(s) que batem o `idLeilao`
+ * (truncado, pra não estourar o log) — permite inspecionar visualmente onde/como o
+ * site representa a categoria de cada item na listagem geral, sem precisar de
+ * acesso de rede/browser no ambiente de dev. Não persiste nada.
+ */
+export async function findLotRawCard(
+  idLeilao: string,
+  pesquisa: string,
+  lockToVinyl: boolean,
+): Promise<{
+  idLeilao: string;
+  pesquisa: string;
+  lockToVinyl: boolean;
+  totalPages: number;
+  cards: string[];
+}> {
+  const tp = lockToVinyl ? VINYL_CATEGORY : null;
+  const firstHtml = await fetchPageSearch(1, pesquisa, tp);
+  const total = lastPage(firstHtml);
+  const cards: string[] = [];
+  let scanned = 0;
+  for (let page = total; page >= 1 && scanned < MAX_PAGES; page -= 1) {
+    scanned += 1;
+    let html: string;
+    try {
+      html = await fetchPageSearch(page, pesquisa, tp);
+    } catch {
+      continue;
+    }
+    const root = parse(html);
+    for (const card of root.querySelectorAll(".mostbidded .product")) {
+      const href = card.querySelector('a[href*="abre_catalogo.asp"]')?.getAttribute("href") ?? "";
+      if (!href.includes(`|${idLeilao}|`)) continue;
+      cards.push(card.outerHTML.slice(0, 4000));
+    }
+  }
+  return { idLeilao, pesquisa, lockToVinyl, totalPages: total, cards };
+}
+
+/**
+ * Diagnóstico nível 4: no catálogo PRÓPRIO da casa (fora do escopo da LeilõesBR),
+ * "Disco de vinil" filtra por `tipo=|129|` — um CÓDIGO NUMÉRICO local da casa, bem
+ * diferente do `tp=|446973636F2064652076696E696C|` (texto "Disco de vinil" em hex)
+ * que a LeilõesBR usa na busca geral. Podem ser esquemas de categoria DIFERENTES
+ * (numérico por casa vs. texto/hex da plataforma) — aqui testamos um `tp` CRU
+ * qualquer (ex.: `|129|`) direto na busca geral da LeilõesBR, pra ver se esse código
+ * também filtra por lá e se o `idLeilao` aparece com ele. Não persiste nada.
+ */
+export async function findLotByCategory(
+  idLeilao: string,
+  pesquisa: string,
+  tp: string,
+): Promise<{
+  idLeilao: string;
+  pesquisa: string;
+  tp: string;
+  totalPages: number;
+  scannedPages: number;
+  matches: FindLotMatch[];
+}> {
+  const firstHtml = await fetchPageSearch(1, pesquisa, tp);
+  const total = lastPage(firstHtml);
+  const matches: FindLotMatch[] = [];
+  let scanned = 0;
+  for (let page = total; page >= 1 && scanned < MAX_PAGES; page -= 1) {
+    scanned += 1;
+    let html: string;
+    try {
+      html = await fetchPageSearch(page, pesquisa, tp);
+    } catch {
+      continue;
+    }
+    for (const lot of parseCards(html)) {
+      if (lot.idLeilao !== idLeilao) continue;
+      matches.push({
+        page,
+        idLeilao: lot.idLeilao,
+        house: lot.house,
+        title: lot.title,
+        dayKey: lot.dayKey,
+        url: lot.url,
+        wouldKeep: !looksNonVinyl(lot.title),
+      });
+    }
+  }
+  return { idLeilao, pesquisa, tp, totalPages: total, scannedPages: scanned, matches };
 }
 
 /** Faz upsert dos lotes no banco e registra os leilões vistos (best-effort). */
