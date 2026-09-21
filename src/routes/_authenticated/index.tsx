@@ -1776,7 +1776,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                     ) : null}
                                     <a
                                       className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                      href={houseGroup.houseUrl}
+                                      href={auctionInfo?.catalogUrl ?? houseGroup.houseUrl}
                                       target="_blank"
                                       rel="noreferrer"
                                     >
@@ -2010,7 +2010,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                     ) : null}
                                     <a
                                       className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                      href={group.houseUrl}
+                                      href={auctionInfo?.catalogUrl ?? group.houseUrl}
                                       target="_blank"
                                       rel="noreferrer"
                                     >
@@ -2262,7 +2262,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                             ) : null}
                                             <a
                                               className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                              href={houseGroup.houseUrl}
+                                              href={auctionInfo?.catalogUrl ?? houseGroup.houseUrl}
                                               target="_blank"
                                               rel="noreferrer"
                                             >

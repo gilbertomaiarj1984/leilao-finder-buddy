@@ -2,6 +2,7 @@ import { ExternalLink } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 
+import { catalogUrlFromLot } from "@/lib/vinyl-parse";
 import type { OwnedHit } from "@/lib/wantlist-match";
 
 import { BidStatBadges } from "./badges";
@@ -67,7 +68,10 @@ export function BidHouseSections({
             {houseGroup.houseUrl && houseGroup.houseUrl !== "#" ? (
               <a
                 className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                href={houseGroup.houseUrl}
+                href={
+                  (houseGroup.lots[0] && catalogUrlFromLot(houseGroup.lots[0])) ??
+                  houseGroup.houseUrl
+                }
                 target="_blank"
                 rel="noreferrer"
               >

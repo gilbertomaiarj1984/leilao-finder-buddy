@@ -79,7 +79,13 @@ import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import type { WatchedLot } from "@/lib/leiloesbr-watch.server";
 import type { MyBid } from "@/lib/leiloesbr-bids.server";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
-import { bidIsWinning, formatDayLabel, normalizeForMatch, type VinylLot } from "@/lib/vinyl-parse";
+import {
+  bidIsWinning,
+  catalogUrlFromLot,
+  formatDayLabel,
+  normalizeForMatch,
+  type VinylLot,
+} from "@/lib/vinyl-parse";
 import {
   BIDS_ACCUM_STORAGE_KEY,
   loadAccum,
@@ -1489,7 +1495,10 @@ function AnalisePage() {
                                     {group.houseUrl && group.houseUrl !== "#" ? (
                                       <a
                                         className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                        href={group.houseUrl}
+                                        href={
+                                          (group.lots[0] && catalogUrlFromLot(group.lots[0])) ??
+                                          group.houseUrl
+                                        }
                                         target="_blank"
                                         rel="noreferrer"
                                       >

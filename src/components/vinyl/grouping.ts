@@ -4,6 +4,7 @@ import {
   auctionFinished,
   auctionStarted,
   bidIsWinning,
+  catalogUrlFromLot,
   LOTE_LABEL,
   normalizeForMatch,
   parsePrice,
@@ -243,6 +244,7 @@ export type HouseAuctionInfo = {
   time: string;
   status: AuctionStatus | null;
   presencialUrl: string | null;
+  catalogUrl: string | null;
 };
 
 /**
@@ -265,7 +267,12 @@ export function houseAuctionInfo(
           ? "live"
           : "upcoming"
       : null;
-  return { time: lot.time, status, presencialUrl: presencialUrlFromLot(lot) };
+  return {
+    time: lot.time,
+    status,
+    presencialUrl: presencialUrlFromLot(lot),
+    catalogUrl: catalogUrlFromLot(lot),
+  };
 }
 
 /** Agrupa vigiados por casa de leilão e ordena os lotes pelo nº do lote. */
