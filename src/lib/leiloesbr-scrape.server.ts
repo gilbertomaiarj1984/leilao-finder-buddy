@@ -162,36 +162,41 @@ async function scrapePages(keep: (lot: VinylLot) => boolean, stopDay: string): P
 }
 
 /** Faz upsert dos lotes no banco e registra os leilões vistos (best-effort). */
+// ⚠️ O upsert de `lots` abaixo NÃO tem try/catch ao redor de si — propositalmente.
+// `supabaseAdmin.from(...).upsert(...)` (o shim em `db-query.server.ts`) NUNCA lança:
+// erros do Postgres (ex.: DATABASE_URL ausente, conexão recusada) viram
+// `{ data: null, error }` normalmente. Sem checar `error` e relançar, essa falha
+// desaparecia em silêncio — a call resolvia como se tivesse gravado, `scrapeVinylChunk`/
+// `enrichMissingLotes` reportavam sucesso (`persisted: true`) e o site foi perdendo lotes
+// sem log nenhum (achado v0.69.28, ver "Pendências" em notas-desenvolvimento.md). Deixamos
+// propagar para os `try/catch` dos chamadores (que já existem e alimentam `persisted`).
 async function persistLots(fresh: VinylLot[]): Promise<void> {
   if (!fresh.length) return;
-  try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const nowIso = new Date().toISOString();
-    const rows = fresh.map((lot) => ({
-      id: lot.id,
-      id_leilao: lot.idLeilao,
-      id_peca: lot.idPeca,
-      base: lot.base,
-      lote: lot.lote,
-      title: lot.title,
-      url: lot.url,
-      image: lot.image,
-      price: lot.price,
-      day_key: lot.dayKey,
-      start_time: lot.time,
-      uf: lot.uf,
-      house: lot.house,
-      house_url: lot.houseUrl,
-      artist: lot.artist,
-      last_seen_at: nowIso,
-      updated_at: nowIso,
-    }));
-    // Upsert por id: atualiza preço/campos dos lotes que ainda estão no site e
-    // ACRESCENTA os novos, sem apagar os que já não aparecem (merge durável).
-    await supabaseAdmin.from("lots").upsert(rows, { onConflict: "id" });
-  } catch (error) {
-    console.error("[leiloesbr] não foi possível salvar os lotes", error);
-  }
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const nowIso = new Date().toISOString();
+  const rows = fresh.map((lot) => ({
+    id: lot.id,
+    id_leilao: lot.idLeilao,
+    id_peca: lot.idPeca,
+    base: lot.base,
+    lote: lot.lote,
+    title: lot.title,
+    url: lot.url,
+    image: lot.image,
+    price: lot.price,
+    day_key: lot.dayKey,
+    start_time: lot.time,
+    uf: lot.uf,
+    house: lot.house,
+    house_url: lot.houseUrl,
+    artist: lot.artist,
+    last_seen_at: nowIso,
+    updated_at: nowIso,
+  }));
+  // Upsert por id: atualiza preço/campos dos lotes que ainda estão no site e
+  // ACRESCENTA os novos, sem apagar os que já não aparecem (merge durável).
+  const { error } = await supabaseAdmin.from("lots").upsert(rows, { onConflict: "id" });
+  if (error) throw error;
   try {
     const { recordAuctions } = await import("./leiloesbr-auctions.server");
     await recordAuctions(fresh);
@@ -363,7 +368,13 @@ export async function listMissingAuctions(
 export async function enrichMissingLotes(
   maxAuctions = 6,
   offset = 0,
-): Promise<{ updated: number; total: number; nextOffset: number | null; done: boolean }> {
+): Promise<{
+  updated: number;
+  total: number;
+  nextOffset: number | null;
+  done: boolean;
+  persisted: boolean;
+}> {
   const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
@@ -372,7 +383,7 @@ export async function enrichMissingLotes(
   try {
     lots = await mergeSources(windowStart, windowEnd, []);
   } catch {
-    return { updated: 0, total: 0, nextOffset: null, done: true };
+    return { updated: 0, total: 0, nextOffset: null, done: true, persisted: false };
   }
 
   const { parseAuctionRef, fetchLoteMap } = await import("./leiloesbr-catalog.server");
@@ -415,7 +426,7 @@ export async function enrichMissingLotes(
       console.error("[leiloesbr] falha ao ler catálogo da casa", error);
     }
   }
-  if (!loteByPeca.size) return { updated: 0, total, nextOffset, done };
+  if (!loteByPeca.size) return { updated: 0, total, nextOffset, done, persisted: true };
 
   // Aplica no cache em memória e coleta os lotes alterados para persistir.
   if (memCache) {
@@ -432,13 +443,15 @@ export async function enrichMissingLotes(
       changed.push(lot);
     }
   }
+  let persisted = true;
   try {
     await persistLots(changed);
   } catch (error) {
     console.error("[leiloesbr] não foi possível persistir os nº de lote", error);
+    persisted = false;
   }
 
-  return { updated: changed.length, total, nextOffset, done };
+  return { updated: changed.length, total, nextOffset, done, persisted };
 }
 
 /**
@@ -547,7 +560,7 @@ export async function refreshVinylDay(
 export async function scrapeVinylChunk(
   fromPage: number | null,
   size: number,
-): Promise<{ total: number; nextPage: number | null; scraped: number }> {
+): Promise<{ total: number; nextPage: number | null; scraped: number; persisted: boolean }> {
   const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
@@ -587,11 +600,13 @@ export async function scrapeVinylChunk(
 
   const fresh = [...byId.values()];
   await fillArtists(fresh);
+  let persisted = true;
   if (fresh.length) {
     try {
       await persistLots(fresh);
     } catch (error) {
       console.error("[leiloesbr] não foi possível persistir o bloco", error);
+      persisted = false;
     }
   }
 
@@ -603,5 +618,5 @@ export async function scrapeVinylChunk(
       console.error("[leiloesbr] não foi possível limpar lotes fora da janela", error);
     }
   }
-  return { total: fromPage == null ? total : start, nextPage, scraped: fresh.length };
+  return { total: fromPage == null ? total : start, nextPage, scraped: fresh.length, persisted };
 }
