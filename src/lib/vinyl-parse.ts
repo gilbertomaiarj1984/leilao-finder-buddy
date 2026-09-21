@@ -697,6 +697,19 @@ export function presencialUrlFromLot(lot: { idLeilao: string; url: string }): st
   return `${domain.replace(/^http:/i, "https:")}/presencial/presencial.asp?Num=${lot.idLeilao}`;
 }
 
+/**
+ * URL do catálogo do leilão no site da casa a partir de um lote (`<domínio>/catalogo.asp?Num=
+ * <idLeilao>`) — aponta para o leilão específico deste lote, ao contrário de `houseUrl`
+ * (link genérico da casa na LeilõesBR, capturado da listagem geral). Mesma extração de
+ * `presencialUrlFromLot`.
+ */
+export function catalogUrlFromLot(lot: { idLeilao: string; url: string }): string | null {
+  if (!lot.idLeilao) return null;
+  const domain = auctionHouseDomain(lot.url);
+  if (!domain) return null;
+  return `${domain.replace(/^http:/i, "https:")}/catalogo.asp?Num=${lot.idLeilao}`;
+}
+
 // --- Base de nomes conhecidos (reforço da classificação de artista) ---
 
 /** Normalização para casar nomes: remove acentos e pontuação, baixa a caixa. */
