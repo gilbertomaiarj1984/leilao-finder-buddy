@@ -681,7 +681,7 @@ segue existindo, usado pela home ("Atualizar tudo").
   load há **migração única** localStorage → servidor. (Antes ficava só no localStorage → sumia
   ao trocar de navegador/dispositivo ou usar a URL de preview, de origem diferente.)
 
-## Atualização em background (cron 2×/dia, v0.60.1)
+## Atualização em background (cron 3×/dia, v0.69.41)
 
 - **Endpoint** `/api/cron` (tratado direto em `src/server.ts`, FORA das server functions → sem
   Supabase/CSRF), protegido pelo segredo **`CRON_TOKEN`** (header `x-cron-token`; o fallback
@@ -690,11 +690,13 @@ segue existindo, usado pela home ("Atualizar tudo").
   (identificação IA), `aieval` (avaliação IA), `market` (Discogs), `condition` (estado
   pré-leilão), `sales` (captura de vendas), `reident` (reidentifica/padroniza o histórico de
   vendas pela IA), `salesdebug`/`catdebug` (diagnósticos).
-- **GitHub Actions** `.github/workflows/refresh.yml`: `cron: "10 3,17 * * *"` (UTC = BRT
-  00:10/14:00) + `workflow_dispatch`. Reduzido de 4x/dia (v0.60.0 e antes) para 2x/dia em
+- **GitHub Actions** `.github/workflows/refresh.yml`: `cron: "10 3,11,19 * * *"` (UTC = BRT
+  00:10/08:10/16:10) + `workflow_dispatch`. Reduzido de 4x/dia (v0.60.0 e antes) para 2x/dia em
   v0.60.1 — a Fluid Active CPU da Vercel estava estourando a cota do plano Hobby (ver
-  `docs/economia-migracao.md`). Varre em blocos até `nextPage:null`, enriquece por `offset`
-  até `done:true`, depois laços curtos de `aiident` → `aieval` → `market`.
+  `docs/economia-migracao.md`) — e aumentado de volta para 3x/dia em v0.69.41 (já fora da
+  Vercel, no VPS) pra reduzir o gap de descoberta entre execuções (ver Pendências: "Leilão de
+  casa multi-dia sumia de um dia específico"). Varre em blocos até `nextPage:null`, enriquece
+  por `offset` até `done:true`, depois laços curtos de `aiident` → `aieval` → `market`.
 - O **"Atualizar tudo"** manual na UI continua (chunk + enrich por cursor), sem mudança.
 - **Corrigido em v0.60.2:** os steps `aieval`, `aiident` e `market` baixavam `lot_ai`/
   `lot_ident`/o snapshot inteiro de `lots` a cada chamada do laço (mesmo padrão que causava o
@@ -1063,7 +1065,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   sem restrição de leilão, igual ao equivalente da Coleção).
 - **Cron:** novo `step=purchases` (`cron.server.ts`) chama `syncPurchasesIncremental()` — 1
   chamada por rodada do `refresh.yml` (barato, sem paginação cega), rodando junto com os demais
-  steps 2x/dia.
+  steps 3x/dia.
 - **Server functions (`purchases.functions.ts`):** `getPurchases` (leitura, best-effort `[]` em
   erro), `scanPurchases` (botão "Atualizar" → incremental), `scanPurchasesFull` (botão
   "Varredura completa" → escape hatch caro).
@@ -1454,6 +1456,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.69.38     | Fix: link "site da casa" ia pro link genérico da casa na LeilõesBR (scrapado da listagem geral), não pro catálogo do leilão específico do grupo — novo `catalogUrlFromLot({idLeilao, url})` (`vinyl-parse.ts`, mesma extração de `presencialUrlFromLot`) monta `<domínio>/catalogo.asp?Num=<idLeilao>`; `houseAuctionInfo` (`grouping.ts`) passa a expor `catalogUrl`. Aplicado nos 4 lugares que renderizam "site da casa": lista principal por dia e Vigiados do dia (`index.tsx`, via `auctionInfo.catalogUrl`), Análise por dia (`analise.tsx`, direto de `group.lots[0]`) e Lances por casa (`bid-house-sections.tsx`, direto de `houseGroup.lots[0]`) — todos com fallback pro `houseUrl` antigo quando o lote não casa o padrão LeilõesBR |
 | v0.69.39     | Fix: clicar em "Vigiar" confirmava a vigia no LeilõesBR (toast de sucesso) mas o card voltava a mostrar "Vigiar" pouco depois, mesmo a casa já mostrando o lote como vigiado — causa era o `void queryClient.invalidateQueries({queryKey: watchedQuery.queryKey})` disparado logo após o `toggle.onSuccess` (`index.tsx`): a página de conta do LeilõesBR (`conta_site.asp?l=8`) demora a refletir o toggle que acabou de ser confirmado por `vigiar_peca.asp`, então o refetch imediato trazia a lista "atrasada" (sem o lote recém-vigiado) e o `mergeWatchedAccum` (`watched-accum.ts`) apagava a entrada otimista que tínhamos acabado de gravar (regra "sumiu do fresh + leilão não terminado = vigia removida de fato"); o mesmo problema existia na direção contrária (desvigiar reaparecendo). Removido o invalidate logo após o toggle — o estado gravado ali já é autoritativo (veio da resposta do próprio endpoint de toggle, com retry até confirmar); a reconciliação com a conta acontece no próximo refetch natural (`staleTime`/refresh manual), quando o LeilõesBR já tiver atualizado |
 | v0.69.40     | `step=galleryscan` testado isolado em produção contra "Coisa Antiga Leilões" (`ga=356`, índice 14): achou 323 lotes (bate com os ~319 marcados vinil no catálogo da casa), `persisted:true`; `findlot2` confirma o leilão 65152 saudável. Descoberta por galeria validada fim a fim — integrada ao `refresh.yml` (nova seção `step=galleryscan`, chunked `offset`/`count=3`, entre "Varredura em blocos" e "Preenchimento de nº de lote"), passa a rodar 2x/dia. Investigação considerada resolvida — ver Pendências |
+| v0.69.41     | Cron 2x/dia → **3x/dia, de 8 em 8h** (`refresh.yml`, `10 3,17 * * *` → `10 3,11,19 * * *`, BRT 00:10/08:10/16:10) — achado do usuário: leilão 64791 (Robson Gini/Trem das 7) com dia 1 (21/9) publicado tarde demais pra o cron 2x/dia pegar antes do pregão ficar "ao vivo" (a listagem geral da LeilõesBR para de listar os lotes de um leilão assim que ele entra ao vivo — `findlot` confirmou os lotes do dia 2 presentes mas nenhum do dia 1). Não é remoção do nosso lado (upsert nunca apaga o que já foi capturado) — é gap de DESCOBERTA: se o cron não escaneou antes do horário do pregão, o lote nunca chega a entrar no banco. Janela menor entre execuções reduz a chance de perder catálogos publicados perto da hora do pregão |
 
 ## Pendências
 
@@ -1670,9 +1673,38 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
   `offset`/`count=3`, mesmo padrão de `chunk`/`enrich`) adicionada ao `refresh.yml`, logo
   APÓS "Varredura em blocos" e ANTES de "Preenchimento de nº de lote" — os lotes descobertos
   por galeria entram na mesma passada de `enrich`/`sales`/`condition` que já roda depois, sem
-  lógica nova ali. Passa a rodar 2x/dia junto com o resto do cron. Investigação considerada
-  **resolvida**; falta só confirmar num ciclo real do `refresh.yml` (agendado ou
-  `workflow_dispatch`) que a seção roda até `done:true` sem `persisted:false`.
+  lógica nova ali. Passa a rodar junto com o resto do cron. 🔄 **v0.69.41**: `workflow_dispatch`
+  completo disparado manualmente em produção pra validar o ciclo real (rodando no momento deste
+  commit) — investigação considerada **encerrada** a pedido do usuário; se essa run acusar
+  `persisted:false` em `galleryscan`, reabrir.
+
+**Leilão de casa multi-dia sumia de um dia específico (resolvido em v0.69.41)**
+
+- Usuário reportou: leilão 64791 (Robson Gini Leilões/Trem das 7, `tremdas7.com.br`, catálogo
+  com "1º DIA" 21/9 e "2º DIA" 22/9) não aparecia na ferramenta no dia 1 (hoje), mesmo validado
+  pelo usuário no catálogo da própria casa. Dias 22/23/24 (outros leilões da mesma casa)
+  apareciam normalmente; dia 25 também estava faltando no momento do report.
+- Diagnóstico (`step=findlot&q=64791`, 92 páginas da categoria "Disco de Vinil"): o leilão
+  **é descoberto normalmente** (não é o gap de categorização das outras pendências) — mas
+  **todos** os lotes achados vinham com `dayKey: 2026-09-22`, nenhum com `2026-09-21`. Causa:
+  a listagem geral da LeilõesBR (`busca_andamento.asp`) **para de listar os lotes de um leilão
+  assim que ele fica "ao vivo"** (comportamento já documentado em "Scraping do LeilõesBR",
+  v0.51.4 — mesmo efeito que fazia vigiados "sumirem" ao terminar o leilão). O pregão do dia 1
+  começava às 15h; a varredura das 14:10 (BRT) não pegou a tempo (catálogo publicado tarde
+  demais pela casa) e, depois das 15h, o leilão simplesmente não aparece mais na fonte — não
+  tem como redescobrir depois.
+- ⚠️ **Não é remoção do nosso lado**: o upsert (`persistLots`) nunca apaga o que já foi
+  capturado; um lote só some da janela por `pruneOutOfWindow` (fora dos dias da janela). O
+  problema é 100% de **descoberta** — se o cron não escaneou o leilão antes dele ficar ao
+  vivo, o lote nunca chega a entrar no banco (não há nada pra "manter visível").
+- **Fix (v0.69.41)**: cron 2x/dia → **3x/dia, de 8 em 8h** (`refresh.yml`, `10 3,17 * * *` →
+  `10 3,11,19 * * *`, BRT 00:10/08:10/16:10) — reduz a janela entre execuções, diminuindo a
+  chance de um catálogo publicado perto do horário do pregão passar batido. Não elimina o gap
+  por completo (uma casa pode publicar e já ficar ao vivo dentro do intervalo de 8h), mas é a
+  mitigação direta sem reescrever a arquitetura de descoberta (que dependeria de saber o
+  horário de cada pregão com antecedência, informação que só vem depois de já ter descoberto o
+  leilão). Investigação encerrada a pedido do usuário — mitigação aplicada, sem necessidade de
+  aprofundar mais.
 
   _(Itens mais antigos desta seção — lance pelo app, upload de foto em massa, peso da sondagem
   na nota e imagem pelo CDN do catálogo — foram **cancelados/descartados**.)_

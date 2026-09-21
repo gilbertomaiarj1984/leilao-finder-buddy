@@ -67,7 +67,7 @@ migrações `.sql` não auto-aplicadas).
   chamar via React Query.
 - **Endpoint de cron fora das server functions**: `/api/cron` é tratado direto em
   `src/server.ts` (sem CSRF), protegido por `CRON_TOKEN` (header, comparação em tempo
-  constante). Disparado 2×/dia por `.github/workflows/refresh.yml`, com vários `step`s
+  constante). Disparado 3×/dia por `.github/workflows/refresh.yml`, com vários `step`s
   (`chunk`, `enrich`, `aiident`, `aieval`, `market`, `condition`, `sales`, `reident`, ...) —
   orquestração em `src/lib/cron.server.ts`.
 - **Scraping**: a listagem geral é varrida sem login (`publicFetch`) em blocos/chunks (nunca
