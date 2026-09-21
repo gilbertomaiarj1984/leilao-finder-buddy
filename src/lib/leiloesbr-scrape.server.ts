@@ -407,22 +407,25 @@ export async function listGalleries(
   tp: string | null = VINYL_CATEGORY,
 ): Promise<{ tp: string | null; galleries: GalleryEntry[]; rawSnippet: string | null }> {
   const html = await fetchPageSearch(1, "", tp);
+  const root = parse(html);
 
-  const galleryIdx = html.search(/galeria/i);
-  const region = galleryIdx >= 0 ? html.slice(galleryIdx, galleryIdx + 20000) : "";
+  // Estrutura confirmada rodando step=galleries em produção (v0.69.35): um <ul
+  // id="comboGalerias"> com um <li> por galeria, cada um com um checkbox
+  // (`input.ga[value]`, o código de `ga=<código>`) e um <label> com o nome — em <div>s
+  // irmãos, não aninhados um dentro do outro (por isso a heurística por regex anterior,
+  // que só olhava o texto logo após o checkbox, sempre batia em espaço em branco e
+  // descartava todas as galerias).
+  // Sem vírgula/união no seletor (evita depender de suporte incerto no parser) —
+  // tenta pelo id do <ul> confirmado e cai para a classe do <li> como reforço.
+  const items = root.querySelectorAll("#comboGalerias li");
+  if (items.length === 0) items.push(...root.querySelectorAll(".lista-subcats-item"));
 
   const galleries: GalleryEntry[] = [];
   const seen = new Set<string>();
-  const checkboxRe = /<input\b[^>]*\bvalue="(\d+)"[^>]*>/gi;
-  let m: RegExpExecArray | null;
-  while ((m = checkboxRe.exec(region))) {
-    const code = m[1]!;
-    if (seen.has(code)) continue;
-    // Texto visível mais próximo depois do checkbox (heurística: primeiro `>texto<` dentro
-    // de uma janela curta — cobre `<label>texto</label>` colado ou um `<span>` ao lado).
-    const after = region.slice(m.index, m.index + 400);
-    const textMatch = after.match(/>([^<]{2,120})</);
-    const raw = decodeHtmlEntities((textMatch?.[1] ?? "").trim());
+  for (const item of items) {
+    const code = item.querySelector('input[type="checkbox"][value]')?.getAttribute("value");
+    if (!code || seen.has(code)) continue;
+    const raw = decodeHtmlEntities(item.querySelector("label")?.text?.trim() ?? "");
     if (!raw) continue;
     const countMatch = raw.match(/\((\d+)\)\s*$/);
     seen.add(code);
@@ -433,7 +436,10 @@ export async function listGalleries(
     });
   }
 
-  return { tp, galleries, rawSnippet: galleryIdx >= 0 ? region.slice(0, 6000) : null };
+  const galleryIdx = html.search(/galeria/i);
+  const rawSnippet = galleryIdx >= 0 ? html.slice(galleryIdx, galleryIdx + 8000) : null;
+
+  return { tp, galleries, rawSnippet };
 }
 
 /** Faz upsert dos lotes no banco e registra os leilões vistos (best-effort). */
