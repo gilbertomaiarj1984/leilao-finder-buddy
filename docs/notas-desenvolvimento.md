@@ -1450,6 +1450,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.69.34     | `step=findlot2&idLeilao=65152&pesquisa=Ray Charles&lockToVinyl=0` rodado em produção: achou o item de primeira (1 página, texto filtrado no servidor) — leilão 65152 está saudável na listagem geral (dayKey correto, passaria no filtro de vinil), só não está marcado com `tp="Disco de Vinil"`. Confirma categorização de fora, fora do nosso scraper. Usuário trouxe pista nova: no catálogo da casa, o filtro "Disco de vinil" grava `tipo=\|129\|` (código numérico local), diferente do `tp=` hex da LeilõesBR — podem ser esquemas de categoria diferentes. Adicionado `findLotByCategory`/`step=findlotcat&idLeilao=<...>&tp=<...>&pesquisa=<termo>` (testa qualquer `tp=` cru direto na busca geral) e `findLotRawCard`/`step=findlotraw` (HTML bruto do card, pra quando os campos já extraídos não bastarem). Investigação em andamento — ver Pendências |
 | v0.69.35     | `step=findlotcat&tp=\|129\|` confirmado: código numérico da casa não é reconhecido pela busca geral da LeilõesBR. Usuário achou a saída: a página `busca_andamento.asp?tp=<vinil>` mostra uma seção "GALERIAS" (casas com código `ga=<n>` que filtra só aquela casa) — plano aprovado pra usar isso como mecanismo de DESCOBERTA. Achado central da pesquisa: `fetchCatalogData(domain, idLeilao)` (`leiloesbr-catalog.server.ts`, já existente) já busca o catálogo INTEIRO de um leilão conhecido tentando `Tipo=129` (o mesmo código da casa) e caindo pro catálogo completo se vier vazio — ou seja, o problema é só descobrir o `idLeilao`, não buscar os lotes dele. Fase 1 (diagnóstico, ainda não validada em produção): `listGalleries`/`step=galleries[&tp=<...>\|tp=none]` (tenta extrair a seção GALERIAS, sempre devolve `rawSnippet` do HTML bruto pra ajustar o parser) e `step=catalogdebug&domain=<...>&idLeilao=<...>` (chama `fetchCatalogData` direto, isola descoberta de extração). Investigação em andamento — ver Pendências |
 | v0.69.36     | `step=galleries` rodado em produção contra v0.69.35: `galleries: []` (parser regex não achou nada), mas o `rawSnippet` confirmou a estrutura real do HTML — `<ul id="comboGalerias">` com um `<li>` por galeria, checkbox (`value="<código>"`) e `<label>` (nome) em `<div>`s irmãos, não aninhados; o regex antigo só olhava o texto logo após o `<input>` e sempre batia em espaço em branco entre tags. `listGalleries` reescrita pra usar `node-html-parser` (`querySelectorAll`/`querySelector`, mesmo parser de `parseCard`/`parseCards`) — `#comboGalerias li` com fallback pra `.lista-subcats-item`, extrai `input[value]` + `label` por item. `rawSnippet` aumentado pra 8000 chars. Ainda não validado em produção — ver Pendências |
+| v0.69.37     | `step=galleries` revalidado em produção: parser DOM funcionou, 68 galerias extraídas, "Coisa Antiga Leilões" achada (`ga=356`). Implementada a Fase 2 (enumeração por galeria): descoberto que `fetchCatalogData` não serve pra criar `VinylLot`s novos (sem `image`/`price`/`dayKey`/`artist` — só enriquece lotes já existentes); abordagem adotada reaproveita `fetchPageSearch`/`parseCards` (mesma função da listagem geral) paginando por `ga=<código>` em vez de `tp=<categoria>`, filtrando por título (`looksNonVinyl`) em vez de tag da plataforma. Adicionado `listGalleryAuctions(galleryCode)`, `scanGalleries(offset, count, tp?)`/`step=galleryscan` (chunked como `chunk`/`enrich`) em `leiloesbr-scrape.server.ts`/`cron.server.ts`. Ainda não testado em produção — ver Pendências |
 
 ## Pendências
 
@@ -1632,6 +1633,30 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
   para 8000 chars. Ainda não validado em produção — próximo passo: rodar
   `step=galleries&tp=|446973636F2064652076696E696C|` de novo e conferir se agora vem a lista
   completa de galerias com "Coisa Antiga Leilões" nela.
+  ✅ **Rodado em produção (v0.69.36)**: parser DOM funcionou — **68 galerias** extraídas, e
+  **"Coisa Antiga Leilões" está na lista, código `356`** (`ga=356`). Confirma a hipótese sem
+  precisar cair pra `tp=none`: mesmo com a categoria "Disco de Vinil" travada, a seção
+  GALERIAS lista essa casa (o mismatch de categorização é só nos ITENS dela, não na
+  listagem de galerias em si).
+  🔧 **v0.69.37 (Fase 2 — enumeração por galeria)**: ao planejar a extração pós-descoberta,
+  achado que `fetchCatalogData` (a função original pensada pra isso) NÃO serve — devolve
+  `Map<idPeca, CatalogLot>` sem `image`/`price`/`dayKey`/`artist` (foi desenhada só pra
+  ENRIQUECER lotes já existentes com nº de lote e dados de venda, não pra criar `VinylLot`s
+  novos do zero). Abordagem mais inteligente adotada: reaproveitar `fetchPageSearch`/
+  `parseCards` (a MESMA função da listagem geral) paginando por `busca_andamento.asp?ga=<código>`
+  em vez de por `tp=<categoria>` — devolve `VinylLot`s já completos, filtrados por TÍTULO
+  (`looksNonVinyl`, mesmo critério de `scrapeVinylChunk`) em vez de por tag da plataforma,
+  sidestepando o gap de categorização por completo. Adicionado:
+  - `listUrlSearch`/`fetchPageSearch` ganham parâmetro opcional `ga` (`leiloesbr-scrape.server.ts`).
+  - `listGalleryAuctions(galleryCode)`: pagina `ga=<código>` (sem travar `tp=`), filtra por
+    `looksNonVinyl` + janela de dias, devolve `VinylLot[]` prontos pra `persistLots`.
+  - `scanGalleries(offset, count, tp?)`/`step=galleryscan&offset=<n>&count=<n>[&tp=<...>|tp=none]`:
+    chunked como `step=chunk`/`step=enrich` (cursor `offset` no servidor), varre `count`
+    galerias por chamada, persiste os lotes achados a cada bloco (`persistLots`, merge/upsert
+    de sempre). Ainda não testado em produção.
+  Próximo passo: testar `step=galleryscan` isolado (via `debug-cron.yml`) contra a galeria da
+  "Coisa Antiga Leilões" (`ga=356`) especificamente, conferindo se o leilão 65152 aparece com
+  ~319 lotes e campos completos — só depois disso considerar adicionar ao `refresh.yml`.
 
   _(Itens mais antigos desta seção — lance pelo app, upload de foto em massa, peso da sondagem
   na nota e imagem pelo CDN do catálogo — foram **cancelados/descartados**.)_
