@@ -173,6 +173,60 @@ async function scrapePages(keep: (lot: VinylLot) => boolean): Promise<VinylLot[]
   return [...byId.values()];
 }
 
+export type FindLotMatch = {
+  page: number;
+  idLeilao: string;
+  house: string;
+  title: string;
+  dayKey: string;
+  url: string;
+  wouldKeep: boolean; // passaria no filtro `looksNonVinyl`?
+};
+
+/**
+ * Diagnóstico: varre TODAS as páginas da listagem geral (mesma categoria travada
+ * "Disco de Vinil", sem filtro de dia/`looksNonVinyl`) procurando `query` como
+ * idLeilao exato, substring do nome da casa ou substring da URL do lote. Serve para
+ * distinguir "o item nem está na categoria vinil da LeilõesBR" (nada a fazer do nosso
+ * lado — categorização é da casa/plataforma) de "está na categoria mas o NOSSO
+ * parser/filtro descartou" (bug nosso). Não persiste nada.
+ */
+export async function findLotDebug(
+  query: string,
+): Promise<{ query: string; totalPages: number; scannedPages: number; matches: FindLotMatch[] }> {
+  const q = query.trim().toLowerCase();
+  const firstHtml = await fetchPage(1);
+  const total = lastPage(firstHtml);
+  const matches: FindLotMatch[] = [];
+  let scanned = 0;
+  for (let page = total; page >= 1 && scanned < MAX_PAGES; page -= 1) {
+    scanned += 1;
+    let html: string;
+    try {
+      html = await fetchPage(page);
+    } catch {
+      continue;
+    }
+    for (const lot of parseCards(html)) {
+      const hit =
+        lot.idLeilao === q ||
+        lot.house.toLowerCase().includes(q) ||
+        lot.url.toLowerCase().includes(q);
+      if (!hit) continue;
+      matches.push({
+        page,
+        idLeilao: lot.idLeilao,
+        house: lot.house,
+        title: lot.title,
+        dayKey: lot.dayKey,
+        url: lot.url,
+        wouldKeep: !looksNonVinyl(lot.title),
+      });
+    }
+  }
+  return { query, totalPages: total, scannedPages: scanned, matches };
+}
+
 /** Faz upsert dos lotes no banco e registra os leilões vistos (best-effort). */
 // ⚠️ O upsert de `lots` abaixo NÃO tem try/catch ao redor de si — propositalmente.
 // `supabaseAdmin.from(...).upsert(...)` (o shim em `db-query.server.ts`) NUNCA lança:
