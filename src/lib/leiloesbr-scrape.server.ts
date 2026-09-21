@@ -389,6 +389,53 @@ export async function findLotByCategory(
   return { idLeilao, pesquisa, tp, totalPages: total, scannedPages: scanned, matches };
 }
 
+export type GalleryEntry = { code: string; name: string; count: number | null };
+
+/**
+ * Diagnóstico (Fase 1 da investigação de descoberta por "galeria" — ver
+ * docs/notas-desenvolvimento.md, Pendências): busca a página 1 de `busca_andamento.asp`
+ * (categoria `tp` opcional, `null` = sem filtro) e tenta extrair a seção "GALERIAS" — lista
+ * de casas com um código `ga=<n>` que filtra `busca_andamento.asp?ga=<n>[&tp=...]` só pra
+ * aquela casa (achado pelo usuário navegando manualmente). A estrutura EXATA do HTML nunca
+ * foi inspecionada por código neste ambiente (sem rede pros sites de leilão) — tentamos um
+ * padrão plausível (checkbox com `value` numérico + texto próximo) e SEMPRE devolvemos
+ * também um trecho do HTML bruto ao redor da palavra "galeria" como `rawSnippet`, pra
+ * confirmar/ajustar o parser com dado real de produção em vez de achismo, igual ao espírito
+ * de `findLotRawCard`. Não persiste nada.
+ */
+export async function listGalleries(
+  tp: string | null = VINYL_CATEGORY,
+): Promise<{ tp: string | null; galleries: GalleryEntry[]; rawSnippet: string | null }> {
+  const html = await fetchPageSearch(1, "", tp);
+
+  const galleryIdx = html.search(/galeria/i);
+  const region = galleryIdx >= 0 ? html.slice(galleryIdx, galleryIdx + 20000) : "";
+
+  const galleries: GalleryEntry[] = [];
+  const seen = new Set<string>();
+  const checkboxRe = /<input\b[^>]*\bvalue="(\d+)"[^>]*>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = checkboxRe.exec(region))) {
+    const code = m[1]!;
+    if (seen.has(code)) continue;
+    // Texto visível mais próximo depois do checkbox (heurística: primeiro `>texto<` dentro
+    // de uma janela curta — cobre `<label>texto</label>` colado ou um `<span>` ao lado).
+    const after = region.slice(m.index, m.index + 400);
+    const textMatch = after.match(/>([^<]{2,120})</);
+    const raw = decodeHtmlEntities((textMatch?.[1] ?? "").trim());
+    if (!raw) continue;
+    const countMatch = raw.match(/\((\d+)\)\s*$/);
+    seen.add(code);
+    galleries.push({
+      code,
+      name: countMatch ? raw.slice(0, countMatch.index).trim() : raw,
+      count: countMatch ? Number(countMatch[1]) : null,
+    });
+  }
+
+  return { tp, galleries, rawSnippet: galleryIdx >= 0 ? region.slice(0, 6000) : null };
+}
+
 /** Faz upsert dos lotes no banco e registra os leilões vistos (best-effort). */
 // ⚠️ O upsert de `lots` abaixo NÃO tem try/catch ao redor de si — propositalmente.
 // `supabaseAdmin.from(...).upsert(...)` (o shim em `db-query.server.ts`) NUNCA lança:
