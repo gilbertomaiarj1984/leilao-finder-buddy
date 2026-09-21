@@ -1,7 +1,6 @@
 name: Atualização periódica dos lotes
 
-# Roda 2x por dia (UTC 03:10/17:00 = BRT 00:10/14:00) — reduzido de 4x/dia para
-# ficar dentro da cota de Fluid Active CPU do Vercel. Também pode ser disparado
+# Roda 2x por dia (UTC 03:10/17:00 = BRT 00:10/14:00). Também pode ser disparado
 # manualmente na aba Actions ("Run workflow"). O "Atualizar tudo" no app continua
 # existindo para forçar na hora.
 on:
@@ -81,38 +80,9 @@ jobs:
           # levar minutos; se ainda estiver processando, a próxima execução 6-horária
           # coleta. Aqui damos algumas voltas com espera para tentar submeter e já
           # coletar na mesma run. No-op se ANTHROPIC_API_KEY não estiver configurado.
-          #
-          # Diagnóstico (v0.69.15): este step vem voltando 500 quando chamado logo em
-          # seguida do `enrich`, só nas rodadas via GitHub Actions — curl direto do VPS,
-          # isolado, sempre funciona (200). `-f` (usado pelo `call()`) suprime o corpo do
-          # erro; aqui não usamos `-f`, extraímos o HTTP_STATUS por um marcador e só
-          # seguimos pro próximo passo do cron em vez de abortar a run inteira — a
-          # mensagem de erro real (vinda do `catch` de `handleCron`) aparece no log.
-          # v0.69.21: todo container conhecido foi descartado como origem da falha (ver
-          # docs/notas-desenvolvimento.md, "Pendências") — o Caddyfile ganhou um header
-          # `X-Debug-Upstream` (placeholder nativo do Caddy) que expõe pra qual IP:porta
-          # a requisição foi de fato encaminhada; `-D` captura os headers da resposta pra
-          # esse header aparecer no log da próxima falha. v0.69.26: o header nunca aparece
-          # mesmo com o Caddy reload confirmado ativo há horas (testado localmente: o
-          # header_down funciona normal pra respostas 500 de verdade) — suspeita migrou pra
-          # fora do Caddy. `-v` aqui imprime o handshake de rede (IP conectado de verdade,
-          # certificado TLS servido) pra descartar de vez um problema de DNS/roteamento do
-          # lado do GitHub Actions antes de continuar investigando o Caddy. Reverter tudo
-          # isso (curl sem -f aqui, `-v`, e o header no Caddyfile) depois que o caso for
-          # entendido.
           for i in $(seq 1 5); do
-            res_raw="$(curl -sS -v --max-time 120 --retry 3 --retry-delay 5 -D /tmp/aieval_headers.txt -H "x-cron-token: $CRON_TOKEN" -w $'\n===HTTPSTATUS===%{http_code}' "$base/api/cron?step=aieval" 2>/tmp/aieval_verbose.txt || true)"
-            status="${res_raw##*===HTTPSTATUS===}"
-            res="${res_raw%$'\n'===HTTPSTATUS===*}"
-            upstream="$(grep -i '^x-debug-upstream:' /tmp/aieval_headers.txt 2>/dev/null | tr -d '\r' || true)"
-            conn="$(grep -iE 'Connected to|subject:|start date|expire date|SSL certificate verify' /tmp/aieval_verbose.txt 2>/dev/null | tr -d '\r' || true)"
-            echo "aieval $i (status $status): $res"
-            if [ -n "$upstream" ]; then echo "aieval $i $upstream"; fi
-            if [ -n "$conn" ]; then echo "aieval $i conn-info: $conn"; fi
-            if [ "$status" -lt 200 ] 2>/dev/null || [ "$status" -ge 300 ] 2>/dev/null; then
-              echo "aieval $i: status HTTP não-2xx, parando o loop (resto do cron segue)"
-              break
-            fi
+            res="$(call "/api/cron?step=aieval")"
+            echo "aieval $i: $res"
             if echo "$res" | jq -e '.skipped' >/dev/null 2>&1; then break; fi
             if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
             sleep 60
@@ -190,13 +160,7 @@ jobs:
           echo "== Faxina de seen_auctions (Fase 5 da migração para VPS) =="
           # Remove leilões cujas vendas já foram capturadas e fora da janela de retenção —
           # tabela nunca era podada antes, só crescia. 1 chamada, idempotente.
-          # Diagnóstico (v0.69.4): esta chamada específica NÃO usa `call()` (que tem -f,
-          # suprime o corpo em 4xx/5xx) — vem falhando com 400 só por aqui (GitHub Actions),
-          # nunca via curl direto do VPS; -w imprime o corpo (com receivedStep/receivedSearch
-          # ecoados pelo servidor) e o status HTTP, e o `|| true` impede que o `set -e` do
-          # step aborte antes de imprimir. Reverter pro `call()` normal depois que o caso for
-          # entendido.
-          res="$(curl -sS --max-time 120 --retry 3 --retry-delay 5 -H "x-cron-token: $CRON_TOKEN" -w '\nHTTP_STATUS:%{http_code}' "$base/api/cron?step=prune" || true)"
+          res="$(call "/api/cron?step=prune")"
           echo "prune: $res"
 
           echo "Concluído."

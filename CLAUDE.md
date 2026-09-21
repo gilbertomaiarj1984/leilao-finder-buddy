@@ -17,9 +17,8 @@ leilão → artista, com vigia e lances sincronizados com a conta do usuário, a
 âncora de preço do Discogs. Stack: **TanStack Start** (React 19 + SSR) + **Postgres** próprio
 (via `postgres.js`) + **Google OAuth** direto, deploy em **VPS** (Docker Compose + Caddy, build
 via Vite + Nitro preset `node-server`), atualização periódica via **GitHub Actions**.
-Migração de Supabase/Vercel para VPS único documentada em
-`docs/economia-fase-2-vps-unico.md` (Fases 1–5 concluídas em código; falta só a Fase 6 —
-cutover, que exige acesso ao VPS real).
+Migração do free tier anterior para VPS único (cutover concluído) documentada em
+`docs/economia-fase-2-vps-unico.md`.
 
 ## Comandos
 

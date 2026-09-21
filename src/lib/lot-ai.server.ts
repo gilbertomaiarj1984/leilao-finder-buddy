@@ -26,8 +26,8 @@ function toTags(value: unknown): string[] {
 // Cache curto em memória: `getAllLotAi` é chamada a cada iteração dos laços do cron
 // (`aieval`/`market`) e a cada abertura de página que mostra a nota da IA — sempre a
 // tabela INTEIRA. Invalidado a cada escrita (`upsertLotAi`/`updateLotTags`), então nunca
-// devolve algo mais velho que a última gravação desta instância. Reduz egress do Supabase
-// / Active CPU da Vercel (ver docs/economia-fase-1-egress-e-cpu.md).
+// devolve algo mais velho que a última gravação deste processo. Reduz consultas ao
+// Postgres (ver docs/economia-fase-1-egress-e-cpu.md).
 let allCache: { at: number; rows: LotAiRow[] } | null = null;
 const ALL_TTL_MS = 30_000;
 

@@ -5,8 +5,8 @@ import { nitro } from "nitro/vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-// Preset de deploy do Nitro. Na Vercel é auto-detectado (env VERCEL); pode ser
-// forçado por SERVER_PRESET/NITRO_PRESET (ex.: "vercel", "node-server").
+// Preset de deploy do Nitro (VPS usa "node-server"). Pode ser forçado por
+// SERVER_PRESET/NITRO_PRESET.
 const preset = process.env.SERVER_PRESET ?? process.env.NITRO_PRESET;
 
 export default defineConfig({
@@ -18,7 +18,7 @@ export default defineConfig({
     viteReact(),
     tailwindcss(),
     tsConfigPaths({ projects: ["./tsconfig.json"] }),
-    // Nitro por último (build). Gera .vercel/output no preset "vercel".
+    // Nitro por último (build).
     nitro(preset ? { preset } : {}),
   ],
 });
