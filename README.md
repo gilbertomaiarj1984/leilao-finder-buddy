@@ -87,5 +87,5 @@ do Supabase); histórico incremental em `supabase/migrations/`.
 
 ## Atualização periódica
 
-`.github/workflows/refresh.yml` chama `/api/cron` 2×/dia. Configure os secrets
+`.github/workflows/refresh.yml` chama `/api/cron` 3×/dia. Configure os secrets
 `APP_URL` (domínio do app no VPS) e `CRON_TOKEN` no repositório.
