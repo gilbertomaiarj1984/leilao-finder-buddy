@@ -1441,32 +1441,35 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.69.25     | **Confirmado que o `caddy reload` FUNCIONA de verdade** (log do próprio Caddy mostra `"admin.api","msg":"received request","uri":"/load"` seguido de `"load complete"` a cada deploy) — a suspeita (a) do v0.69.24 (reload não aplicando) cai. **Achado real, mas que acabou sendo outro confundidor, não o mistério do `aieval`**: o log do Caddy mostra dois eventos genuínos de `"dial tcp 172.19.0.5:3000: connect: connection refused"` — mas ao cruzar os timestamps com os eventos de rede (`sbJoin`) do `garimpo-app-1` no `journalctl`, **os 4 "recreate" do container hoje batem EXATAMENTE com os 4 deploys desta sessão** (PRs #192–195, um por merge — a tag `APP_IMAGE:${{ github.sha }}` muda a cada deploy, então `garimpo-app-1` é recriado em TODO deploy, sempre). Os dois "connection refused" são só o gap normal de alguns ms trocando de container durante um recreate — nada misterioso, e o `RestartCount` nunca passou de 0 porque cada recreate é um container NOVO (reseta a contagem), não um crash-loop do mesmo container. **Isso reabre uma dúvida importante sobre os testes de HOJE** (`#137`/`#138`/`#139`): como fiz 4 deploys em ~40min nesta sessão, todo teste de hoje caiu perto demais de algum deploy meu — o mesmo confundidor que a run `#136` de ONTEM (genuinamente ~56min longe de qualquer deploy) já tinha descartado. A teoria de "periodicidade ~27–31min" do v0.69.19 foi construída em cima de `#134`/`#135`/`#136` de ontem — **essas continuam válidas** (135 e 136 confirmados sem deploy por perto na hora), mas não deve ganhar mais pontos de dado a partir dos testes de hoje, que estão contaminados. **Decisão**: parar de disparar deploys por um tempo (mínimo ~30-40min sem nenhum push/deploy) antes do próximo teste, pra finalmente conseguir uma reprodução limpa com o header/health-check já confirmadamente ativos |
 | v0.69.26     | **A janela limpa apareceu de graça**: o `schedule` normal do GitHub disparou a run `#140` às 08:30 UTC, **5 horas depois do último deploy** (bem mais que os 30-40min planejados) — reproduziu o bug de novo (`hostname: "169.254.51.151"`) e **o header `X-Debug-Upstream` continuou ausente**, mesmo com o reload confirmado ativo há 5h. Isso praticamente descarta de vez a suspeita (a) do v0.69.24/25 (reload não aplicado) — não sobra tempo suficiente pra explicar 5h de config "desatualizada". **Testado localmente e CONFIRMADO que `header_down` funciona normal**: Caddy real + backend fake devolvendo o corpo JSON idêntico ao bug (500 "Missing DATABASE_URL...") → o header aparece certinho na resposta E no log de acesso. Ou seja: **a suspeita (b) também cai** — não é um problema do Caddy pular `header_down` em erros. Testado também que `curl -D` + `--retry` (exatamente como o `refresh.yml` usa, sem `--retry-all-errors`) captura o header corretamente em todas as 4 tentativas contra um servidor de teste local. **Conclusão desta rodada**: com as duas hipóteses de Caddy descartadas por teste direto, a suspeita migra pra fora do Caddy inteiramente — a requisição que falha pode não estar nem chegando nesse Caddy/site block. Implementado `curl -v` na chamada do `aieval` (`refresh.yml`), capturando o handshake de rede real (IP conectado, certificado TLS servido) — testado localmente sob `set -euo pipefail` (sobrevive, mesmo padrão de proteção do v0.69.22). Isso deve mostrar, na próxima falha, se o GitHub Actions está de fato conectando no IP certo do VPS com o certificado certo, ou se há algo de DNS/roteamento do lado de fora que nem chega a ser problema do Caddy |
 | v0.69.27     | **🎯 CAUSA RAIZ ENCONTRADA — fecha a investigação do bug do `aieval` aberta desde v0.69.15.** A run `#141` reproduziu a falha de novo e o `curl -v` (v0.69.26) revelou tudo na primeira tentativa: `Connected to leilao-finder-buddy.vercel.app (64.29.17.195) port 443`, `subject: CN=*.vercel.app`. **O secret `APP_URL` do GitHub Actions nunca foi atualizado pro domínio do VPS no cutover da Fase 6** — continua apontando pra Vercel. Isso explica cada peça do mistério de uma vez: hostname link-local (`169.254.x.x`) é o padrão normal de runtime serverless da AWS Lambda por trás do Vercel; `hasDatabaseUrl: false` porque `DATABASE_URL` é uma env exclusiva do VPS, nunca cadastrada no painel da Vercel; o corpo do erro bate exatamente com o código atual porque **a Vercel nunca parou de fazer auto-deploy deste repo** (confirmado pelos comentários do bot `vercel[bot]` aparecendo em TODOS os PRs desta sessão, #192–197) — a Vercel está rodando o código mais recente, só que com o ambiente antigo (sem `DATABASE_URL`). O checklist de progresso do cutover (`docs/economia-fase-2-vps-unico.md`, item 12) foi marcado `[x]` dizendo "cron reabilitado e validado com dados reais" — mas isso validou o cron rodando MANUALMENTE contra o VPS na época; **o secret `APP_URL` em si, usado pelo `refresh.yml` de verdade, nunca foi trocado**. Ou seja: possivelmente NENHUMA chamada do cron 2×/dia desde o cutover (v0.69.13) chegou de fato no VPS — tudo foi pra Vercel, que ainda tem `SUPABASE_*`/Postgres antigo configurado o suficiente pra `chunk`/`enrich` (scraping + persistência) parecerem funcionar normalmente na maior parte do tempo, mas falha especificamente onde o código exige `DATABASE_URL` sem fallback (só a partir do `client.server.ts` pós-v0.64.0). **Ação necessária, só o usuário pode fazer** (secret do GitHub, fora do alcance de qualquer sessão): trocar o secret `APP_URL` em Settings → Secrets and variables → Actions pra `https://143-95-214-240.sslip.io` (o `APP_DOMAIN` real do VPS). Recomendado também, depois de confirmar que o cron passa a bater no VPS: desligar de vez o auto-deploy da Vercel pra este repo (Vercel → Project Settings → Git → desconectar), já que ele não serve mais nenhum propósito e só criou essa armadilha — e reforçar no checklist de cutover que "cron validado" precisa checar o secret em si, não só um teste manual |
-| v0.69.28     | **Secret `APP_URL` trocado pelo usuário pra `https://143-95-214-240.sslip.io` — confirmado que a troca funcionou.** Na run `#143` (`workflow_dispatch`), o primeiro `curl` do `refresh.yml` (`step=chunk`) já não conecta mais na Vercel — chega de fato no VPS —, mas volta **401 Unauthorized** de cara, sem nem chegar no `aieval`. Como `handleCron` (`cron.server.ts`) checa o `CRON_TOKEN` ANTES de qualquer outra coisa (inclusive antes do acesso a banco), um 401 nesse ponto só pode ser mismatch entre o `CRON_TOKEN` do secret do GitHub Actions e o `CRON_TOKEN` configurado no `.env` do VPS — **segundo secret que também nunca foi sincronizado no cutover da Fase 6**, mesma classe de problema do `APP_URL` (v0.69.27), só que só apareceu agora porque o `APP_URL` era o bloqueador anterior (a requisição nem chegava a testar o token). É evidência POSITIVA de que a correção do `APP_URL` está certa. Ação pendente, só o usuário pode fazer: comparar (sem colar o valor em texto puro no chat) o `CRON_TOKEN` de `/home/deploy/garimpo/.env` na VPS com o secret `CRON_TOKEN` em Settings → Secrets and variables → Actions, e igualar os dois |
-| v0.69.29     | **✅ CONFIRMAÇÃO FINAL — bug do `aieval` (aberto desde v0.69.15) totalmente resolvido.** Usuário igualou o `CRON_TOKEN` da VPS com o secret do GitHub Actions; a run `#144` (`workflow_dispatch`) completou TODOS os steps do `refresh.yml` com sucesso (chunk, enrich, aieval, aiident, market, condition, sales, reident, purchases, prune), sem nenhum 401/500 — inclusive o `step=prune`, que também tinha um diagnóstico de "só falha via GitHub Actions" aberto desde v0.69.4 e era a MESMA causa raiz. Prova definitiva no `aieval`: `x-debug-upstream: tcp/app:3000` + `conn-info: Connected to 143-95-214-240.sslip.io ... subject: CN=143-95-214-240.sslip.io` — o cron finalmente bate no `garimpo-app-1` de verdade, nunca mais na Vercel. Removida TODA a instrumentação temporária de diagnóstico (header `X-Debug-Upstream` no `Caddyfile`, `curl -v`/`-D` no `aieval`, `curl` cru no `prune` — ambos voltam a usar `call()` padrão) e TODAS as referências ativas à Vercel do código/docs (pedido do usuário assim que a correção fosse confirmada): `vercel.json` removido, `.vercel` tirado de `.gitignore`/`.dockerignore`, comentários em `vite.config.ts`/`discogs.server.ts`/`leiloesbr-scrape.server.ts`/`lot-ai.server.ts`/`lot-ident.server.ts`/`lot-sales.server.ts` reescritos sem menção à Vercel, `CLAUDE.md` atualizado (cutover já concluído, não "falta a Fase 6"), `.env.example` corrigido (chaves de IA/Discogs são lidas do `.env` do VPS, não mais "Environment Variables da Vercel"). Mantido só o registro histórico da migração (`economia-fase-2-vps-unico.md`/`economia-migracao.md`/`README.md`) — não é instrução ativa, é o porquê da arquitetura atual |
+| v0.69.28     | **Achado mais fundo do bug de perda de lotes**: `persistLots` (`leiloesbr-scrape.server.ts`) fazia `await supabaseAdmin.from("lots").upsert(...)` sem checar `{ error }` — o shim `db-query.server.ts` tem contrato de NUNCA lançar (erro do Postgres vira `{ data: null, error }` resolvido, igual PostgREST), então o `try/catch` ao redor da chamada nunca disparava e `scrapeVinylChunk`/`enrichMissingLotes` reportavam sucesso mesmo quando nada foi gravado (ex.: rodando contra ambiente sem `DATABASE_URL`, caso do v0.69.27). Diferente do `aieval` (que sempre checa `error` e relança, por isso é o único que estourava 500), `chunk`/`enrich` mascaravam a falha por trás de um HTTP 200 com `scraped`/`updated` contando o que foi RASPADO do site, não o que foi GRAVADO no banco — cron rodando 2×/dia desde o cutover da Fase 6 sem persistir um lote sequer, sem nenhum log. Corrigido: `persistLots` checa `error` e relança (try/catch morto removido); `scrapeVinylChunk`/`enrichMissingLotes` devolvem `persisted: boolean`; `refresh.yml` aborta a run (+ ping de falha no healthchecks.io) em `persisted:false` em vez de seguir o laço até o fim. Não troca o secret `APP_URL` (v0.69.27, ainda pendente só o usuário) — só torna a perda visível em vez de silenciosa a partir de agora |
+| v0.69.29     | **Segundo secret divergente encontrado em paralelo, mesma classe do `APP_URL`**: com `APP_URL` corrigido, a run `#143` do `refresh.yml` chegou a bater no VPS de verdade mas voltou **401 Unauthorized** logo no primeiro step (`chunk`) — como `handleCron` (`cron.server.ts`) checa o `CRON_TOKEN` antes de qualquer outra coisa, um 401 ali só podia ser mismatch entre o secret `CRON_TOKEN` do GitHub Actions e o `CRON_TOKEN` do `.env` do VPS, também nunca sincronizado no cutover. Usuário igualou os dois; a run `#144` completou TODOS os steps do cron com sucesso ponta a ponta contra o VPS real (chunk, enrich, aieval, aiident, market, condition, sales, reident, purchases, prune), com o `aieval` mostrando `conn-info` direto pro domínio do VPS — confirmação final e independente de que o bug do `aieval` (v0.69.27) estava mesmo resolvido |
+| v0.69.30     | **Confirmado em produção que o `APP_URL` já tinha sido trocado pelo usuário** (runs `#151`/`#152` do `refresh.yml`, 2026-09-21: todos os steps verdes, `chunk`/`enrich` com `persisted:true`, `aieval` conectando direto no domínio do VPS). Ao validar os números pós-fix, o usuário achou um bug DIFERENTE e mais antigo (não causado pela migração — código já existia em 10/09, bem antes da Fase 1): a varredura geral (`scrapePages`/`scrapeVinylChunk`) parava de escanear páginas assim que achava uma cujo dia mínimo já tinha passado da janela, assumindo ordenação estritamente monotônica por data — mas a listagem intercala leilões, então isso deixava dias inteiros de fora sem nenhum log (dia 24/9 com 0 lotes cercado de dias com centenas; casa Abreu Colecionismo com só 125 dos 198 lotes reais do dia 22, confirmados no catálogo dela e por casas com histórico normal na base como RT Leilões e Artes). Reproduzido de forma determinística: duas rodadas completas do cron pararam exatamente no mesmo intervalo de páginas. Corrigido: removido o corte antecipado por `minDay` em `scrapePages`/`scrapeVinylChunk` — a varredura agora sempre vai até `MAX_PAGES`/`page=1`, só o filtro por `dayKey` item a item decide o que entra na janela |
+| v0.69.31     | Validado em produção que o fix de paginação (v0.69.30) funcionou (run `#153`: sequência de páginas `93→78→63→48→33→18→3→null`, cobrindo o intervalo antes pulado). Mesmo assim o usuário reportou um lote específico do dia 24/9 ainda ausente (casa "Coisa Antiga Leilões", idLeilao 65152) — caso NOVO, de natureza diferente do bug de paginação já corrigido. Sem acesso de rede aos sites de leilão nem ao banco de produção no ambiente de dev, criada ferramenta de diagnóstico pra decidir se é categorização da própria LeilõesBR (fora do nosso controle) ou um filtro nosso descartando por engano: `findLotDebug` (`leiloesbr-scrape.server.ts`) + `step=findlot&q=<idLeilao ou casa>` (`cron.server.ts`) varre toda a listagem geral (mesma categoria, sem filtro de dia/`looksNonVinyl`) e reporta cada ocorrência encontrada; novo workflow `debug-cron.yml` (`workflow_dispatch`, input `querystring`) chama qualquer step de diagnóstico do `/api/cron` avulso, sem rodar a cadeia pesada do `refresh.yml`. Investigação em andamento — ver Pendências |
+| v0.69.32     | `step=findlot&q=65152` rodado em produção: varreu as 93 páginas da categoria "Disco de Vinil" da LeilõesBR de ponta a ponta e não achou NENHUMA ocorrência do leilão 65152 — descarta bug nosso (paginação/filtro/parse) pra esse caso específico. Usuário então trouxe achado novo: no catálogo PRÓPRIO da casa "Coisa Antiga Leilões", o leilão 65152 tem 401 itens, 319 categorizados como "Disco de vinil" pelo filtro do site DELA — ou seja, a categorização interna da casa não está batendo com a tag `tp=` que a nossa busca geral usa (ou não chega na LeilõesBR). Adicionado `findLotSearch`/`step=findlot2&idLeilao=<...>&pesquisa=<termo>&lockToVinyl=0\|1` (`leiloesbr-scrape.server.ts`/`cron.server.ts`): busca por texto livre (filtrado no servidor, mantém o total de páginas viável) e opcionalmente SEM travar a categoria, pra achar o mesmo idLeilao em qualquer categoria da LeilõesBR. Investigação em andamento — ver Pendências |
+| v0.69.33     | **Fechamento do bug do `aieval` (v0.69.27/29) e limpeza pós-migração**: removida TODA a instrumentação temporária de diagnóstico usada pra caçar o bug (header `X-Debug-Upstream` no `Caddyfile`, `curl -v`/`-D` no `aieval`/`prune` do `refresh.yml` — ambos voltam a usar `call()` padrão) e TODAS as referências ativas à Vercel do código/docs (pedido do usuário assim que a correção foi confirmada em produção): `vercel.json` removido, `.vercel` tirado de `.gitignore`/`.dockerignore`, comentários em `vite.config.ts`/`discogs.server.ts`/`leiloesbr-scrape.server.ts`/`lot-ai.server.ts`/`lot-ident.server.ts`/`lot-sales.server.ts` reescritos sem menção à Vercel, `CLAUDE.md` atualizado (cutover já concluído, não "falta a Fase 6"), `.env.example` corrigido (chaves de IA/Discogs são lidas do `.env` do VPS, não mais "Environment Variables da Vercel"). Mantido só o registro histórico da migração (`economia-fase-2-vps-unico.md`/`economia-migracao.md`/`README.md`) — não é instrução ativa, é o porquê da arquitetura atual. Usuário confirmou nesta janela que também já removeu o auto-deploy da Vercel pro repo e a Authorized redirect URI antiga (Google Cloud Console) — ambas ações fora do alcance de qualquer sessão |
 
 ## Pendências
 
 **Produto / código (em aberto)**
 
-- **✅ RESOLVIDO DE VEZ (v0.69.27–29) — `step=aieval` voltando 500 "Missing DATABASE_URL" (aberto
-  desde v0.69.15).** Causa raiz: **dois secrets do GitHub Actions nunca foram atualizados pro
-  VPS no cutover da Fase 6** — `APP_URL` continuava apontando pra Vercel
-  (`leilao-finder-buddy.vercel.app`, corrigido v0.69.27/28) e, uma vez corrigido esse, apareceu
-  o segundo: `CRON_TOKEN` também divergente entre o secret do GitHub e o `.env` do VPS (401,
-  achado/corrigido v0.69.28/29). A Vercel nunca parou de receber auto-deploy deste repo, então
-  rodava o código atual — só que sem `DATABASE_URL` (env exclusiva do VPS). **Confirmado
-  resolvido de vez na run `#144`**: todos os steps do `refresh.yml` completam com sucesso,
-  `aieval` responde 200 com `conn-info` apontando pro domínio real do VPS
-  (`143-95-214-240.sslip.io`), nunca mais pra Vercel (ver Histórico de versões, v0.69.27–29,
-  pra investigação completa).
-  - Mitigação que fica valendo, mesmo com a causa raiz resolvida: `/api/health`
-    (`src/lib/health.server.ts`) + `health_uri` ativo no Caddy (v0.69.21) — proteção estrutural
-    de baixo custo, útil independente da causa.
-  - Instrumentação temporária de diagnóstico **removida** (v0.69.29): header `X-Debug-Upstream`
+- **✅ RESOLVIDO DE VEZ (v0.69.27/29, validado em produção 2026-09-21) — `step=aieval` voltando
+  500 "Missing DATABASE_URL" (aberto desde v0.69.15).** Causa raiz: **dois secrets do GitHub
+  Actions nunca foram atualizados pro VPS no cutover da Fase 6** — `APP_URL` apontava pra Vercel
+  (`leilao-finder-buddy.vercel.app`, corrigido v0.69.27) e, uma vez corrigido esse, apareceu o
+  segundo em paralelo: `CRON_TOKEN` também divergente entre o secret do GitHub e o `.env` do
+  VPS (401 Unauthorized, achado/corrigido v0.69.29). A Vercel nunca parou de receber auto-deploy
+  deste repo, então rodava o código atual — só que sem `DATABASE_URL` (env exclusiva do VPS).
+  Confirmado resolvido de vez na run `#144` (todos os steps do `refresh.yml` com sucesso,
+  `aieval` com `conn-info` direto pro VPS) e reconfirmado nas runs `#151`/`#152` (2026-09-21,
+  já sem a instrumentação de diagnóstico precisar de nada especial — ver Histórico de versões,
+  v0.69.27–29, pra investigação completa).
+  - Mitigação que fica valendo: `/api/health` (`src/lib/health.server.ts`) + `health_uri` ativo
+    no Caddy (v0.69.21) — proteção estrutural de baixo custo, útil independente da causa.
+  - Instrumentação temporária de diagnóstico **removida** (v0.69.33): header `X-Debug-Upstream`
     no `Caddyfile` e `-v`/`-D` na chamada do `aieval`/`prune` em `refresh.yml` (v0.69.4/21/26) —
     nenhum dos dois é mais necessário, o tráfego já vai pro VPS de verdade.
 
-- **✅ FEITO (v0.69.29) — remoção de TODAS as referências ativas à Vercel do código/docs**,
+- **✅ FEITO (v0.69.33) — remoção de TODAS as referências ativas à Vercel do código/docs**,
   pedido explícito do usuário assim que o bug do `aieval` foi confirmado resolvido. Removidos:
   `vercel.json`, entrada `.vercel` em `.gitignore`/`.dockerignore`, menção a `vercel.app` no
   User-Agent do Discogs (`discogs.server.ts`), comentários citando Vercel em
@@ -1477,9 +1480,102 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
   v0.69.13). Mantido de propósito o registro **histórico** da migração (`README.md`,
   `docs/economia-fase-2-vps-unico.md`, `docs/economia-migracao.md`,
   `docs/economia-fase-1-egress-e-cpu.md`) — essas menções não são instrução ativa, são o
-  porquê da arquitetura atual (VPS único). Recomendado ao usuário, como próximo passo fora do
-  alcance de qualquer sessão: desconectar de vez o auto-deploy da Vercel pra este repo (Vercel
-  → Project Settings → Git) — não serve mais nenhum propósito.
+  porquê da arquitetura atual (VPS único). Usuário confirmou nesta janela que também já
+  desconectou o auto-deploy da Vercel pra este repo (Vercel → Project Settings → Git) e removeu
+  a Authorized redirect URI antiga (Google Cloud Console) — ambas ações fora do alcance de
+  qualquer sessão. **Fase 6 (cutover) totalmente encerrada, sem pendências restantes.**
+
+- **✅ RESOLVIDO (achado em v0.69.28, decorrente do bug acima) — o cron vinha PERDENDO lotes desde o
+  cutover da Fase 6, não só falhando o `aieval`.** Causa raiz de UM NÍVEL MAIS FUNDO do que
+  parecia: o shim `db-query.server.ts` (`createDbQueryClient`/`QueryBuilder.execute`) tem
+  contrato explícito de **nunca lançar** — todo erro do Postgres (`DATABASE_URL` ausente,
+  conexão recusada, o que for) vira `{ data: null, error }` resolvido normalmente, igual ao
+  PostgREST. `persistLots` (`leiloesbr-scrape.server.ts`, usado por `scrapeVinylChunk` e
+  `enrichMissingLotes`) fazia `await supabaseAdmin.from("lots").upsert(rows, ...)` **sem checar
+  `error`** — então o `try/catch` ao redor nunca disparava (não havia o que capturar: a promise
+  sempre resolvia "com sucesso", só que sem gravar nada) e o `console.error` de diagnóstico
+  nunca rodava. `scrapeVinylChunk`/`enrichMissingLotes` devolviam **HTTP 200 normal**, com
+  `scraped`/`updated` contando o que foi RASPADO do site (parse do HTML), não o que foi GRAVADO
+  no banco. Combinado com o bug do `APP_URL`/Vercel acima (sem `DATABASE_URL` lá), toda rodada
+  de cron desde o cutover da Fase 6 raspou o site normalmente mas **não gravou nada de novo** na
+  tabela `lots` real (a do VPS) — o app ficou servindo só o snapshot congelado de antes da
+  migração, cada vez mais defasado da contagem real do LeilõesBR, sem nenhum log ou sintoma
+  visível (diferente do `aieval`, que usa `ai-eval.server.ts`/outros módulos que SEMPRE checam
+  `error` e relançam — por isso só ele estourava 500 e abortava o `refresh.yml`, mascarando que
+  `chunk`/`enrich`, rodando antes dele no laço, já não estavam gravando nada). **Corrigido em
+  v0.69.28**: `persistLots` agora checa `{ error }` do `.upsert()` e relança (removido o
+  `try/catch` que envolvia essa chamada — ela nunca lançava mesmo, então o bloco só escondia o
+  problema; o histórico de leilões via `recordAuctions`, best-effort à parte, continua
+  silencioso de propósito). `scrapeVinylChunk`/`enrichMissingLotes` devolvem `persisted: boolean`
+  (`false` quando o erro relançado foi pego pelo `try/catch` que já existia nelas) e `refresh.yml`
+  aborta a run (+ ping de falha no healthchecks.io) assim que vir `persisted:false`, em vez de
+  seguir o laço até o fim fingindo que terminou. **Isso não troca o secret `APP_URL` sozinho** —
+  só transforma a perda silenciosa em falha ruidosa, visível no log da Action/healthchecks.io,
+  até o item acima ser corrigido pelo usuário. Depois de trocar o secret e confirmar rodadas
+  verdes: (1) considerar rodar `chunk`/`enrich` manualmente (botão "Atualizar tudo") pra
+  recuperar o atraso acumulado mais rápido que esperar os 2 ciclos diários; (2) varrer o resto
+  do arquivo por outros `.upsert()`/`.insert()`/`.update()`/`.delete()` que não checam `error`
+  (`pruneOutOfWindow` aqui mesmo é um candidato — não corrigido agora por ser limpeza, não
+  causa de perda, mas mesma classe de risco) — não é garantido que este seja o único lugar.
+  **Confirmado em produção**: as runs `#151`/`#152` (2026-09-21, após o usuário trocar o
+  `APP_URL`) mostram `chunk`/`enrich` com `persisted:true` em toda chamada — a gravação no
+  banco do VPS está funcionando de verdade.
+
+- **✅ RESOLVIDO (achado em 2026-09-21, INDEPENDENTE da migração — ver nota abaixo) — dia
+  inteiro sumindo da listagem (ex.: quinta 24/9 com 0 lotes, cercado por 21/9=1194, 22/9=344,
+  23/9=563, 25/9=615).** Depois de confirmar a persistência (item acima), o usuário ainda achou
+  lotes de vinil reais sumindo — não só o caso do dia 24 zerado, mas também a casa **Abreu
+  Colecionismo** trazendo só 125 dos 198 lotes do dia 22 que aparecem no catálogo dela mesma.
+  Causa raiz: `scrapePages`/`scrapeVinylChunk` (`leiloesbr-scrape.server.ts`) caminhavam pelas
+  páginas da listagem geral (`busca_andamento.asp`) de trás pra frente e **paravam assim que
+  encontravam uma página cujo dia mínimo já tinha passado do fim da janela** (`passedWindow`),
+  assumindo que a ordenação é estritamente monotônica por data ("os dias mais próximos ficam
+  nas últimas páginas"). Na prática os leilões vêm intercalados (não ordenados só por data) —
+  uma página "fora da janela" não garante que as páginas seguintes (números menores) também
+  estejam; leilões inteiros com lotes dentro da janela (confirmados pelo usuário: "Peça Única
+  Colecionismo" e "Livros Universo - Livros Raros e Antiguidades" com vinil pro dia 24; "RT
+  Leilões e Artes", casa já com histórico normal na base) ficavam permanentemente fora do
+  alcance da varredura, sem nenhum log. **Achado reproduzível/determinístico**: duas rodadas
+  completas do cron (`#151`, `#152`) pararam exatamente no mesmo intervalo de páginas (93→34),
+  nunca alcançando as páginas 33→1 em nenhuma das duas — não era questão de dado ainda não
+  publicado. **Corrigido em v0.69.30**: removido o corte antecipado por `minDay` em
+  `scrapePages` (usada por `scrapeVinylLots`/`refreshVinylDay`) e em `scrapeVinylChunk` (usada
+  pelo cron); agora a varredura sempre vai até `MAX_PAGES`/`page=1`, e só o filtro por `dayKey`
+  item a item decide o que entra na janela — mais requisições por rodada (hoje ~93 páginas
+  completas em vez de parar em ~60), mas dentro do orçamento já existente (`MAX_PAGES=150` na
+  leitura ao vivo; laço de 80 chamadas × 15 páginas no `refresh.yml`).
+  ⚠️ **Nota de atribuição**: diferente do bug de persistência acima, este é **mais antigo que a
+  migração pra VPS** — a lógica `passedWindow` já existia no código em 10/09 (v0.44.x),
+  bem antes da Fase 1 da migração (v0.62.0). Não é um efeito colateral do cutover; só não tinha
+  sido percebido porque, até a persistência ser corrigida, o app servia um retrato congelado
+  de dados antigos e ninguém conferia a distribuição por dia de uma varredura fresca dia a dia.
+
+- **🔎 EM INVESTIGAÇÃO (2026-09-21, v0.69.31/32) — mesmo após o fix de paginação acima, usuário
+  reportou um lote específico do dia 24/9 ainda ausente da ferramenta**: casa "Coisa Antiga
+  Leilões", `https://www.coisaantigaleiloes.com.br/catalogo.asp?Num=65152` (idLeilao 65152).
+  A run `#153` (v0.69.30, pós-fix) já varreu a listagem geral até o fim (93→3→null, cobrindo
+  o intervalo antes pulado), então o caso muda de natureza: não é mais o corte antecipado por
+  página. **Ferramenta de diagnóstico** (`findLotDebug`, `leiloesbr-scrape.server.ts`,
+  `step=findlot&q=<idLeilao ou casa/URL>` em `cron.server.ts`; chamada avulsa via novo workflow
+  `debug-cron.yml`, `workflow_dispatch` com input `querystring`, sem rodar a cadeia pesada do
+  `refresh.yml`) rodada em produção (`step=findlot&q=65152`): varreu as 93 páginas da categoria
+  "Disco de Vinil" da LeilõesBR de ponta a ponta e **não achou NENHUMA ocorrência** do leilão
+  65152 (`matches: []`) — descarta bug nosso (paginação/`looksNonVinyl`/parse de `dayKey`) pra
+  esse caso: o item simplesmente não está na categoria vinil da LeilõesBR.
+  ⚠️ **Achado adicional do usuário que reabre a investigação**: no catálogo PRÓPRIO da casa
+  (`coisaantigaleiloes.com.br/catalogo.asp?Num=65152`), o leilão tem 401 itens, dos quais **319
+  categorizados como "Disco de vinil"** (e 82 como "Música") pelos filtros do site DELA. Ou seja,
+  a casa marca esses 319 itens como vinil no catálogo próprio, mas nenhum deles aparece na busca
+  geral da LeilõesBR filtrada por `tp="Disco de vinil"` — a categoria interna da casa não está
+  batendo com a tag que chega na LeilõesBR (ou não chega nenhuma). **Ferramenta nível 2**
+  (`findLotSearch`, `step=findlot2&idLeilao=<...>&pesquisa=<termo>&lockToVinyl=0|1`): busca por
+  texto livre (`pesquisa`, filtrado no servidor — mantém o total de páginas viável mesmo sem
+  travar categoria) e OPCIONALMENTE sem o `tp=` de categoria, pra achar o mesmo idLeilao em
+  QUALQUER categoria da LeilõesBR — se achar com `lockToVinyl=0` mas não com `findlot`, confirma
+  categorização de fora (nada a corrigir no scraper); se não achar em lugar nenhum, o leilão
+  pode nem estar exposto na busca geral (ex.: leilão futuro que só aparece perto da data, ou
+  fora da plataforma agregadora). Próximo passo: rodar `step=findlot2` em produção com um termo
+  de busca real (ex. um título de item visto no catálogo da casa) e decidir com o resultado.
 
   _(Itens mais antigos desta seção — lance pelo app, upload de foto em massa, peso da sondagem
   na nota e imagem pelo CDN do catálogo — foram **cancelados/descartados**.)_

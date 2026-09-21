@@ -1,0 +1,30 @@
+name: Debug avulso (/api/cron)
+
+# Chamada AVULSA a um step de diagnóstico do /api/cron (findlot, catdebug, salesdebug…)
+# sem rodar a cadeia pesada do cron completo (`refresh.yml`). Disparo manual só ("Run
+# workflow"), informando a querystring após `/api/cron?`.
+on:
+  workflow_dispatch:
+    inputs:
+      querystring:
+        description: 'Querystring após /api/cron?, ex.: "step=findlot&q=65152"'
+        required: true
+        type: string
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chamar /api/cron
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+          QS: ${{ inputs.querystring }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL:-}" ] || [ -z "${CRON_TOKEN:-}" ]; then
+            echo "Configure os secrets APP_URL e CRON_TOKEN no repositório."; exit 1
+          fi
+          base="${APP_URL%/}"
+          curl -sS --max-time 100 --retry 2 --retry-delay 5 -H "x-cron-token: $CRON_TOKEN" \
+            "$base/api/cron?$QS" | jq .

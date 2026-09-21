@@ -41,10 +41,20 @@ jobs:
           trap 'ping_healthcheck fail' ERR
 
           echo "== Varredura em blocos =="
+          # `chunk`/`enrich` engolem falha de persistência no banco (best-effort, pra não
+          # derrubar a varredura por um blipe transitório de rede) e sempre voltam HTTP 200 —
+          # por isso `call()` (que usa `curl -f`) nunca detectava um banco fora do ar aqui,
+          # mascarando perda silenciosa de lotes (ex.: cron rodando contra ambiente sem
+          # DATABASE_URL). O campo `persisted:false` na resposta agora expõe isso: aborta a
+          # run (mesmo padrão do trap ERR) em vez de seguir raspando sem nunca gravar nada.
           from="null"
           for i in $(seq 1 80); do
             res="$(call "/api/cron?step=chunk&fromPage=$from&size=15")"
             echo "chunk $i: $res"
+            if [ "$(echo "$res" | jq -r '.persisted')" = "false" ]; then
+              echo "chunk $i: persisted=false — banco não gravou o bloco, abortando"
+              ping_healthcheck fail; exit 1
+            fi
             next="$(echo "$res" | jq -r '.nextPage')"
             [ "$next" = "null" ] && break
             from="$next"
@@ -55,6 +65,10 @@ jobs:
           for i in $(seq 1 60); do
             res="$(call "/api/cron?step=enrich&max=6&offset=$off")"
             echo "enrich $i (offset $off): $res"
+            if [ "$(echo "$res" | jq -r '.persisted')" = "false" ]; then
+              echo "enrich $i: persisted=false — banco não gravou os nº de lote, abortando"
+              ping_healthcheck fail; exit 1
+            fi
             done="$(echo "$res" | jq -r '.done')"
             [ "$done" = "true" ] && break
             off="$(echo "$res" | jq -r '.nextOffset')"

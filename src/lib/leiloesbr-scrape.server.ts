@@ -132,11 +132,25 @@ function sortLots(lots: VinylLot[]): VinylLot[] {
 }
 
 /**
- * Percorre as páginas (op=3, decrescentes por data — os dias mais próximos ficam
- * nas ÚLTIMAS páginas) coletando lotes de vinil que passem em `keep`, parando
- * assim que uma página inteira já está além de `stopDay`.
+ * Percorre as páginas (op=3) coletando lotes de vinil que passem em `keep`, até
+ * `MAX_PAGES` ou o fim da listagem.
+ *
+ * ⚠️ NÃO paramos mais cedo ao achar uma página cujo dia mínimo já passou de
+ * `stopDay` — a suposição de que a ordenação das páginas é estritamente
+ * monotônica por data (comentário antigo: "os dias mais próximos ficam nas
+ * ÚLTIMAS páginas") não se sustenta na prática. Achado real (2026-09-21): o dia
+ * 24/9 aparecia com 0 lotes na ferramenta enquanto 21/22/23/25 tinham centenas
+ * cada, e casas confirmadas com lotes reais de vinil nesse dia ("Peça Única
+ * Colecionismo", "Livros Universo") simplesmente não apareciam. Causa: leilões
+ * ficam intercalados na listagem (não ordenados só por data), então uma página
+ * com `minDay > stopDay` não garante que TODAS as páginas seguintes também
+ * estejam fora da janela — só que aquela página específica está. Parar ali
+ * pulava para sempre as páginas restantes (nunca escaneadas), mesmo que
+ * contivessem dias dentro da janela. `MAX_PAGES` (150) já é a proteção contra
+ * varredura descontrolada; o filtro por `dayKey`/`keep` por item continua
+ * sendo quem decide o que entra, não mais um corte por página.
  */
-async function scrapePages(keep: (lot: VinylLot) => boolean, stopDay: string): Promise<VinylLot[]> {
+async function scrapePages(keep: (lot: VinylLot) => boolean): Promise<VinylLot[]> {
   const firstHtml = await fetchPage(1);
   const total = lastPage(firstHtml);
   const byId = new Map<string, VinylLot>();
@@ -155,43 +169,171 @@ async function scrapePages(keep: (lot: VinylLot) => boolean, stopDay: string): P
       if (looksNonVinyl(lot.title)) continue;
       if (keep(lot)) byId.set(lot.id, lot);
     }
-    const minDay = lots.reduce((min, lot) => (lot.dayKey < min ? lot.dayKey : min), "9999-99-99");
-    if (minDay > stopDay) break;
   }
   return [...byId.values()];
 }
 
+export type FindLotMatch = {
+  page: number;
+  idLeilao: string;
+  house: string;
+  title: string;
+  dayKey: string;
+  url: string;
+  wouldKeep: boolean; // passaria no filtro `looksNonVinyl`?
+};
+
+/**
+ * Diagnóstico: varre TODAS as páginas da listagem geral (mesma categoria travada
+ * "Disco de Vinil", sem filtro de dia/`looksNonVinyl`) procurando `query` como
+ * idLeilao exato, substring do nome da casa ou substring da URL do lote. Serve para
+ * distinguir "o item nem está na categoria vinil da LeilõesBR" (nada a fazer do nosso
+ * lado — categorização é da casa/plataforma) de "está na categoria mas o NOSSO
+ * parser/filtro descartou" (bug nosso). Não persiste nada.
+ */
+export async function findLotDebug(
+  query: string,
+): Promise<{ query: string; totalPages: number; scannedPages: number; matches: FindLotMatch[] }> {
+  const q = query.trim().toLowerCase();
+  const firstHtml = await fetchPage(1);
+  const total = lastPage(firstHtml);
+  const matches: FindLotMatch[] = [];
+  let scanned = 0;
+  for (let page = total; page >= 1 && scanned < MAX_PAGES; page -= 1) {
+    scanned += 1;
+    let html: string;
+    try {
+      html = await fetchPage(page);
+    } catch {
+      continue;
+    }
+    for (const lot of parseCards(html)) {
+      const hit =
+        lot.idLeilao === q ||
+        lot.house.toLowerCase().includes(q) ||
+        lot.url.toLowerCase().includes(q);
+      if (!hit) continue;
+      matches.push({
+        page,
+        idLeilao: lot.idLeilao,
+        house: lot.house,
+        title: lot.title,
+        dayKey: lot.dayKey,
+        url: lot.url,
+        wouldKeep: !looksNonVinyl(lot.title),
+      });
+    }
+  }
+  return { query, totalPages: total, scannedPages: scanned, matches };
+}
+
+function listUrlSearch(page: number, pesquisa: string, lockToVinyl: boolean): string {
+  const params = new URLSearchParams({
+    pesquisa,
+    op: "3",
+    v: String(PER_PAGE),
+    b: "0",
+    pag: String(page),
+  });
+  const base = `${BASE_URL}/busca_andamento.asp?${params.toString()}`;
+  return lockToVinyl ? `${base}&tp=${VINYL_CATEGORY}` : base;
+}
+
+async function fetchPageSearch(
+  page: number,
+  pesquisa: string,
+  lockToVinyl: boolean,
+): Promise<string> {
+  return await publicFetch(listUrlSearch(page, pesquisa, lockToVinyl), {});
+}
+
+/**
+ * Diagnóstico nível 2: para o caso em que `findLotDebug` NÃO achou o idLeilao em
+ * NENHUMA página da categoria "Disco de Vinil" (mesmo a casa marcando o item como
+ * vinil no catálogo DELA — categoria interna da casa, não necessariamente a mesma
+ * tag que ela manda pra LeilõesBR). Aqui usamos `pesquisa` (busca por texto livre do
+ * próprio site, filtrada no SERVIDOR — mantém o total de páginas viável) e
+ * OPCIONALMENTE sem travar `tp=` (categoria), pra achar o mesmo `idLeilao` em
+ * QUALQUER categoria. Se achar aqui com `lockToVinyl:false` mas `findLotDebug` não
+ * achou nada, confirma que o item está categorizado FORA de "Disco de Vinil" na
+ * LeilõesBR (decisão da casa/plataforma, não um bug nosso). Não persiste nada.
+ */
+export async function findLotSearch(
+  idLeilao: string,
+  pesquisa: string,
+  lockToVinyl: boolean,
+): Promise<{
+  idLeilao: string;
+  pesquisa: string;
+  lockToVinyl: boolean;
+  totalPages: number;
+  scannedPages: number;
+  matches: FindLotMatch[];
+}> {
+  const firstHtml = await fetchPageSearch(1, pesquisa, lockToVinyl);
+  const total = lastPage(firstHtml);
+  const matches: FindLotMatch[] = [];
+  let scanned = 0;
+  for (let page = total; page >= 1 && scanned < MAX_PAGES; page -= 1) {
+    scanned += 1;
+    let html: string;
+    try {
+      html = await fetchPageSearch(page, pesquisa, lockToVinyl);
+    } catch {
+      continue;
+    }
+    for (const lot of parseCards(html)) {
+      if (lot.idLeilao !== idLeilao) continue;
+      matches.push({
+        page,
+        idLeilao: lot.idLeilao,
+        house: lot.house,
+        title: lot.title,
+        dayKey: lot.dayKey,
+        url: lot.url,
+        wouldKeep: !looksNonVinyl(lot.title),
+      });
+    }
+  }
+  return { idLeilao, pesquisa, lockToVinyl, totalPages: total, scannedPages: scanned, matches };
+}
+
 /** Faz upsert dos lotes no banco e registra os leilões vistos (best-effort). */
+// ⚠️ O upsert de `lots` abaixo NÃO tem try/catch ao redor de si — propositalmente.
+// `supabaseAdmin.from(...).upsert(...)` (o shim em `db-query.server.ts`) NUNCA lança:
+// erros do Postgres (ex.: DATABASE_URL ausente, conexão recusada) viram
+// `{ data: null, error }` normalmente. Sem checar `error` e relançar, essa falha
+// desaparecia em silêncio — a call resolvia como se tivesse gravado, `scrapeVinylChunk`/
+// `enrichMissingLotes` reportavam sucesso (`persisted: true`) e o site foi perdendo lotes
+// sem log nenhum (achado v0.69.28, ver "Pendências" em notas-desenvolvimento.md). Deixamos
+// propagar para os `try/catch` dos chamadores (que já existem e alimentam `persisted`).
 async function persistLots(fresh: VinylLot[]): Promise<void> {
   if (!fresh.length) return;
-  try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const nowIso = new Date().toISOString();
-    const rows = fresh.map((lot) => ({
-      id: lot.id,
-      id_leilao: lot.idLeilao,
-      id_peca: lot.idPeca,
-      base: lot.base,
-      lote: lot.lote,
-      title: lot.title,
-      url: lot.url,
-      image: lot.image,
-      price: lot.price,
-      day_key: lot.dayKey,
-      start_time: lot.time,
-      uf: lot.uf,
-      house: lot.house,
-      house_url: lot.houseUrl,
-      artist: lot.artist,
-      last_seen_at: nowIso,
-      updated_at: nowIso,
-    }));
-    // Upsert por id: atualiza preço/campos dos lotes que ainda estão no site e
-    // ACRESCENTA os novos, sem apagar os que já não aparecem (merge durável).
-    await supabaseAdmin.from("lots").upsert(rows, { onConflict: "id" });
-  } catch (error) {
-    console.error("[leiloesbr] não foi possível salvar os lotes", error);
-  }
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const nowIso = new Date().toISOString();
+  const rows = fresh.map((lot) => ({
+    id: lot.id,
+    id_leilao: lot.idLeilao,
+    id_peca: lot.idPeca,
+    base: lot.base,
+    lote: lot.lote,
+    title: lot.title,
+    url: lot.url,
+    image: lot.image,
+    price: lot.price,
+    day_key: lot.dayKey,
+    start_time: lot.time,
+    uf: lot.uf,
+    house: lot.house,
+    house_url: lot.houseUrl,
+    artist: lot.artist,
+    last_seen_at: nowIso,
+    updated_at: nowIso,
+  }));
+  // Upsert por id: atualiza preço/campos dos lotes que ainda estão no site e
+  // ACRESCENTA os novos, sem apagar os que já não aparecem (merge durável).
+  const { error } = await supabaseAdmin.from("lots").upsert(rows, { onConflict: "id" });
+  if (error) throw error;
   try {
     const { recordAuctions } = await import("./leiloesbr-auctions.server");
     await recordAuctions(fresh);
@@ -363,7 +505,13 @@ export async function listMissingAuctions(
 export async function enrichMissingLotes(
   maxAuctions = 6,
   offset = 0,
-): Promise<{ updated: number; total: number; nextOffset: number | null; done: boolean }> {
+): Promise<{
+  updated: number;
+  total: number;
+  nextOffset: number | null;
+  done: boolean;
+  persisted: boolean;
+}> {
   const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
@@ -372,7 +520,7 @@ export async function enrichMissingLotes(
   try {
     lots = await mergeSources(windowStart, windowEnd, []);
   } catch {
-    return { updated: 0, total: 0, nextOffset: null, done: true };
+    return { updated: 0, total: 0, nextOffset: null, done: true, persisted: false };
   }
 
   const { parseAuctionRef, fetchLoteMap } = await import("./leiloesbr-catalog.server");
@@ -415,7 +563,7 @@ export async function enrichMissingLotes(
       console.error("[leiloesbr] falha ao ler catálogo da casa", error);
     }
   }
-  if (!loteByPeca.size) return { updated: 0, total, nextOffset, done };
+  if (!loteByPeca.size) return { updated: 0, total, nextOffset, done, persisted: true };
 
   // Aplica no cache em memória e coleta os lotes alterados para persistir.
   if (memCache) {
@@ -432,13 +580,15 @@ export async function enrichMissingLotes(
       changed.push(lot);
     }
   }
+  let persisted = true;
   try {
     await persistLots(changed);
   } catch (error) {
     console.error("[leiloesbr] não foi possível persistir os nº de lote", error);
+    persisted = false;
   }
 
-  return { updated: changed.length, total, nextOffset, done };
+  return { updated: changed.length, total, nextOffset, done, persisted };
 }
 
 /**
@@ -481,10 +631,7 @@ export async function scrapeVinylLots(
 
   let fresh: VinylLot[] = [];
   try {
-    fresh = await scrapePages(
-      (lot) => lot.dayKey >= windowStart && lot.dayKey <= windowEnd,
-      windowEnd,
-    );
+    fresh = await scrapePages((lot) => lot.dayKey >= windowStart && lot.dayKey <= windowEnd);
   } catch (error) {
     console.error("[leiloesbr] varredura falhou; usando o que já temos", error);
   }
@@ -517,7 +664,7 @@ export async function refreshVinylDay(
 
   let fresh: VinylLot[] = [];
   try {
-    fresh = await scrapePages((lot) => lot.dayKey === day, day);
+    fresh = await scrapePages((lot) => lot.dayKey === day);
   } catch (error) {
     console.error("[leiloesbr] varredura do dia falhou", error);
   }
@@ -547,7 +694,7 @@ export async function refreshVinylDay(
 export async function scrapeVinylChunk(
   fromPage: number | null,
   size: number,
-): Promise<{ total: number; nextPage: number | null; scraped: number }> {
+): Promise<{ total: number; nextPage: number | null; scraped: number; persisted: boolean }> {
   const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
@@ -560,9 +707,13 @@ export async function scrapeVinylChunk(
     start = total;
   }
 
+  // ⚠️ NÃO paramos mais cedo ao achar uma página cujo dia mínimo já passou da janela
+  // (ver `scrapePages` acima, mesmo achado/fix) — a listagem intercala leilões, não é
+  // estritamente ordenada por data, então uma página "fora da janela" não garante que
+  // as páginas seguintes (números menores) também estejam. Sempre varremos até `end`
+  // (ou `page=1`); o filtro por `dayKey` dentro do loop decide o que entra.
   const end = Math.max(start - size + 1, 1);
   const byId = new Map<string, VinylLot>();
-  let passedWindow = false;
   for (let page = start; page >= end; page -= 1) {
     let html: string;
     try {
@@ -577,25 +728,21 @@ export async function scrapeVinylChunk(
       if (looksNonVinyl(lot.title)) continue;
       byId.set(lot.id, lot);
     }
-    // Páginas decrescentes por data: ao passar do fim da janela, terminamos.
-    const minDay = lots.reduce((min, lot) => (lot.dayKey < min ? lot.dayKey : min), "9999-99-99");
-    if (minDay > windowEnd) {
-      passedWindow = true;
-      break;
-    }
   }
 
   const fresh = [...byId.values()];
   await fillArtists(fresh);
+  let persisted = true;
   if (fresh.length) {
     try {
       await persistLots(fresh);
     } catch (error) {
       console.error("[leiloesbr] não foi possível persistir o bloco", error);
+      persisted = false;
     }
   }
 
-  const nextPage = passedWindow || end <= 1 ? null : end - 1;
+  const nextPage = end <= 1 ? null : end - 1;
   if (nextPage == null) {
     try {
       await pruneOutOfWindow(windowStart, windowEnd);
@@ -603,5 +750,5 @@ export async function scrapeVinylChunk(
       console.error("[leiloesbr] não foi possível limpar lotes fora da janela", error);
     }
   }
-  return { total: fromPage == null ? total : start, nextPage, scraped: fresh.length };
+  return { total: fromPage == null ? total : start, nextPage, scraped: fresh.length, persisted };
 }
