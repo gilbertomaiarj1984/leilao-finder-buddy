@@ -229,7 +229,9 @@ export async function findLotDebug(
 
 // `tp` é passado CRU (sem URL-encode dos `|`) igual ao resto do arquivo — é assim que o
 // próprio site usa (ex.: VINYL_CATEGORY acima); `null` = sem filtro de categoria nenhum.
-function listUrlSearch(page: number, pesquisa: string, tp: string | null): string {
+// `ga` (opcional) filtra por uma "galeria" (casa) específica pelo código numérico que
+// `listGalleries` devolve — ver `busca_andamento.asp?ga=<código>` (achado pelo usuário).
+function listUrlSearch(page: number, pesquisa: string, tp: string | null, ga?: string): string {
   const params = new URLSearchParams({
     pesquisa,
     op: "3",
@@ -237,12 +239,19 @@ function listUrlSearch(page: number, pesquisa: string, tp: string | null): strin
     b: "0",
     pag: String(page),
   });
-  const base = `${BASE_URL}/busca_andamento.asp?${params.toString()}`;
-  return tp ? `${base}&tp=${tp}` : base;
+  let url = `${BASE_URL}/busca_andamento.asp?${params.toString()}`;
+  if (tp) url += `&tp=${tp}`;
+  if (ga) url += `&ga=${ga}`;
+  return url;
 }
 
-async function fetchPageSearch(page: number, pesquisa: string, tp: string | null): Promise<string> {
-  return await publicFetch(listUrlSearch(page, pesquisa, tp), {});
+async function fetchPageSearch(
+  page: number,
+  pesquisa: string,
+  tp: string | null,
+  ga?: string,
+): Promise<string> {
+  return await publicFetch(listUrlSearch(page, pesquisa, tp, ga), {});
 }
 
 /**
@@ -440,6 +449,95 @@ export async function listGalleries(
   const rawSnippet = galleryIdx >= 0 ? html.slice(galleryIdx, galleryIdx + 8000) : null;
 
   return { tp, galleries, rawSnippet };
+}
+
+/**
+ * Fase 2 da descoberta por galeria: pagina `busca_andamento.asp?ga=<código>` (SEM travar
+ * `tp=` de categoria) usando o mesmo `fetchPageSearch`/`parseCards` da listagem geral — ou
+ * seja, os `VinylLot`s vêm já completos (`dayKey`, `image`, `price`, `artist`...), sem
+ * depender de `fetchCatalogData` (que não tem esses campos, só serve pra ENRIQUECER lotes já
+ * conhecidos com nº de lote/dados de venda). Sidesteps o gap de categorização que motivou
+ * toda a investigação: como não filtramos por `tp=`, um item da galeria aparece aqui mesmo
+ * que a LeilõesBR não o marque como "Disco de Vinil" — filtramos por TÍTULO
+ * (`looksNonVinyl`, mesmo critério de `scrapeVinylChunk`) em vez de confiar na tag da
+ * plataforma. Não persiste nada — quem chama decide (`persistLots`).
+ */
+export async function listGalleryAuctions(galleryCode: string): Promise<VinylLot[]> {
+  const days = upcomingDayKeys(WINDOW_DAYS);
+  const windowStart = days[0]!;
+  const windowEnd = days[days.length - 1]!;
+
+  const firstHtml = await fetchPageSearch(1, "", null, galleryCode);
+  const total = lastPage(firstHtml);
+  const byId = new Map<string, VinylLot>();
+  let scanned = 0;
+  for (let page = total; page >= 1 && scanned < MAX_PAGES; page -= 1) {
+    scanned += 1;
+    let html: string;
+    try {
+      html = page === 1 ? firstHtml : await fetchPageSearch(page, "", null, galleryCode);
+    } catch {
+      continue;
+    }
+    for (const lot of parseCards(html)) {
+      if (lot.dayKey < windowStart || lot.dayKey > windowEnd) continue;
+      if (looksNonVinyl(lot.title)) continue;
+      byId.set(lot.id, lot);
+    }
+  }
+  return [...byId.values()];
+}
+
+/**
+ * `step=galleryscan`: varre as galerias devolvidas por `listGalleries(tp)` em blocos (cursor
+ * `offset` no servidor, `count` galerias por chamada, mesmo padrão chunked de
+ * `scrapeVinylChunk`/`enrichMissingLotes`, pra caber no tempo do request). Pra cada galeria do
+ * bloco chama `listGalleryAuctions` e acumula os lotes achados; persiste tudo do bloco de uma
+ * vez (`persistLots`, merge/upsert de sempre — nunca apaga o que não veio nesta rodada).
+ */
+export async function scanGalleries(
+  offset: number,
+  count: number,
+  tp: string | null = VINYL_CATEGORY,
+): Promise<{
+  total: number;
+  nextOffset: number | null;
+  done: boolean;
+  scraped: number;
+  persisted: boolean;
+}> {
+  const { galleries } = await listGalleries(tp);
+  const total = galleries.length;
+  const start = Math.max(0, offset);
+  const batch = galleries.slice(start, start + count);
+  const nextStart = start + count;
+  const done = nextStart >= total;
+  const nextOffset = done ? null : nextStart;
+
+  const byId = new Map<string, VinylLot>();
+  for (const gallery of batch) {
+    try {
+      for (const lot of await listGalleryAuctions(gallery.code)) {
+        byId.set(lot.id, lot);
+      }
+    } catch (error) {
+      console.error("[leiloesbr] falha ao varrer galeria", gallery.code, gallery.name, error);
+    }
+  }
+
+  const fresh = [...byId.values()];
+  let persisted = true;
+  if (fresh.length) {
+    try {
+      await fillArtists(fresh);
+      await persistLots(fresh);
+    } catch (error) {
+      console.error("[leiloesbr] não foi possível persistir o bloco de galerias", error);
+      persisted = false;
+    }
+  }
+
+  return { total, nextOffset, done, scraped: fresh.length, persisted };
 }
 
 /** Faz upsert dos lotes no banco e registra os leilões vistos (best-effort). */

@@ -533,6 +533,19 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await listGalleries(tpParam ?? undefined));
     }
 
+    // Fase 2 da descoberta por galeria (ver notas-desenvolvimento.md, Pendências): varre em
+    // blocos as galerias devolvidas por listGalleries, achando leilões que a categoria "Disco
+    // de Vinil" da LeilõesBR não pega (gap que motivou toda a investigação). Chunked como
+    // step=chunk/enrich — offset é o cursor, count quantas galerias por chamada.
+    if (step === "galleryscan") {
+      const { scanGalleries } = await import("./leiloesbr-scrape.server");
+      const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
+      const count = Math.min(Math.max(Number(url.searchParams.get("count")) || 3, 1), 10);
+      const tpParam = url.searchParams.get("tp");
+      const tp = tpParam === "none" ? null : (tpParam ?? undefined);
+      return json(await scanGalleries(offset, count, tp));
+    }
+
     // Diagnóstico: chama fetchCatalogData(domain, idLeilao) direto (já usado por
     // enrich/condition/sales) — confirma que, uma vez conhecido o idLeilao, o catálogo da
     // casa já traz os itens certos (isola "descoberta" de "extração").
@@ -562,7 +575,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     return json(
       {
         error:
-          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|purchases|backfillbundle|compressimages|prune|salesdebug|catdebug|findlot|findlot2|findlotraw|findlotcat|galleries|catalogdebug)",
+          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|purchases|backfillbundle|compressimages|prune|salesdebug|catdebug|findlot|findlot2|findlotraw|findlotcat|galleries|galleryscan|catalogdebug)",
         // Diagnóstico (v0.69.4): step=prune vinha falhando com 400 só quando chamado pelo
         // GitHub Actions (curl direto do VPS sempre respondia 200). Sem log de acesso no
         // Caddy nem log de aplicação chegando no `docker logs` (Nitro usa logger próprio,
