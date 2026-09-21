@@ -472,6 +472,18 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json({ missingAuctions: auctions.length, probes });
     }
 
+    // Diagnóstico: procura um leilão/casa específico em TODA a listagem geral (categoria
+    // "Disco de Vinil" travada por `tp=`, sem filtro de dia nem `looksNonVinyl`) — idLeilao
+    // exato, ou substring do nome da casa/URL. Responde se o item está na categoria (e em
+    // que página/dia) ou se nem aparece — distingue "categorização da LeilõesBR" de "bug
+    // no nosso parser/filtro". Não persiste nada.
+    if (step === "findlot") {
+      const { findLotDebug } = await import("./leiloesbr-scrape.server");
+      const q = url.searchParams.get("q")?.trim();
+      if (!q) return json({ error: "informe ?q=<idLeilao ou parte do nome da casa/URL>" }, 400);
+      return json(await findLotDebug(q));
+    }
+
     // Fase 5 da migração para VPS (docs/economia-fase-2-vps-unico.md): poda
     // `seen_auctions` (leilões com vendas já capturadas e fora da janela de retenção).
     // Barato — 1 SELECT + 1 DELETE por rodada; roda 1x por execução do cron.
@@ -483,7 +495,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     return json(
       {
         error:
-          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|purchases|backfillbundle|compressimages|prune|salesdebug|catdebug)",
+          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|purchases|backfillbundle|compressimages|prune|salesdebug|catdebug|findlot)",
         // Diagnóstico (v0.69.4): step=prune vinha falhando com 400 só quando chamado pelo
         // GitHub Actions (curl direto do VPS sempre respondia 200). Sem log de acesso no
         // Caddy nem log de aplicação chegando no `docker logs` (Nitro usa logger próprio,
