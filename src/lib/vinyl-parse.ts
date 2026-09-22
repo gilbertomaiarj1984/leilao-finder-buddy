@@ -408,6 +408,15 @@ export function extractArtist(title: string): string {
     }
   }
 
+  // Título no formato "<CASA-PREFIXO> ARTISTA ÁLBUM ANO" sem NENHUM separador ("-"/":"/"|")
+  // entre artista e álbum: a heurística de candidato abaixo (que corta no separador, ou usa
+  // a frase inteira quando não há um) não tem como isolar só o artista e ou descarta tudo
+  // (frase > 5 palavras) ou vira um "artista" espúrio com a frase inteira colada. Quando um
+  // nome CONHECIDO casa logo no INÍCIO do que sobrou, ele é o sinal mais confiável disponível
+  // — resolve direto, sem passar pela heurística de corte por separador/tamanho abaixo.
+  const knownPrefixMatch = matchKnownArtistAtStart(rest, getBundledKnownArtistIndex());
+  if (knownPrefixMatch) return canonicalizeCollapsedArtist(knownPrefixMatch);
+
   // "Grandes Sucessos de Ray Charles" → candidato = "Ray Charles" (tira o padrão ANTES do
   // dash-split abaixo: aqui não há "-", o nome vem depois de "de/do" no fim do título). Só a
   // PRIMEIRA palavra do resto entra na trava do qualificador de série (`.+$` é guloso e pegaria
@@ -867,7 +876,14 @@ export function buildKnownArtistIndex(names: string[]): KnownArtistIndex {
   const add = (key: string, canonical: string) => {
     const words = key.split(" ").filter(Boolean);
     if (!words.length) return;
-    if (words.length === 1 && (key.length < 4 || AMBIGUOUS_SINGLE_WORDS.has(key))) return;
+    if (words.length === 1) {
+      if (AMBIGUOUS_SINGLE_WORDS.has(key)) return;
+      // Nomes curtos (<4) normalmente são ruído/siglas ambíguas, mas um nome estilizado com
+      // pontuação na grafia original ("Ira!", "Neu!") é um sinal forte de nome de banda
+      // deliberado, não uma palavra comum — não descarta só por ser curto.
+      const stylized = /[^a-zA-Z0-9À-ÿ ]/.test(canonical.trim());
+      if (key.length < 4 && !stylized) return;
+    }
     if (!byNorm.has(key)) byNorm.set(key, canonical);
     if (words.length > maxWords) maxWords = words.length;
   };
@@ -900,4 +916,28 @@ export function matchKnownArtist(title: string, index: KnownArtistIndex): string
     }
   }
   return "";
+}
+
+/**
+ * Como `matchKnownArtist`, mas só aceita o nome conhecido ANCORADO no início do texto (usado
+ * por `extractArtist` para separar "ARTISTA ÁLBUM ANO" sem separador nenhum entre os dois).
+ */
+function matchKnownArtistAtStart(text: string, index: KnownArtistIndex): string {
+  const words = normalizeForMatch(text).split(" ").filter(Boolean);
+  const max = Math.min(index.maxWords, words.length);
+  for (let size = max; size >= 1; size -= 1) {
+    const hit = index.byNorm.get(words.slice(0, size).join(" "));
+    if (hit) return hit;
+  }
+  return "";
+}
+
+// Índice preguiçoso construído só a partir do bundle versionado (sem tabela `known_artists` do
+// banco — `extractArtist` é puro/client-safe e não pode depender de I/O). Usado pelo fallback
+// acima; o reforço server-side (`fillMissingArtists`) continua rodando com o índice completo
+// (bundle + banco) para os lotes que ainda assim ficarem sem artista.
+let bundledKnownArtistIndex: KnownArtistIndex | null = null;
+function getBundledKnownArtistIndex(): KnownArtistIndex {
+  if (!bundledKnownArtistIndex) bundledKnownArtistIndex = buildKnownArtistIndex(KNOWN_ARTISTS_SEED);
+  return bundledKnownArtistIndex;
 }
