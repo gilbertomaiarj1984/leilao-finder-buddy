@@ -32,6 +32,24 @@ jobs:
           fi
           base="${APP_URL%/}"
           call() { curl -fsS --max-time 120 --retry 3 --retry-delay 5 -H "x-cron-token: $CRON_TOKEN" "$base$1"; }
+          # Como call(), mas sem `-f`: usada só nos steps de IA (aieval/aiident) — chunked,
+          # idempotentes, "o resto completa nas execuções seguintes" por design. Um 500/rede ali
+          # não perde dado nenhum (diferente de chunk/enrich, que abortam de propósito), mas
+          # `-f` + `set -e` matava a run INTEIRA mesmo assim, cancelando market/condition/sales/
+          # reident/purchases/prune juntos — e escondia o corpo do erro (achado real do
+          # v0.69.15/16: só assim a mensagem real de um 500 apareceu). Extrai o HTTP status por
+          # marcador (mesma técnica do v0.69.15, robusta a JSON com "==="/quebras de linha) e
+          # devolve status via código de saída, sem abortar o shell.
+          call_soft() {
+            local resp status
+            resp="$(curl -sS --max-time 120 --retry 3 --retry-delay 5 -H "x-cron-token: $CRON_TOKEN" -w '===HTTPSTATUS===%{http_code}' "$base$1" 2>&1)" || {
+              echo "$resp"; return 1;
+            }
+            status="${resp##*===HTTPSTATUS===}"
+            echo "${resp%%===HTTPSTATUS===*}"
+            [ "$status" = "200" ]
+          }
+          soft_failed=0
           # Avisa o healthchecks.io se a execução falhar (falha silenciosa é o risco nº 1 do
           # cron — ver "Riscos e reversão" no plano de migração); ping de sucesso no final.
           ping_healthcheck() {
@@ -104,7 +122,12 @@ jobs:
           # coleta. Aqui damos algumas voltas com espera para tentar submeter e já
           # coletar na mesma run. No-op se ANTHROPIC_API_KEY não estiver configurado.
           for i in $(seq 1 5); do
-            res="$(call "/api/cron?step=aieval")"
+            if ! res="$(call_soft "/api/cron?step=aieval")"; then
+              echo "aieval $i: falhou — $res"
+              echo "aieval: não crítico, seguindo pro próximo step (retry automático na próxima execução); run marcada como falha no final"
+              soft_failed=1
+              break
+            fi
             echo "aieval $i: $res"
             if echo "$res" | jq -e '.skipped' >/dev/null 2>&1; then break; fi
             if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
@@ -117,7 +140,12 @@ jobs:
           # Alimenta exibição/busca/filtro por artista e o Discogs (por isso vem ANTES do
           # market). Idempotente por chamada; no-op sem ANTHROPIC_API_KEY.
           for i in $(seq 1 5); do
-            res="$(call "/api/cron?step=aiident")"
+            if ! res="$(call_soft "/api/cron?step=aiident")"; then
+              echo "aiident $i: falhou — $res"
+              echo "aiident: não crítico, seguindo pro próximo step (retry automático na próxima execução); run marcada como falha no final"
+              soft_failed=1
+              break
+            fi
             echo "aiident $i: $res"
             if echo "$res" | jq -e '.skipped' >/dev/null 2>&1; then break; fi
             if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
@@ -187,4 +215,9 @@ jobs:
           echo "prune: $res"
 
           echo "Concluído."
+          if [ "$soft_failed" = "1" ]; then
+            echo "Uma ou mais etapas de IA (aieval/aiident) falharam nesta run — ver mensagens acima; o resto do cron rodou normalmente."
+            ping_healthcheck fail
+            exit 1
+          fi
           ping_healthcheck
