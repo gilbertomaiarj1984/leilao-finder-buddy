@@ -1671,6 +1671,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.75.0      | Lote em pregão agora ("Lote 457" + barra "135/322 · 41%") ao lado de "Ao vivo agora" na lista principal e no `/ao-vivo`, via endpoint de polling do presencial (`le_registro_pregao_cfbr_v1.asp`), atualizado a cada 5 min só com a aba visível |
 | v0.75.1      | Selo do lote em pregão atualiza a cada 1 min (era 5 min); cache do servidor 60 s → 30 s para não virar o piso |
 | v0.75.2      | Pedido do usuário: remove a barra de chips das casas do header (introduzida em v0.74.0, com botão pra ocultar) pra liberar espaço — clicar na casa direto na grade principal continua abrindo/fechando a seção (`openHouses`/`toggleHouse`, inalterados) |
+| v0.75.3      | Pedido do usuário: botão "Incluir/Ocultar finalizados" move da barra de controles do dia pro final da faixa de dias (depois de "Lances") — novo alvo de portal `finishedToggleHost` em `_authenticated/index.tsx`, populado dentro do loop de dias (mesma lógica de `finishedCount`/`showFinished`/`toggleShowFinished` de antes, só muda o destino do portal) |
 
 ## Pendências
 
