@@ -51,6 +51,19 @@ export function loteNum(value: string): number {
   return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
 }
 
+/**
+ * Minutos desde meia-noite a partir de um horário tipo "19:30h"/"9h"/"9:30". Sem horário
+ * (ou ilegível) vai para o FIM (+Infinity), igual ao `loteNum` — usado para ordenar casas
+ * por horário do leilão antes do desempate alfabético.
+ */
+export function timeMinutes(value: string): number {
+  const match = value.match(/(\d{1,2})[:h.]?(\d{2})?/);
+  if (!match) return Number.POSITIVE_INFINITY;
+  const hh = Number(match[1]);
+  const mm = Number(match[2] ?? "0");
+  return Number.isFinite(hh) && Number.isFinite(mm) ? hh * 60 + mm : Number.POSITIVE_INFINITY;
+}
+
 /** Forma enxuta do agrupamento por casa (`{house, houseUrl, lots}`), preservando a ordem. */
 export type SimpleHouseGroup = { house: string; houseUrl: string; lots: VinylLot[] };
 
@@ -97,7 +110,10 @@ export function groupByHouse(lots: VinylLot[]): HouseGroup[] {
       artists: groupByArtist(houseLots),
       count: houseLots.length,
     }))
-    .sort((a, b) => b.count - a.count || a.house.localeCompare(b.house, "pt-BR"));
+    .sort(
+      (a, b) =>
+        timeMinutes(a.time) - timeMinutes(b.time) || a.house.localeCompare(b.house, "pt-BR"),
+    );
 }
 
 export type HouseStats = { vigia: number; green: number; red: number };
@@ -275,15 +291,20 @@ export function houseAuctionInfo(
   };
 }
 
-/** Agrupa vigiados por casa de leilão e ordena os lotes pelo nº do lote. */
-export function groupWatchedByHouse<T extends { house: string; houseUrl: string; lote: string }>(
-  lots: T[],
-): { house: string; houseUrl: string; lots: T[] }[] {
-  const byHouse = new Map<string, { house: string; houseUrl: string; lots: T[] }>();
+/**
+ * Agrupa vigiados/lances por casa de leilão e ordena os lotes pelo nº do lote. As casas saem
+ * ordenadas por horário do leilão (`time`, quando presente no item — ex. vigiados) e depois
+ * alfabeticamente, igual ao `groupByHouse` da grade principal.
+ */
+export function groupWatchedByHouse<
+  T extends { house: string; houseUrl: string; lote: string; time?: string },
+>(lots: T[]): { house: string; houseUrl: string; time: string; lots: T[] }[] {
+  const byHouse = new Map<string, { house: string; houseUrl: string; time: string; lots: T[] }>();
   for (const lot of lots) {
     const group = byHouse.get(lot.house) ?? {
       house: lot.house,
       houseUrl: lot.houseUrl,
+      time: lot.time ?? "",
       lots: [] as T[],
     };
     group.lots.push(lot);
@@ -295,6 +316,6 @@ export function groupWatchedByHouse<T extends { house: string; houseUrl: string;
     );
   }
   return [...byHouse.values()].sort(
-    (a, b) => b.lots.length - a.lots.length || a.house.localeCompare(b.house, "pt-BR"),
+    (a, b) => timeMinutes(a.time) - timeMinutes(b.time) || a.house.localeCompare(b.house, "pt-BR"),
   );
 }
