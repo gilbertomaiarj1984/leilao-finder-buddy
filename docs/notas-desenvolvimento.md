@@ -1590,22 +1590,24 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.73.2      | Fix P0: deploy quebrando de novo desde o v0.72.1 (que corrigiu `service_role`) — dessa vez no bloco de FKs `ON DELETE CASCADE` (v0.67.0, "FKs de limpeza"): `ADD CONSTRAINT lot_ai_id_fkey` (e as três irmãs) travava com violação de FK, porque produção tinha órfãos de antes da Fase 5 que a limpeza da migração `20260917120000_orphans_fk_cascade.sql` nunca rodou contra esse banco (schema veio de `pg_restore`, e só `setup.sql` é reaplicado automaticamente — migrações avulsas não são). `setup.sql` ganha os mesmos 4 `DELETE ... WHERE NOT EXISTS` da migração original antes do `ADD CONSTRAINT`, tornando o bloco idempotente mesmo com órfãos acumulados |
 | v0.73.3      | Fix: "Atual"/"Próximo" desatualizados ou ausentes nos cards de vigiados/lances — `leiloesbr-lot-details.server.ts` passa a ler também `VALOR_VALUE` (valor atual AO VIVO) do `peca.asp`, não só `NOVO_VALOR`; `index.tsx` sobrescreve `price`/`priceById` com esse valor quando disponível (`currentValueById`/`effectivePriceById`) e corrige a aba "Vigiados", que não passava `nextBid` ao `LotCard` |
 | v0.73.4      | Fix: lotes no formato "LP DISCO DE VINIL ARTISTA ÁLBUM ANO" (sem nenhum separador entre artista e álbum) caíam em `UNCLASSIFIED_LABEL` mesmo com artista claro no título (ex.: "Ira! Vivendo e Não Aprendendo 1986", "John Denver Poems Prayers and Promises 1974") — `extractArtist` (`vinyl-parse.ts`), sem separador, só tinha a frase inteira como candidato: vira "" pela trava de >5 palavras, ou pior, um "artista" espúrio com a frase toda quando ≤5 palavras (ex. "Legiao Urbana Dois 1986" virava artista "Legiao Urbana Dois 1986" em vez de casar "Legião Urbana" via `known_artists`). Nova `matchKnownArtistAtStart` roda ANTES da heurística de corte: casa um nome conhecido ancorado no início do título (índice lazy só do bundle `KNOWN_ARTISTS_SEED`, client-safe — sem tocar a tabela `known_artists` do banco). `buildKnownArtistIndex` também para de descartar nome de 1 palavra <4 chars quando a grafia original tem pontuação estilizada ("Ira!", "Neu!" — sinal de nome de banda deliberado, não sigla/palavra comum; "RPM"/"Nas"/"Art" etc. continuam de fora, ambíguos com termos comuns de leilão/PT). Seed ganha "John Denver", "Linear", "Fat Boys", "Nazareth" (exemplos reportados pelo usuário que ainda ficavam sem match nem por essa via nem pelo reforço via `fillMissingArtists`) |
+| v0.73.5      | Resolve a pendência "Alberto Lopes - Leiloeiro Público" (aberto desde v0.69.42/43, reforçado em v0.71.1): a alternativa cogitada nas Pendências ("excluir a casa da varredura") foi adotada em vez de continuar ampliando `NON_MEDIA_COLLECTIBLE_RE` termo a termo. Novo `BLOCKED_HOUSES`/`isBlockedHouse` em `leiloesbr-scrape.server.ts` (comparação normalizada, trim + minúsculas) bloqueia a casa em TODOS os pontos de entrada — `scrapePages`/`scrapeVinylChunk` (varredura geral, categoria travada), `listGalleryAuctions` (`galleryscan`) e `persistLots` (upsert, defesa em profundidade) — e `pruneNonVinylLots` passa a apagar também lotes já persistidos dessa casa, então `step=cleannonvinyl&apply=1` limpa o que já tinha entrado (achado do usuário, 2026-09-22: item de bijuteria "ANELÃO MASCULINO ANTI STRESS" não batia nenhum termo de `looksNonVinyl`) |
 
 ## Pendências
 
 **Produto / código (em aberto)**
 
-- **Itens não-disco reincidentes da "Alberto Lopes - Leiloeiro Público" (aberto desde
-  v0.69.42/43, reforçado em v0.71.1).** Essa casa generalista já rendeu 3 rodadas de achados do
-  usuário (joalheria, depois livro/quadro/lata/brinquedo via `galleryscan` sem categoria
-  travada, depois prataria/salva/bandeja) mesmo após `step=cleannonvinyl` limpar o que já
-  tinha entrado. Se `dryRun` continuar achando lotes novos dessa casa após uma rodada de
-  `apply=1`, o padrão sugere que a PRÓPRIA LeilõesBR está marcando itens fora de disco na
-  categoria "Disco de Vinil" pra essa casa específica (não é só o gap do `galleryscan`, já
-  corrigido) — nesse caso, ampliar `NON_MEDIA_COLLECTIBLE_RE` termo a termo não escala.
-  Alternativa a considerar: excluir a casa da varredura (lista de exclusão, análoga a
-  `verified_houses` em `app_state`) em vez de perseguir cada categoria de colecionável que ela
-  lista.
+- **✅ RESOLVIDO (v0.73.5) — Itens não-disco reincidentes da "Alberto Lopes - Leiloeiro
+  Público" (aberto desde v0.69.42/43, reforçado em v0.71.1).** Essa casa generalista rendeu 4
+  rodadas de achados do usuário (joalheria, depois livro/quadro/lata/brinquedo via
+  `galleryscan` sem categoria travada, depois prataria/salva/bandeja, por fim bijuteria de
+  novo em 2026-09-22 com "ANELÃO MASCULINO ANTI STRESS" — título sem nenhum termo bloqueável)
+  mesmo após rodadas de `step=cleannonvinyl` limpar o que já tinha entrado — confirmando que a
+  PRÓPRIA LeilõesBR marca itens fora de disco na categoria "Disco de Vinil" pra essa casa
+  específica, não só o gap do `galleryscan` (já corrigido em v0.69.43). Ampliar
+  `NON_MEDIA_COLLECTIBLE_RE` termo a termo não escala — adotada a alternativa já cogitada aqui:
+  a casa inteira agora é bloqueada (`BLOCKED_HOUSES` em `leiloesbr-scrape.server.ts`, hardcoded
+  — não é um toggle de UI como `verified_houses`) em todos os pontos de entrada da varredura, e
+  `pruneNonVinylLots`/`step=cleannonvinyl` apaga retroativamente os lotes já persistidos dela.
 
 - **✅ RESOLVIDO DE VEZ (v0.69.27/29, validado em produção 2026-09-21) — `step=aieval` voltando
   500 "Missing DATABASE_URL" (aberto desde v0.69.15).** Causa raiz: **dois secrets do GitHub
