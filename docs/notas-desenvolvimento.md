@@ -959,36 +959,23 @@ midia, capa, valor, tags, notas}`. Parser puro/**client-safe** `parseCollectionB
   "Escolher arquivo" — no celular abre a câmera direto; no desktop o `capture` é ignorado e cai no
   seletor. Mesmo fluxo `handleFile`/`uploadCollectionImage`. **Upload de foto EM MASSA segue
   pendente** (o import em massa cria discos sem foto; a foto é adicionada depois por disco).
-- **Botão "Atualizar coleção"** → `importWonLotsIncremental()` (v0.52.0): em vez de sempre
-  repaginar `l=6` do zero (`id=0`, `t=1`+`t=0`, até 50 páginas cada — caro e com teto), lê
-  `listMyBidsFromSite()` (`l=4`) e filtra os lances com `status` "Vencedor"
-  (`wonAuctionIdsFromBids`), obtendo só os `idLeilao` candidatos; para esses, varre
-  `conta_site.asp?l=6&id=<idLeilao>&t=<0|1>&...&pag=N` (**`listPurchasesForAuctions`**, em
-  `leiloesbr-purchases.server.ts`) — 1 leilão por vez, poucas páginas cada, bem mais barato.
-  **Cai sozinho para a varredura completa** (`importWonLots`, abaixo) quando a coleção ainda
-  não tem NENHUM item vindo de leilão (`lotId` — 1ª varredura: `l=4` não garante cobrir todo o
-  histórico). Resultado inclui `auctionsChecked` (`-1` = caiu para a completa; `0` = nenhum
-  leilão vencido nos lances atuais).
-- **Botão "Varredura completa"** (ghost, ao lado) → `importWonLots()`: a varredura ANTIGA,
-  irrestrita (`conta_site.asp?l=6&t=1&...&pag=N`, **`t=1`** confirmado com o site, e depois
-  `t=0`; lê página a página até uma sem lotes novos) via `listVinylPurchases`. Cara —
-  contingência manual para quando um leilão vencido escapa da incremental (ex.: some de `l=4`
-  antes do usuário atualizar).
-  Ambas usam `leiloesbr-purchases.server.ts` (`listVinylPurchases`/`listVinylPurchasesForAuctions`;
-  filtram não-vinil por `looksNonVinyl`) e a mesma lógica de importação (`importFromWonLots`
-  em `collection.server.ts`), que **ACRESCENTA** os lotes ainda ausentes (**de-dup por
-  `lot_id` = `${idLeilao}-${idPeca}`**) — nunca sobrescreve edição do usuário. Semeia
-  artista/álbum/ano e a faixa Discogs **reaproveitando a identificação já gravada**
-  (`lot_ai`/`lot_ident` via `parseAiAlbum`) e o mercado (`lot_market` via `toLotMarket`); **não**
-  dispara IA/Discogs novos.
-- **Prioridade da identificação (tudo GRÁTIS antes da IA — poupar créditos), em `deriveCandidate`:**
-  (1) **identificação já gravada** (`lot_ai`/`lot_ident` casada por `id`; estes lotes já rodaram
-  na página de leilão); (2) **título rotulado** — `parsePurchaseTitle` lê os campos do próprio
-  título das casas: `Álbum: X | Código: Y | Artista(s): [`Z`] | Ano: N | Estilo(s): [..] | Label(s):`
-  (o `//` vira `notes`; `Estilo(s)` vira `tags`; artista de `Artista(s):`, álbum de `Álbum:` ou do
-  1º segmento sem rótulo), além de "Artista: X / Album: Y" e "ARTISTA - ÁLBUM"; (3) heurístico
-  `extractArtist`; (4) `canonicalArtist` reduz coletânea/lote à categoria. A varredura retorna
-  `sources = {stored, title, none}` (diagnóstico de onde veio cada artista — some no toast).
+- **Sem varredura própria (v0.70.0):** a Coleção não lê mais "Minhas compras" diretamente — os
+  botões "Atualizar coleção"/"Varredura completa" (que chamavam `importWonLotsIncremental`/
+  `importWonLots` em `collection.server.ts`, com o parser `parsePurchaseTitle` e a fila de
+  duplicados para revisar) foram **removidos**. Quem varre "Minhas compras" agora é só a página
+  **Compras** (`/compras`, ver seção própria); a Coleção passa a ser povoada por **"Enviar para a
+  coleção"** a partir de lá (abaixo), por importação em massa (`importCollectionText`, mantida) ou
+  manualmente. `canonicalArtist`/`albumKey` (reduzir coletânea/lote à categoria; de-dup por
+  artista+álbum) continuam em `collection.server.ts`, reusados pela importação em massa.
+- **"Enviar para a coleção" (a partir de `/compras`):** cada `PurchaseCard` sem relação
+  confirmada mostra um botão que abre um diálogo de edição (`SendToCollectionDialog`, em
+  `compras.tsx`) pré-preenchido com um palpite de artista (`extractArtist`/`titleCase` sobre o
+  título, client-safe) — álbum, ano, grading e tags ficam em branco para o usuário completar antes
+  de confirmar. Ao enviar, chama `addCollectionItem` (`collection.functions.ts` →
+  `collection.server.ts`) com `lotId` = o `lot_id` da compra: grava `source: "auction"` e
+  `lot_id` preenchido (igual à antiga varredura direta), herdando valor pago/data/casa/UF/imagem
+  da própria compra. Recusa reenviar a mesma peça duas vezes (`existing.some(i => i.lotId ===
+  input.lotId)`).
 - **IA por TEXTO (opt-in, gasta créditos):** dois caminhos, ambos via **`identCollectionSync`**.
   - **Em massa — botão "Identificar novos (IA)"** no header → `identifyCollection({offset, max,
 onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda sem
@@ -1055,9 +1042,8 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   `collection_items`** — mesma descoberta de leilões vencidos (`wonAuctionIdsFromBids`, `l=4`),
   mas gravação separada: um lote arrematado pode aparecer nas duas tabelas (Compras é o
   histórico bruto; Coleção é o catálogo editável agrupado por artista/álbum).
-- **Sync incremental (`purchases.server.ts`):** `syncPurchasesIncremental()` segue o mesmo padrão
-  de `importWonLotsIncremental` (`collection.server.ts`) — `listMyBidsFromSite()` (`l=4`) →
-  `wonAuctionIdsFromBids` → `listVinylPurchasesForAuctions(auctionIds)`
+- **Sync incremental (`purchases.server.ts`):** `syncPurchasesIncremental()` — `listMyBidsFromSite()`
+  (`l=4`) → `wonAuctionIdsFromBids` → `listVinylPurchasesForAuctions(auctionIds)`
   (`leiloesbr-purchases.server.ts`, `l=6&id=<idLeilao>`) → `upsert` por `lot_id` (idempotente,
   não duplica ao reprocessar um leilão já visto). **Sem fallback de backfill automático** (a
   tabela é nova — o histórico inicial entra pela **varredura completa manual**,
@@ -1069,9 +1055,34 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
 - **Server functions (`purchases.functions.ts`):** `getPurchases` (leitura, best-effort `[]` em
   erro), `scanPurchases` (botão "Atualizar" → incremental), `scanPurchasesFull` (botão
   "Varredura completa" → escape hatch caro).
-- **Card (`PurchaseCard`, `components/vinyl/purchase-card.tsx`):** enxuto e SOMENTE LEITURA (sem
-  edição/tags/grading, ao contrário de `CollectionCard`) — imagem, título, casa/UF, valor pago,
-  data e nº do lote, link "Ver no leiloeiro".
+- **Card (`PurchaseCard`, `components/vinyl/purchase-card.tsx`):** enxuto (sem edição/tags/grading
+  próprios, ao contrário de `CollectionCard`) — imagem, título, casa/UF, valor pago, data e nº do
+  lote, link "Ver no leiloeiro". Ganhou (v0.70.0) o selo de relação com a Coleção e o botão
+  "Enviar para a coleção" — ver abaixo.
+- **Relação com a Coleção + "Enviar para a coleção" (v0.70.0):** a Coleção deixou de ter
+  varredura própria (ver seção "Coleção do usuário" acima) — `/compras` passa a ser o ponto de
+  entrada para povoá-la a partir de uma compra:
+  - **Selo de relação** (ícone `Disc3` no canto do card, `compras.tsx`): reaproveita a MESMA
+    infraestrutura da home (`collection_links`/`collection_feedback` em `app_state.server.ts`,
+    `resolveOwned`/`OwnedPanel` de `wantlist-match.ts`/`owned-panel.tsx`), casando pelo `lot_id`
+    EXATO da compra (`ownedByLotId`, análogo ao `ownedByLotId` de `index.tsx`) — sem o casamento
+    fuzzy por tokens (`ownedMatchForLot`), que a home usa para lotes "candidatos" ainda não
+    comprados; aqui a compra já é a peça exata, então só o `lot_id` interessa. Roxo = já
+    relacionado (enviado por este fluxo, ou vinculado manualmente a um disco pré-existente);
+    cinza = sem relação. Clicar abre o `OwnedPanel` (mesmo componente da home) para confirmar,
+    vincular a outro disco da Coleção, marcar "não tenho" ou reativar — a decisão grava em
+    `collection_links`/`collection_feedback` via `applyCollectionDecision`, **compartilhado**
+    com a home (útil quando o disco já estava na Coleção antes deste recurso existir, cadastrado
+    manualmente sem `lot_id`).
+  - **Botão "Enviar para a coleção"** (só aparece sem relação confirmada): abre
+    `SendToCollectionDialog` (`compras.tsx`) pré-preenchido com um palpite de artista
+    (`extractArtist`/`titleCase`, client-safe, sobre o título da compra) — álbum, ano, grading e
+    tags ficam em branco para completar antes de confirmar. Ao enviar, chama `addCollectionItem`
+    com `lotId` = o `lot_id` da compra, herdando valor pago/data/casa/UF/imagem dela; grava
+    `source: "auction"` e recusa reenviar a mesma peça duas vezes.
+  - **`GradeSelect`** (escala de 10 graus M…F/P) extraído de `colecao.tsx` para
+    `components/vinyl/grade-select.tsx` — reusado por `SendToCollectionDialog` e pelo diálogo de
+    edição da Coleção.
 
 ## Páginas / UI
 
@@ -1460,6 +1471,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.69.42     | Fix: bloco "Acontecendo agora" (`live-auctions.tsx`) agora começa **fechado** (colapsado), com botão pra abrir/fechar (chevron) — antes ficava sempre expandido ocupando espaço mesmo sem o usuário estar olhando pro pregão. Fix: `NON_MEDIA_COLLECTIBLE_RE` (`vinyl-parse.ts`, usada por `looksNonVinyl`) ganhou termos de joalheria (anel/anéis, joia, bijuteria, pulseira, colar, brinco, pingente, corrente de ouro/prata, relógio de pulso, aliança) — achado do usuário: casas que vendem "de tudo" listam anéis/joias na mesma categoria "Disco de vinil" do site e eles passavam pelo filtro por não baterem em nenhum formato de mídia bloqueado (mesma classe de problema do ex-libris/numismática/perfumaria já filtrados) |
 | v0.69.43     | Fix mais profundo do mesmo sintoma: usuário mostrou um leilão da "Alberto Lopes - Leiloeiro Público" (`ga=199`, "LEILÃO ANTIGUIDADES RJ") **sem NENHUMA categoria de disco** no catálogo da própria casa (só Diversos/Fotografia/Joias/Porcelana/Relógio) que mesmo assim aparecia no app — causa raiz não era só faltar termo na lista de bloqueio: `listGalleryAuctions` (`step=galleryscan`, v0.69.37) usa `ga=<código>` **sem travar `tp=` de categoria** (ao contrário da varredura geral, que trava "Disco de Vinil" e por isso pode usar `looksNonVinyl`, uma lista de BLOQUEIO permissiva por padrão). Sem a garantia de categoria, qualquer item cujo título não batesse em nenhum termo ruim conhecido (ex.: miniatura de carrinho de coleção) entrava como se fosse vinil. Trocado o filtro de `listGalleryAuctions` de `looksNonVinyl` para `isVinylTitle` (função já existente, não usada até então — exige palavra de vinil no título) só nesse caminho; a varredura geral (`scrapeVinylChunk`, categoria travada) continua com `looksNonVinyl`. Trade-off consciente: casas dedicadas a vinil com títulos "Artista - Álbum" sem a palavra "vinil"/"LP" podem perder cobertura *só* via `galleryscan` — mas essas mesmas casas já são cobertas pela varredura geral (categoria tagueada corretamente na plataforma), então `galleryscan` é reforço, não fonte única |
 | v0.69.44     | Pedido do usuário: manter (e ampliar) a lista de bloqueio de `NON_MEDIA_COLLECTIBLE_RE` (`vinyl-parse.ts`) além do que já tinha — acrescentados livro/revista, quadro/pintura, lata, brinquedo/miniatura/carrinho (colecionáveis de brinquedo), boneco/boneca. Continua sendo o mecanismo de defesa em profundidade da varredura geral (`scrapeVinylChunk`, categoria `tp=` travada) — protegido pelo guard `mentionsVinyl`/`mentionsDisc` em `looksNonVinyl`/`isVinylTitle`: um lote que de fato menciona "vinil"/"LP"/"disco"/"compacto" nunca é descartado só por também citar um desses termos (ex.: "capa com lata pintada" numa descrição de LP genuíno) |
+| v0.70.0      | Pedido do usuário: a Coleção deixa de varrer "Minhas compras" sozinha — removidos os botões "Atualizar coleção"/"Varredura completa" e toda a pipeline de importação direta (`importWonLots(Incremental)`, `parsePurchaseTitle`, `deriveCandidate`, fila de duplicados) de `collection.server.ts`/`colecao.tsx`. Em troca, `/compras` (que já varre "Minhas compras" para a própria tabela `purchases`) ganha: **(1)** um selo de relação com a Coleção por card (`Disc3`, `compras.tsx`), casando pelo `lot_id` exato e reaproveitando a mesma infra de vínculo manual/aprendizado da home (`collection_links`/`collection_feedback`, `resolveOwned`/`OwnedPanel`) — permite confirmar, vincular a outro disco já cadastrado, marcar "não tenho" ou reativar o automático; **(2)** botão **"Enviar para a coleção"** (só sem relação confirmada) que abre um diálogo de edição pré-preenchido (palpite de artista via `extractArtist`/`titleCase`) e cria o item via `addCollectionItem` com `lotId`, herdando valor pago/data/casa/UF/imagem da compra. `GradeSelect` extraído para `components/vinyl/grade-select.tsx` (reusado pelos dois diálogos) |
 
 ## Pendências
 

@@ -1,36 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import type { PendingWonLot } from "@/lib/collection.server";
 import { isAiProvider } from "./ai-provider";
-
-/** Normaliza um candidato duplicado vindo da UI (round-trip do resultado da varredura). */
-function normalizePending(input: Record<string, unknown> | undefined): PendingWonLot {
-  const s = (v: unknown) => (typeof v === "string" ? v : "");
-  const sn = (v: unknown) => (typeof v === "string" && v ? v : null);
-  const lotId = s(input?.lotId);
-  if (!lotId) throw new Error("lote inválido");
-  return {
-    lotId,
-    artist: s(input?.artist),
-    album: s(input?.album),
-    title: s(input?.title),
-    year: input?.year == null ? null : Number(input.year) || null,
-    image: sn(input?.image),
-    house: s(input?.house),
-    uf: s(input?.uf),
-    wonPrice: s(input?.wonPrice),
-    wonDate: sn(input?.wonDate),
-    marketLow: sn(input?.marketLow),
-    marketHigh: sn(input?.marketHigh),
-    sourceUrl: s(input?.sourceUrl),
-    notes: s(input?.notes),
-    tags: Array.isArray(input?.tags)
-      ? input!.tags.filter((t): t is string => typeof t === "string")
-      : [],
-    existing: s(input?.existing),
-  };
-}
 
 /** Normaliza a entrada dos campos editáveis de um disco (add/update). */
 function normalizeInput(input: Record<string, unknown> | undefined) {
@@ -50,6 +21,7 @@ function normalizeInput(input: Record<string, unknown> | undefined) {
     notes?: string;
     description?: string;
     tags?: string[];
+    lotId?: string;
   } = {};
   if (str(input?.artist) !== undefined) patch.artist = String(input!.artist);
   if (str(input?.album) !== undefined) patch.album = String(input!.album);
@@ -71,6 +43,7 @@ function normalizeInput(input: Record<string, unknown> | undefined) {
   if (str(input?.description) !== undefined) patch.description = String(input!.description);
   if (Array.isArray(input?.tags))
     patch.tags = input!.tags.filter((t): t is string => typeof t === "string");
+  if (str(input?.lotId) !== undefined) patch.lotId = String(input!.lotId);
   return patch;
 }
 
@@ -87,34 +60,6 @@ export const getCollection = createServerFn({ method: "GET" })
       console.error("[collection] não foi possível ler a coleção", error);
       return [];
     }
-  });
-
-/**
- * Varre "Minhas compras" (l=6) e acrescenta os vinis arrematados à coleção. Incremental por
- * padrão (só os leilões vencidos segundo os lances, `l=4`) — bem mais barato que repaginar
- * tudo; cai sozinho para a varredura completa na 1ª vez (coleção ainda sem item de leilão).
- */
-export const scanCollection = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { importWonLotsIncremental } = await import("./collection.server");
-    return await importWonLotsIncremental();
-  });
-
-/**
- * Varredura COMPLETA de "Minhas compras" (todas as páginas, `id=0`) — para forçar um
- * backfill manual (ex.: leilão vencido não aparece mais em "Meus lances"). Cara; usar com
- * moderação.
- */
-export const scanCollectionFull = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { importWonLots } = await import("./collection.server");
-    return await importWonLots();
   });
 
 /**
@@ -167,28 +112,10 @@ export const reprocessCollectionItem = createServerFn({ method: "POST" })
     return await reidentifyCollectionItem(data.id, provider);
   });
 
-/** Diagnóstico da varredura (não grava): quantas peças/páginas/logado por aba. */
-export const debugScanCollection = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { debugPurchases } = await import("./leiloesbr-purchases.server");
-    return await debugPurchases();
-  });
-
-/** Confirma um duplicado sinalizado pela varredura ("adicionar mesmo assim"). */
-export const addWonLot = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: Record<string, unknown> | undefined) => normalizePending(input))
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { addPendingWonLot } = await import("./collection.server");
-    return await addPendingWonLot(data);
-  });
-
-/** Adiciona um disco manualmente à coleção. */
+/**
+ * Adiciona um disco à coleção — manualmente, ou a partir do botão "Enviar para a coleção" em
+ * `/compras` (nesse caso o payload traz `lotId`, vinculando à peça arrematada).
+ */
 export const addCollectionItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: Record<string, unknown> | undefined) => normalizeInput(input))
