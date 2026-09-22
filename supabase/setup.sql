@@ -345,6 +345,29 @@ CREATE TRIGGER update_purchases_updated_at BEFORE UPDATE ON public.purchases
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- ---------------------------------------------------------------------
+-- excluded_lots — lotes excluídos manualmente pelo usuário. `id` é a mesma PK
+-- de `lots.id`: serve de lista negra (o cron nunca reinsere, ver
+-- src/lib/lot-exclusion.server.ts) e sobrevive ao DELETE físico do lote em `lots`
+-- (documenta que ele foi apagado, mesma razão de `lot_sales` nunca cascatear com
+-- `lots`). `keywords` alimenta a heurística de "possível lixo" (ver
+-- src/lib/lot-exclusion.ts) — sem IA, por enquanto. Histórico: migração
+-- supabase/migrations/20260922000000_excluded_lots.sql.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.excluded_lots (
+  id           text PRIMARY KEY,
+  title        text NOT NULL,
+  house        text NOT NULL DEFAULT '',
+  artist       text NOT NULL DEFAULT '',
+  reason       text,
+  keywords     text[] NOT NULL DEFAULT '{}',
+  excluded_by  text NOT NULL DEFAULT '',
+  excluded_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS excluded_lots_keywords_gin_idx
+  ON public.excluded_lots USING GIN (keywords);
+
+-- ---------------------------------------------------------------------
 -- FKs de limpeza (Fase 5 da migração para VPS): `lot_ai`/`lot_ident`/`lot_market`/
 -- `lot_condition` (todos com `id` = `lots.id`) viram órfãos quando `pruneOutOfWindow`
 -- apaga de `lots` os lotes fora da janela de dias. `ON DELETE CASCADE` evita isso dali
@@ -388,6 +411,7 @@ ALTER TABLE public.lot_sales      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wantlist_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.collection_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchases        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.excluded_lots    ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.seen_auctions  FROM anon, authenticated;
 REVOKE ALL ON public.lots           FROM anon, authenticated;
@@ -401,6 +425,7 @@ REVOKE ALL ON public.lot_sales      FROM anon, authenticated;
 REVOKE ALL ON public.wantlist_items FROM anon, authenticated;
 REVOKE ALL ON public.collection_items FROM anon, authenticated;
 REVOKE ALL ON public.purchases        FROM anon, authenticated;
+REVOKE ALL ON public.excluded_lots    FROM anon, authenticated;
 
 GRANT ALL ON public.seen_auctions  TO service_role;
 GRANT ALL ON public.lots           TO service_role;
@@ -414,3 +439,4 @@ GRANT ALL ON public.lot_sales      TO service_role;
 GRANT ALL ON public.wantlist_items TO service_role;
 GRANT ALL ON public.collection_items TO service_role;
 GRANT ALL ON public.purchases        TO service_role;
+GRANT ALL ON public.excluded_lots    TO service_role;

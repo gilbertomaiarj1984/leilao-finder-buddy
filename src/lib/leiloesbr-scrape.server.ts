@@ -561,8 +561,14 @@ export async function scanGalleries(
 async function persistLots(fresh: VinylLot[]): Promise<void> {
   if (!fresh.length) return;
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  // Lotes excluídos manualmente pelo usuário nunca voltam (ver lot-exclusion.server.ts) —
+  // best-effort: getExcludedLotIds nunca lança, um erro aqui só falha em não filtrar nada.
+  const { getExcludedLotIds } = await import("./lot-exclusion.server");
+  const excludedIds = await getExcludedLotIds();
+  const keep = excludedIds.size ? fresh.filter((lot) => !excludedIds.has(lot.id)) : fresh;
+  if (!keep.length) return;
   const nowIso = new Date().toISOString();
-  const rows = fresh.map((lot) => ({
+  const rows = keep.map((lot) => ({
     id: lot.id,
     id_leilao: lot.idLeilao,
     id_peca: lot.idPeca,
@@ -587,7 +593,7 @@ async function persistLots(fresh: VinylLot[]): Promise<void> {
   if (error) throw error;
   try {
     const { recordAuctions } = await import("./leiloesbr-auctions.server");
-    await recordAuctions(fresh);
+    await recordAuctions(keep);
   } catch (error) {
     console.error("[leiloesbr] não foi possível salvar o histórico de leilões", error);
   }

@@ -1,4 +1,4 @@
-import { Disc3, ExternalLink, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Disc3, ExternalLink, Eye, EyeOff, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
 import { formatAiAlbum, type LotAi, type LotMarket } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import type { Condition } from "@/lib/grading";
+import type { ExclusionSignal } from "@/lib/lot-exclusion";
 import { auctionStarted, bidIsSold, bidIsWinning, decodeHtmlEntities } from "@/lib/vinyl-parse";
 import { OWNED_CONFIDENT_MIN, type OwnedHit } from "@/lib/wantlist-match";
 
@@ -42,6 +43,8 @@ export function LotCard({
   owned,
   onOpenOwned,
   onEditTags,
+  possibleTrash,
+  onExclude,
 }: {
   lot: CardLot;
   busy: boolean;
@@ -69,6 +72,12 @@ export function LotCard({
   owned?: OwnedHit | null;
   onOpenOwned?: () => void;
   onEditTags?: (next: string[]) => void;
+  // Casamento por palavras-chave contra lotes já excluídos (ver src/lib/lot-exclusion.ts) —
+  // só sinaliza, NUNCA esconde o lote sozinho. Ausente/null = sem sinal (badge não aparece).
+  possibleTrash?: ExclusionSignal | null;
+  // Presente só nas listagens onde faz sentido excluir (ver index.tsx) — botão de exclusão
+  // definitiva não aparece quando ausente.
+  onExclude?: () => void;
 }) {
   // Imagens hotlinkadas das casas às vezes falham (403/404/expirada) — troca para o mesmo
   // placeholder "sem imagem". (O transbordo do texto do `alt` por cima do card é evitado de
@@ -264,6 +273,16 @@ export function LotCard({
               {bidStatus}
             </span>
           ) : null}
+          {/* "Possível lixo": parecido (por palavras-chave do título) com um lote já excluído.
+              Nunca esconde nada sozinho — só avisa; o usuário decide se exclui também. */}
+          {possibleTrash ? (
+            <span
+              className="rounded bg-orange-500/15 px-1.5 py-0.5 font-medium text-orange-600 dark:text-orange-400"
+              title={`Parecido com um lote excluído: "${possibleTrash.excludedTitle}" (termos: ${possibleTrash.matchedTerms.join(", ")})`}
+            >
+              ⚠ possível lixo
+            </span>
+          ) : null}
           {showDate && lot.dayKey ? <span>{lot.dayKey}</span> : null}
           {lot.time ? <span>{lot.time}</span> : null}
           {lot.uf ? <span>{lot.uf}</span> : null}
@@ -308,6 +327,17 @@ export function LotCard({
               <ExternalLink className="h-4 w-4" />
             </a>
           </Button>
+          {onExclude ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onExclude}
+              aria-label="Excluir lote (nunca mais aparece)"
+              title="Excluir lote — some para sempre e ajuda a sinalizar parecidos"
+            >
+              <Trash2 className="h-4 w-4 text-muted-foreground" />
+            </Button>
+          ) : null}
         </div>
       </div>
     </article>
