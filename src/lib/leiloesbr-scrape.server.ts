@@ -4,6 +4,7 @@ import { publicFetch, BASE_URL } from "./leiloesbr-auth.server";
 import {
   decodeHtmlEntities,
   extractArtist,
+  isVinylTitle,
   looksNonVinyl,
   parseInfoLine,
   upcomingDayKeys,
@@ -458,9 +459,17 @@ export async function listGalleries(
  * depender de `fetchCatalogData` (que não tem esses campos, só serve pra ENRIQUECER lotes já
  * conhecidos com nº de lote/dados de venda). Sidesteps o gap de categorização que motivou
  * toda a investigação: como não filtramos por `tp=`, um item da galeria aparece aqui mesmo
- * que a LeilõesBR não o marque como "Disco de Vinil" — filtramos por TÍTULO
- * (`looksNonVinyl`, mesmo critério de `scrapeVinylChunk`) em vez de confiar na tag da
- * plataforma. Não persiste nada — quem chama decide (`persistLots`).
+ * que a LeilõesBR não o marque como "Disco de Vinil".
+ *
+ * ⚠️ Por isso NÃO dá pra usar `looksNonVinyl` aqui (é uma lista de BLOQUEIO — permite por
+ * padrão, só rejeita o que bate um termo ruim conhecido; funciona em `scrapeVinylChunk`
+ * porque lá a categoria `tp=` já GARANTE vinil antes do filtro de título entrar em jogo). Sem
+ * essa garantia, uma casa com leilão 100% fora de vinil (ex.: "LEILÃO ANTIGUIDADES" só com
+ * miniatura/joia/porcelana/relógio) tinha itens colando na varredura só por não bater em
+ * nenhum termo da lista de bloqueio — achado do usuário (2026-09-22): leilão inteiro sem
+ * NENHUMA categoria de disco no catálogo da própria casa, mas apareceu aqui mesmo assim.
+ * Usamos `isVinylTitle` (exige palavra de vinil no título) em vez disso — mais restritivo,
+ * mas correto pra uma fonte sem confirmação de categoria da plataforma.
  */
 export async function listGalleryAuctions(galleryCode: string): Promise<VinylLot[]> {
   const days = upcomingDayKeys(WINDOW_DAYS);
@@ -481,7 +490,7 @@ export async function listGalleryAuctions(galleryCode: string): Promise<VinylLot
     }
     for (const lot of parseCards(html)) {
       if (lot.dayKey < windowStart || lot.dayKey > windowEnd) continue;
-      if (looksNonVinyl(lot.title)) continue;
+      if (!isVinylTitle(lot.title)) continue;
       byId.set(lot.id, lot);
     }
   }
