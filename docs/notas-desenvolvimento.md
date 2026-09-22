@@ -1678,6 +1678,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.74.2      | Fix: vigiados de leilões distantes (além de `WINDOW_DAYS`/5 dias, a janela de scraping do servidor) sumiam das abas "Vigiados"/"Lances" — `mergeWatchedAccum` (`watched-accum.ts`) podava pelo teto de `WATCH_WINDOW_DAYS` mesmo sendo vigia real e confirmada na conta do LeilõesBR; agora só poda vigiados pelo dia já PASSADO (removido o teto futuro, `WATCH_WINDOW_DAYS` não existe mais) — lances (`MyBid`) sem mudança |
 | v0.75.0      | Lote em pregão agora ("Lote 457" + barra "135/322 · 41%") ao lado de "Ao vivo agora" na lista principal e no `/ao-vivo`, via endpoint de polling do presencial (`le_registro_pregao_cfbr_v1.asp`), atualizado a cada 5 min só com a aba visível |
 | v0.75.1      | Selo do lote em pregão atualiza a cada 1 min (era 5 min); cache do servidor 60 s → 30 s para não virar o piso |
+| v0.75.2      | Pedido do usuário: remove a barra de chips das casas do header (introduzida em v0.74.0, com botão pra ocultar) pra liberar espaço — clicar na casa direto na grade principal continua abrindo/fechando a seção (`openHouses`/`toggleHouse`, inalterados) |
 | v0.76.0      | Selo do lote em pregão (nº + barra) também em "Acontecendo agora", trocando a linha "Início hh:mm" — card mantém o mesmo tamanho |
 
 ## Pendências
