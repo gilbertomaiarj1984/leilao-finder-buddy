@@ -391,9 +391,16 @@ CREATE INDEX IF NOT EXISTS excluded_lots_keywords_gin_idx
 -- apaga de `lots` os lotes fora da janela de dias. `ON DELETE CASCADE` evita isso dali
 -- pra frente. ⚠️ NUNCA cascatear `lot_sales` → `lots`: é o arquivo permanente de vendas.
 -- Idempotente: `pg_constraint` checado antes do `ADD CONSTRAINT` (que não tem
--- `IF NOT EXISTS`); a limpeza dos órfãos já acumulados está em
--- `supabase/migrations/20260917120000_orphans_fk_cascade.sql`.
+-- `IF NOT EXISTS`). Limpa os órfãos já acumulados antes do `ADD CONSTRAINT` — em produção
+-- o schema veio de `pg_restore`, nunca rodou de fato este `setup.sql` nem a migração
+-- `20260917120000_orphans_fk_cascade.sql` antes do auto-apply da v0.72.0, então órfãos de
+-- antes da Fase 5 ainda estavam lá e travavam o `ADD CONSTRAINT` (violação de FK).
 -- ---------------------------------------------------------------------
+DELETE FROM public.lot_ai        la WHERE NOT EXISTS (SELECT 1 FROM public.lots l WHERE l.id = la.id);
+DELETE FROM public.lot_ident     li WHERE NOT EXISTS (SELECT 1 FROM public.lots l WHERE l.id = li.id);
+DELETE FROM public.lot_market    lm WHERE NOT EXISTS (SELECT 1 FROM public.lots l WHERE l.id = lm.id);
+DELETE FROM public.lot_condition lc WHERE NOT EXISTS (SELECT 1 FROM public.lots l WHERE l.id = lc.id);
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'lot_ai_id_fkey') THEN
