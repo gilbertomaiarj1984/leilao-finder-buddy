@@ -8,7 +8,6 @@ import {
   ChevronRight,
   ChevronUp,
   Eye,
-  EyeOff,
   ExternalLink,
   Gavel,
   Library,
@@ -416,10 +415,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     });
   const closeAllHouseSections = (keys: string[]) =>
     setClosedHouseSections((prev) => new Set([...prev, ...keys]));
-  // A barra de chips com as casas (no header, acima da lista de dias) pode ser ocultada à
-  // parte do resto do topo — preferência simples, só no navegador (sem persistência no
-  // servidor).
-  const [housesBarHidden, setHousesBarHidden] = useState(false);
   // Casas já verificadas (chave `${dia}|${casa}`): marcador verde que move a casa
   // para a seção "Já verificadas" no fim da lista. PERSISTE no servidor (app_state,
   // via getVerifiedHouses/setVerifiedHouses) — antes ficava só no localStorage do
@@ -1856,81 +1851,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                               </span>
                             )}
                           </div>
-                          {!isWatchedView && !isBidsView && groups.length > 0 ? (
-                            <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-1">
-                              <button
-                                type="button"
-                                onClick={() => setHousesBarHidden((c) => !c)}
-                                title={
-                                  housesBarHidden
-                                    ? "Mostrar a barra de casas"
-                                    : "Ocultar a barra de casas"
-                                }
-                                aria-label={
-                                  housesBarHidden
-                                    ? "Mostrar a barra de casas"
-                                    : "Ocultar a barra de casas"
-                                }
-                                aria-pressed={housesBarHidden}
-                                className="inline-flex shrink-0 items-center justify-center rounded-full border border-border p-1.5 text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-                              >
-                                {housesBarHidden ? (
-                                  <EyeOff className="h-3.5 w-3.5" />
-                                ) : (
-                                  <Eye className="h-3.5 w-3.5" />
-                                )}
-                              </button>
-                              {housesBarHidden ? null : (
-                                <nav className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
-                                  {groups.map((group) => {
-                                    const houseKey = `${day}|${group.house}`;
-                                    const isOpen = openHouses.has(houseKey);
-                                    return (
-                                      <button
-                                        key={group.house}
-                                        type="button"
-                                        aria-expanded={isOpen}
-                                        onClick={() => {
-                                          const willOpen = !openHouses.has(houseKey);
-                                          toggleHouse(houseKey);
-                                          if (willOpen) {
-                                            requestAnimationFrame(() =>
-                                              document
-                                                .getElementById(houseAnchor(group.house, index))
-                                                ?.scrollIntoView({
-                                                  behavior: "smooth",
-                                                  block: "start",
-                                                }),
-                                            );
-                                          }
-                                        }}
-                                        className={
-                                          isOpen
-                                            ? "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
-                                            : "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
-                                        }
-                                      >
-                                        {isOpen ? (
-                                          <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                                        ) : (
-                                          <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                                        )}
-                                        {group.house}
-                                        <span className="text-muted-foreground">{group.count}</span>
-                                        <HouseStatBadges
-                                          stats={computeHouseStats(
-                                            group.lots,
-                                            watchedIds,
-                                            bidStatusById,
-                                          )}
-                                        />
-                                      </button>
-                                    );
-                                  })}
-                                </nav>
-                              )}
-                            </div>
-                          ) : null}
                         </div>,
                         dayBarHost,
                       )}
