@@ -4,6 +4,9 @@ import { auctionHouseDomain } from "./vinyl-parse";
 /**
  * Detalhes de UM lote que só existem na página individual (`peca.asp?ID=<idPeca>`, mesma
  * lógica em toda casa — só o domínio muda), nunca na listagem geral nem nas páginas de conta:
+ * - **Valor atual** (`VALOR_VALUE`, MESMO JSON `loadData`) — ao vivo, direto da página do
+ *   próprio lote. Preferido sobre `price`/`priceById` (varredura geral, cron 3×/dia — fica
+ *   defasado, e some de vez quando o leilão entra ao vivo e o lote sai da listagem pública).
  * - **Próximo lance** (`NOVO_VALOR`, JSON `loadData` embutido) — só o lote ABERTO traz isso.
  * - **Resultado da venda**, quando o leilão já terminou — a MESMA página/JSON também traz
  *   `MOSTRABTN_CLASS` ('is-vendido'|'is-naovendido') e `VALOR_VENDA`, os MESMOS campos que
@@ -25,7 +28,7 @@ import { auctionHouseDomain } from "./vinyl-parse";
  * nunca para a listagem inteira.
  */
 
-export type LotDetails = { nextBid?: string; sold?: string };
+export type LotDetails = { currentValue?: string; nextBid?: string; sold?: string };
 
 /** Monta a URL do `peca.asp` no domínio da casa a partir da URL do lote + idPeca. */
 function pecaUrl(lotUrl: string, idPeca: string): string | null {
@@ -34,13 +37,24 @@ function pecaUrl(lotUrl: string, idPeca: string): string | null {
   return domain ? `${domain}/peca.asp?id=${idPeca}` : null;
 }
 
+/** Formata um valor cru (string numérica BR) do `loadData` em BRL, ou `null` se inválido. */
+function formatValor(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const n = Number(raw.replace(",", "."));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+/** Extrai o valor atual (VALOR_VALUE) do HTML da peça e formata em BRL. */
+function parseCurrentValue(html: string): string | null {
+  const m = html.match(/"VALOR_VALUE":"(\d+(?:[.,]\d+)?)"/);
+  return m ? formatValor(m[1]) : null;
+}
+
 /** Extrai o próximo lance (NOVO_VALOR) do HTML da peça e formata em BRL. */
 function parseNextBid(html: string): string | null {
   const m = html.match(/"NOVO_VALOR":"(\d+(?:[.,]\d+)?)"/);
-  if (!m) return null;
-  const n = Number(m[1]!.replace(",", "."));
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return m ? formatValor(m[1]) : null;
 }
 
 // Classe do botão de lance quando o leiloeiro já bateu o martelo (template ANTIGO). Token CSS
@@ -87,11 +101,13 @@ async function fetchOne(target: {
   try {
     const html = await publicFetch(url, {});
     const details: LotDetails = {};
+    const currentValue = parseCurrentValue(html);
+    if (currentValue) details.currentValue = currentValue;
     const nextBid = parseNextBid(html);
     if (nextBid) details.nextBid = nextBid;
     const sold = parseSold(html);
     if (sold) details.sold = sold;
-    return details.nextBid || details.sold ? [target.id, details] : null;
+    return details.currentValue || details.nextBid || details.sold ? [target.id, details] : null;
   } catch {
     return null;
   }

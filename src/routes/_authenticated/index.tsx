@@ -1387,6 +1387,27 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       if (d.nextBid) map.set(id, d.nextBid);
     return map;
   }, [lotDetails.data]);
+  // Valor atual AO VIVO (VALOR_VALUE do peca.asp) — para VIGIADOS + LANCES, mesmo fetch que já
+  // traz `nextBid`/`sold`. Mais fresco que `priceById` (varredura geral, cron 3×/dia) e cobre o
+  // caso em que o leilão já está ao vivo e o lote some da listagem pública (`priceById` fica
+  // sem entrada nesse caso). Usado como override em `currentPriceFor` abaixo.
+  const currentValueById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [id, d] of Object.entries(lotDetails.data ?? {}))
+      if (d.currentValue) map.set(id, d.currentValue);
+    return map;
+  }, [lotDetails.data]);
+  // "Atual" preferindo o valor AO VIVO (peca.asp) sobre o da varredura geral/conta, quando
+  // disponível — ver comentário de `currentValueById`.
+  const currentPriceFor = (id: string, fallback: string) => currentValueById.get(id) || fallback;
+  // `priceById` (varredura geral) com o valor AO VIVO sobrescrevendo quando disponível — usado
+  // pelas seções de "Meus lances" (`BidHouseSections`, que não tem preço próprio nenhum).
+  const effectivePriceById = useMemo(() => {
+    if (currentValueById.size === 0) return priceById;
+    const map = new Map(priceById);
+    for (const [id, value] of currentValueById) map.set(id, value);
+    return map;
+  }, [priceById, currentValueById]);
   // Status "Vendido" (tarja diagonal) — só para VIGIADOS + LANCES, casado por `id`
   // (${idLeilao}-${idPeca}) com `lot_sales` (fonte mais rica, com valor de venda).
   const soldTargets = useMemo(() => {
@@ -1901,6 +1922,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                       key={lot.id}
                                       lot={{
                                         ...lot,
+                                        price: currentPriceFor(lot.id, lot.price),
                                         dayKey: watchedDateToKey(lot.date) || lot.date,
                                         watched: true,
                                         myBid: myBidById.get(lot.idPeca),
@@ -1943,7 +1965,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                           houses={bidsByHouse}
                           pending={pending}
                           loteById={loteById}
-                          priceById={priceById}
+                          priceById={effectivePriceById}
                           nextBidById={nextBidById}
                           albumById={albumById}
                           soldById={soldById}
@@ -1993,6 +2015,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   key={lot.id}
                                   lot={{
                                     ...lot,
+                                    price: currentPriceFor(lot.id, lot.price),
                                     lote: lot.lote || loteById.get(lot.idPeca) || "",
                                     myBid: myBidById.get(lot.idPeca),
                                     nextBid: nextBidById.get(lot.id),
@@ -2185,6 +2208,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                               key={lot.id}
                                               lot={{
                                                 ...lot,
+                                                price: currentPriceFor(lot.id, lot.price),
                                                 lote: lot.lote || loteById.get(lot.idPeca) || "",
                                                 myBid: myBidById.get(lot.idPeca),
                                                 nextBid: nextBidById.get(lot.id),
@@ -2404,9 +2428,11 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                               key={lot.id}
                                               lot={{
                                                 ...lot,
+                                                price: currentPriceFor(lot.id, lot.price),
                                                 dayKey: watchedDateToKey(lot.date) || lot.date,
                                                 watched: true,
                                                 myBid: myBidById.get(lot.idPeca),
+                                                nextBid: nextBidById.get(lot.id),
                                               }}
                                               busy={pending === lot.idPeca}
                                               ai={aiFor(lot)}
@@ -2523,7 +2549,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   houses={houses}
                                   pending={pending}
                                   loteById={loteById}
-                                  priceById={priceById}
+                                  priceById={effectivePriceById}
                                   nextBidById={nextBidById}
                                   albumById={albumById}
                                   soldById={soldById}
