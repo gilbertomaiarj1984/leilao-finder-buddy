@@ -11,12 +11,6 @@
 // com o acumulador certo já existindo ali.
 import { auctionFinished, recentDayKeys, upcomingDayKeys } from "./vinyl-parse";
 
-// Espelha o `WINDOW_DAYS` do servidor (`leiloesbr-scrape.server.ts`) — janela de poda do
-// acumulador de vigiados (um item só sai quando o dia do LEILÃO já saiu dessa janela, ou é
-// removido explicitamente). Lances usam `BID_RETENTION_DAYS` abaixo — ver comentário em
-// `mergeWatchedAccum`.
-export const WATCH_WINDOW_DAYS = 5;
-
 // Para lances (`MyBid`), `date` é o dia em que o lance foi DADO (normalmente hoje ou um pouco
 // antes do pregão), não o dia do leilão — ao contrário de `WatchedLot`. Por isso a poda de
 // lances olha para os últimos N dias (passado), não para os próximos (`upcomingDayKeys`), com
@@ -67,25 +61,28 @@ export function mergeWatchedAccum<T extends { id: string; date: string; time?: s
 ): T[] {
   const freshIds = new Set(fresh.map((item) => item.id));
   for (const item of fresh) acc.set(item.id, item);
-  const validUpcomingDays = new Set(upcomingDayKeys(WATCH_WINDOW_DAYS));
+  const todayKey = upcomingDayKeys(1)[0];
   const validBidDays = new Set(recentDayKeys(BID_RETENTION_DAYS));
   for (const [id, item] of acc) {
     const dayKey = dateToKey(item.date);
-    // `item.time` só existe em `WatchedLot` — ali `date` é o dia do LEILÃO, então a poda olha
-    // para frente (`upcomingDayKeys`). Em `MyBid` (sem `time`), `date` é o dia em que o lance
-    // foi DADO — normalmente hoje ou um pouco antes do pregão —, então a poda olha para trás
-    // (`recentDayKeys`); podar pela janela "só futuro" apagava o lance do acumulador assim que
-    // ele era mesclado, e o card nunca chegava a mostrar "Meu lance".
+    // `item.time` só existe em `WatchedLot` — ali `date` é o dia do LEILÃO. A poda aqui só olha
+    // para TRÁS (dia já passado, sem data legível): vigiados de leilões FUTUROS ficam visíveis
+    // mesmo além da janela de scraping do servidor (`WINDOW_DAYS`,
+    // `leiloesbr-scrape.server.ts`) — o lote ainda não estar "na ferramenta" (na tabela `lots`)
+    // não significa que a vigia não exista; ela vem direto da conta do LeilõesBR (`l=8`). Em
+    // `MyBid` (sem `time`), `date` é o dia em que o lance foi DADO — normalmente hoje ou um
+    // pouco antes do pregão —, então a poda olha para trás (`recentDayKeys`); podar pela janela
+    // "só futuro" apagava o lance do acumulador assim que ele era mesclado, e o card nunca
+    // chegava a mostrar "Meu lance".
     if (item.time !== undefined) {
-      if (!validUpcomingDays.has(dayKey)) {
+      if (!dayKey || dayKey < todayKey) {
         acc.delete(id);
         continue;
       }
       // Ausente do fresh só remove aqui se o leilão NÃO estiver terminado: se ainda está
       // rolando e sumiu do fresh, a vigia foi removida de fato (ex.: pelo próprio usuário no
-      // site do LeilõesBR) e o card deve sumir também aqui, sem esperar a poda pela janela de
-      // dias — do contrário o card ficava "preso" como vigiado até `WATCH_WINDOW_DAYS` dias
-      // depois de já ter sido desmarcado no site.
+      // site do LeilõesBR) e o card deve sumir também aqui, sem esperar o dia virar passado —
+      // do contrário o card ficava "preso" como vigiado até o dia seguinte ao leilão.
       if (!freshIds.has(id) && !auctionFinished(dayKey, item.time)) {
         acc.delete(id);
       }

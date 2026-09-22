@@ -337,6 +337,19 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
     por uma janela de dias PASSADOS a partir da data do lance (`recentDayKeys`,
     `BID_RETENTION_DAYS` = 14, margem generosa entre dar o lance e o leilão fechar).
     `recentDayKeys` é o espelho de `upcomingDayKeys` em `vinyl-parse.ts`.
+    ⚠️ **Fix v0.74.2 — vigiado de leilão distante sumia da ferramenta**: a poda por janela de
+    dias futuros (`upcomingDayKeys(WATCH_WINDOW_DAYS)`, "hoje + próximos 4 dias") também
+    descartava vigiados de leilões **além** dessa janela — mesmo sendo uma vigia real, confirmada
+    direto na conta do LeilõesBR (`l=8`, `listWatchedFromSite`), sem depender de o lote já estar
+    na tabela `lots` (varredura geral limitada ao mesmo `WINDOW_DAYS` do servidor,
+    `leiloesbr-scrape.server.ts`). Fix: `mergeWatchedAccum` não poda mais vigiados pelo TETO
+    futuro — só remove quando o dia já é passado (`dayKey < hoje`) ou sem data legível; o teto
+    artificial de `WATCH_WINDOW_DAYS` (removido, não é mais usado em lugar nenhum) só existia
+    para espelhar a janela de scraping, mas o card do vigiado não depende dela (vem pronto —
+    título/preço/imagem/data — direto da conta; casamento com `lots` para preço ao vivo/nota
+    IA/Discogs é best-effort, se o lote ainda não foi varrido o card simplesmente mostra menos
+    dado, nunca some). Lances (`MyBid`) não mudam — a poda deles continua olhando pra trás
+    (`recentDayKeys`/`BID_RETENTION_DAYS`), já que `date` ali é a data do LANCE, não do leilão.
 - **Ícone roxo "já tenho na Coleção"** (`LotCard`, só na **home** `index.tsx`): disco `Disc3`
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
@@ -1627,6 +1640,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.73.6      | Fix (2ª leva de "artista claro em não classificados", depois do v0.73.4): casas que usam "//" pra separar campos ("LP ANA CARAM C/ ENCARTE // CAPA CONFORME FOTOS // DISCO EM MUITO BOM ESTADO // PODE...") não tinham esse separador reconhecido pelo split de `extractArtist` (só `-`/`:`/`–`/`—`), então o candidato virava a frase inteira e zerava pela trava de >5 palavras. `//` (duas barras — UMA barra continua reservada pro nome de banda tipo "AC/DC", nunca tem espaço antes) entra no split. Duas limpezas novas no candidato: corta o abreviação " C/ " ("com [encarte/pôster]", não é nome — "Ana Caram C/ Encarte" → "Ana Caram") e o ANO final colado sem separador ("Bebeto 1981" → "Bebeto", útil bem além desse formato — qualquer "ARTISTA ANO" que sobre como candidato) |
 | v0.74.0      | Ordena as casas (grade principal, Vigiados/Lances do dia e geral) por horário do leilão + alfabética, em vez de por nº de itens; lances ganham horário casado por `${dia}\|casa` (não vêm com horário na origem). Vigiados/Lances (dia e geral) ganham abrir/fechar por casa (antes sempre abertas) + botão "Fechar todas" no início de cada lista (grade principal também ganha o botão). Barra de chips das casas no header ganha botão pra ocultar só ela |
 | v0.74.1      | Achado de produção: run `#160` do `refresh.yml` (2026-09-22) voltou "All jobs have failed" — `chunk`/`galleryscan`/`enrich` completaram normalmente (`persisted:true`), `aieval` coletou um batch, mas a 2ª chamada de `step=aiident` (mesmo lote de 25 ainda pendentes de identificação por título, via Gemini síncrono) voltou HTTP 500 nas 4 tentativas do `curl --retry 3` — consistente, não parece blip de rede. Causa raiz real ainda **não** identificada: `call()` usa `curl -f`, que suprime o corpo da resposta (o `catch` de `handleCron` devolve a mensagem do erro + `pid`/`hostname`/`hasDatabaseUrl` no JSON, mas isso nunca chega ao log do Actions). Corrigido o que dava pra corrigir sem essa informação: `aieval`/`aiident` são chunked e idempotentes por design ("o resto completa nas execuções seguintes"), mas uma falha ali estava matando a run INTEIRA via `set -e`, cancelando também `market`/`condition`/`sales`/`reident`/`purchases`/`prune` — nada a ver com o bug em si. Novo `call_soft()` em `refresh.yml` (sem `-f`, extrai o HTTP status por marcador `===HTTPSTATUS===`, mesma técnica do v0.69.15) faz esses dois steps logarem o corpo real do erro e **pularem pro próximo step** em vez de abortar tudo; a run só é marcada como falha (`exit 1` + ping de falha no healthchecks.io) no FINAL, depois que os demais steps já rodaram. Validado localmente (`bash -n`, mais um teste isolado do `call_soft` contra um servidor fake simulando 200/500/conexão recusada). Pendente: a próxima falha do `aiident` deve trazer a mensagem real do erro no log — ver Pendências |
+| v0.74.2      | Fix: vigiados de leilões distantes (além de `WINDOW_DAYS`/5 dias, a janela de scraping do servidor) sumiam das abas "Vigiados"/"Lances" — `mergeWatchedAccum` (`watched-accum.ts`) podava pelo teto de `WATCH_WINDOW_DAYS` mesmo sendo vigia real e confirmada na conta do LeilõesBR; agora só poda vigiados pelo dia já PASSADO (removido o teto futuro, `WATCH_WINDOW_DAYS` não existe mais) — lances (`MyBid`) sem mudança |
 
 ## Pendências
 
