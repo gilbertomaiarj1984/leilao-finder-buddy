@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
+import { LiveLotNow } from "@/components/vinyl/live-lot-now";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import type { PresencialAuction } from "@/lib/leiloesbr-auctions.server";
 import { getTodayAuctions, openLiveAuction } from "@/lib/leiloesbr.functions";
@@ -105,6 +106,12 @@ function AuctionCard({
           {status.label}
         </Badge>
       </div>
+
+      {auction.status === "live" && auction.presencialUrl ? (
+        <div className="mt-1.5">
+          <LiveLotNow url={auction.presencialUrl} />
+        </div>
+      ) : null}
 
       <p className="mt-1 text-xs text-muted-foreground">
         Início {auction.time}
