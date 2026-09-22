@@ -46,7 +46,8 @@ produção.
 
 Ver `AGENTS.md` (fonte única — responder em PT, branch a partir de `origin/main`, bump de
 versão obrigatório em todo PR, atualizar `docs/notas-desenvolvimento.md` antes de mesclar,
-migrações `.sql` não auto-aplicadas).
+`supabase/setup.sql` reaplicado automaticamente em produção a cada deploy — ver
+`docs/notas-desenvolvimento.md`, "Restrições do ambiente").
 
 ## Arquitetura
 

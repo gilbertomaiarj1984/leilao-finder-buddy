@@ -107,6 +107,9 @@ import type { MyBid } from "@/lib/leiloesbr-bids.server";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
 import { getCollection } from "@/lib/collection.functions";
 import type { CollectionItem } from "@/lib/collection.server";
+import { excludeLot, getExcludedLotsForMatching } from "@/lib/lot-exclusion.functions";
+import { extractKeywords, matchPossibleTrash } from "@/lib/lot-exclusion";
+import { ExcludeLotDialog } from "@/components/vinyl/exclude-lot-dialog";
 import {
   BIDS_ACCUM_STORAGE_KEY,
   loadAccum,
@@ -428,6 +431,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const fetchCollectionLinks = useServerFn(getCollectionLinks);
   const fetchCollectionFeedback = useServerFn(getCollectionFeedback);
   const runApplyDecision = useServerFn(applyCollectionDecision);
+  const runExcludeLot = useServerFn(excludeLot);
+  const fetchExcludedLots = useServerFn(getExcludedLotsForMatching);
 
   const lots = useQuery({
     ...lotsQuery,
@@ -708,6 +713,26 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     const cached = lot.id ? conditionById.get(lot.id) : undefined;
     return cached ?? parseConditionFromText(lot.title ?? "");
   };
+  // Lotes já excluídos (ver src/lib/lot-exclusion.server.ts) — alimenta o badge "possível
+  // lixo" na listagem. Calculado no CLIENTE (não persistido): volume baixo, sem gasto de IA.
+  const excludedLotsQuery = useQuery({
+    queryKey: ["excluded-lots"] as const,
+    queryFn: () => fetchExcludedLots(),
+    staleTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const possibleTrashById = useMemo(() => {
+    const excluded = excludedLotsQuery.data ?? [];
+    const map = new Map<string, ReturnType<typeof matchPossibleTrash>>();
+    if (!excluded.length) return map;
+    for (const lot of lots.data?.lots ?? []) {
+      const keywords = extractKeywords(lot.title, lot.artist);
+      const signal = matchPossibleTrash(keywords, excluded);
+      if (signal) map.set(lot.id, signal);
+    }
+    return map;
+  }, [excludedLotsQuery.data, lots.data]);
+  const possibleTrashFor = (lot: { id: string }) => possibleTrashById.get(lot.id) ?? null;
   // Demanda (visualizações/lances) por lote, do mesmo cache `lot_condition`.
   const demandById = useMemo(() => {
     const map = new Map<string, { views: number | null; bids: number | null }>();
@@ -931,6 +956,29 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         void queryClient.invalidateQueries({ queryKey: ["collection-feedback"] });
       });
   };
+
+  // Exclusão definitiva de lote (DELETE físico + aprendizado — ver
+  // src/lib/lot-exclusion.server.ts). Um diálogo só, controlado por este estado.
+  const [excludeTarget, setExcludeTarget] = useState<{ id: string; title: string } | null>(null);
+  const excludeMutation = useMutation({
+    mutationFn: async (input: { lotId: string; reason?: string }) =>
+      await runExcludeLot({ data: input }),
+    onSuccess: (result, input) => {
+      if (!result.ok) {
+        toast.error("Este lote já não estava mais na listagem");
+        return;
+      }
+      queryClient.setQueryData(lotsQuery.queryKey, (old: typeof lots.data) =>
+        old ? { ...old, lots: old.lots.filter((item) => item.id !== input.lotId) } : old,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["excluded-lots"] });
+      toast.success("Lote excluído — não volta a aparecer");
+      setExcludeTarget(null);
+    },
+    onError: (error: unknown) => {
+      toast.error((error as Error)?.message || "Não foi possível excluir o lote");
+    },
+  });
 
   // Casas verificadas: fonte da verdade é o servidor (app_state). O localStorage é só
   // um cache para pintar a tela na hora, sem esperar a rede.
@@ -1929,6 +1977,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   onEditTags={editTags(lot.id)}
                                   bidStatus={bidStatusById.get(lot.idPeca)}
                                   sold={soldById.get(lot.id)}
+                                  possibleTrash={possibleTrashFor(lot)}
+                                  onExclude={() =>
+                                    setExcludeTarget({ id: lot.id, title: lot.title })
+                                  }
                                   onToggle={() =>
                                     toggle.mutate({
                                       idPeca: lot.idPeca,
@@ -2113,6 +2165,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                               onEditTags={editTags(lot.id)}
                                               bidStatus={bidStatusById.get(lot.idPeca)}
                                               sold={soldById.get(lot.id)}
+                                              possibleTrash={possibleTrashFor(lot)}
+                                              onExclude={() =>
+                                                setExcludeTarget({ id: lot.id, title: lot.title })
+                                              }
                                               onToggle={() =>
                                                 toggle.mutate({
                                                   idPeca: lot.idPeca,
@@ -2488,6 +2544,14 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             );
           })()
         : null}
+      <ExcludeLotDialog
+        target={excludeTarget}
+        busy={excludeMutation.isPending}
+        onClose={() => setExcludeTarget(null)}
+        onConfirm={(reason) =>
+          excludeMutation.mutate({ lotId: excludeTarget!.id, reason: reason || undefined })
+        }
+      />
       {footerExtraHost &&
         createPortal(
           <>

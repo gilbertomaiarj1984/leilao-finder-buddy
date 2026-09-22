@@ -121,4 +121,5 @@ jobs:
             export APP_IMAGE='$APP_IMAGE' BACKUP_IMAGE='$BACKUP_IMAGE' && \
             docker compose pull && \
             docker compose up -d --remove-orphans && \
+            docker compose exec -T postgres sh -c 'psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/01-setup.sql' && \
             docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile"

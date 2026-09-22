@@ -440,6 +440,39 @@ export type Database = {
         }
         Relationships: []
       }
+      excluded_lots: {
+        Row: {
+          artist: string
+          excluded_at: string
+          excluded_by: string
+          house: string
+          id: string
+          keywords: string[]
+          reason: string | null
+          title: string
+        }
+        Insert: {
+          artist?: string
+          excluded_at?: string
+          excluded_by?: string
+          house?: string
+          id: string
+          keywords?: string[]
+          reason?: string | null
+          title: string
+        }
+        Update: {
+          artist?: string
+          excluded_at?: string
+          excluded_by?: string
+          house?: string
+          id?: string
+          keywords?: string[]
+          reason?: string | null
+          title?: string
+        }
+        Relationships: []
+      }
       wantlist_items: {
         Row: {
           acquired: boolean

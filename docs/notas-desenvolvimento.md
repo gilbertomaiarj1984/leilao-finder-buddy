@@ -30,11 +30,17 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
 - **`bun install` funciona** (`bunfig.toml` → npm público), então `bun run build`,
   `bunx tsc --noEmit` e `bun run lint` rodam localmente. Lint verde salvo 2 warnings
   pré-existentes de shadcn (`ui/badge`, `ui/button`).
-- **Migrações `.sql` NÃO são auto-aplicadas** — o schema é (re)criado via `supabase/setup.sql`
-  (SQL Editor ou `psql -f`), re-executável (tudo `IF NOT EXISTS`). Ao criar tabela/coluna,
-  editar `setup.sql` **e** `src/integrations/supabase/types.ts` à mão. Tabelas: `lots`,
-  `known_artists`, `app_state`, `seen_auctions`, `lot_ai`, `lot_ident`, `lot_market`,
-  `wantlist_items`, `collection_items`, `purchases`.
+- **Schema consolidado em `supabase/setup.sql`, re-executável (tudo `IF NOT EXISTS`).** Não é
+  mais Supabase hospedado (esse trecho do documento é anterior ao cutover pra VPS, ver "Infra"
+  abaixo) — em **produção**, `deploy.yml` reaplica `setup.sql` sozinho a cada push pra
+  `main`/`vps` (`docker compose exec postgres psql -f /docker-entrypoint-initdb.d/01-setup.sql`,
+  depois do `up -d`), então uma tabela/coluna nova já existe no próximo deploy sem passo manual.
+  Localmente, aplicar com `psql -f supabase/setup.sql` contra o Postgres do `docker compose` de
+  dev (ou recriar o volume). Migrações incrementais em `supabase/migrations/` continuam só como
+  **histórico/changelog** do schema. Ao criar tabela/coluna, editar `setup.sql` **e**
+  `src/integrations/supabase/types.ts` à mão. Tabelas: `lots`, `known_artists`, `app_state`,
+  `seen_auctions`, `lot_ai`, `lot_ident`, `lot_market`, `lot_condition`, `lot_sales`,
+  `wantlist_items`, `collection_items`, `purchases`, `excluded_lots`.
 - **Git push HTTPS costuma funcionar**; quando não, usar os tools `mcp__github__*`.
 
 ## Arquitetura de dados
@@ -1095,6 +1101,55 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
     "Enviar" — mesmo aviso de failover de provedor (`formatFailoverTrail`) das outras telas de IA.
     Usa sempre o provedor padrão do `app_state` (sem seletor próprio no diálogo).
 
+## Exclusão de lotes — `excluded_lots` (v0.72.0)
+
+- **Objetivo:** o usuário exclui manualmente um lote "lixo" (ex.: joia, item que escapou do
+  filtro de vinil) e ele **nunca mais volta**, mesmo em varreduras futuras do cron — e o sistema
+  **aprende** os termos do título para sinalizar (nunca esconder sozinho) lotes futuros
+  parecidos como "possível lixo".
+- **DELETE físico, sem desfazer** — diferente do padrão "soft-hide via `app_state`" usado pelo
+  Analytics (`analytics_excluded_sales`/`analytics_excluded_artists`) ou pelo aprendizado da
+  Coleção (`collection_feedback`): aqui o lote é APAGADO de `lots` de verdade
+  (`excludeLot`, `src/lib/lot-exclusion.server.ts`) — `ON DELETE CASCADE` já existente limpa
+  `lot_ai`/`lot_ident`/`lot_market`/`lot_condition` junto (mesmas FKs da Fase 5 da migração
+  VPS). Reverter exigiria re-raspar o site; não há botão de "desfazer" nesta versão.
+- **Tabela `excluded_lots`** (`supabase/setup.sql` +
+  `supabase/migrations/20260922000000_excluded_lots.sql`): `id` é a MESMA PK de `lots.id`
+  (histórico — a linha sobrevive ao lote já apagado, mesma razão de `lot_sales` nunca cascatear
+  com `lots`), `title`/`house`/`artist` (snapshot no momento da exclusão), `reason` (opcional,
+  do usuário), `keywords text[]` (extraídas do título, ver abaixo), `excluded_by`, `excluded_at`.
+- **Bloqueio de reinserção pelo cron:** `persistLots` (`leiloesbr-scrape.server.ts`) filtra os
+  lotes frescos contra `getExcludedLotIds()` (1 query best-effort — nunca lança, um erro aqui só
+  falha em não filtrar nada) ANTES do upsert. Mesmo princípio dos outros prune
+  (`pruneOutOfWindow`/`pruneNonVinylLots`), mas aplicado na ENTRADA em vez de limpeza posterior.
+- **"Possível lixo" — heurística por palavras-chave, SEM IA** (`src/lib/lot-exclusion.ts`,
+  módulo puro/client-safe, mesmo padrão de `grading.ts`/`wantlist-match.ts`):
+  `extractKeywords(title, artist)` normaliza (`normalizeForMatch`, de `vinyl-parse.ts`), remove
+  stopwords em PT + termos genéricos de catálogo ("disco", "vinil", "lote", "capa"...) e o
+  próprio artista (evita falso positivo por nome comum); `matchPossibleTrash` compara por
+  OVERLAP DE CONTAGEM (não percentual, `MIN_OVERLAP=2`) contra os lotes já excluídos — o
+  primeiro casamento vira o sinal (`{ matchedTerms, excludedTitle }`).
+- **Calculado no CLIENTE, NÃO persistido:** `index.tsx` busca `getExcludedLotsForMatching`
+  (`["excluded-lots"]`, `staleTime` 30 min) e monta `possibleTrashById` num `useMemo` a partir de
+  `lots.data.lots` — mesmo padrão de `albumById`/`marketById`. Decisão deliberada: volume baixo
+  (exclusão manual, 1 usuário), sem testes automatizados no projeto, evita decidir "quando
+  recalcular" (a cada exclusão? a cada upsert do cron?) que uma tabela/coluna persistida exigiria.
+- **UI:** botão de lixeira no `LotCard` (só aparece quando `onExclude` é passado — hoje só nas
+  duas listagens de DESCOBERTA de lotes novos: busca com relevância e "por casa → artista";
+  **não** nas abas Vigiados/Lances, que mostram lotes já em acompanhamento) abre
+  `ExcludeLotDialog` (`components/vinyl/exclude-lot-dialog.tsx`, um diálogo só, controlado por
+  estado no `index.tsx`, mesmo padrão do `OwnedPanel`) com motivo opcional. Sucesso remove o
+  lote do cache de `["vinyl-lots"]` na hora (otimista) e invalida `["excluded-lots"]`. Badge
+  "⚠ possível lixo" (laranja, com tooltip dos termos casados) fica na linha de badges do card,
+  ao lado de demanda/condição — nunca esconde nada sozinho.
+- **`setup.sql` reaplicado automaticamente a cada deploy:** esta PR também corrigiu a convenção
+  antiga ("SQL Editor ou `psql -f`", resquício de quando o projeto era Supabase hospedado — não
+  é mais, ver "Infra" abaixo) — `deploy.yml` agora roda
+  `docker compose exec postgres psql -f /docker-entrypoint-initdb.d/01-setup.sql` depois do
+  `up -d`, em TODO push pra `main`/`vps` (idempotente, `IF NOT EXISTS`), então uma tabela/coluna
+  nova em `setup.sql` já existe no próximo deploy sem passo manual. Ver "Restrições do ambiente"
+  no topo deste documento.
+
 ## Páginas / UI
 
 - **Header persistente (v0.41.0):** o `<header>` de todas as páginas autenticadas (index,
@@ -1488,6 +1543,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.71.1      | Continuação de v0.69.42–45: usuário rodou `step=cleannonvinyl&apply=1` em produção ("o processo retirou muitos itens mas ainda temos muitos outros") e achou mais um caso — "Antiga salva sobre 3 pés, produzida em metal espessurado à prata..." (bandeja/salva de prata antiga), de novo da "Alberto Lopes - Leiloeiro Público" (mesma casa generalista do achado de v0.69.43). `NON_MEDIA_COLLECTIBLE_RE` (`vinyl-parse.ts`) ganha termos de prataria/utensílios antigos: salva, bandeja, prataria, baixela, castiçal, talheres, molheira, centro de mesa. Reforça a suspeita de que essa casa específica marca itens fora de disco na própria categoria "Disco de Vinil" da LeilõesBR (não só via `galleryscan`, já corrigido em v0.69.43) — se o padrão persistir após mais uma rodada de `cleannonvinyl`, considerar excluir a casa da varredura em vez de só ampliar a lista de termos (ver Pendências) |
 | v0.71.2      | Fix: a caixa de busca da home (`index.tsx`) já só filtrava a lista no Enter/clique em "Pesquisar" (estado `search` separado do rascunho digitado), mas o rascunho vivia como `useState` dentro do próprio `RouteComponent` — um componente de ~2500 linhas com dezenas de listas/cálculos — então cada tecla digitada re-renderizava a árvore inteira e travava a digitação mesmo sem filtrar em tempo real. Extraído `LotSearchBox`, componente próprio que guarda o rascunho em estado local e só chama `onSearch`/`onClear` (que tocam `search` no pai) ao confirmar; digitar agora só re-renderiza essa caixa pequena |
 | v0.71.3      | Mais uma rodada do mesmo padrão (v0.69.42–v0.71.1): usuário mostrou 6 lotes de documentos/livros históricos ("Brochura autografada", "OPÚSCULO / Monumento...", "Prova de Fogo", "Cap Recona"...) e apontou que vários não têm NENHUM termo bloqueável no título (sem "livro"/"joia"/etc., só o texto da capa/folheto). `NON_MEDIA_COLLECTIBLE_RE` (`vinyl-parse.ts`) ganha termos de documentos/impressos históricos: rascunho, bilhete, manuscrito, carta, brochura, página, escrita, opúsculo, folheto, panfleto (lista dada pelo usuário). Título como "INTEGRALISMO Antônio Pompeo com dedicatória" continua passando — não tem termo seguro pra bloquear ("dedicatória" sozinha é arriscada: aparece também em LP autografado genuíno) — reforça a nota já registrada em Pendências: lista de termos está batendo o teto de escala pra essa casa, próximo passo é exclusão por casa, não por termo |
+| v0.72.0      | Pedido do usuário: excluir um lote manualmente (nunca mais volta, mesmo em varreduras futuras) e o sistema aprender com a exclusão para sinalizar "possível lixo" em lotes parecidos (sem esconder sozinho). Nova tabela `excluded_lots` (DELETE físico em `lots`, cascade limpa `lot_ai`/`lot_ident`/`lot_market`/`lot_condition`); heurística por palavras-chave do título sem IA (`lot-exclusion.ts`); filtro em `persistLots` bloqueia reinserção pelo cron; badge "possível lixo" calculado no cliente, não persistido. Botão de excluir só nas listagens de descoberta (busca e "por casa → artista"), não em Vigiados/Lances. Corrigida de passagem a convenção desatualizada de aplicar `setup.sql` ("SQL Editor", resquício do Supabase hospedado) — `deploy.yml` agora reaplica o schema sozinho a cada deploy. Ver seção "Exclusão de lotes" |
 
 ## Pendências
 
