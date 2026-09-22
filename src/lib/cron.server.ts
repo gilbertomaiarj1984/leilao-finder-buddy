@@ -572,10 +572,22 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await pruneSeenAuctions());
     }
 
+    // Limpeza retroativa (v0.69.45): apaga da janela atual os lotes que NÃO deveriam ter
+    // entrado (joalheria/colecionismo geral capturados antes dos fixes de v0.69.42–44,
+    // em especial pelo `galleryscan`). `lots` só recebe upsert (nunca apaga sozinho), então
+    // isso não se resolve sem uma limpeza manual. `dryRun` por padrão (só lista os títulos
+    // que SERIAM removidos, sem apagar nada) — `apply=1` de fato apaga.
+    if (step === "cleannonvinyl") {
+      const { pruneNonVinylLots } = await import("./leiloesbr-scrape.server");
+      const apply = url.searchParams.get("apply") === "1";
+      const { scanned, removed, removedTitles } = await pruneNonVinylLots(!apply);
+      return json({ dryRun: !apply, scanned, removed, sample: removedTitles });
+    }
+
     return json(
       {
         error:
-          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|purchases|backfillbundle|compressimages|prune|salesdebug|catdebug|findlot|findlot2|findlotraw|findlotcat|galleries|galleryscan|catalogdebug)",
+          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|reident|purchases|backfillbundle|compressimages|prune|cleannonvinyl|salesdebug|catdebug|findlot|findlot2|findlotraw|findlotcat|galleries|galleryscan|catalogdebug)",
         // Diagnóstico (v0.69.4): step=prune vinha falhando com 400 só quando chamado pelo
         // GitHub Actions (curl direto do VPS sempre respondia 200). Sem log de acesso no
         // Caddy nem log de aplicação chegando no `docker logs` (Nitro usa logger próprio,

@@ -689,6 +689,44 @@ async function readLots(windowStart: string, windowEnd: string): Promise<VinylLo
   return sortLots(out);
 }
 
+/**
+ * Limpeza retroativa: `lots` só recebe upsert (nunca apaga o que não veio na varredura
+ * atual — merge durável), então itens capturados ANTES de um fix de filtro (ex.: joalheria/
+ * colecionismo entrando pelo `galleryscan`, v0.69.42–44) ficam no banco pra sempre até
+ * alguém limpar manualmente. Relê a janela atual, reaplica `looksNonVinyl` no título (mesmo
+ * critério da varredura) e apaga os que não deveriam ter entrado — `lot_ai`/`lot_ident`/
+ * `lot_market`/`lot_condition` somem junto por `ON DELETE CASCADE`; `lot_sales` (histórico)
+ * NUNCA é tocado aqui. Devolve os títulos removidos (até `limit`) pra conferência manual.
+ */
+export async function pruneNonVinylLots(
+  dryRun = false,
+  limit = 200,
+): Promise<{ scanned: number; removed: number; removedTitles: { id: string; title: string }[] }> {
+  const days = upcomingDayKeys(WINDOW_DAYS);
+  const windowStart = days[0]!;
+  const windowEnd = days[days.length - 1]!;
+  const lots = await readLots(windowStart, windowEnd);
+  const bad = lots.filter((lot) => looksNonVinyl(lot.title));
+  const sample = bad.slice(0, limit).map((lot) => ({ id: lot.id, title: lot.title }));
+  if (dryRun || !bad.length) {
+    return { scanned: lots.length, removed: bad.length, removedTitles: sample };
+  }
+
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const ids = bad.map((lot) => lot.id);
+  const CHUNK = 200;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { error } = await supabaseAdmin
+      .from("lots")
+      .delete()
+      .in("id", ids.slice(i, i + CHUNK));
+    if (error) throw error;
+  }
+  if (memCache) memCache.lots = memCache.lots.filter((lot) => !bad.some((b) => b.id === lot.id));
+
+  return { scanned: lots.length, removed: bad.length, removedTitles: sample };
+}
+
 /** Une (por id) o cache em memória + o banco (best-effort) + os recém-varridos. */
 async function mergeSources(
   windowStart: string,
