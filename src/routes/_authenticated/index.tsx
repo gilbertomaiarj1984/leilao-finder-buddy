@@ -107,7 +107,12 @@ import type { MyBid } from "@/lib/leiloesbr-bids.server";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
 import { getCollection } from "@/lib/collection.functions";
 import type { CollectionItem } from "@/lib/collection.server";
-import { excludeLot, getExcludedLotsForMatching } from "@/lib/lot-exclusion.functions";
+import {
+  dismissPossibleTrash,
+  excludeLot,
+  getExcludedLotsForMatching,
+  getTrashKeywordDenylist,
+} from "@/lib/lot-exclusion.functions";
 import { extractKeywords, matchPossibleTrash } from "@/lib/lot-exclusion";
 import { ExcludeLotDialog } from "@/components/vinyl/exclude-lot-dialog";
 import {
@@ -433,6 +438,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const runApplyDecision = useServerFn(applyCollectionDecision);
   const runExcludeLot = useServerFn(excludeLot);
   const fetchExcludedLots = useServerFn(getExcludedLotsForMatching);
+  const fetchTrashDenylist = useServerFn(getTrashKeywordDenylist);
+  const runDismissTrash = useServerFn(dismissPossibleTrash);
 
   const lots = useQuery({
     ...lotsQuery,
@@ -721,18 +728,42 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     staleTime: 30 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
+  // Termos que o usuário já negou ("isto não é lixo" — clique no badge, ver
+  // `onDismissTrash`/`dismissPossibleTrash`). Filtrados de AMBOS os lados do casamento por
+  // palavras-chave, então o aprendizado vale globalmente, não só pro lote clicado.
+  const trashDenylistQuery = useQuery({
+    queryKey: ["trash-keyword-denylist"] as const,
+    queryFn: () => fetchTrashDenylist(),
+    staleTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
   const possibleTrashById = useMemo(() => {
     const excluded = excludedLotsQuery.data ?? [];
     const map = new Map<string, ReturnType<typeof matchPossibleTrash>>();
     if (!excluded.length) return map;
+    const denylist = new Set(trashDenylistQuery.data ?? []);
     for (const lot of lots.data?.lots ?? []) {
       const keywords = extractKeywords(lot.title, lot.artist);
-      const signal = matchPossibleTrash(keywords, excluded);
+      const signal = matchPossibleTrash(keywords, excluded, denylist);
       if (signal) map.set(lot.id, signal);
     }
     return map;
-  }, [excludedLotsQuery.data, lots.data]);
+  }, [excludedLotsQuery.data, trashDenylistQuery.data, lots.data]);
   const possibleTrashFor = (lot: { id: string }) => possibleTrashById.get(lot.id) ?? null;
+  const dismissTrashMutation = useMutation({
+    mutationFn: async (terms: string[]) => await runDismissTrash({ data: { terms } }),
+    onMutate: (terms) => {
+      // Otimista: o badge some NA HORA (o memo acima recalcula assim que o cache muda).
+      const prev = trashDenylistQuery.data ?? [];
+      queryClient.setQueryData(["trash-keyword-denylist"], [...new Set([...prev, ...terms])]);
+      return { prev };
+    },
+    onError: (error: unknown, _terms, ctx) => {
+      if (ctx) queryClient.setQueryData(["trash-keyword-denylist"], ctx.prev);
+      toast.error((error as Error)?.message || "Não foi possível salvar");
+    },
+    onSuccess: () => toast.success('Marcado como "não é lixo" — o sistema aprendeu'),
+  });
   // Demanda (visualizações/lances) por lote, do mesmo cache `lot_condition`.
   const demandById = useMemo(() => {
     const map = new Map<string, { views: number | null; bids: number | null }>();
@@ -1981,6 +2012,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   onExclude={() =>
                                     setExcludeTarget({ id: lot.id, title: lot.title })
                                   }
+                                  onDismissTrash={() => {
+                                    const signal = possibleTrashFor(lot);
+                                    if (signal) dismissTrashMutation.mutate(signal.matchedTerms);
+                                  }}
                                   onToggle={() =>
                                     toggle.mutate({
                                       idPeca: lot.idPeca,
@@ -2169,6 +2204,11 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                               onExclude={() =>
                                                 setExcludeTarget({ id: lot.id, title: lot.title })
                                               }
+                                              onDismissTrash={() => {
+                                                const signal = possibleTrashFor(lot);
+                                                if (signal)
+                                                  dismissTrashMutation.mutate(signal.matchedTerms);
+                                              }}
                                               onToggle={() =>
                                                 toggle.mutate({
                                                   idPeca: lot.idPeca,
