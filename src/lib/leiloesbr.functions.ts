@@ -115,8 +115,9 @@ export const listMyBids = createServerFn({ method: "GET" })
 
 /**
  * Detalhes por lote lidos do `peca.asp` (1 requisição por lote → usar só para conjuntos
- * pequenos: vigiados + lances): próximo lance (`NOVO_VALOR`) e, quando o leilão já terminou,
- * o resultado da venda (sinal mais rápido de "vendido" para quem só VIGIA, sem lance — ver
+ * pequenos: vigiados + lances): valor atual (`VALOR_VALUE`, ao vivo — mais fresco que a
+ * varredura geral), próximo lance (`NOVO_VALOR`) e, quando o leilão já terminou, o resultado
+ * da venda (sinal mais rápido de "vendido" para quem só VIGIA, sem lance — ver
  * `leiloesbr-lot-details.server.ts`). Best-effort: {} em erro.
  */
 export const getLotDetails = createServerFn({ method: "POST" })
@@ -139,7 +140,7 @@ export const getLotDetails = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
-    const empty: Record<string, { nextBid?: string; sold?: string }> = {};
+    const empty: Record<string, { currentValue?: string; nextBid?: string; sold?: string }> = {};
     if (!data.targets.length) return empty;
     try {
       const { fetchLotDetails } = await import("./leiloesbr-lot-details.server");
