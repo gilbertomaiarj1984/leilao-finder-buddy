@@ -1681,24 +1681,18 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.75.2      | Pedido do usuário: remove a barra de chips das casas do header (introduzida em v0.74.0, com botão pra ocultar) pra liberar espaço — clicar na casa direto na grade principal continua abrindo/fechando a seção (`openHouses`/`toggleHouse`, inalterados) |
 | v0.76.0      | Selo do lote em pregão (nº + barra) também em "Acontecendo agora", trocando a linha "Início hh:mm" — card mantém o mesmo tamanho |
 | v0.76.1      | Pedido do usuário: botão "Incluir/Ocultar finalizados" move da barra de controles do dia pro final da faixa de dias (depois de "Lances") — novo alvo de portal `finishedToggleHost` em `_authenticated/index.tsx`, populado dentro do loop de dias (mesma lógica de `finishedCount`/`showFinished`/`toggleShowFinished` de antes, só muda o destino do portal) |
+| v0.76.2      | **Causa raiz do 500 recorrente no cron resolvida** (pendência aberta desde v0.74.1). Runs `#160`/`#161`/`#162` do `refresh.yml` (2026-09-22) falharam em steps DIFERENTES a cada vez (`aiident`, `condition`, `reident`) — investigação por log da VPS (`docker compose logs app`) achou duas causas distintas, não uma: (1) run `#161` colidiu com um deploy em andamento (`docker compose up -d` recriando o container `app` no meio da chamada do cron — nada a corrigir, risco aceito de rodar deploy+cron em paralelo); (2) run `#162`, o real bug: `upsertLotIdent` (`lot-ident.server.ts`) explode com `insert or update on table "lot_ident" violates foreign key constraint "lot_ident_id_fkey"` (código `23503`) quando o `id` não existe mais em `lots` — `lot_ident` tem FK `ON DELETE CASCADE` pra `lots(id)` (v0.67.0), mas `reidentifyAllSales` escreve identificações a partir de `lot_id` de `lot_sales`, tabela histórica que NUNCA é apagada; uma venda cujo lote original foi podado (`step=prune`) ou excluído manualmente (`step=aiident` tem o mesmo risco — lote pode sumir de `lots` entre a seleção do batch e o upsert) gera uma linha órfã que quebra o upsert inteiro do lote e sobe sem tratamento até `handleCron`, virando HTTP 500 pro `curl` do `refresh.yml` e derrubando o resto da run (`sales`/`purchases`/`prune` inclusive). Fix: `upsertLotIdent` agora trata o `code: "23503"` como best-effort — consulta quais `id`s do payload ainda existem em `lots`, descarta os órfãos (loga quantos) e regrava só os válidos, em vez de propagar a exceção. Nenhuma mudança em `reidentifyAllSales`/`cron.server.ts` — o filtro fica centralizado no writer compartilhado, protegendo `aiident` e `reident` ao mesmo tempo |
 
 ## Pendências
 
 **Produto / código (em aberto)**
 
-- **Causa raiz do 500 em `step=aiident` ainda não identificada (achado v0.74.1, run `#160` do
-  `refresh.yml`, 2026-09-22).** A 2ª chamada de `aiident` (lote seguinte de 25 lotes pendentes de
-  identificação por título, via Gemini síncrono) voltou HTTP 500 nas 4 tentativas do
-  `curl --retry 3` — consistente, não parece blip de rede; como nada foi gravado nessa chamada
-  (upsert nunca rodou), é provável que o MESMO lote volte a falhar do mesmo jeito em toda run
-  futura até ser diagnosticado. `call()` usa `curl -f`, que suprimia o corpo da resposta (só via
-  o status), então a mensagem real do `catch` de `handleCron` (`cron.server.ts`) nunca chegou ao
-  log. Corrigido em v0.73.7: novo `call_soft()` em `refresh.yml` loga o corpo real do erro para
-  `aieval`/`aiident` sem abortar o resto da run. Próximo passo: esperar a próxima falha (ou
-  disparar `step=aiident` manualmente) e ler o corpo logado — provavelmente aponta pro registro
-  específico (título/imagem) que quebra `identLotsSyncRows`/`runText` fora do `try/catch` por
-  lote (ex.: `resolveGeminiModel`, `scrapeVinylLots`, ou o `upsertLotIdent` falhando por dado de
-  um lote específico, já que o mesmo lote reaparece na fila enquanto não for gravado).
+- **✅ RESOLVIDO (v0.76.2) — Causa raiz do 500 em `step=aiident`/`reident` (achado v0.74.1, run
+  `#160` do `refresh.yml`, 2026-09-22).** Confirmada por log direto da VPS (`docker compose
+  logs app`) numa recorrência (runs `#161`/`#162`, mesmo dia): `upsertLotIdent` explodia com
+  violação de FK (`lot_ident_id_fkey`, código `23503`) quando o `lot_id` não existia mais em
+  `lots` (lote podado ou excluído manualmente entre a seleção do batch e a gravação). Ver
+  changelog v0.76.2 para o fix.
 
 - **✅ RESOLVIDO (v0.73.5) — Itens não-disco reincidentes da "Alberto Lopes - Leiloeiro
   Público" (aberto desde v0.69.42/43, reforçado em v0.71.1).** Essa casa generalista rendeu 4
