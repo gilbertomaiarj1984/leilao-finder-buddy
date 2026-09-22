@@ -428,13 +428,16 @@ export function extractArtist(title: string): string {
     if (!COMPILATION_SERIES_QUALIFIERS.has(tailFirstWord)) rest = tail;
   }
 
-  // "ARTISTA - TITULO" / "ARTISTA – TITULO" / "ARTISTA: TITULO" / "ARTISTA. resto". Um "best of"
-  // de artista identificável ("Jorge Ben Jor - Grandes Sucessos") tem candidato válido À
-  // ESQUERDA do separador mesmo com "sucessos" no título — por isso NÃO descartamos pelo título
-  // INTEIRO aqui; a checagem de coletânea roda só no CANDIDATO final (abaixo), que é o nome
-  // isolado, não a frase toda. Só falha quando não sobra um nome específico (ex.: "Grandes
-  // Sucessos" sozinho, "Trilha Sonora Novela Tieta" sem artista).
-  const parts = rest.split(/\s[-–—:]\s|[-–—:](?=\s)|\s[-–—](?=\S)/);
+  // "ARTISTA - TITULO" / "ARTISTA – TITULO" / "ARTISTA: TITULO" / "ARTISTA. resto" / "ARTISTA
+  // // resto" (algumas casas usam "//" pra separar campos: "ANA CARAM C/ ENCARTE // CAPA
+  // CONFORME FOTOS // ..." — "//" DUPLA barra é separador de campo; UMA barra só continua
+  // reservada pro nome de banda de verdade, ver comentário abaixo). Um "best of" de artista
+  // identificável ("Jorge Ben Jor - Grandes Sucessos") tem candidato válido À ESQUERDA do
+  // separador mesmo com "sucessos" no título — por isso NÃO descartamos pelo título INTEIRO
+  // aqui; a checagem de coletânea roda só no CANDIDATO final (abaixo), que é o nome isolado,
+  // não a frase toda. Só falha quando não sobra um nome específico (ex.: "Grandes Sucessos"
+  // sozinho, "Trilha Sonora Novela Tieta" sem artista).
+  const parts = rest.split(/\s[-–—:]\s|[-–—:](?=\s)|\s[-–—](?=\S)|\s*\/\/+\s*/);
   let candidate = (parts[0] ?? "").trim();
 
   // Cut trailing sentences / album names / parentheses: "Artista. Produto original..."
@@ -447,6 +450,13 @@ export function extractArtist(title: string): string {
     .replace(/^[(),.;:]+/g, "")
     .trim();
   candidate = candidate.replace(/\s+(vol\.?|volume)\s*\d*$/i, "").trim();
+  // "ANA CARAM C/ ENCARTE" → "Ana Caram": " C/ " é abreviação de "com" (encarte/pôster/etc.
+  // incluso), não parte do nome — sempre tem espaço nos dois lados (bandas com barra no próprio
+  // nome, tipo "AC/DC", nunca têm espaço ANTES da barra, então não caem aqui).
+  candidate = candidate.replace(/\s+c\/\s+.*$/i, "").trim();
+  // "BEBETO 1981" → "Bebeto": ano de lançamento colado no fim do candidato (comum em títulos
+  // "ARTISTA ANO" sem outro separador antes do próximo campo) não é parte do nome do artista.
+  candidate = candidate.replace(/\s+(19|20)\d{2}$/, "").trim();
 
   const normCandidate = normalize(candidate);
   if (!normCandidate) return "";
