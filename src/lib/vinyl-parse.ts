@@ -791,13 +791,24 @@ export function searchRelevance(identity: string, extra: string, queryNorm: stri
   if (!queryNorm) return 1;
   const id = normalizeForMatch(identity);
   const full = normalizeForMatch(`${identity} ${extra}`);
-  const tokens = queryNorm.split(" ").filter(Boolean);
-  const allIn = (hay: string) => tokens.every((t) => hay.includes(t));
-  if (id.startsWith(queryNorm)) return 5;
-  if (id.includes(queryNorm)) return 4;
-  if (allIn(id)) return 3;
-  if (full.includes(queryNorm)) return 2;
-  if (allIn(full)) return 1;
+  // Espaço nas pontas: transforma "hay.includes(needle)" em casamento por PALAVRA INTEIRA
+  // (nunca substring solta dentro de outra palavra) — sem isso, buscar "rita" batia em
+  // "manuscrita" (dedicatória manuscrita), "margarita", "sanscrita" etc.
+  const idPadded = ` ${id} `;
+  const fullPadded = ` ${full} `;
+  const tokens = queryNorm
+    .split(" ")
+    .filter(Boolean)
+    .map((t) => ` ${t} `);
+  const queryPadded = ` ${queryNorm} `;
+  const allIn = (hayPadded: string) => tokens.every((t) => hayPadded.includes(t));
+  const startsWithWhole =
+    id.startsWith(queryNorm) && (id.length === queryNorm.length || id[queryNorm.length] === " ");
+  if (startsWithWhole) return 5;
+  if (idPadded.includes(queryPadded)) return 4;
+  if (allIn(idPadded)) return 3;
+  if (fullPadded.includes(queryPadded)) return 2;
+  if (allIn(fullPadded)) return 1;
   return 0;
 }
 
