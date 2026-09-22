@@ -360,6 +360,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   // Alvo (via portal) para a barra de controles do dia (Vigiados/Lances/Analisar/casas),
   // renderizada dentro do header — acima da lista de dias — em vez de sticky abaixo dele.
   const [dayBarHost, setDayBarHost] = useState<HTMLDivElement | null>(null);
+  // Alvo (via portal) para o botão "Incluir/Ocultar finalizados", renderizado ao final da
+  // faixa de dias (depois de "Lances"), em vez de junto com a barra de controles do dia.
+  const [finishedToggleHost, setFinishedToggleHost] = useState<HTMLDivElement | null>(null);
   // Alvo (via portal) para o modo/provedor de IA + "Atualizar tudo", que vivem na MESMA
   // barra do rodapé global (Footer.tsx, montado no __root.tsx) — não um <footer> próprio.
   const [footerExtraHost, setFooterExtraHost] = useState<HTMLElement | null>(null);
@@ -1584,7 +1587,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           </HideableBar>
 
           {!lots.isError && !lots.isLoading ? (
-            <div ref={tabsBarRef} className="mx-auto max-w-6xl px-4 pb-1.5 sm:pb-2">
+            <div
+              ref={tabsBarRef}
+              className="mx-auto flex max-w-6xl flex-wrap items-center gap-1 px-4 pb-1.5 sm:pb-2"
+            >
               {/* No mobile a lista de dias rola na horizontal (uma linha), evitando que o
               header sticky cresça por causa da quebra de linha; no desktop volta a
               quebrar em linhas (flex-wrap). Fica sempre visível (fora do HideableBar acima) —
@@ -1624,6 +1630,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                   </span>
                 </TabsTrigger>
               </TabsList>
+              {/* Alvo do portal do botão "Incluir/Ocultar finalizados" — ao final da faixa de
+              dias, depois de "Lances" (ver finishedToggleHost). */}
+              <div ref={setFinishedToggleHost} className="shrink-0" />
             </div>
           ) : null}
         </div>
@@ -1828,17 +1837,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                 <span className="text-xs text-muted-foreground">
                                   {visibleLots.length} lote(s) em {groups.length} casa(s)
                                 </span>
-                                {finishedCount > 0 ? (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => toggleShowFinished(day)}
-                                  >
-                                    {showFinished
-                                      ? `Ocultar finalizados (${finishedCount})`
-                                      : `Incluir finalizados (${finishedCount})`}
-                                  </Button>
-                                ) : null}
                               </>
                             ) : isWatchedView ? (
                               <span className="text-xs text-muted-foreground">
@@ -1853,6 +1851,18 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                           </div>
                         </div>,
                         dayBarHost,
+                      )}
+                    {finishedToggleHost &&
+                      !isWatchedView &&
+                      !isBidsView &&
+                      finishedCount > 0 &&
+                      createPortal(
+                        <Button variant="ghost" size="sm" onClick={() => toggleShowFinished(day)}>
+                          {showFinished
+                            ? `Ocultar finalizados (${finishedCount})`
+                            : `Incluir finalizados (${finishedCount})`}
+                        </Button>,
+                        finishedToggleHost,
                       )}
                     {isWatchedView ? (
                       watched.isLoading ? (
