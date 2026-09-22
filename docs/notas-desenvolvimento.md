@@ -1149,6 +1149,18 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   `up -d`, em TODO push pra `main`/`vps` (idempotente, `IF NOT EXISTS`), então uma tabela/coluna
   nova em `setup.sql` já existe no próximo deploy sem passo manual. Ver "Restrições do ambiente"
   no topo deste documento.
+  ⚠️ **Fix v0.72.1 — esse mesmo auto-apply quebrou o primeiro deploy em produção**: `setup.sql`
+  ainda tinha `GRANT`/`REVOKE` para papéis (`anon`/`authenticated`/`service_role`) e um
+  `INSERT INTO storage.buckets` herdados do Supabase hospedado, que nunca existiram de verdade
+  no Postgres self-hosted da VPS — rodavam sem erro só porque o script nunca tinha sido
+  executado de fato contra esse banco (o schema veio de `pg_restore`, não de `setup.sql`; ver
+  "Infra" abaixo). Na primeira execução automática (`ON_ERROR_STOP=1`), o script travou no meio
+  (`role "service_role" does not exist`), ANTES de chegar em `excluded_lots` — a tabela nunca
+  foi criada, e a exclusão de lote falhava em produção com "relation excluded_lots does not
+  exist". Corrigido: `CREATE ROLE IF NOT EXISTS` (idempotente) pra `anon`/`authenticated`/
+  `service_role` logo no topo de `setup.sql` (só pra RLS não falhar — a conexão real do app
+  ignora RLS por ser dona das tabelas) + removida a linha morta do Storage bucket (fotos da
+  Coleção são arquivo em disco desde a Fase 5).
 
 ## Páginas / UI
 
@@ -1544,6 +1556,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.71.2      | Fix: a caixa de busca da home (`index.tsx`) já só filtrava a lista no Enter/clique em "Pesquisar" (estado `search` separado do rascunho digitado), mas o rascunho vivia como `useState` dentro do próprio `RouteComponent` — um componente de ~2500 linhas com dezenas de listas/cálculos — então cada tecla digitada re-renderizava a árvore inteira e travava a digitação mesmo sem filtrar em tempo real. Extraído `LotSearchBox`, componente próprio que guarda o rascunho em estado local e só chama `onSearch`/`onClear` (que tocam `search` no pai) ao confirmar; digitar agora só re-renderiza essa caixa pequena |
 | v0.71.3      | Mais uma rodada do mesmo padrão (v0.69.42–v0.71.1): usuário mostrou 6 lotes de documentos/livros históricos ("Brochura autografada", "OPÚSCULO / Monumento...", "Prova de Fogo", "Cap Recona"...) e apontou que vários não têm NENHUM termo bloqueável no título (sem "livro"/"joia"/etc., só o texto da capa/folheto). `NON_MEDIA_COLLECTIBLE_RE` (`vinyl-parse.ts`) ganha termos de documentos/impressos históricos: rascunho, bilhete, manuscrito, carta, brochura, página, escrita, opúsculo, folheto, panfleto (lista dada pelo usuário). Título como "INTEGRALISMO Antônio Pompeo com dedicatória" continua passando — não tem termo seguro pra bloquear ("dedicatória" sozinha é arriscada: aparece também em LP autografado genuíno) — reforça a nota já registrada em Pendências: lista de termos está batendo o teto de escala pra essa casa, próximo passo é exclusão por casa, não por termo |
 | v0.72.0      | Pedido do usuário: excluir um lote manualmente (nunca mais volta, mesmo em varreduras futuras) e o sistema aprender com a exclusão para sinalizar "possível lixo" em lotes parecidos (sem esconder sozinho). Nova tabela `excluded_lots` (DELETE físico em `lots`, cascade limpa `lot_ai`/`lot_ident`/`lot_market`/`lot_condition`); heurística por palavras-chave do título sem IA (`lot-exclusion.ts`); filtro em `persistLots` bloqueia reinserção pelo cron; badge "possível lixo" calculado no cliente, não persistido. Botão de excluir só nas listagens de descoberta (busca e "por casa → artista"), não em Vigiados/Lances. Corrigida de passagem a convenção desatualizada de aplicar `setup.sql` ("SQL Editor", resquício do Supabase hospedado) — `deploy.yml` agora reaplica o schema sozinho a cada deploy. Ver seção "Exclusão de lotes" |
+| v0.72.1      | Fix P0: o v0.72.0 fez `deploy.yml` reaplicar `setup.sql` contra o Postgres já rodando em produção, e isso quebrou o deploy — `service_role` (papel do Postgres do Supabase, nunca existiu de verdade neste Postgres self-hosted) travava o script inteiro no meio (`ON_ERROR_STOP=1`), ANTES de chegar em `excluded_lots`, então a tabela nunca foi criada e a exclusão de lote falhava em produção ("relation \"excluded_lots\" does not exist"). `setup.sql` ganha um bloco `CREATE ROLE IF NOT EXISTS` (idempotente) para `anon`/`authenticated`/`service_role` antes do primeiro uso; a conexão real do app ignora RLS por ser dona das tabelas, então isso só existe para as linhas de RLS não falharem. De quebra, removida a linha morta `INSERT INTO storage.buckets` (Storage do Supabase não existe mais — fotos da Coleção são arquivo em disco desde a Fase 5, ver "Fotos da Coleção") — que ia quebrar a mesma execução um pouco mais adiante. Validado rodando `setup.sql` 3x seguidas contra um Postgres 17 local (fresh + 2 reruns), todas saída 0 |
 
 ## Pendências
 
