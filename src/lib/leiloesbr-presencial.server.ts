@@ -12,7 +12,8 @@ const PREGAO_URL =
   process.env["PRESENCIAL_PREGAO_URL"] ||
   "https://d1vzg1b1ofiies.cloudfront.net/1s/le_registro_pregao_cfbr_v1.asp";
 
-const CACHE_TTL_MS = 60 * 1000;
+// ≤ metade do intervalo do cliente (1 min), senão o cache vira o piso da atualização.
+const CACHE_TTL_MS = 30 * 1000;
 const cache = new Map<string, { at: number; value: PresencialNow | null }>();
 // `idsite` não muda durante o leilão: evita baixar o HTML do presencial a cada consulta.
 const idsCache = new Map<string, { idleilao: string; idsite: string }>();

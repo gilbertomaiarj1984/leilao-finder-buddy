@@ -6,7 +6,7 @@ import { getPresencialNow } from "@/lib/leiloesbr.functions";
 
 /**
  * Lote em pregão AGORA + barra "peça x de y · %", ao lado de "Ao vivo agora". Atualiza a cada
- * 5 min só com a aba visível (o React Query pausa o intervalo em segundo plano) e ao voltar
+ * 1 min só com a aba visível (o React Query pausa o intervalo em segundo plano) e ao voltar
  * para a aba; mesma casa na lista e no /ao-vivo compartilha a consulta (mesma queryKey).
  */
 export function LiveLotNow({ url }: { url: string }) {
@@ -14,8 +14,8 @@ export function LiveLotNow({ url }: { url: string }) {
   const query = useQuery({
     queryKey: ["presencial-now", url] as const,
     queryFn: () => fetchNow({ data: { url } }),
-    staleTime: 60 * 1000,
-    refetchInterval: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
