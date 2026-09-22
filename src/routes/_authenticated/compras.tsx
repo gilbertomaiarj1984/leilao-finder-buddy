@@ -11,17 +11,44 @@ import {
   ShoppingBag,
   Store,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { GradeSelect } from "@/components/vinyl/grade-select";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import { groupWatchedByHouse } from "@/components/vinyl/grouping";
+import { OwnedPanel } from "@/components/vinyl/owned-panel";
 import { PurchaseCard } from "@/components/vinyl/purchase-card";
+import { addCollectionItem, getCollection } from "@/lib/collection.functions";
+import type { CollectionItem } from "@/lib/collection.server";
+import {
+  applyCollectionDecision,
+  getCollectionFeedback,
+  getCollectionLinks,
+} from "@/lib/leiloesbr.functions";
 import type { Purchase } from "@/lib/purchases.server";
 import { getPurchases, scanPurchases, scanPurchasesFull } from "@/lib/purchases.functions";
+import { extractArtist, titleCase } from "@/lib/vinyl-parse";
+import {
+  lotIdentity,
+  ownedSignatureFromLot,
+  resolveOwned,
+  type CollectionLinks,
+  type OwnedFeedback,
+  type OwnedHit,
+  type OwnedResolution,
+} from "@/lib/wantlist-match";
 
 export const Route = createFileRoute("/_authenticated/compras")({
   head: () => ({ meta: [{ title: "Compras — Garimpo de Vinil" }] }),
@@ -29,6 +56,33 @@ export const Route = createFileRoute("/_authenticated/compras")({
 });
 
 type ViewMode = "flat" | "day" | "house";
+
+// --- "Enviar para a coleção": edita e cria um disco novo a partir de uma compra ---
+type SendDraft = {
+  purchase: Purchase;
+  artist: string;
+  album: string;
+  year: string;
+  conditionMedia: string;
+  conditionSleeve: string;
+  notes: string;
+  tags: string;
+};
+
+/** Palpite inicial (editável) a partir do título da compra — mesma heurística usada na home. */
+function draftFromPurchase(p: Purchase): SendDraft {
+  const guess = extractArtist(p.title);
+  return {
+    purchase: p,
+    artist: guess ? titleCase(guess) : "",
+    album: "",
+    year: "",
+    conditionMedia: "",
+    conditionSleeve: "",
+    notes: "",
+    tags: "",
+  };
+}
 
 function dayHeaderLabel(day: string): string {
   if (!day) return "Sem data";
@@ -74,6 +128,144 @@ function ComprasPage() {
 
   const purchases = useMemo(() => query.data ?? [], [query.data]);
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["purchases"] });
+
+  // Coleção + relação manual ("já tenho") — mesma infraestrutura da home (`collection_links`/
+  // `collection_feedback`), reaproveitada aqui pelo `lotId` da compra (peça exata arrematada).
+  const fetchCollection = useServerFn(getCollection);
+  const fetchCollectionLinks = useServerFn(getCollectionLinks);
+  const fetchCollectionFeedback = useServerFn(getCollectionFeedback);
+  const runApplyDecision = useServerFn(applyCollectionDecision);
+  const sendToCollection = useServerFn(addCollectionItem);
+
+  const collectionQuery = useQuery<CollectionItem[]>({
+    queryKey: ["collection"] as const,
+    queryFn: () => fetchCollection() as Promise<CollectionItem[]>,
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const collectionLinksQuery = useQuery({
+    queryKey: ["collection-links"] as const,
+    queryFn: () => fetchCollectionLinks(),
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const collectionFeedbackQuery = useQuery({
+    queryKey: ["collection-feedback"] as const,
+    queryFn: () => fetchCollectionFeedback(),
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  const collById = useMemo(
+    () => new Map((collectionQuery.data ?? []).map((i) => [i.id, i])),
+    [collectionQuery.data],
+  );
+  // `lot_id` das peças EXATAS já enviadas à coleção → id do item (casamento 100% preciso).
+  const ownedByLotId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const it of collectionQuery.data ?? []) if (it.lotId) map.set(it.lotId, it.id);
+    return map;
+  }, [collectionQuery.data]);
+  const collLabel = (id: string) => {
+    const it = collById.get(id);
+    return it ? [it.artist, it.album].filter(Boolean).join(" — ") || it.title : "";
+  };
+
+  const links: CollectionLinks = collectionLinksQuery.data ?? {};
+  const feedback: OwnedFeedback[] = collectionFeedbackQuery.data ?? [];
+  const ownedResolutionFor = (p: Purchase): OwnedResolution => {
+    try {
+      const exactId = ownedByLotId.get(p.lotId);
+      const autoHit: OwnedHit | null = exactId
+        ? { id: exactId, label: collLabel(exactId), score: 1 }
+        : null;
+      return resolveOwned(p.lotId, links, autoHit, feedback, lotIdentity({ title: p.title }));
+    } catch {
+      return { kind: "none" };
+    }
+  };
+  const ownedLabelFor = (p: Purchase): string | null => {
+    const res = ownedResolutionFor(p);
+    switch (res.kind) {
+      case "linked":
+        return collLabel(res.itemId) || "(sem nome)";
+      case "auto":
+        return res.hit.label || "(sem nome)";
+      default:
+        return null; // suggested/rejected/none → não conta como "já enviado"
+    }
+  };
+
+  const [ownedPanelPurchase, setOwnedPanelPurchase] = useState<Purchase | null>(null);
+  const sigForPurchase = (p: Purchase) => ownedSignatureFromLot({ title: p.title });
+  const applyDecision = (p: Purchase, value: string | false | null, itemId: string | null) => {
+    const sig = sigForPurchase(p);
+    const prevLinks = collectionLinksQuery.data ?? {};
+    const prevFeedback = collectionFeedbackQuery.data ?? [];
+    queryClient.setQueryData<CollectionLinks>(["collection-links"], (old) => {
+      const next = { ...(old ?? {}) };
+      if (value === null) delete next[p.lotId];
+      else next[p.lotId] = value;
+      return next;
+    });
+    queryClient.setQueryData<OwnedFeedback[]>(["collection-feedback"], (old) => {
+      const kept = (old ?? []).filter((e) => e.lotId !== p.lotId);
+      if (value === null || !itemId) return kept;
+      return [
+        ...kept,
+        {
+          lotId: p.lotId,
+          itemId,
+          verdict: value === false ? "neg" : "pos",
+          artist: sig.artist,
+          album: sig.album,
+          year: sig.year,
+        },
+      ];
+    });
+    void runApplyDecision({ data: { lotId: p.lotId, value, itemId, sig } })
+      .catch((error: unknown) => {
+        queryClient.setQueryData(["collection-links"], prevLinks);
+        queryClient.setQueryData(["collection-feedback"], prevFeedback);
+        toast.error((error as Error)?.message || "Não foi possível salvar a relação");
+      })
+      .finally(() => {
+        void queryClient.invalidateQueries({ queryKey: ["collection-links"] });
+        void queryClient.invalidateQueries({ queryKey: ["collection-feedback"] });
+      });
+  };
+
+  const [sendDraft, setSendDraft] = useState<SendDraft | null>(null);
+  const sendMut = useMutation({
+    mutationFn: (d: SendDraft) =>
+      sendToCollection({
+        data: {
+          lotId: d.purchase.lotId,
+          artist: d.artist,
+          album: d.album,
+          title: d.purchase.title,
+          year: d.year.trim() ? Number(d.year) || null : null,
+          image: d.purchase.image,
+          house: d.purchase.house,
+          uf: d.purchase.uf,
+          wonPrice: d.purchase.wonPrice,
+          wonDate: d.purchase.wonDate,
+          conditionMedia: d.conditionMedia,
+          conditionSleeve: d.conditionSleeve,
+          notes: d.notes,
+          tags: d.tags
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean),
+        },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["collection"] });
+      setSendDraft(null);
+      toast.success("Disco enviado para a coleção.");
+    },
+    onError: (e: Error) => toast.error(e.message || "Não foi possível enviar para a coleção"),
+  });
 
   const onScanSuccess = (res: { added: number; scanned: number; auctionsChecked?: number }) => {
     void invalidate();
@@ -188,7 +380,13 @@ function ComprasPage() {
         ) : viewMode === "flat" ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {purchases.map((p) => (
-              <PurchaseCard key={p.id} purchase={p} />
+              <PurchaseCard
+                key={p.id}
+                purchase={p}
+                ownedLabel={ownedLabelFor(p)}
+                onOpenOwned={() => setOwnedPanelPurchase(p)}
+                onSend={() => setSendDraft(draftFromPurchase(p))}
+              />
             ))}
           </div>
         ) : viewMode === "day" ? (
@@ -200,6 +398,9 @@ function ComprasPage() {
                 purchases={group.purchases}
                 defaultOpen={index === 0}
                 nestByHouse
+                ownedLabelFor={ownedLabelFor}
+                onOpenOwned={setOwnedPanelPurchase}
+                onSend={(p) => setSendDraft(draftFromPurchase(p))}
               />
             ))}
           </div>
@@ -221,6 +422,9 @@ function ComprasPage() {
                       purchases={dayGroup.purchases}
                       defaultOpen={index === 0}
                       nestByHouse={false}
+                      ownedLabelFor={ownedLabelFor}
+                      onOpenOwned={setOwnedPanelPurchase}
+                      onSend={(p) => setSendDraft(draftFromPurchase(p))}
                     />
                   ))}
                 </div>
@@ -229,6 +433,55 @@ function ComprasPage() {
           </div>
         )}
       </div>
+
+      {ownedPanelPurchase
+        ? (() => {
+            const p = ownedPanelPurchase;
+            const res = ownedResolutionFor(p);
+            const relatedId =
+              res.kind === "linked" || res.kind === "suggested"
+                ? res.itemId
+                : res.kind === "auto"
+                  ? res.hit.id
+                  : null;
+            const relatedItem = relatedId ? (collById.get(relatedId) ?? null) : null;
+            return (
+              <OwnedPanel
+                open
+                onClose={() => setOwnedPanelPurchase(null)}
+                lotTitle={p.title}
+                resolution={res}
+                relatedItem={relatedItem}
+                collection={collectionQuery.data ?? []}
+                busy={collectionLinksQuery.isFetching || collectionFeedbackQuery.isFetching}
+                onConfirm={() => {
+                  if (relatedId) applyDecision(p, relatedId, relatedId);
+                  setOwnedPanelPurchase(null);
+                }}
+                onReject={() => {
+                  applyDecision(p, false, relatedId);
+                  setOwnedPanelPurchase(null);
+                }}
+                onReactivate={() => {
+                  applyDecision(p, null, null);
+                  setOwnedPanelPurchase(null);
+                }}
+                onLink={(itemId) => {
+                  applyDecision(p, itemId, itemId);
+                  setOwnedPanelPurchase(null);
+                }}
+              />
+            );
+          })()
+        : null}
+
+      <SendToCollectionDialog
+        draft={sendDraft}
+        sending={sendMut.isPending}
+        onChange={setSendDraft}
+        onClose={() => setSendDraft(null)}
+        onSend={() => sendDraft && sendMut.mutate(sendDraft)}
+      />
     </main>
   );
 }
@@ -238,11 +491,17 @@ function DaySection({
   purchases,
   defaultOpen,
   nestByHouse,
+  ownedLabelFor,
+  onOpenOwned,
+  onSend,
 }: {
   day: string;
   purchases: Purchase[];
   defaultOpen: boolean;
   nestByHouse: boolean; // true na visão "por dia" (sub-agrupa por casa); false dentro de "por casa"
+  ownedLabelFor: (p: Purchase) => string | null;
+  onOpenOwned: (p: Purchase) => void;
+  onSend: (p: Purchase) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const houseGroups = useMemo(
@@ -279,7 +538,13 @@ function DaySection({
                   </h3>
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     {hg.lots.map((p) => (
-                      <PurchaseCard key={p.id} purchase={p} />
+                      <PurchaseCard
+                        key={p.id}
+                        purchase={p}
+                        ownedLabel={ownedLabelFor(p)}
+                        onOpenOwned={() => onOpenOwned(p)}
+                        onSend={() => onSend(p)}
+                      />
                     ))}
                   </div>
                 </div>
@@ -288,7 +553,13 @@ function DaySection({
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {purchases.map((p) => (
-                <PurchaseCard key={p.id} purchase={p} />
+                <PurchaseCard
+                  key={p.id}
+                  purchase={p}
+                  ownedLabel={ownedLabelFor(p)}
+                  onOpenOwned={() => onOpenOwned(p)}
+                  onSend={() => onSend(p)}
+                />
               ))}
             </div>
           )}
@@ -339,5 +610,107 @@ function EmptyState({ onScan, scanning }: { onScan: () => void; scanning: boolea
         {scanning ? "Atualizando…" : "Atualizar"}
       </Button>
     </div>
+  );
+}
+
+function SendField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function SendToCollectionDialog({
+  draft,
+  sending,
+  onChange,
+  onClose,
+  onSend,
+}: {
+  draft: SendDraft | null;
+  sending: boolean;
+  onChange: (d: SendDraft) => void;
+  onClose: () => void;
+  onSend: () => void;
+}) {
+  const set = (patch: Partial<SendDraft>) => draft && onChange({ ...draft, ...patch });
+
+  return (
+    <Dialog open={draft !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Enviar para a coleção</DialogTitle>
+        </DialogHeader>
+        {draft ? (
+          <form
+            className="grid gap-3 sm:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              onSend();
+            }}
+          >
+            <p className="text-sm text-muted-foreground sm:col-span-2">
+              {draft.purchase.title || "(sem título)"}
+            </p>
+            <SendField label="Artista">
+              <Input value={draft.artist} onChange={(e) => set({ artist: e.target.value })} />
+            </SendField>
+            <SendField label="Álbum">
+              <Input value={draft.album} onChange={(e) => set({ album: e.target.value })} />
+            </SendField>
+            <SendField label="Ano">
+              <Input
+                value={draft.year}
+                inputMode="numeric"
+                onChange={(e) => set({ year: e.target.value })}
+              />
+            </SendField>
+            <SendField label="Estado da mídia">
+              <GradeSelect
+                value={draft.conditionMedia}
+                onChange={(v) => set({ conditionMedia: v })}
+                ariaLabel="Estado da mídia"
+              />
+            </SendField>
+            <SendField label="Estado da capa">
+              <GradeSelect
+                value={draft.conditionSleeve}
+                onChange={(v) => set({ conditionSleeve: v })}
+                ariaLabel="Estado da capa"
+              />
+            </SendField>
+            <div className="sm:col-span-2">
+              <SendField label="Tags (separadas por vírgula)">
+                <Input
+                  value={draft.tags}
+                  placeholder="MPB, prioridade, raro"
+                  onChange={(e) => set({ tags: e.target.value })}
+                />
+              </SendField>
+            </div>
+            <div className="sm:col-span-2">
+              <SendField label="Notas">
+                <textarea
+                  value={draft.notes}
+                  onChange={(e) => set({ notes: e.target.value })}
+                  rows={2}
+                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                />
+              </SendField>
+            </div>
+            <DialogFooter className="sm:col-span-2">
+              <Button type="button" variant="outline" onClick={onClose} disabled={sending}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={sending}>
+                {sending ? "Enviando…" : "Enviar"}
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }

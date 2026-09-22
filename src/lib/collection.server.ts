@@ -1,4 +1,4 @@
-import { fmtMoney, parseAiAlbum, toLotMarket } from "@/components/vinyl/ai-score-utils";
+import { parseAiAlbum } from "@/components/vinyl/ai-score-utils";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
 import {
@@ -9,7 +9,6 @@ import {
 } from "@/lib/collection-storage.server";
 import {
   COMPILATION_LABEL,
-  extractArtist,
   isCompilation,
   isDiscBundle,
   isVariousArtists,
@@ -19,8 +18,6 @@ import {
   UNCLASSIFIED_LABEL,
 } from "@/lib/vinyl-parse";
 
-import type { WonLot } from "./leiloesbr-purchases.server";
-import type { LotMarketRow } from "./lot-market.server";
 import type { AiProvider } from "./ai-provider";
 
 /**
@@ -125,166 +122,6 @@ export async function getAllCollection(): Promise<CollectionItem[]> {
 }
 
 /**
- * dd/mm/yyyy (site) -> yyyy-mm-dd (coluna `date`), ou null quando não casa OU é uma data
- * inválida. A página de compras traz datas vazias como "00/00/0000" — que viravam
- * "0000-00-00" e faziam o Postgres recusar o insert inteiro ("date/time field value out of
- * range"). Aqui validamos o intervalo e conferimos que a data existe de fato (rejeita 31/02).
- */
-function brDateToIso(value: string): string | null {
-  const m = (value ?? "").match(/(\d{2})\/(\d{2})\/(\d{4})/);
-  if (!m) return null;
-  const day = Number(m[1]);
-  const month = Number(m[2]);
-  const year = Number(m[3]);
-  if (!day || !month || !year || month > 12 || day > 31 || year < 1900) return null;
-  const iso = `${m[3]}-${m[2]}-${m[1]}`;
-  const d = new Date(`${iso}T00:00:00Z`);
-  if (Number.isNaN(d.getTime()) || d.getUTCDate() !== day || d.getUTCMonth() + 1 !== month) {
-    return null;
-  }
-  return iso;
-}
-
-/** Tira pontuacao solta nas pontas (ex.: ": Fulano", "Fulano -"). */
-function trimEdges(s: string): string {
-  return s
-    .replace(/^[\s:;,–—/|-]+/, "")
-    .replace(/[\s:;,–—/|-]+$/, "")
-    .trim();
-}
-
-/** Normaliza um rótulo de campo ("Álbum", "Artista(s)") p/ comparar (sem acento/`(s)`/plural). */
-function normLabel(s: string): string {
-  return s
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/\(s\)/g, "")
-    .replace(/s$/, "")
-    .trim();
-}
-
-/** Limpa o valor de um campo: tira crases/colchetes/aspas. */
-function cleanValue(v: string): string {
-  return v
-    .replace(/[`[\]"']/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/** 1º item de um valor que pode ser lista ("A, B" -> "A"). */
-function firstItem(v: string): string {
-  return cleanValue(v)
-    .split(/\s*[,;/]\s*/)[0]!
-    .trim();
-}
-
-const isLabeledSeg = (seg: string) => /^[^:]{1,25}:\s/.test(seg);
-
-type ParsedTitle = {
-  artist: string;
-  album: string;
-  year: number | null;
-  notes: string;
-  tags: string[];
-};
-
-/**
- * Extrai artista/álbum/ano (+notas e estilo→tags) do título de compra das casas. Cobre:
- * - **rotulado por campos** `Álbum: X | Código: Y | Artista(s): [`Z`] | Ano: N | Estilo(s): [..]`
- *   (Abreu/Vinil 11) — o artista fica em `Artista(s):`, e o estado/observações após `//`;
- * - `LP: Artista: X / Album: Y`;
- * - `LP: ARTISTA - ÁLBUM` / `LP de Fulano - Álbum`;
- * - título simples (vira artista).
- * `titleCase` é aplicado depois, em `deriveCandidate`.
- */
-function parsePurchaseTitle(rawTitle: string): ParsedTitle {
-  // Notas = texto após o 1º "//" (estado da mídia/capa).
-  const halves = rawTitle.split(/\s*\/\/\s*/);
-  const notes = halves.slice(1).join(" · ").trim();
-  // Tira o prefixo de formato ("LP:", "LP de", "Disco:").
-  const head = halves[0]!
-    .replace(
-      /^\s*(lps?|discos?|vinil|vinis|compactos?|bolach[aã]o|long\s*play)\b\s*(de|do|da|dos|das)?\s*[:–—-]?\s*/i,
-      "",
-    )
-    .trim();
-
-  // Campos rotulados separados por " | " ou " / ".
-  const segments = head.split(/\s*\|\s*|\s+\/\s+/);
-  const fields = new Map<string, string>();
-  for (const seg of segments) {
-    const m = seg.match(/^\s*([^:]{1,20}):\s*(.+)$/);
-    if (m) fields.set(normLabel(m[1]!), m[2]!.trim());
-  }
-  const artista = fields.get("artista") ?? "";
-  let album = fields.get("album") ?? "";
-  // Álbum sem rótulo no 1º segmento (ex.: "Divina Luz | Artista(s): ...").
-  if (artista && !album && segments[0] && !isLabeledSeg(segments[0])) album = segments[0];
-
-  if (artista || fields.get("album")) {
-    const anoRaw = fields.get("ano");
-    const estilo = fields.get("estilo");
-    return {
-      artist: artista ? firstItem(artista) : "",
-      album: cleanValue(album),
-      year: anoRaw ? Number((cleanValue(anoRaw).match(/\d{4}/) ?? [])[0]) || null : null,
-      notes,
-      tags: estilo
-        ? cleanValue(estilo)
-            .split(/\s*[,;/]\s*/)
-            .filter(Boolean)
-        : [],
-    };
-  }
-
-  // Fallback: "ARTISTA - ÁLBUM" (tirando um rótulo "Artista:" solto no começo).
-  const t = head.replace(/^\s*artista\s*[:-]\s*/i, "").trim();
-  const parts = t.split(/\s[-–—:/]\s/);
-  if (parts.length >= 2 && parts[0]!.trim()) {
-    return {
-      artist: trimEdges(parts[0]!),
-      album: trimEdges(parts.slice(1).join(" - ")),
-      year: null,
-      notes,
-      tags: [],
-    };
-  }
-  return { artist: trimEdges(t), album: "", year: null, notes, tags: [] };
-}
-
-/** Um vinil arrematado que a varredura NÃO inseriu porque parece duplicar um já existente
- * (mesmo artista+álbum). Volta para a UI confirmar "adicionar mesmo assim" ou "ignorar".
- * Campos em camelCase, prontos para reinserção via `addPendingWonLot`. */
-export type PendingWonLot = {
-  lotId: string;
-  artist: string;
-  album: string;
-  title: string;
-  year: number | null;
-  image: string | null;
-  house: string;
-  uf: string;
-  wonPrice: string;
-  wonDate: string | null; // já em ISO (yyyy-mm-dd)
-  marketLow: string | null;
-  marketHigh: string | null;
-  sourceUrl: string;
-  notes: string;
-  tags: string[];
-  existing: string; // rótulo do disco já na coleção que casou (p/ mostrar)
-};
-
-type EnrichMaps = {
-  albumById: Map<string, string | null>;
-  yearById: Map<string, number | null>;
-  marketById: Map<string, LotMarketRow>;
-};
-
-/** De onde veio o artista de um candidato (diagnóstico da varredura). */
-export type ArtistSource = "stored" | "title" | "none";
-
-/**
  * Reduz o artista à sua CATEGORIA canônica quando cabe: conjuntos de discos → "Lote";
  * coletâneas (título de coletânea sem artista confiável, ou artista "Vários Artistas") →
  * "Coletâneas". Caso contrário devolve o artista como veio. Assim discos de vários artistas
@@ -297,249 +134,10 @@ function canonicalArtist(artist: string, title: string): string {
   return artist;
 }
 
-/**
- * Deriva os campos de um vinil arrematado, na ordem de prioridade (tudo GRÁTIS):
- * (1) identificação JÁ gravada (`lot_ai`/`lot_ident`, casada por id); (2) título rotulado
- * ("Artista(s): …" / "ARTISTA - ÁLBUM"). Ano/notas/tags vêm do título quando presentes.
- * Devolve também de onde veio o artista, p/ o diagnóstico da varredura.
- */
-function deriveCandidate(
-  w: WonLot,
-  maps: EnrichMaps,
-): { cand: Omit<PendingWonLot, "existing">; source: ArtistSource } {
-  const identified = maps.albumById.get(w.id) ?? null;
-  const idParsed = parseAiAlbum(identified);
-  const parsedTitle = parsePurchaseTitle(w.title);
-
-  let artist: string;
-  let album: string;
-  let source: ArtistSource;
-  if (identified && idParsed.artist) {
-    artist = titleCase(idParsed.artist);
-    album = idParsed.album ?? "";
-    source = "stored";
-  } else if (parsedTitle.artist) {
-    artist = titleCase(parsedTitle.artist);
-    album = parsedTitle.album;
-    source = "title";
-  } else {
-    const heur = extractArtist(w.title);
-    artist = heur; // "" quando não identifica → cai em "não classificados" (IA opcional depois)
-    album = parsedTitle.album;
-    source = heur ? "title" : "none";
-  }
-
-  const mktRow = maps.marketById.get(w.id);
-  let marketLow: string | null = null;
-  let marketHigh: string | null = null;
-  let marketYear: number | null = null;
-  if (mktRow) {
-    const m = toLotMarket(mktRow);
-    const low = m.priceLowBr ?? m.lowestPrice;
-    const high = m.priceHighBr ?? m.suggestedPrice;
-    marketLow = low != null ? fmtMoney(low, m.currency) : null;
-    marketHigh = high != null ? fmtMoney(high, m.currency) : null;
-    marketYear = m.year;
-  }
-  const year = idParsed.year ?? parsedTitle.year ?? maps.yearById.get(w.id) ?? marketYear ?? null;
-
-  // Reduz a coletânea/lote à sua categoria (agrupa em "Coletâneas"/"Lote").
-  artist = canonicalArtist(artist, w.title);
-
-  return {
-    cand: {
-      lotId: w.id,
-      artist,
-      album,
-      title: w.title,
-      year,
-      image: w.image,
-      house: w.house,
-      uf: w.uf,
-      wonPrice: w.wonPrice,
-      wonDate: brDateToIso(w.wonDate),
-      marketLow,
-      marketHigh,
-      sourceUrl: w.url,
-      notes: parsedTitle.notes,
-      tags: parsedTitle.tags,
-    },
-    source,
-  };
-}
-
-/** Candidato (camelCase) -> linha de insert (snake_case). */
-function candidateToRow(
-  c: Omit<PendingWonLot, "existing">,
-  position: number,
-): TablesInsert<"collection_items"> {
-  return {
-    lot_id: c.lotId,
-    source: "auction",
-    artist: c.artist,
-    album: c.album,
-    title: c.title,
-    year: c.year,
-    image: c.image,
-    house: c.house,
-    uf: c.uf,
-    won_price: c.wonPrice,
-    won_date: c.wonDate,
-    market_low: c.marketLow,
-    market_high: c.marketHigh,
-    source_url: c.sourceUrl,
-    position,
-    notes: c.notes,
-    tags: c.tags,
-  };
-}
-
 /** Chave de duplicidade: artista+álbum normalizado. Vazia quando não há álbum (aí nunca
  * tratamos como duplicado — não dá para afirmar que dois "LP de Fulano" sejam o mesmo). */
 function albumKey(artist: string, album: string): string {
   return album.trim() ? normalizeForMatch(`${artist} ${album}`) : "";
-}
-
-/**
- * Varre "Minhas compras" (l=6), filtra vinil e ACRESCENTA à coleção os lotes ainda
- * ausentes (de-dup por `lot_id`) — nunca sobrescreve o que o usuário editou. Semeia
- * artista/álbum/ano e a faixa Discogs reaproveitando a identificação JÁ gravada
- * (lot_ai/lot_ident) e o mercado (lot_market); sem chamadas novas de IA/Discogs.
- *
- * **Duplicados por álbum** (mesmo artista+álbum de um disco já na coleção, mas outro lote)
- * NÃO entram sozinhos — voltam em `duplicates` para o usuário confirmar (pode ser uma 2ª
- * cópia proposital). `added` = inseridos automaticamente; `scanned` = vinis lidos.
- */
-export type ScanSources = { stored: number; title: number; none: number };
-export type ScanResult = {
-  added: number;
-  scanned: number;
-  duplicates: PendingWonLot[];
-  sources: ScanSources;
-};
-
-const EMPTY_SCAN_SOURCES: ScanSources = { stored: 0, title: 0, none: 0 };
-
-async function importFromWonLots(won: WonLot[]): Promise<ScanResult> {
-  if (!won.length) return { added: 0, scanned: 0, duplicates: [], sources: EMPTY_SCAN_SOURCES };
-
-  // Identificação/mercado já existentes (best-effort — pode não haver linha p/ o lote).
-  const [aiRows, identRows, marketRows, existing] = await Promise.all([
-    import("./lot-ai.server").then((m) => m.getAllLotAi()).catch(() => []),
-    import("./lot-ident.server").then((m) => m.getAllLotIdent()).catch(() => []),
-    import("./lot-market.server").then((m) => m.getAllLotMarket()).catch(() => []),
-    getAllCollection(),
-  ]);
-
-  const albumById = new Map<string, string | null>();
-  for (const r of identRows) albumById.set(r.id, r.album);
-  for (const r of aiRows) if (r.album) albumById.set(r.id, r.album); // avaliação completa vence
-  const yearById = new Map<string, number | null>();
-  for (const r of identRows) if (r.year != null) yearById.set(r.id, r.year);
-  const marketById = new Map(marketRows.map((r) => [r.id, r]));
-  const maps: EnrichMaps = { albumById, yearById, marketById };
-
-  const have = new Set(existing.filter((i) => i.lotId).map((i) => i.lotId as string));
-  // Álbuns já na coleção (e os já vistos nesta varredura) → detecção de duplicado.
-  const seenAlbum = new Map<string, string>();
-  for (const i of existing) {
-    const k = albumKey(i.artist, i.album);
-    if (k && !seenAlbum.has(k)) seenAlbum.set(k, `${i.artist} — ${i.album}`);
-  }
-  let pos = existing.reduce((max, i) => Math.max(max, i.position), 0);
-
-  const payload: TablesInsert<"collection_items">[] = [];
-  const duplicates: PendingWonLot[] = [];
-  const sources: ScanSources = { stored: 0, title: 0, none: 0 };
-  for (const w of won) {
-    if (have.has(w.id)) continue; // mesma peça já na coleção → re-scan não duplica
-    have.add(w.id);
-
-    const { cand, source } = deriveCandidate(w, maps);
-    sources[source] += 1;
-    const k = albumKey(cand.artist, cand.album);
-    const dupOf = k ? seenAlbum.get(k) : undefined;
-    if (dupOf) {
-      duplicates.push({ ...cand, existing: dupOf });
-      continue;
-    }
-    if (k) seenAlbum.set(k, `${cand.artist} — ${cand.album}`);
-    pos += 1;
-    payload.push(candidateToRow(cand, pos));
-  }
-
-  if (payload.length) {
-    const { error } = await supabaseAdmin.from("collection_items").insert(payload);
-    if (error) {
-      console.error("[collection] falha ao importar compras", error);
-      throw new Error(`Não foi possível atualizar a coleção: ${error.message}`);
-    }
-  }
-  return { added: payload.length, scanned: won.length, duplicates, sources };
-}
-
-/**
- * Varre "Minhas compras" (l=6) do zero (todas as páginas, `id=0`) e importa. Cara — usar só
- * para o backfill inicial (coleção ainda sem nenhum item vindo de leilão). Uso de rotina deve
- * ir por `importWonLotsIncremental`.
- */
-export async function importWonLots(): Promise<ScanResult> {
-  const { listVinylPurchases } = await import("./leiloesbr-purchases.server");
-  const won = await listVinylPurchases();
-  return importFromWonLots(won);
-}
-
-/**
- * Varre "Minhas compras" de forma INCREMENTAL: só os leilões em que o usuário venceu algum
- * lance (`wonAuctionIdsFromBids`, lido de `l=4`), em vez de repaginar `l=6` do zero a cada
- * clique em "Atualizar coleção" — bem mais barato e sem depender do teto de páginas do full
- * scan. Cai para o full scan (`importWonLots`) quando a coleção ainda não tem nenhum item
- * vindo de leilão (1ª varredura: precisamos do histórico completo, que `l=4` sozinho não
- * garante cobrir).
- */
-export async function importWonLotsIncremental(): Promise<
-  ScanResult & { auctionsChecked: number }
-> {
-  const existing = await getAllCollection();
-  const hasAuctionItems = existing.some((i) => i.lotId);
-  if (!hasAuctionItems) {
-    const result = await importWonLots();
-    return { ...result, auctionsChecked: -1 }; // -1 = varredura completa (backfill inicial)
-  }
-
-  const { listMyBidsFromSite, wonAuctionIdsFromBids } = await import("./leiloesbr-bids.server");
-  const { listVinylPurchasesForAuctions } = await import("./leiloesbr-purchases.server");
-  const bids = await listMyBidsFromSite().catch(() => []);
-  const auctionIds = wonAuctionIdsFromBids(bids);
-  if (!auctionIds.length) {
-    return {
-      added: 0,
-      scanned: 0,
-      duplicates: [],
-      sources: EMPTY_SCAN_SOURCES,
-      auctionsChecked: 0,
-    };
-  }
-
-  const won = await listVinylPurchasesForAuctions(auctionIds);
-  const result = await importFromWonLots(won);
-  return { ...result, auctionsChecked: auctionIds.length };
-}
-
-/** Insere um duplicado confirmado pelo usuário ("adicionar mesmo assim"). */
-export async function addPendingWonLot(cand: PendingWonLot): Promise<CollectionItem> {
-  const existing = await getAllCollection();
-  const position = existing.reduce((max, i) => Math.max(max, i.position), 0) + 1;
-  const { data, error } = await supabaseAdmin
-    .from("collection_items")
-    .insert(candidateToRow(cand, position))
-    .select(COLS)
-    .single();
-  if (error) {
-    console.error("[collection] falha ao adicionar duplicado", error);
-    throw new Error(`Não foi possível adicionar o disco: ${error.message}`);
-  }
-  return toItem(data as DbRow);
 }
 
 /** Resultado de uma passada de re-identificação (o cliente repete em laço pelo `nextOffset`). */
@@ -817,20 +415,29 @@ export type CollectionInput = {
   notes?: string;
   description?: string;
   tags?: string[];
+  // Presente só quando o disco vem de "Enviar para a coleção" (`/compras`) — vincula à peça
+  // arrematada (`lot_id`), igual à antiga varredura direta.
+  lotId?: string;
 };
 
-/** Adiciona um disco manualmente (no fim da lista). */
+/**
+ * Adiciona um disco à coleção — manualmente, ou a partir do botão "Enviar para a coleção" de
+ * uma compra (`lotId` presente, `source: "auction"`). Recusa reenviar a mesma peça duas vezes.
+ */
 export async function addCollectionItem(input: CollectionInput): Promise<CollectionItem> {
   const artist = (input.artist ?? "").trim();
   const album = (input.album ?? "").trim();
   if (!artist && !album) throw new Error("Informe ao menos o artista ou o álbum.");
   const existing = await getAllCollection();
+  if (input.lotId && existing.some((i) => i.lotId === input.lotId)) {
+    throw new Error("Esta compra já está na coleção.");
+  }
   const position = existing.reduce((max, i) => Math.max(max, i.position), 0) + 1;
   const { data, error } = await supabaseAdmin
     .from("collection_items")
     .insert({
-      lot_id: null,
-      source: "manual",
+      lot_id: input.lotId ?? null,
+      source: input.lotId ? "auction" : "manual",
       artist,
       album,
       title: (input.title ?? "").trim(),

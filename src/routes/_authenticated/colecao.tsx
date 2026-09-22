@@ -10,7 +10,6 @@ import {
   Library,
   Pencil,
   Plus,
-  RefreshCw,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -26,22 +25,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CollectionCard } from "@/components/vinyl/collection-card";
 import { collectionLabel } from "@/components/vinyl/collection-utils";
 import { ArtistFilter } from "@/components/vinyl/filters";
+import { GradeSelect } from "@/components/vinyl/grade-select";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import { GEMINI_IMPORT_PROMPT, parseCollectionBulkText } from "@/lib/collection-bulk";
-import { GRADE_ORDER } from "@/lib/grading";
 import { AiProviderSelect, GeminiModelSelect } from "@/components/vinyl/ai-provider-controls";
 import {
   AI_PROVIDER_SHORT,
@@ -55,18 +47,14 @@ import {
   setAiProvider,
   setGeminiModel,
 } from "@/lib/leiloesbr.functions";
-import type { CollectionItem, PendingWonLot } from "@/lib/collection.server";
+import type { CollectionItem } from "@/lib/collection.server";
 import {
   addCollectionItem,
-  addWonLot,
-  debugScanCollection,
   deleteCollectionItem,
   getCollection,
   identifyCollection,
   importCollectionText,
   reprocessCollectionItem,
-  scanCollection,
-  scanCollectionFull,
   updateCollectionItem,
   uploadCollectionImage,
 } from "@/lib/collection.functions";
@@ -187,37 +175,6 @@ const EMPTY_DRAFT: Draft = {
   tags: "",
 };
 
-// Escala de conservação (grading) canônica de 10 graus (M…F/P), usada para mídia e capa.
-const GRADES = GRADE_ORDER;
-// Radix Select não aceita item com value "" → sentinela para "não definido".
-const GRADE_NONE = "__none__";
-
-function GradeSelect({
-  value,
-  onChange,
-  ariaLabel,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  ariaLabel: string;
-}) {
-  return (
-    <Select value={value || GRADE_NONE} onValueChange={(v) => onChange(v === GRADE_NONE ? "" : v)}>
-      <SelectTrigger aria-label={ariaLabel}>
-        <SelectValue placeholder="Não definido" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={GRADE_NONE}>Não definido</SelectItem>
-        {GRADES.map((g) => (
-          <SelectItem key={g} value={g}>
-            {g}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
 function toDraft(item: CollectionItem): Draft {
   return {
     id: item.id,
@@ -241,12 +198,8 @@ function ColecaoPage() {
   const [barsHidden, setBarsHidden] = useState(false);
   const queryClient = useQueryClient();
   const fetchCollection = useServerFn(getCollection);
-  const scan = useServerFn(scanCollection);
-  const scanFull = useServerFn(scanCollectionFull);
   const addItem = useServerFn(addCollectionItem);
   const importBulk = useServerFn(importCollectionText);
-  const addWon = useServerFn(addWonLot);
-  const debugScan = useServerFn(debugScanCollection);
   const identify = useServerFn(identifyCollection);
   const reprocess = useServerFn(reprocessCollectionItem);
   const fetchAiProvider = useServerFn(getAiProvider);
@@ -261,8 +214,6 @@ function ColecaoPage() {
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [review, setReview] = useState<PendingWonLot[]>([]);
-  const [debug, setDebug] = useState<string | null>(null);
   const [identifying, setIdentifying] = useState(false);
 
   const query = useQuery<CollectionItem[]>({
@@ -333,46 +284,6 @@ function ColecaoPage() {
     }
   };
 
-  type ScanResult = {
-    added: number;
-    scanned: number;
-    duplicates: PendingWonLot[];
-    sources: { stored: number; title: number; none: number };
-  };
-  const onScanSuccess = (res: ScanResult) => {
-    void invalidate();
-    if (res.duplicates.length) setReview(res.duplicates);
-    const dup = res.duplicates.length
-      ? ` ${res.duplicates.length} possível(is) duplicado(s) para revisar.`
-      : "";
-    const src = res.sources
-      ? ` (banco ${res.sources.stored} · título ${res.sources.title} · sem artista ${res.sources.none})`
-      : "";
-    toast.success(
-      res.added > 0
-        ? `${res.added} disco(s) adicionado(s).${dup}${src}`
-        : res.duplicates.length
-          ? `Nenhum novo automático.${dup}`
-          : "Nada novo. Se você tem compras e nada aparece, clique em Diagnóstico.",
-    );
-  };
-  const onScanError = (e: Error) => toast.error(e.message || "Falha ao varrer as compras");
-
-  const scanMut = useMutation({
-    mutationFn: () => scan(),
-    onSuccess: onScanSuccess,
-    onError: onScanError,
-  });
-
-  // Varredura completa manual ("id=0", todas as páginas) — backfill de contingência para
-  // quando um leilão vencido não aparece mais em "Meus lances" (l=4) e por isso escapa da
-  // varredura incremental padrão.
-  const scanFullMut = useMutation({
-    mutationFn: () => scanFull(),
-    onSuccess: onScanSuccess,
-    onError: onScanError,
-  });
-
   // Identifica pela IA (só texto, nunca a capa) em laço pelo cursor até terminar. Define
   // artista/álbum/ano e agrupa coletâneas/lotes. Opt-in (gasta créditos). `onlyUnidentified`
   // (padrão) gasta IA só nos discos ainda sem identificação — uso rotineiro e barato; `false`
@@ -441,25 +352,6 @@ function ColecaoPage() {
       );
     },
     onError: (e: Error) => toast.error(e.message || "Não foi possível importar"),
-  });
-
-  const addWonMut = useMutation({
-    mutationFn: (p: PendingWonLot) => addWon({ data: p }),
-    onSuccess: (_res, p) => {
-      void invalidate();
-      setReview((list) => list.filter((d) => d.lotId !== p.lotId));
-      toast.success("Disco adicionado.");
-    },
-    onError: (e: Error) => toast.error(e.message || "Não foi possível adicionar"),
-  });
-
-  const ignoreDuplicate = (lotId: string) =>
-    setReview((list) => list.filter((d) => d.lotId !== lotId));
-
-  const debugMut = useMutation({
-    mutationFn: () => debugScan(),
-    onSuccess: (res) => setDebug(JSON.stringify(res, null, 2)),
-    onError: (e: Error) => toast.error(e.message || "Falha no diagnóstico"),
   });
 
   const saveMut = useMutation({
@@ -602,8 +494,8 @@ function ColecaoPage() {
                   </h1>
                 </div>
                 <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
-                  Seus vinis, agrupados por artista. A varredura de "Minhas compras" acrescenta os
-                  lotes de vinil arrematados; cada disco é editável.
+                  Seus vinis, agrupados por artista. Envie discos arrematados a partir de "Compras",
+                  ou adicione manualmente; cada disco é editável.
                 </p>
               </div>
               <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:overflow-visible sm:pb-0">
@@ -637,38 +529,6 @@ function ColecaoPage() {
                     {identifying ? "Identificando…" : "Identificar novos (IA)"}
                   </Button>
                 ) : null}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => debugMut.mutate()}
-                  disabled={debugMut.isPending}
-                  title="Diagnosticar a varredura (não grava nada) — mostra o que o servidor lê do site"
-                >
-                  {debugMut.isPending ? "Diagnosticando…" : "Diagnóstico"}
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => scanMut.mutate()}
-                  disabled={scanMut.isPending}
-                  title="Varrer 'Minhas compras' (leilões vencidos) e atualizar a coleção"
-                >
-                  <RefreshCw
-                    className={`mr-2 h-4 w-4 ${scanMut.isPending ? "animate-spin" : ""}`}
-                  />
-                  {scanMut.isPending ? "Atualizando…" : "Atualizar coleção"}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => scanFullMut.mutate()}
-                  disabled={scanFullMut.isPending}
-                  title="Varredura completa de 'Minhas compras' (todas as páginas) — use se um leilão vencido não aparecer mais em Meus lances"
-                >
-                  <RefreshCw
-                    className={`mr-2 h-4 w-4 ${scanFullMut.isPending ? "animate-spin" : ""}`}
-                  />
-                  {scanFullMut.isPending ? "Varrendo…" : "Varredura completa"}
-                </Button>
                 <AiProviderSelect
                   value={aiProvider}
                   onChange={changeAiProvider}
@@ -704,22 +564,6 @@ function ColecaoPage() {
         </HideableBar>
 
         <div className="mx-auto max-w-6xl px-4 py-6">
-          {debug ? (
-            <div className="mb-4 rounded-md border border-border bg-card p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-sm font-semibold text-foreground">
-                  Diagnóstico da varredura
-                </span>
-                <Button size="sm" variant="ghost" onClick={() => setDebug(null)}>
-                  Fechar
-                </Button>
-              </div>
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all text-xs text-muted-foreground">
-                {debug}
-              </pre>
-            </div>
-          ) : null}
-
           {query.isLoading ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -727,7 +571,7 @@ function ColecaoPage() {
               ))}
             </div>
           ) : items.length === 0 ? (
-            <EmptyState onScan={() => scanMut.mutate()} scanning={scanMut.isPending} />
+            <EmptyState onAdd={() => setDraft({ ...EMPTY_DRAFT })} />
           ) : filtered.length === 0 ? (
             <p className="rounded-lg border border-dashed border-border bg-card/40 px-4 py-16 text-center text-sm text-muted-foreground">
               Nenhum disco corresponde ao filtro.
@@ -812,14 +656,6 @@ function ColecaoPage() {
         importing={bulkMut.isPending}
         onImport={(text) => bulkMut.mutate(text)}
         onClose={() => setBulkOpen(false)}
-      />
-
-      <ReviewDialog
-        items={review}
-        busy={addWonMut.isPending}
-        onAdd={(p) => addWonMut.mutate(p)}
-        onIgnore={ignoreDuplicate}
-        onClose={() => setReview([])}
       />
     </main>
   );
@@ -944,77 +780,6 @@ function BulkImportDialog({
   );
 }
 
-function ReviewDialog({
-  items,
-  busy,
-  onAdd,
-  onIgnore,
-  onClose,
-}: {
-  items: PendingWonLot[];
-  busy: boolean;
-  onAdd: (p: PendingWonLot) => void;
-  onIgnore: (lotId: string) => void;
-  onClose: () => void;
-}) {
-  return (
-    <Dialog open={items.length > 0} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Possíveis duplicados</DialogTitle>
-        </DialogHeader>
-        <p className="text-sm text-muted-foreground">
-          Estes vinis arrematados parecem já estar na coleção. Se for uma segunda cópia proposital,
-          adicione mesmo assim; senão, ignore.
-        </p>
-        <ul className="space-y-3">
-          {items.map((p) => (
-            <li
-              key={p.lotId}
-              className="flex items-center gap-3 rounded-md border border-border p-2"
-            >
-              {p.image ? (
-                <img
-                  src={p.image}
-                  alt=""
-                  loading="lazy"
-                  className="h-14 w-14 shrink-0 rounded object-contain"
-                />
-              ) : (
-                <div className="h-14 w-14 shrink-0 rounded bg-secondary" />
-              )}
-              <div className="min-w-0 flex-1 text-sm">
-                <p className="truncate font-medium text-foreground">
-                  {[p.artist, p.album].filter(Boolean).join(" — ") || p.title}
-                </p>
-                <p className="truncate text-xs text-muted-foreground">
-                  Já na coleção: {p.existing}
-                </p>
-                {p.wonPrice ? (
-                  <p className="text-xs text-muted-foreground">Pago {p.wonPrice}</p>
-                ) : null}
-              </div>
-              <div className="flex shrink-0 flex-col gap-1">
-                <Button size="sm" onClick={() => onAdd(p)} disabled={busy}>
-                  Adicionar
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => onIgnore(p.lotId)} disabled={busy}>
-                  Ignorar
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>
-            Fechar
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 function TitleRow({
   item,
   busy,
@@ -1055,18 +820,17 @@ function TitleRow({
   );
 }
 
-function EmptyState({ onScan, scanning }: { onScan: () => void; scanning: boolean }) {
+function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="rounded-lg border border-dashed border-border bg-card/40 px-4 py-16 text-center">
       <Library className="mx-auto h-8 w-8 text-muted-foreground/50" />
       <p className="mt-3 text-sm font-medium text-foreground">Sua coleção está vazia.</p>
       <p className="mt-1 text-sm text-muted-foreground">
-        Clique em "Atualizar coleção" para varrer os leilões que você venceu, ou adicione um disco
-        manualmente.
+        Envie um disco arrematado a partir da página "Compras", ou adicione um manualmente.
       </p>
-      <Button size="sm" className="mt-4" onClick={onScan} disabled={scanning}>
-        <RefreshCw className={`mr-2 h-4 w-4 ${scanning ? "animate-spin" : ""}`} />
-        {scanning ? "Atualizando…" : "Atualizar coleção"}
+      <Button size="sm" className="mt-4" onClick={onAdd}>
+        <Plus className="mr-2 h-4 w-4" />
+        Adicionar disco
       </Button>
     </div>
   );
