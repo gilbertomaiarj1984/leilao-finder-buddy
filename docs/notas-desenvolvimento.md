@@ -698,6 +698,39 @@ segue existindo, usado pela home ("Atualizar tudo").
   load há **migração única** localStorage → servidor. (Antes ficava só no localStorage → sumia
   ao trocar de navegador/dispositivo ou usar a URL de preview, de origem diferente.)
 
+### Ordem das casas e abrir/fechar seções (v0.74.0)
+
+- **Ordenação uniforme das casas** (grade principal, Vigiados do dia, Vigiados geral, Lances
+  do dia, Lances geral): sempre por **horário do leilão** e, no empate (sem horário ou mesmo
+  horário), **alfabética**. Antes a grade principal ordenava por nº de lotes (desc) e os
+  vigiados/lances por nº de itens (desc) — trocado pelo horário, que é o que importa pra saber
+  a ordem em que os leilões abrem no dia.
+  - `timeMinutes(time)` (`grouping.ts`) converte "19:30h"/"9h"/"9:30" em minutos desde meia-noite
+    (mesmo regex de `auctionStartMs` em `vinyl-parse.ts`); sem horário/ilegível vai pro fim
+    (`+Infinity`), igual ao `loteNum`.
+  - `groupByHouse` (grade principal) e `groupWatchedByHouse` (vigiados/lances) ordenam por
+    `timeMinutes` e devolvem `time` no grupo.
+  - **Lances não têm horário na origem** ("Meus lances" só traz a data do lance, não o horário
+    do leilão) — `houseTimeByDayHouse` (`index.tsx`) casa `${dayKey}|casa` com o horário lido
+    da varredura geral e dos vigiados, e `bidsWithHouseUrl` injeta esse horário em cada lance
+    antes de agrupar (mesmo padrão do `houseUrlByName` já existente pra URL da casa).
+- **Abrir/fechar por casa, com "Fechar todas"**: a grade principal já tinha
+  `openHouses`/`toggleHouse` (casa começa FECHADA); ganhou um botão "Fechar todas" no início da
+  lista (`closeAllHouses(day)`, remove as chaves `${dia}|casa` do set).
+  - Vigiados do dia, Vigiados geral, Lances do dia e Lances geral **não tinham como recolher
+    casa nenhuma** (sempre abertas) — ganharam o mesmo padrão, só que com o **padrão invertido**
+    (casa começa ABERTA): `closedHouseSections`/`toggleHouseSection`/`closeAllHouseSections`
+    (`index.tsx`), chave por tela (`watched-day|`, `bids-day|`, `watched|`, `bids|` +
+    `${dia}|casa`) pra não colidir entre as 4 telas. `BidHouseSections`
+    (`bid-house-sections.tsx`, usado por Lances do dia e Lances geral) ganhou as props opcionais
+    `isHouseOpen`/`onToggleHouse`/`onCloseAll` — sem elas, continua sempre aberto (usado também
+    por outras telas que não precisam do recolher).
+- **Barra de chips das casas** (no header, acima da lista de dias — mostra cada casa da grade
+  principal com contagem e ir direto pra seção) ganhou um botão de olho pra ocultar só ela,
+  independente do "recolher topo" (`MobileTopToggle`/`barsHidden`) que já existia — estado local
+  `housesBarHidden`, só no navegador (sem persistir). Chip é distinto do `openHouses` visto no
+  item acima: continua controlando abrir/fechar cada seção, só a LISTA de chips some.
+
 ## Atualização em background (cron 3×/dia, v0.69.41)
 
 - **Endpoint** `/api/cron` (tratado direto em `src/server.ts`, FORA das server functions → sem
@@ -1592,6 +1625,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.73.4      | Fix: lotes no formato "LP DISCO DE VINIL ARTISTA ÁLBUM ANO" (sem nenhum separador entre artista e álbum) caíam em `UNCLASSIFIED_LABEL` mesmo com artista claro no título (ex.: "Ira! Vivendo e Não Aprendendo 1986", "John Denver Poems Prayers and Promises 1974") — `extractArtist` (`vinyl-parse.ts`), sem separador, só tinha a frase inteira como candidato: vira "" pela trava de >5 palavras, ou pior, um "artista" espúrio com a frase toda quando ≤5 palavras (ex. "Legiao Urbana Dois 1986" virava artista "Legiao Urbana Dois 1986" em vez de casar "Legião Urbana" via `known_artists`). Nova `matchKnownArtistAtStart` roda ANTES da heurística de corte: casa um nome conhecido ancorado no início do título (índice lazy só do bundle `KNOWN_ARTISTS_SEED`, client-safe — sem tocar a tabela `known_artists` do banco). `buildKnownArtistIndex` também para de descartar nome de 1 palavra <4 chars quando a grafia original tem pontuação estilizada ("Ira!", "Neu!" — sinal de nome de banda deliberado, não sigla/palavra comum; "RPM"/"Nas"/"Art" etc. continuam de fora, ambíguos com termos comuns de leilão/PT). Seed ganha "John Denver", "Linear", "Fat Boys", "Nazareth" (exemplos reportados pelo usuário que ainda ficavam sem match nem por essa via nem pelo reforço via `fillMissingArtists`) |
 | v0.73.5      | Resolve a pendência "Alberto Lopes - Leiloeiro Público" (aberto desde v0.69.42/43, reforçado em v0.71.1): a alternativa cogitada nas Pendências ("excluir a casa da varredura") foi adotada em vez de continuar ampliando `NON_MEDIA_COLLECTIBLE_RE` termo a termo. Novo `BLOCKED_HOUSES`/`isBlockedHouse` em `leiloesbr-scrape.server.ts` (comparação normalizada, trim + minúsculas) bloqueia a casa em TODOS os pontos de entrada — `scrapePages`/`scrapeVinylChunk` (varredura geral, categoria travada), `listGalleryAuctions` (`galleryscan`) e `persistLots` (upsert, defesa em profundidade) — e `pruneNonVinylLots` passa a apagar também lotes já persistidos dessa casa, então `step=cleannonvinyl&apply=1` limpa o que já tinha entrado (achado do usuário, 2026-09-22: item de bijuteria "ANELÃO MASCULINO ANTI STRESS" não batia nenhum termo de `looksNonVinyl`) |
 | v0.73.6      | Fix (2ª leva de "artista claro em não classificados", depois do v0.73.4): casas que usam "//" pra separar campos ("LP ANA CARAM C/ ENCARTE // CAPA CONFORME FOTOS // DISCO EM MUITO BOM ESTADO // PODE...") não tinham esse separador reconhecido pelo split de `extractArtist` (só `-`/`:`/`–`/`—`), então o candidato virava a frase inteira e zerava pela trava de >5 palavras. `//` (duas barras — UMA barra continua reservada pro nome de banda tipo "AC/DC", nunca tem espaço antes) entra no split. Duas limpezas novas no candidato: corta o abreviação " C/ " ("com [encarte/pôster]", não é nome — "Ana Caram C/ Encarte" → "Ana Caram") e o ANO final colado sem separador ("Bebeto 1981" → "Bebeto", útil bem além desse formato — qualquer "ARTISTA ANO" que sobre como candidato) |
+| v0.74.0      | Ordena as casas (grade principal, Vigiados/Lances do dia e geral) por horário do leilão + alfabética, em vez de por nº de itens; lances ganham horário casado por `${dia}\|casa` (não vêm com horário na origem). Vigiados/Lances (dia e geral) ganham abrir/fechar por casa (antes sempre abertas) + botão "Fechar todas" no início de cada lista (grade principal também ganha o botão). Barra de chips das casas no header ganha botão pra ocultar só ela |
 
 ## Pendências
 
