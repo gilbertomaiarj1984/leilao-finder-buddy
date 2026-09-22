@@ -1580,22 +1580,24 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.72.2      | Fix: busca por relevância (`searchRelevance`, `vinyl-parse.ts`) casava substring SOLTA dentro de outra palavra — usuário achou (buscando "rita") lotes sem nenhuma relação, ex. um LP do Airton Lima Barbosa cuja descrição só cita "dedicatória **manus­crita**" (contém "rita" grudado). Confirmado por eliminação: sem IA associada ao lote (sem `aiLabel` no card) e usuário confirmou ter vindo da caixa de busca, não do filtro por artista — descartando erro de identificação da IA. Todos os `hay.includes(needle)` (identidade e campos fracos, camadas 2–4) e o `startsWith` (camada 5) passaram a exigir borda de PALAVRA INTEIRA (haystack e agulha com espaço nas pontas) — "manuscrita"/"margarita"/"sanscrita" não batem mais em "rita", mas frases/termos legítimos continuam batendo igual |
 | v0.73.0      | Pedido do usuário: clicar no badge "possível lixo" remove o aviso e ENSINA o modelo que aqueles termos não indicam lixo ("adaptando e melhorando o modelo"). Nova chave `app_state.trash_keyword_denylist` (array simples, só cresce); `matchPossibleTrash` (`lot-exclusion.ts`) ganha parâmetro `denylist` filtrado dos dois lados do casamento — o termo negado deixa de gerar falso positivo em QUALQUER lote futuro, não só no clicado. Badge vira botão clicável ("✕") com atualização otimista via `dismissTrashMutation`. Ver seção "Exclusão de lotes" |
 | v0.73.1      | Merge de v0.72.2 (fix de busca por palavra inteira) sobre a base já em v0.73.0 (badge "possível lixo" clicável) — sem conflito de lógica, só de versão/changelog |
+| v0.73.2      | Resolve a pendência "Alberto Lopes - Leiloeiro Público" (aberto desde v0.69.42/43, reforçado em v0.71.1): a alternativa cogitada nas Pendências ("excluir a casa da varredura") foi adotada em vez de continuar ampliando `NON_MEDIA_COLLECTIBLE_RE` termo a termo. Novo `BLOCKED_HOUSES`/`isBlockedHouse` em `leiloesbr-scrape.server.ts` (comparação normalizada, trim + minúsculas) bloqueia a casa em TODOS os pontos de entrada — `scrapePages`/`scrapeVinylChunk` (varredura geral, categoria travada), `listGalleryAuctions` (`galleryscan`) e `persistLots` (upsert, defesa em profundidade) — e `pruneNonVinylLots` passa a apagar também lotes já persistidos dessa casa, então `step=cleannonvinyl&apply=1` limpa o que já tinha entrado (achado do usuário, 2026-09-22: item de bijuteria "ANELÃO MASCULINO ANTI STRESS" não batia nenhum termo de `looksNonVinyl`) |
 
 ## Pendências
 
 **Produto / código (em aberto)**
 
-- **Itens não-disco reincidentes da "Alberto Lopes - Leiloeiro Público" (aberto desde
-  v0.69.42/43, reforçado em v0.71.1).** Essa casa generalista já rendeu 3 rodadas de achados do
-  usuário (joalheria, depois livro/quadro/lata/brinquedo via `galleryscan` sem categoria
-  travada, depois prataria/salva/bandeja) mesmo após `step=cleannonvinyl` limpar o que já
-  tinha entrado. Se `dryRun` continuar achando lotes novos dessa casa após uma rodada de
-  `apply=1`, o padrão sugere que a PRÓPRIA LeilõesBR está marcando itens fora de disco na
-  categoria "Disco de Vinil" pra essa casa específica (não é só o gap do `galleryscan`, já
-  corrigido) — nesse caso, ampliar `NON_MEDIA_COLLECTIBLE_RE` termo a termo não escala.
-  Alternativa a considerar: excluir a casa da varredura (lista de exclusão, análoga a
-  `verified_houses` em `app_state`) em vez de perseguir cada categoria de colecionável que ela
-  lista.
+- **✅ RESOLVIDO (v0.73.2) — Itens não-disco reincidentes da "Alberto Lopes - Leiloeiro
+  Público" (aberto desde v0.69.42/43, reforçado em v0.71.1).** Essa casa generalista rendeu 4
+  rodadas de achados do usuário (joalheria, depois livro/quadro/lata/brinquedo via
+  `galleryscan` sem categoria travada, depois prataria/salva/bandeja, por fim bijuteria de
+  novo em 2026-09-22 com "ANELÃO MASCULINO ANTI STRESS" — título sem nenhum termo bloqueável)
+  mesmo após rodadas de `step=cleannonvinyl` limpar o que já tinha entrado — confirmando que a
+  PRÓPRIA LeilõesBR marca itens fora de disco na categoria "Disco de Vinil" pra essa casa
+  específica, não só o gap do `galleryscan` (já corrigido em v0.69.43). Ampliar
+  `NON_MEDIA_COLLECTIBLE_RE` termo a termo não escala — adotada a alternativa já cogitada aqui:
+  a casa inteira agora é bloqueada (`BLOCKED_HOUSES` em `leiloesbr-scrape.server.ts`, hardcoded
+  — não é um toggle de UI como `verified_houses`) em todos os pontos de entrada da varredura, e
+  `pruneNonVinylLots`/`step=cleannonvinyl` apaga retroativamente os lotes já persistidos dela.
 
 - **✅ RESOLVIDO DE VEZ (v0.69.27/29, validado em produção 2026-09-21) — `step=aieval` voltando
   500 "Missing DATABASE_URL" (aberto desde v0.69.15).** Causa raiz: **dois secrets do GitHub

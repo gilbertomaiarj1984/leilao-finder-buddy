@@ -123,6 +123,19 @@ function lastPage(html: string): number {
   return pages.length ? Math.max(...pages) : 1;
 }
 
+// Casas bloqueadas por completo (nenhum lote delas entra, independente do título) — usado
+// quando a categorização da própria casa/plataforma não é confiável. "Alberto Lopes -
+// Leiloeiro Público" (achado do usuário, 2026-09-22): catálogo de bijuteria/antiguidades
+// sem nenhum vínculo com vinil, colando na varredura por vir marcado como categoria "Disco
+// de Vinil" na LeilõesBR mesmo sem bater nenhum termo de `looksNonVinyl` (títulos como
+// "ANELÃO MASCULINO ANTI STRESS" não citam CD/DVD/etc.). Comparação normalizada
+// (trim + minúsculas) pra não depender de acentuação exata.
+const BLOCKED_HOUSES = new Set(["alberto lopes - leiloeiro público"]);
+
+function isBlockedHouse(house: string): boolean {
+  return BLOCKED_HOUSES.has(house.trim().toLowerCase());
+}
+
 function sortLots(lots: VinylLot[]): VinylLot[] {
   return lots.sort(
     (a, b) =>
@@ -167,7 +180,7 @@ async function scrapePages(keep: (lot: VinylLot) => boolean): Promise<VinylLot[]
     const lots = parseCards(html);
     if (!lots.length) continue;
     for (const lot of lots) {
-      if (looksNonVinyl(lot.title)) continue;
+      if (looksNonVinyl(lot.title) || isBlockedHouse(lot.house)) continue;
       if (keep(lot)) byId.set(lot.id, lot);
     }
   }
@@ -490,7 +503,7 @@ export async function listGalleryAuctions(galleryCode: string): Promise<VinylLot
     }
     for (const lot of parseCards(html)) {
       if (lot.dayKey < windowStart || lot.dayKey > windowEnd) continue;
-      if (!isVinylTitle(lot.title)) continue;
+      if (!isVinylTitle(lot.title) || isBlockedHouse(lot.house)) continue;
       byId.set(lot.id, lot);
     }
   }
@@ -565,7 +578,7 @@ async function persistLots(fresh: VinylLot[]): Promise<void> {
   // best-effort: getExcludedLotIds nunca lança, um erro aqui só falha em não filtrar nada.
   const { getExcludedLotIds } = await import("./lot-exclusion.server");
   const excludedIds = await getExcludedLotIds();
-  const keep = excludedIds.size ? fresh.filter((lot) => !excludedIds.has(lot.id)) : fresh;
+  const keep = fresh.filter((lot) => !excludedIds.has(lot.id) && !isBlockedHouse(lot.house));
   if (!keep.length) return;
   const nowIso = new Date().toISOString();
   const rows = keep.map((lot) => ({
@@ -712,7 +725,7 @@ export async function pruneNonVinylLots(
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
   const lots = await readLots(windowStart, windowEnd);
-  const bad = lots.filter((lot) => looksNonVinyl(lot.title));
+  const bad = lots.filter((lot) => looksNonVinyl(lot.title) || isBlockedHouse(lot.house));
   const sample = bad.slice(0, limit).map((lot) => ({ id: lot.id, title: lot.title }));
   if (dryRun || !bad.length) {
     return { scanned: lots.length, removed: bad.length, removedTitles: sample };
@@ -1020,7 +1033,7 @@ export async function scrapeVinylChunk(
     if (!lots.length) continue;
     for (const lot of lots) {
       if (lot.dayKey < windowStart || lot.dayKey > windowEnd) continue;
-      if (looksNonVinyl(lot.title)) continue;
+      if (looksNonVinyl(lot.title) || isBlockedHouse(lot.house)) continue;
       byId.set(lot.id, lot);
     }
   }
