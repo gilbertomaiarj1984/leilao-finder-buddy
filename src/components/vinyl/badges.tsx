@@ -1,6 +1,7 @@
 import { Clock, Eye, Trophy } from "lucide-react";
 
 import type { AuctionStatus, BidStats, HouseAuctionInfo, HouseStats } from "./grouping";
+import { LiveLotNow } from "./live-lot-now";
 
 const AUCTION_STATUS_LABEL: Record<AuctionStatus, string> = {
   upcoming: "Em breve",
@@ -14,30 +15,38 @@ const AUCTION_STATUS_CLASS: Record<AuctionStatus, string> = {
   ended: "bg-muted text-muted-foreground",
 };
 
-/** Horário do leilão + status (em breve/ao vivo/encerrado), ao lado do nome da casa. */
+/**
+ * Horário do leilão + status (em breve/ao vivo/encerrado), ao lado do nome da casa. Ao vivo,
+ * mostra também o lote em pregão agora (`LiveLotNow`).
+ */
 export function AuctionStatusInline({ info }: { info: HouseAuctionInfo | null }) {
   if (!info?.time) return null;
   return (
-    <span
-      title="Horário do pregão presencial desta casa"
-      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-    >
-      <Clock className="h-3.5 w-3.5" />
-      {info.time}
-      {info.status ? (
-        <span
-          className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${AUCTION_STATUS_CLASS[info.status]}`}
-        >
-          {info.status === "live" ? (
-            <span className="relative flex h-1.5 w-1.5" aria-hidden>
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/70" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
-            </span>
-          ) : null}
-          {AUCTION_STATUS_LABEL[info.status]}
-        </span>
+    <>
+      <span
+        title="Horário do pregão presencial desta casa"
+        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+      >
+        <Clock className="h-3.5 w-3.5" />
+        {info.time}
+        {info.status ? (
+          <span
+            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${AUCTION_STATUS_CLASS[info.status]}`}
+          >
+            {info.status === "live" ? (
+              <span className="relative flex h-1.5 w-1.5" aria-hidden>
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/70" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+              </span>
+            ) : null}
+            {AUCTION_STATUS_LABEL[info.status]}
+          </span>
+        ) : null}
+      </span>
+      {info.status === "live" && info.presencialUrl ? (
+        <LiveLotNow url={info.presencialUrl} />
       ) : null}
-    </span>
+    </>
   );
 }
 

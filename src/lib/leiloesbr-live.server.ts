@@ -110,7 +110,7 @@ export async function buildLiveProxyUrl(houseUrl: string): Promise<string> {
 }
 
 // Evita SSRF para redes internas: exige host com ponto (FQDN) e não-privado.
-function isPublicHost(host: string): boolean {
+export function isPublicHost(host: string): boolean {
   if (!host || host === "localhost" || !host.includes(".")) return false;
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
     const [a, b] = host.split(".").map(Number);

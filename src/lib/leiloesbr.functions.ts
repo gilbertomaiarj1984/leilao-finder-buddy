@@ -83,6 +83,24 @@ export const openLiveAuction = createServerFn({ method: "POST" })
     return { proxyUrl: await buildLiveProxyUrl(data.url) };
   });
 
+/**
+ * Lote em pregão AGORA (nº do lote + "peça x de y") no presencial de uma casa, para o selo ao
+ * lado de "Ao vivo agora". Best-effort: `null` quando não há pregão ou a casa não respondeu.
+ */
+export const getPresencialNow = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { url?: string } | undefined) => {
+    const url = typeof input?.url === "string" ? input.url.trim() : "";
+    if (!url) throw new Error("URL do pregão obrigatória.");
+    return { url };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { fetchPresencialNow } = await import("./leiloesbr-presencial.server");
+    return await fetchPresencialNow(data.url);
+  });
+
 // Preenche o nº do lote (via catálogo da casa) em blocos de leilões, para caber no
 // tempo do servidor. O cliente chama em laço até `remaining` chegar a 0.
 export const enrichLotes = createServerFn({ method: "POST" })

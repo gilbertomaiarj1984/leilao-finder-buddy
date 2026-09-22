@@ -1361,6 +1361,30 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   arquivos `.ts`/`.tsx` separados por causa do react-refresh (o especificador resolve `.ts`
   antes de `.tsx` — nomes não podem colidir).
 
+## Lote em pregão ao lado de "Ao vivo agora" (v0.75.0)
+
+Selo `LiveLotNow` (`src/components/vinyl/live-lot-now.tsx`): "🔨 Lote 457" + mini barra
+"135/322 · 41%" logo após a tag "Ao vivo agora" — na lista principal (dentro de
+`AuctionStatusInline`, `badges.tsx`, cobre as 3 ocorrências do `index.tsx`) e nos cards do
+`/ao-vivo`. Só com `status === "live"` e `presencialUrl`.
+
+- **Mecânica**: o `presencial.asp` chega com o lote VAZIO (`<span class="is-lotenumber">--</span>`)
+  — quem preenche é o JS da página (`novoPresencial.LePregao`). O servidor imita isso:
+  `publicFetch` do `presencial.asp` (sem login) → `idleilao`/`idsite` do script inline
+  (`UpdatePresencialArr`, `parsePresencialIds`; cacheados por URL) → GET no endpoint de polling
+  comum da plataforma `https://d1vzg1b1ofiies.cloudfront.net/1s/le_registro_pregao_cfbr_v1.asp?i=<idleilao>&j=<idsite>&p=`
+  (`p` vazio = primeira carga, responde igual; override por `PRESENCIAL_PREGAO_URL`). Resposta
+  `LANCES*|*INFOLEILAO*|*flag*|*PROXIMOS_LOTES`; `INFOLEILAO.LOTE` = nº do lote,
+  `QTD_ATUAL`/`QTD_LOTES` = "Peça nº x de y", % = `floor(x/y*100)` (igual ao site). Parser puro
+  em `src/lib/presencial-now.ts`; fetch em `leiloesbr-presencial.server.ts` (valida https + host
+  público via `isPublicHost` exportado do proxy + caminho `/presencial/presencial.asp`; cache 60 s;
+  best-effort → `null`, selo some). Server fn `getPresencialNow`.
+- **Atualização**: `useQuery` com `refetchInterval` 5 min, `refetchIntervalInBackground: false`
+  (pausa com a aba oculta) e `refetchOnWindowFocus`. `queryKey ["presencial-now", url]`
+  compartilhada entre lista e `/ao-vivo`. Dado até 5 min defasado — tooltip mostra "há X min".
+- Formato descoberto pelo usuário no console do navegador (2026-09-22, Traditio, leilão 63534);
+  a rede deste ambiente não alcança as casas nem o CDN.
+
 ## Ferramenta separada: `tools/missleiloes-sniper.user.js`
 
 Userscript (Tampermonkey/bookmarklet) que roda **na página do pregão ao vivo** do missleiloes
@@ -1641,6 +1665,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.74.0      | Ordena as casas (grade principal, Vigiados/Lances do dia e geral) por horário do leilão + alfabética, em vez de por nº de itens; lances ganham horário casado por `${dia}\|casa` (não vêm com horário na origem). Vigiados/Lances (dia e geral) ganham abrir/fechar por casa (antes sempre abertas) + botão "Fechar todas" no início de cada lista (grade principal também ganha o botão). Barra de chips das casas no header ganha botão pra ocultar só ela |
 | v0.74.1      | Achado de produção: run `#160` do `refresh.yml` (2026-09-22) voltou "All jobs have failed" — `chunk`/`galleryscan`/`enrich` completaram normalmente (`persisted:true`), `aieval` coletou um batch, mas a 2ª chamada de `step=aiident` (mesmo lote de 25 ainda pendentes de identificação por título, via Gemini síncrono) voltou HTTP 500 nas 4 tentativas do `curl --retry 3` — consistente, não parece blip de rede. Causa raiz real ainda **não** identificada: `call()` usa `curl -f`, que suprime o corpo da resposta (o `catch` de `handleCron` devolve a mensagem do erro + `pid`/`hostname`/`hasDatabaseUrl` no JSON, mas isso nunca chega ao log do Actions). Corrigido o que dava pra corrigir sem essa informação: `aieval`/`aiident` são chunked e idempotentes por design ("o resto completa nas execuções seguintes"), mas uma falha ali estava matando a run INTEIRA via `set -e`, cancelando também `market`/`condition`/`sales`/`reident`/`purchases`/`prune` — nada a ver com o bug em si. Novo `call_soft()` em `refresh.yml` (sem `-f`, extrai o HTTP status por marcador `===HTTPSTATUS===`, mesma técnica do v0.69.15) faz esses dois steps logarem o corpo real do erro e **pularem pro próximo step** em vez de abortar tudo; a run só é marcada como falha (`exit 1` + ping de falha no healthchecks.io) no FINAL, depois que os demais steps já rodaram. Validado localmente (`bash -n`, mais um teste isolado do `call_soft` contra um servidor fake simulando 200/500/conexão recusada). Pendente: a próxima falha do `aiident` deve trazer a mensagem real do erro no log — ver Pendências |
 | v0.74.2      | Fix: vigiados de leilões distantes (além de `WINDOW_DAYS`/5 dias, a janela de scraping do servidor) sumiam das abas "Vigiados"/"Lances" — `mergeWatchedAccum` (`watched-accum.ts`) podava pelo teto de `WATCH_WINDOW_DAYS` mesmo sendo vigia real e confirmada na conta do LeilõesBR; agora só poda vigiados pelo dia já PASSADO (removido o teto futuro, `WATCH_WINDOW_DAYS` não existe mais) — lances (`MyBid`) sem mudança |
+| v0.75.0      | Lote em pregão agora ("Lote 457" + barra "135/322 · 41%") ao lado de "Ao vivo agora" na lista principal e no `/ao-vivo`, via endpoint de polling do presencial (`le_registro_pregao_cfbr_v1.asp`), atualizado a cada 5 min só com a aba visível |
 
 ## Pendências
 
