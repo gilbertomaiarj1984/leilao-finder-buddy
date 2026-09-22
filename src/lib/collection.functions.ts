@@ -113,6 +113,45 @@ export const reprocessCollectionItem = createServerFn({ method: "POST" })
   });
 
 /**
+ * Identifica pela IA (texto) um disco que ainda NÃO está na coleção — usado pelo diálogo
+ * "Enviar para a coleção" em `/compras` para pré-preencher artista/álbum/ano/descritivo/tags a
+ * partir do título da compra antes do usuário confirmar o envio. Não persiste nada.
+ */
+export const identifyPurchaseDraft = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (
+      input:
+        | {
+            title?: string;
+            artist?: string;
+            album?: string;
+            year?: number | null;
+            provider?: string;
+          }
+        | undefined,
+    ) => {
+      const title = typeof input?.title === "string" ? input.title : "";
+      if (!title.trim()) throw new Error("título obrigatório");
+      return {
+        title,
+        artist: typeof input?.artist === "string" ? input.artist : "",
+        album: typeof input?.album === "string" ? input.album : "",
+        year: input?.year == null ? null : Number(input.year) || null,
+        provider: isAiProvider(input?.provider) ? input.provider : null,
+      };
+    },
+  )
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getAiProvider } = await import("./app-state.server");
+    const provider = data.provider ?? (await getAiProvider());
+    const { identifyDraftFromTitle } = await import("./collection.server");
+    return await identifyDraftFromTitle(data, provider);
+  });
+
+/**
  * Adiciona um disco à coleção — manualmente, ou a partir do botão "Enviar para a coleção" em
  * `/compras` (nesse caso o payload traz `lotId`, vinculando à peça arrematada).
  */
