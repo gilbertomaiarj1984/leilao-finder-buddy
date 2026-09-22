@@ -47,7 +47,7 @@ const NON_VINYL_HINTS = ["cd ", " cd", "dvd", "blu-ray", "fita k7", "k7", "casse
 // disco). Lista por CATEGORIA de colecionismo, não por marca/evento — cresce conforme aparecem
 // casos reais.
 const NON_MEDIA_COLLECTIBLE_RE =
-  /\b(ex-?libris|pin\s+de\s+lapela|broche|medalh(?:a|ao|oes|as)|moedas?|cedulas?|numismatic\w*|selos?\s+postais?|filatelic\w*|porta-?moedas|carteira\s+de\s+couro|cinto\s+de\s+couro|perfume|colonia|fragrancia|estatueta|porcelana)\b/;
+  /\b(ex-?libris|pin\s+de\s+lapela|broche|medalh(?:a|ao|oes|as)|moedas?|cedulas?|numismatic\w*|selos?\s+postais?|filatelic\w*|porta-?moedas|carteira\s+de\s+couro|cinto\s+de\s+couro|perfume|colonia|fragrancia|estatueta|porcelana|an(?:el|eis)|joias?|bijuteria|bijouteria|pulseiras?|colar(?:es)?|brincos?|pingentes?|correntes?\s+de\s+(?:ouro|prata)|relogios?\s+de\s+pulso|aliancas?)\b/;
 // Callout de DIMENSÃO física ("TAM: 12,4CM X 9CM") — típico de gravura/print/foto/cartão
 // postal, NUNCA de um disco (LP/compacto tem tamanho padrão, não descrito item a item).
 const PAPER_DIMENSION_RE = /\btam[.:]?\s*\d+(?:[,.]\d+)?\s*cm\s*x\b/;
