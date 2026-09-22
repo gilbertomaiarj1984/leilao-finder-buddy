@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ChevronUp,
   Eye,
+  EyeOff,
   ExternalLink,
   Gavel,
   Library,
@@ -398,6 +399,27 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       else next.add(key);
       return next;
     });
+  /** Fecha de uma vez todas as casas de um dia (grade principal). */
+  const closeAllHouses = (day: string) =>
+    setOpenHouses((prev) => new Set([...prev].filter((key) => !key.startsWith(`${day}|`))));
+  // Seções de casa em Vigiados/Lances (dia e geral) não tinham como recolher — ficavam
+  // sempre abertas. Aqui o padrão é o OPOSTO do `openHouses` acima: a casa começa ABERTA e
+  // só entra neste set quando o usuário fecha (chave livre, cada tela usa seu prefixo:
+  // `watched-day|`, `bids-day|`, `watched|`, `bids|`).
+  const [closedHouseSections, setClosedHouseSections] = useState<Set<string>>(new Set());
+  const toggleHouseSection = (key: string) =>
+    setClosedHouseSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const closeAllHouseSections = (keys: string[]) =>
+    setClosedHouseSections((prev) => new Set([...prev, ...keys]));
+  // A barra de chips com as casas (no header, acima da lista de dias) pode ser ocultada à
+  // parte do resto do topo — preferência simples, só no navegador (sem persistência no
+  // servidor).
+  const [housesBarHidden, setHousesBarHidden] = useState(false);
   // Casas já verificadas (chave `${dia}|${casa}`): marcador verde que move a casa
   // para a seção "Já verificadas" no fim da lista. PERSISTE no servidor (app_state,
   // via getVerifiedHouses/setVerifiedHouses) — antes ficava só no localStorage do
@@ -1339,6 +1361,19 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   }, [lots.data]);
   const bidDayKey = (bid: { id: string; date: string }) =>
     dayKeyByLotId.get(bid.id) || watchedDateToKey(bid.date) || bid.date || "";
+  // Horário do leilão por `${dia}|casa` — "Meus lances" não traz o horário (só a data do
+  // lance), então casamos pelo dia+casa com a varredura geral e os vigiados, pra ordenar os
+  // lances por horário do leilão igual às outras telas.
+  const houseTimeByDayHouse = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const lot of lots.data?.lots ?? [])
+      if (lot.dayKey && lot.house && lot.time) map.set(`${lot.dayKey}|${lot.house}`, lot.time);
+    for (const w of watched.data ?? []) {
+      const key = `${watchedDateToKey(w.date)}|${w.house}`;
+      if (w.house && w.time && !map.has(key)) map.set(key, w.time);
+    }
+    return map;
+  }, [lots.data, watched.data]);
   // Meu lance por peça — para exibir "Meu lance" e corrigir o "Atual" (quando venço, o
   // valor atual É o meu lance) também nas abas de dia/vigiados, não só em "Meus lances".
   const myBidById = useMemo(() => {
@@ -1447,10 +1482,17 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       if (w.house && w.houseUrl && !map.has(w.house)) map.set(w.house, w.houseUrl);
     return map;
   }, [lots.data, watched.data]);
-  // Lances com a URL da casa preenchida, prontos para o agrupamento por casa.
+  // Lances com a URL da casa e o horário do leilão preenchidos, prontos para o agrupamento
+  // por casa (o horário ordena as casas, igual às outras telas).
   const bidsWithHouseUrl = useMemo(
-    () => (bids.data ?? []).map((b) => ({ ...b, houseUrl: houseUrlByName.get(b.house) ?? "#" })),
-    [bids.data, houseUrlByName],
+    () =>
+      (bids.data ?? []).map((b) => ({
+        ...b,
+        houseUrl: houseUrlByName.get(b.house) ?? "#",
+        time: houseTimeByDayHouse.get(`${bidDayKey(b)}|${b.house}`) ?? "",
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bidDayKey só lê dayKeyByLotId (já na lista)
+    [bids.data, houseUrlByName, houseTimeByDayHouse, dayKeyByLotId],
   );
 
   return (
@@ -1815,53 +1857,79 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                             )}
                           </div>
                           {!isWatchedView && !isBidsView && groups.length > 0 ? (
-                            <nav className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
-                              {groups.map((group) => {
-                                const houseKey = `${day}|${group.house}`;
-                                const isOpen = openHouses.has(houseKey);
-                                return (
-                                  <button
-                                    key={group.house}
-                                    type="button"
-                                    aria-expanded={isOpen}
-                                    onClick={() => {
-                                      const willOpen = !openHouses.has(houseKey);
-                                      toggleHouse(houseKey);
-                                      if (willOpen) {
-                                        requestAnimationFrame(() =>
-                                          document
-                                            .getElementById(houseAnchor(group.house, index))
-                                            ?.scrollIntoView({
-                                              behavior: "smooth",
-                                              block: "start",
-                                            }),
-                                        );
-                                      }
-                                    }}
-                                    className={
-                                      isOpen
-                                        ? "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
-                                        : "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
-                                    }
-                                  >
-                                    {isOpen ? (
-                                      <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                                    ) : (
-                                      <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                                    )}
-                                    {group.house}
-                                    <span className="text-muted-foreground">{group.count}</span>
-                                    <HouseStatBadges
-                                      stats={computeHouseStats(
-                                        group.lots,
-                                        watchedIds,
-                                        bidStatusById,
-                                      )}
-                                    />
-                                  </button>
-                                );
-                              })}
-                            </nav>
+                            <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-1">
+                              <button
+                                type="button"
+                                onClick={() => setHousesBarHidden((c) => !c)}
+                                title={
+                                  housesBarHidden
+                                    ? "Mostrar a barra de casas"
+                                    : "Ocultar a barra de casas"
+                                }
+                                aria-label={
+                                  housesBarHidden
+                                    ? "Mostrar a barra de casas"
+                                    : "Ocultar a barra de casas"
+                                }
+                                aria-pressed={housesBarHidden}
+                                className="inline-flex shrink-0 items-center justify-center rounded-full border border-border p-1.5 text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                              >
+                                {housesBarHidden ? (
+                                  <EyeOff className="h-3.5 w-3.5" />
+                                ) : (
+                                  <Eye className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                              {housesBarHidden ? null : (
+                                <nav className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
+                                  {groups.map((group) => {
+                                    const houseKey = `${day}|${group.house}`;
+                                    const isOpen = openHouses.has(houseKey);
+                                    return (
+                                      <button
+                                        key={group.house}
+                                        type="button"
+                                        aria-expanded={isOpen}
+                                        onClick={() => {
+                                          const willOpen = !openHouses.has(houseKey);
+                                          toggleHouse(houseKey);
+                                          if (willOpen) {
+                                            requestAnimationFrame(() =>
+                                              document
+                                                .getElementById(houseAnchor(group.house, index))
+                                                ?.scrollIntoView({
+                                                  behavior: "smooth",
+                                                  block: "start",
+                                                }),
+                                            );
+                                          }
+                                        }}
+                                        className={
+                                          isOpen
+                                            ? "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
+                                            : "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
+                                        }
+                                      >
+                                        {isOpen ? (
+                                          <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                                        ) : (
+                                          <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                                        )}
+                                        {group.house}
+                                        <span className="text-muted-foreground">{group.count}</span>
+                                        <HouseStatBadges
+                                          stats={computeHouseStats(
+                                            group.lots,
+                                            watchedIds,
+                                            bidStatusById,
+                                          )}
+                                        />
+                                      </button>
+                                    );
+                                  })}
+                                </nav>
+                              )}
+                            </div>
                           ) : null}
                         </div>,
                         dayBarHost,
@@ -1875,14 +1943,42 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                         </p>
                       ) : (
                         <div className="space-y-8">
+                          {watchedByHouse.length > 1 ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                closeAllHouseSections(
+                                  watchedByHouse.map((g) => `watched-day|${day}|${g.house}`),
+                                )
+                              }
+                              className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                            >
+                              <ChevronUp className="h-3.5 w-3.5" />
+                              Fechar todas
+                            </button>
+                          ) : null}
                           {watchedByHouse.map((houseGroup) => {
                             const auctionInfo = houseAuctionInfo(day, houseGroup.lots[0]);
+                            const houseSectionKey = `watched-day|${day}|${houseGroup.house}`;
+                            const isHouseOpen = !closedHouseSections.has(houseSectionKey);
                             return (
                               <section key={houseGroup.house} className="space-y-3">
                                 <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
-                                  <h2 className="text-xl font-semibold tracking-tight text-foreground">
-                                    {houseGroup.house}
-                                  </h2>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleHouseSection(houseSectionKey)}
+                                    aria-expanded={isHouseOpen}
+                                    className="flex items-center gap-2 text-left"
+                                  >
+                                    {isHouseOpen ? (
+                                      <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
+                                    ) : (
+                                      <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+                                    )}
+                                    <span className="text-xl font-semibold tracking-tight text-foreground">
+                                      {houseGroup.house}
+                                    </span>
+                                  </button>
                                   <Badge variant="secondary">
                                     {houseGroup.lots.length} lote(s)
                                   </Badge>
@@ -1916,40 +2012,42 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                     </a>
                                   </div>
                                 </div>
-                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                  {houseGroup.lots.map((lot) => (
-                                    <LotCard
-                                      key={lot.id}
-                                      lot={{
-                                        ...lot,
-                                        price: currentPriceFor(lot.id, lot.price),
-                                        dayKey: watchedDateToKey(lot.date) || lot.date,
-                                        watched: true,
-                                        myBid: myBidById.get(lot.idPeca),
-                                        nextBid: nextBidById.get(lot.id),
-                                      }}
-                                      busy={pending === lot.idPeca}
-                                      ai={aiFor(lot)}
-                                      market={marketFor(lot)}
-                                      album={albumFor(lot)}
-                                      condition={conditionFor(lot)}
-                                      demand={demandFor(lot)}
-                                      owned={ownedFor(lot)}
-                                      onOpenOwned={() => setOwnedPanelLot(lot)}
-                                      onEditTags={editTags(lot.id)}
-                                      bidStatus={bidStatusById.get(lot.idPeca)}
-                                      sold={soldById.get(lot.id)}
-                                      onToggle={() =>
-                                        toggle.mutate({
-                                          idPeca: lot.idPeca,
-                                          idLeilao: lot.idLeilao,
-                                          base: lot.base,
-                                          watch: false,
-                                        })
-                                      }
-                                    />
-                                  ))}
-                                </div>
+                                {isHouseOpen ? (
+                                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                    {houseGroup.lots.map((lot) => (
+                                      <LotCard
+                                        key={lot.id}
+                                        lot={{
+                                          ...lot,
+                                          price: currentPriceFor(lot.id, lot.price),
+                                          dayKey: watchedDateToKey(lot.date) || lot.date,
+                                          watched: true,
+                                          myBid: myBidById.get(lot.idPeca),
+                                          nextBid: nextBidById.get(lot.id),
+                                        }}
+                                        busy={pending === lot.idPeca}
+                                        ai={aiFor(lot)}
+                                        market={marketFor(lot)}
+                                        album={albumFor(lot)}
+                                        condition={conditionFor(lot)}
+                                        demand={demandFor(lot)}
+                                        owned={ownedFor(lot)}
+                                        onOpenOwned={() => setOwnedPanelLot(lot)}
+                                        onEditTags={editTags(lot.id)}
+                                        bidStatus={bidStatusById.get(lot.idPeca)}
+                                        sold={soldById.get(lot.id)}
+                                        onToggle={() =>
+                                          toggle.mutate({
+                                            idPeca: lot.idPeca,
+                                            idLeilao: lot.idLeilao,
+                                            base: lot.base,
+                                            watch: false,
+                                          })
+                                        }
+                                      />
+                                    ))}
+                                  </div>
+                                ) : null}
                               </section>
                             );
                           })}
@@ -1971,6 +2069,15 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                           soldById={soldById}
                           ownedFor={ownedFor}
                           onOpenOwned={(bid) => setOwnedPanelLot(bid)}
+                          isHouseOpen={(house) =>
+                            !closedHouseSections.has(`bids-day|${day}|${house}`)
+                          }
+                          onToggleHouse={(house) => toggleHouseSection(`bids-day|${day}|${house}`)}
+                          onCloseAll={() =>
+                            closeAllHouseSections(
+                              bidsByHouse.map((g) => `bids-day|${day}|${g.house}`),
+                            )
+                          }
                           onToggle={(bid) => toggle.mutate(bid)}
                         />
                       )
@@ -2280,6 +2387,16 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                         );
                         return (
                           <>
+                            {groups.length > 1 ? (
+                              <button
+                                type="button"
+                                onClick={() => closeAllHouses(day)}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                              >
+                                <ChevronUp className="h-3.5 w-3.5" />
+                                Fechar todas
+                              </button>
+                            ) : null}
                             {unverifiedGroups.map(renderHouse)}
                             {verifiedGroups.length ? (
                               <div className="space-y-6 pt-4">
@@ -2376,19 +2493,47 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   </span>
                                 </button>
                               </HideableBar>
-                              {!isOpen
-                                ? null
-                                : houses.map((houseGroup) => {
+                              {!isOpen ? null : (
+                                <>
+                                  {houses.length > 1 ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        closeAllHouseSections(
+                                          houses.map((g) => `watched|${dayKey}|${g.house}`),
+                                        )
+                                      }
+                                      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                                    >
+                                      <ChevronUp className="h-3.5 w-3.5" />
+                                      Fechar todas
+                                    </button>
+                                  ) : null}
+                                  {houses.map((houseGroup) => {
                                     const auctionInfo = houseAuctionInfo(
                                       dayKey,
                                       houseGroup.lots[0],
                                     );
+                                    const houseSectionKey = `watched|${dayKey}|${houseGroup.house}`;
+                                    const isHouseOpen = !closedHouseSections.has(houseSectionKey);
                                     return (
                                       <section key={houseGroup.house} className="space-y-3">
                                         <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
-                                          <h2 className="text-xl font-semibold tracking-tight text-foreground">
-                                            {houseGroup.house}
-                                          </h2>
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleHouseSection(houseSectionKey)}
+                                            aria-expanded={isHouseOpen}
+                                            className="flex items-center gap-2 text-left"
+                                          >
+                                            {isHouseOpen ? (
+                                              <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
+                                            ) : (
+                                              <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+                                            )}
+                                            <span className="text-xl font-semibold tracking-tight text-foreground">
+                                              {houseGroup.house}
+                                            </span>
+                                          </button>
                                           <Badge variant="secondary">
                                             {houseGroup.lots.length} lote(s)
                                           </Badge>
@@ -2422,43 +2567,47 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                             </a>
                                           </div>
                                         </div>
-                                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                          {houseGroup.lots.map((lot) => (
-                                            <LotCard
-                                              key={lot.id}
-                                              lot={{
-                                                ...lot,
-                                                price: currentPriceFor(lot.id, lot.price),
-                                                dayKey: watchedDateToKey(lot.date) || lot.date,
-                                                watched: true,
-                                                myBid: myBidById.get(lot.idPeca),
-                                                nextBid: nextBidById.get(lot.id),
-                                              }}
-                                              busy={pending === lot.idPeca}
-                                              ai={aiFor(lot)}
-                                              market={marketFor(lot)}
-                                              album={albumFor(lot)}
-                                              condition={conditionFor(lot)}
-                                              demand={demandFor(lot)}
-                                              owned={ownedFor(lot)}
-                                              onOpenOwned={() => setOwnedPanelLot(lot)}
-                                              onEditTags={editTags(lot.id)}
-                                              bidStatus={bidStatusById.get(lot.idPeca)}
-                                              sold={soldById.get(lot.id)}
-                                              onToggle={() =>
-                                                toggle.mutate({
-                                                  idPeca: lot.idPeca,
-                                                  idLeilao: lot.idLeilao,
-                                                  base: lot.base,
-                                                  watch: false,
-                                                })
-                                              }
-                                            />
-                                          ))}
-                                        </div>
+                                        {isHouseOpen ? (
+                                          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                            {houseGroup.lots.map((lot) => (
+                                              <LotCard
+                                                key={lot.id}
+                                                lot={{
+                                                  ...lot,
+                                                  price: currentPriceFor(lot.id, lot.price),
+                                                  dayKey: watchedDateToKey(lot.date) || lot.date,
+                                                  watched: true,
+                                                  myBid: myBidById.get(lot.idPeca),
+                                                  nextBid: nextBidById.get(lot.id),
+                                                }}
+                                                busy={pending === lot.idPeca}
+                                                ai={aiFor(lot)}
+                                                market={marketFor(lot)}
+                                                album={albumFor(lot)}
+                                                condition={conditionFor(lot)}
+                                                demand={demandFor(lot)}
+                                                owned={ownedFor(lot)}
+                                                onOpenOwned={() => setOwnedPanelLot(lot)}
+                                                onEditTags={editTags(lot.id)}
+                                                bidStatus={bidStatusById.get(lot.idPeca)}
+                                                sold={soldById.get(lot.id)}
+                                                onToggle={() =>
+                                                  toggle.mutate({
+                                                    idPeca: lot.idPeca,
+                                                    idLeilao: lot.idLeilao,
+                                                    base: lot.base,
+                                                    watch: false,
+                                                  })
+                                                }
+                                              />
+                                            ))}
+                                          </div>
+                                        ) : null}
                                       </section>
                                     );
                                   })}
+                                </>
+                              )}
                             </section>
                           );
                         })}
@@ -2555,6 +2704,17 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                                   soldById={soldById}
                                   ownedFor={ownedFor}
                                   onOpenOwned={(bid) => setOwnedPanelLot(bid)}
+                                  isHouseOpen={(house) =>
+                                    !closedHouseSections.has(`bids|${dayKey}|${house}`)
+                                  }
+                                  onToggleHouse={(house) =>
+                                    toggleHouseSection(`bids|${dayKey}|${house}`)
+                                  }
+                                  onCloseAll={() =>
+                                    closeAllHouseSections(
+                                      houses.map((g) => `bids|${dayKey}|${g.house}`),
+                                    )
+                                  }
                                   onToggle={(bid) => toggle.mutate(bid)}
                                 />
                               ) : null}
