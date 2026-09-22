@@ -1085,6 +1085,15 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   - **`GradeSelect`** (escala de 10 graus M…F/P) extraído de `colecao.tsx` para
     `components/vinyl/grade-select.tsx` — reusado por `SendToCollectionDialog` e pelo diálogo de
     edição da Coleção.
+  - **Botão "Identificar pela IA" no diálogo de envio (v0.71.0):** antes de confirmar, chama
+    `identifyPurchaseDraft` (`collection.functions.ts` → nova `identifyDraftFromTitle` em
+    `collection.server.ts`) — mesmo prompt/modelo do reprocessar por card da Coleção
+    (`identCollectionSync`, `ai-eval.server.ts`, SÓ TEXTO, nunca a capa), rodando com um `id`
+    avulso ("draft") já que o disco ainda não existe em `collection_items`; **não persiste
+    nada**. Preenche artista/álbum/ano/descritivo/tags no formulário (tags são ACRESCENTADAS às
+    já digitadas, via `mergeTagsText`, sem duplicar) para o usuário revisar/ajustar antes de
+    "Enviar" — mesmo aviso de failover de provedor (`formatFailoverTrail`) das outras telas de IA.
+    Usa sempre o provedor padrão do `app_state` (sem seletor próprio no diálogo).
 
 ## Páginas / UI
 
@@ -1475,6 +1484,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.69.44     | Pedido do usuário: manter (e ampliar) a lista de bloqueio de `NON_MEDIA_COLLECTIBLE_RE` (`vinyl-parse.ts`) além do que já tinha — acrescentados livro/revista, quadro/pintura, lata, brinquedo/miniatura/carrinho (colecionáveis de brinquedo), boneco/boneca. Continua sendo o mecanismo de defesa em profundidade da varredura geral (`scrapeVinylChunk`, categoria `tp=` travada) — protegido pelo guard `mentionsVinyl`/`mentionsDisc` em `looksNonVinyl`/`isVinylTitle`: um lote que de fato menciona "vinil"/"LP"/"disco"/"compacto" nunca é descartado só por também citar um desses termos (ex.: "capa com lata pintada" numa descrição de LP genuíno) |
 | v0.69.45     | Pedido do usuário: **limpeza retroativa** dos itens que já tinham entrado no banco antes dos fixes de v0.69.42–44 — `lots` só recebe upsert (merge durável, nunca apaga sozinho), então um fix de filtro não remove o que já tinha sido capturado. Novo `pruneNonVinylLots(dryRun, limit)` (`leiloesbr-scrape.server.ts`): relê a janela atual (`WINDOW_DAYS`), reaplica `looksNonVinyl` no título (mesmo critério da varredura) e apaga em lotes de 200 (`DELETE ... WHERE id = ANY(...)`) os que não deveriam ter entrado — `lot_ai`/`lot_ident`/`lot_market`/`lot_condition` somem junto por `ON DELETE CASCADE`; `lot_sales` (histórico de vendas) nunca é tocado. Exposto via `GET /api/cron?step=cleannonvinyl` (protegido por `CRON_TOKEN`, como os demais steps) — **`dryRun` por padrão** (só lista o que seria removido, sem apagar nada); `&apply=1` apaga de fato. Uso manual único (não entra no `refresh.yml`) — rodar `dryRun` primeiro, conferir a amostra de títulos devolvida, só então `apply=1` |
 | v0.70.0      | Pedido do usuário: a Coleção deixa de varrer "Minhas compras" sozinha — removidos os botões "Atualizar coleção"/"Varredura completa" e toda a pipeline de importação direta (`importWonLots(Incremental)`, `parsePurchaseTitle`, `deriveCandidate`, fila de duplicados) de `collection.server.ts`/`colecao.tsx`. Em troca, `/compras` (que já varre "Minhas compras" para a própria tabela `purchases`) ganha: **(1)** um selo de relação com a Coleção por card (`Disc3`, `compras.tsx`), casando pelo `lot_id` exato e reaproveitando a mesma infra de vínculo manual/aprendizado da home (`collection_links`/`collection_feedback`, `resolveOwned`/`OwnedPanel`) — permite confirmar, vincular a outro disco já cadastrado, marcar "não tenho" ou reativar o automático; **(2)** botão **"Enviar para a coleção"** (só sem relação confirmada) que abre um diálogo de edição pré-preenchido (palpite de artista via `extractArtist`/`titleCase`) e cria o item via `addCollectionItem` com `lotId`, herdando valor pago/data/casa/UF/imagem da compra. `GradeSelect` extraído para `components/vinyl/grade-select.tsx` (reusado pelos dois diálogos) |
+| v0.71.0      | Pedido do usuário: botão **"Identificar pela IA"** no diálogo "Enviar para a coleção" (`/compras`) — antes de confirmar o envio, preenche artista/álbum/ano/descritivo/tags a partir só do título da compra. Nova `identifyDraftFromTitle` (`collection.server.ts`) reusa o mesmo prompt/modelo de `reidentifyCollectionItem` (`identCollectionSync`, só texto, nunca a capa) com um `id` avulso ("draft"), já que o disco ainda não existe em `collection_items`; não persiste nada, só devolve o resultado para o formulário. Exposta via `identifyPurchaseDraft` (`collection.functions.ts`), usando sempre o provedor de IA padrão do `app_state` (mesmo aviso de failover das outras telas) |
 
 ## Pendências
 

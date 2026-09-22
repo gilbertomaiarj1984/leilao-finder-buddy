@@ -9,6 +9,7 @@ import {
   List,
   RefreshCw,
   ShoppingBag,
+  Sparkles,
   Store,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
@@ -30,7 +31,12 @@ import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import { groupWatchedByHouse } from "@/components/vinyl/grouping";
 import { OwnedPanel } from "@/components/vinyl/owned-panel";
 import { PurchaseCard } from "@/components/vinyl/purchase-card";
-import { addCollectionItem, getCollection } from "@/lib/collection.functions";
+import { AI_PROVIDER_SHORT, formatFailoverTrail, type AiProvider } from "@/lib/ai-provider";
+import {
+  addCollectionItem,
+  getCollection,
+  identifyPurchaseDraft,
+} from "@/lib/collection.functions";
 import type { CollectionItem } from "@/lib/collection.server";
 import {
   applyCollectionDecision,
@@ -66,6 +72,7 @@ type SendDraft = {
   conditionMedia: string;
   conditionSleeve: string;
   notes: string;
+  description: string;
   tags: string;
 };
 
@@ -80,8 +87,26 @@ function draftFromPurchase(p: Purchase): SendDraft {
     conditionMedia: "",
     conditionSleeve: "",
     notes: "",
+    description: "",
     tags: "",
   };
+}
+
+/** Acrescenta as tags da IA (sem duplicar, sem caixa) às tags já digitadas (texto "a, b, c"). */
+function mergeTagsText(current: string, incoming: string[]): string {
+  const out = current
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const seen = new Set(out.map((t) => t.toLowerCase()));
+  for (const t of incoming) {
+    const v = t.trim();
+    if (v && !seen.has(v.toLowerCase())) {
+      out.push(v);
+      seen.add(v.toLowerCase());
+    }
+  }
+  return out.join(", ");
 }
 
 function dayHeaderLabel(day: string): string {
@@ -253,6 +278,7 @@ function ComprasPage() {
           conditionMedia: d.conditionMedia,
           conditionSleeve: d.conditionSleeve,
           notes: d.notes,
+          description: d.description,
           tags: d.tags
             .split(",")
             .map((t) => t.trim())
@@ -266,6 +292,69 @@ function ComprasPage() {
     },
     onError: (e: Error) => toast.error(e.message || "Não foi possível enviar para a coleção"),
   });
+
+  // "Identificar pela IA" no diálogo de envio: preenche artista/álbum/ano/descritivo/tags a
+  // partir só do título da compra (mesmo prompt/modelo do reprocessar da Coleção), sem persistir
+  // nada — o usuário confere e ajusta antes de "Enviar".
+  const identifyDraftFn = useServerFn(identifyPurchaseDraft);
+  const [identifyingDraft, setIdentifyingDraft] = useState(false);
+  async function runIdentifyDraft() {
+    if (!sendDraft) return;
+    setIdentifyingDraft(true);
+    try {
+      const res = (await identifyDraftFn({
+        data: {
+          title: sendDraft.purchase.title,
+          artist: sendDraft.artist,
+          album: sendDraft.album,
+          year: sendDraft.year.trim() ? Number(sendDraft.year) || null : null,
+        },
+      })) as {
+        artist: string;
+        album: string;
+        year: number | null;
+        description: string;
+        tags: string[];
+        served: AiProvider | null;
+        switched: boolean;
+        error: string | null;
+        attemptErrors?: Partial<Record<AiProvider, string>>;
+      };
+      setSendDraft((d) =>
+        d
+          ? {
+              ...d,
+              artist: res.artist || d.artist,
+              album: res.album || d.album,
+              year: res.year != null ? String(res.year) : d.year,
+              description: res.description || d.description,
+              tags: res.tags.length ? mergeTagsText(d.tags, res.tags) : d.tags,
+            }
+          : d,
+      );
+      if (res.switched && res.served) {
+        const trail = formatFailoverTrail(res.attemptErrors ?? {});
+        toast.warning(
+          trail
+            ? `${trail} — usei ${AI_PROVIDER_SHORT[res.served]}`
+            : `Provedor de IA indisponível — usei ${AI_PROVIDER_SHORT[res.served]}`,
+        );
+      }
+      if (!res.artist && !res.album && !res.description) {
+        toast.error(
+          res.error
+            ? `A IA não retornou identificação (${res.error}) — verifique a chave/limite`
+            : "A IA não encontrou nada para este título.",
+        );
+      } else {
+        toast.success("Dados preenchidos pela IA — confira antes de enviar.");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao identificar pela IA");
+    } finally {
+      setIdentifyingDraft(false);
+    }
+  }
 
   const onScanSuccess = (res: { added: number; scanned: number; auctionsChecked?: number }) => {
     void invalidate();
@@ -478,9 +567,11 @@ function ComprasPage() {
       <SendToCollectionDialog
         draft={sendDraft}
         sending={sendMut.isPending}
+        identifying={identifyingDraft}
         onChange={setSendDraft}
         onClose={() => setSendDraft(null)}
         onSend={() => sendDraft && sendMut.mutate(sendDraft)}
+        onIdentify={() => void runIdentifyDraft()}
       />
     </main>
   );
@@ -625,17 +716,22 @@ function SendField({ label, children }: { label: string; children: ReactNode }) 
 function SendToCollectionDialog({
   draft,
   sending,
+  identifying,
   onChange,
   onClose,
   onSend,
+  onIdentify,
 }: {
   draft: SendDraft | null;
   sending: boolean;
+  identifying: boolean;
   onChange: (d: SendDraft) => void;
   onClose: () => void;
   onSend: () => void;
+  onIdentify: () => void;
 }) {
   const set = (patch: Partial<SendDraft>) => draft && onChange({ ...draft, ...patch });
+  const busy = sending || identifying;
 
   return (
     <Dialog open={draft !== null} onOpenChange={(open) => !open && onClose()}>
@@ -651,9 +747,22 @@ function SendToCollectionDialog({
               onSend();
             }}
           >
-            <p className="text-sm text-muted-foreground sm:col-span-2">
-              {draft.purchase.title || "(sem título)"}
-            </p>
+            <div className="flex items-center justify-between gap-2 sm:col-span-2">
+              <p className="text-sm text-muted-foreground">
+                {draft.purchase.title || "(sem título)"}
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onIdentify}
+                disabled={busy}
+                title="Identificar artista/álbum/ano e gerar um descritivo pela IA (só texto, a partir do título)"
+              >
+                <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
+                {identifying ? "Identificando…" : "Identificar pela IA"}
+              </Button>
+            </div>
             <SendField label="Artista">
               <Input value={draft.artist} onChange={(e) => set({ artist: e.target.value })} />
             </SendField>
@@ -691,6 +800,17 @@ function SendToCollectionDialog({
               </SendField>
             </div>
             <div className="sm:col-span-2">
+              <SendField label="Descritivo do disco (preenchido pela IA — editável)">
+                <textarea
+                  value={draft.description}
+                  onChange={(e) => set({ description: e.target.value })}
+                  rows={3}
+                  placeholder="Descrição do disco (artista, estilo, época, relevância)…"
+                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                />
+              </SendField>
+            </div>
+            <div className="sm:col-span-2">
               <SendField label="Notas">
                 <textarea
                   value={draft.notes}
@@ -701,10 +821,10 @@ function SendToCollectionDialog({
               </SendField>
             </div>
             <DialogFooter className="sm:col-span-2">
-              <Button type="button" variant="outline" onClick={onClose} disabled={sending}>
+              <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={sending}>
+              <Button type="submit" disabled={busy}>
                 {sending ? "Enviando…" : "Enviar"}
               </Button>
             </DialogFooter>

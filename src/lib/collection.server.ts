@@ -399,6 +399,67 @@ export async function reidentifyCollectionItem(
   return { updated: true, served, switched, error: null, attemptErrors };
 }
 
+/**
+ * Identifica pela IA (por TEXTO, mesmo prompt/modelo de `reidentifyCollectionItem`) um disco
+ * que AINDA NÃO existe na coleção — usado pelo diálogo "Enviar para a coleção" em `/compras`
+ * para pré-preencher artista/álbum/ano/descritivo/tags a partir só do título da compra, antes
+ * de o usuário confirmar o envio. Não persiste nada (o chamador decide o que gravar).
+ */
+export async function identifyDraftFromTitle(
+  input: { title: string; artist?: string; album?: string; year?: number | null },
+  provider: AiProvider,
+): Promise<{
+  artist: string;
+  album: string;
+  year: number | null;
+  description: string;
+  tags: string[];
+  served: AiProvider | null;
+  switched: boolean;
+  error: string | null;
+  attemptErrors: Partial<Record<AiProvider, string>>;
+}> {
+  const { aiConfigured, identCollectionSync } = await import("./ai-eval.server");
+  if (!aiConfigured()) {
+    throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
+  }
+  const title = input.title.trim();
+  const {
+    rows: [r],
+    served,
+    switched,
+    error,
+    attemptErrors,
+  } = await identCollectionSync(
+    [
+      {
+        id: "draft",
+        title: title || [input.artist, input.album].filter(Boolean).join(" - "),
+        artist: input.artist,
+        album: input.album,
+        year: input.year ?? null,
+      },
+    ],
+    provider,
+  );
+  const parsed = r ? parseAiAlbum(r.album) : { artist: "", album: null, year: null };
+  const artist = canonicalArtist(
+    parsed.artist ? titleCase(parsed.artist) : (input.artist ?? ""),
+    title,
+  );
+  return {
+    artist,
+    album: parsed.album ?? input.album ?? "",
+    year: r?.year ?? input.year ?? null,
+    description: r?.description ?? "",
+    tags: r?.tags ?? [],
+    served,
+    switched,
+    error,
+    attemptErrors,
+  };
+}
+
 /** Campos editáveis de um disco (usado por add e update). */
 export type CollectionInput = {
   artist?: string;
