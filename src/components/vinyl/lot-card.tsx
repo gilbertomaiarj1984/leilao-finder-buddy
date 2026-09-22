@@ -45,6 +45,7 @@ export function LotCard({
   onEditTags,
   possibleTrash,
   onExclude,
+  onDismissTrash,
 }: {
   lot: CardLot;
   busy: boolean;
@@ -78,6 +79,9 @@ export function LotCard({
   // Presente só nas listagens onde faz sentido excluir (ver index.tsx) — botão de exclusão
   // definitiva não aparece quando ausente.
   onExclude?: () => void;
+  // Clicar no badge "possível lixo" → "isto NÃO é lixo": nega os termos que causaram o
+  // casamento (aprendizado global, ver dismissPossibleTrash). Sem isso o badge é só leitura.
+  onDismissTrash?: () => void;
 }) {
   // Imagens hotlinkadas das casas às vezes falham (403/404/expirada) — troca para o mesmo
   // placeholder "sem imagem". (O transbordo do texto do `alt` por cima do card é evitado de
@@ -274,14 +278,30 @@ export function LotCard({
             </span>
           ) : null}
           {/* "Possível lixo": parecido (por palavras-chave do título) com um lote já excluído.
-              Nunca esconde nada sozinho — só avisa; o usuário decide se exclui também. */}
+              Nunca esconde nada sozinho — só avisa; o usuário decide se exclui também. Clicável
+              quando `onDismissTrash` existe: "isto não é lixo" nega os termos que causaram o
+              casamento, some o badge NA HORA (aqui) e ensina o modelo pra qualquer lote futuro. */}
           {possibleTrash ? (
-            <span
-              className="rounded bg-orange-500/15 px-1.5 py-0.5 font-medium text-orange-600 dark:text-orange-400"
-              title={`Parecido com um lote excluído: "${possibleTrash.excludedTitle}" (termos: ${possibleTrash.matchedTerms.join(", ")})`}
-            >
-              ⚠ possível lixo
-            </span>
+            onDismissTrash ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDismissTrash();
+                }}
+                className="rounded bg-orange-500/15 px-1.5 py-0.5 font-medium text-orange-600 hover:bg-orange-500/25 dark:text-orange-400"
+                title={`Parecido com um lote excluído: "${possibleTrash.excludedTitle}" (termos: ${possibleTrash.matchedTerms.join(", ")}) — clique se isto NÃO for lixo`}
+              >
+                ⚠ possível lixo ✕
+              </button>
+            ) : (
+              <span
+                className="rounded bg-orange-500/15 px-1.5 py-0.5 font-medium text-orange-600 dark:text-orange-400"
+                title={`Parecido com um lote excluído: "${possibleTrash.excludedTitle}" (termos: ${possibleTrash.matchedTerms.join(", ")})`}
+              >
+                ⚠ possível lixo
+              </span>
+            )
           ) : null}
           {showDate && lot.dayKey ? <span>{lot.dayKey}</span> : null}
           {lot.time ? <span>{lot.time}</span> : null}

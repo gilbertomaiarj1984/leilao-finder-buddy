@@ -26,6 +26,7 @@ const ANALYTICS_ALBUM_ALIASES_KEY = "analytics_album_aliases";
 const ANALYTICS_SALE_OVERRIDES_KEY = "analytics_sale_overrides";
 const ANALYTICS_EXCLUDED_SALES_KEY = "analytics_excluded_sales";
 const ANALYTICS_EXCLUDED_ARTISTS_KEY = "analytics_excluded_artists";
+const TRASH_KEYWORD_DENYLIST_KEY = "trash_keyword_denylist";
 
 /**
  * Casas de leilão marcadas como "verificadas" (chaves `${dia}|${casa}`). Global, um
@@ -63,6 +64,57 @@ export async function setVerifiedHouses(keys: string[]): Promise<{ savedAt: stri
   if (error) {
     console.error("[app-state] não foi possível gravar as casas verificadas", error);
     throw new Error(`Não foi possível gravar as casas verificadas: ${error.message}`);
+  }
+  return { savedAt };
+}
+
+/**
+ * Termos que o usuário já confirmou NÃO indicarem "possível lixo" (clicou no badge do
+ * `LotCard` para dizer "isto não é lixo") — ver `src/lib/lot-exclusion.ts`. Filtrados de
+ * AMBOS os lados da comparação por palavras-chave (o lote novo e os já excluídos), então o
+ * aprendizado vale pra qualquer lote futuro, não só o que foi clicado. Só cresce (nunca
+ * esquece um termo já negado) — mesmo padrão array simples de `verified_houses`.
+ */
+export async function getTrashKeywordDenylist(): Promise<string[]> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("app_state")
+      .select("value")
+      .eq("key", TRASH_KEYWORD_DENYLIST_KEY)
+      .maybeSingle();
+    if (error) throw error;
+    const value = data?.value;
+    return Array.isArray(value)
+      ? (value as unknown[]).filter((v): v is string => typeof v === "string")
+      : [];
+  } catch (error) {
+    console.error(
+      "[app-state] não foi possível ler os termos negados de 'possível lixo' (usando vazio)",
+      error,
+    );
+    return [];
+  }
+}
+
+/** Acrescenta termos à negação (read-modify-write, union — nunca remove). */
+export async function addTrashKeywordDenylist(terms: string[]): Promise<{ savedAt: string }> {
+  const clean = terms.filter((t): t is string => typeof t === "string" && t.length > 0);
+  if (!clean.length) return { savedAt: new Date().toISOString() };
+  const current = await getTrashKeywordDenylist();
+  const unique = [...new Set([...current, ...clean])];
+  const savedAt = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from("app_state")
+    .upsert(
+      { key: TRASH_KEYWORD_DENYLIST_KEY, value: unique, updated_at: savedAt },
+      { onConflict: "key" },
+    );
+  if (error) {
+    console.error(
+      "[app-state] não foi possível gravar os termos negados de 'possível lixo'",
+      error,
+    );
+    throw new Error(`Não foi possível gravar: ${error.message}`);
   }
   return { savedAt };
 }

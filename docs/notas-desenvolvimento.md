@@ -1165,6 +1165,22 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   `service_role` logo no topo de `setup.sql` (só pra RLS não falhar — a conexão real do app
   ignora RLS por ser dona das tabelas) + removida a linha morta do Storage bucket (fotos da
   Coleção são arquivo em disco desde a Fase 5).
+- **Badge "possível lixo" clicável → aprendizado por negação (v0.73.0):** clicar no badge diz
+  "isto NÃO é lixo" — não precisa excluir nada nem existe mais um lote pra apontar (o casamento
+  é por palavras-chave, não por id). O clique nega os TERMOS que causaram aquele casamento
+  específico (`ExclusionSignal.matchedTerms`), não só aquele lote: `app_state` ganha a chave
+  `trash_keyword_denylist` (array simples, mesmo padrão de `verified_houses`, só cresce — nunca
+  esquece um termo já negado), via `getTrashKeywordDenylist`/`addTrashKeywordDenylist`
+  (`app-state.server.ts`) e as server functions `getTrashKeywordDenylist`/`dismissPossibleTrash`
+  (`lot-exclusion.functions.ts`). `matchPossibleTrash` (`lot-exclusion.ts`) ganhou um 3º
+  parâmetro opcional `denylist: ReadonlySet<string>`, filtrado de AMBOS os lados (keywords do
+  lote novo E do lote excluído) antes de contar o overlap — assim o termo negado deixa de gerar
+  falso positivo em QUALQUER lote futuro, não só no que foi clicado (é isso que "melhora o
+  modelo": a heurística fica mais precisa a cada correção, sem precisar reexcluir nada). UI:
+  o badge vira `<button>` com "✕" quando `onDismissTrash` está presente (`LotCard`); clique
+  chama `dismissTrashMutation` (`index.tsx`) com atualização OTIMISTA de
+  `["trash-keyword-denylist"]` — o badge some da tela na hora, antes mesmo da resposta do
+  servidor, e reverte com toast de erro se a gravação falhar.
 
 ## Páginas / UI
 
@@ -1562,6 +1578,8 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.72.0      | Pedido do usuário: excluir um lote manualmente (nunca mais volta, mesmo em varreduras futuras) e o sistema aprender com a exclusão para sinalizar "possível lixo" em lotes parecidos (sem esconder sozinho). Nova tabela `excluded_lots` (DELETE físico em `lots`, cascade limpa `lot_ai`/`lot_ident`/`lot_market`/`lot_condition`); heurística por palavras-chave do título sem IA (`lot-exclusion.ts`); filtro em `persistLots` bloqueia reinserção pelo cron; badge "possível lixo" calculado no cliente, não persistido. Botão de excluir só nas listagens de descoberta (busca e "por casa → artista"), não em Vigiados/Lances. Corrigida de passagem a convenção desatualizada de aplicar `setup.sql` ("SQL Editor", resquício do Supabase hospedado) — `deploy.yml` agora reaplica o schema sozinho a cada deploy. Ver seção "Exclusão de lotes" |
 | v0.72.1      | Fix P0: o v0.72.0 fez `deploy.yml` reaplicar `setup.sql` contra o Postgres já rodando em produção, e isso quebrou o deploy — `service_role` (papel do Postgres do Supabase, nunca existiu de verdade neste Postgres self-hosted) travava o script inteiro no meio (`ON_ERROR_STOP=1`), ANTES de chegar em `excluded_lots`, então a tabela nunca foi criada e a exclusão de lote falhava em produção ("relation \"excluded_lots\" does not exist"). `setup.sql` ganha um bloco `CREATE ROLE IF NOT EXISTS` (idempotente) para `anon`/`authenticated`/`service_role` antes do primeiro uso; a conexão real do app ignora RLS por ser dona das tabelas, então isso só existe para as linhas de RLS não falharem. De quebra, removida a linha morta `INSERT INTO storage.buckets` (Storage do Supabase não existe mais — fotos da Coleção são arquivo em disco desde a Fase 5, ver "Fotos da Coleção") — que ia quebrar a mesma execução um pouco mais adiante. Validado rodando `setup.sql` 3x seguidas contra um Postgres 17 local (fresh + 2 reruns), todas saída 0 |
 | v0.72.2      | Fix: busca por relevância (`searchRelevance`, `vinyl-parse.ts`) casava substring SOLTA dentro de outra palavra — usuário achou (buscando "rita") lotes sem nenhuma relação, ex. um LP do Airton Lima Barbosa cuja descrição só cita "dedicatória **manus­crita**" (contém "rita" grudado). Confirmado por eliminação: sem IA associada ao lote (sem `aiLabel` no card) e usuário confirmou ter vindo da caixa de busca, não do filtro por artista — descartando erro de identificação da IA. Todos os `hay.includes(needle)` (identidade e campos fracos, camadas 2–4) e o `startsWith` (camada 5) passaram a exigir borda de PALAVRA INTEIRA (haystack e agulha com espaço nas pontas) — "manuscrita"/"margarita"/"sanscrita" não batem mais em "rita", mas frases/termos legítimos continuam batendo igual |
+| v0.73.0      | Pedido do usuário: clicar no badge "possível lixo" remove o aviso e ENSINA o modelo que aqueles termos não indicam lixo ("adaptando e melhorando o modelo"). Nova chave `app_state.trash_keyword_denylist` (array simples, só cresce); `matchPossibleTrash` (`lot-exclusion.ts`) ganha parâmetro `denylist` filtrado dos dois lados do casamento — o termo negado deixa de gerar falso positivo em QUALQUER lote futuro, não só no clicado. Badge vira botão clicável ("✕") com atualização otimista via `dismissTrashMutation`. Ver seção "Exclusão de lotes" |
+| v0.73.1      | Merge de v0.72.2 (fix de busca por palavra inteira) sobre a base já em v0.73.0 (badge "possível lixo" clicável) — sem conflito de lógica, só de versão/changelog |
 
 ## Pendências
 
