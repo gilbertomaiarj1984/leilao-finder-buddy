@@ -1361,7 +1361,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   arquivos `.ts`/`.tsx` separados por causa do react-refresh (o especificador resolve `.ts`
   antes de `.tsx` — nomes não podem colidir).
 
-## Lote em pregão ao lado de "Ao vivo agora" (v0.75.0–1)
+## Lote em pregão ao lado de "Ao vivo agora" (v0.75.0–v0.76.0)
 
 Selo `LiveLotNow` (`src/components/vinyl/live-lot-now.tsx`): "🔨 Lote 457" + mini barra
 "135/322 · 41%" logo após a tag "Ao vivo agora" — na lista principal (dentro de
@@ -1387,6 +1387,14 @@ Selo `LiveLotNow` (`src/components/vinyl/live-lot-now.tsx`): "🔨 Lote 457" + m
   compartilhada entre lista e `/ao-vivo`. Dado até ~1 min defasado — tooltip mostra "há X min".
 - Formato descoberto pelo usuário no console do navegador (2026-09-22, Traditio, leilão 63534);
   a rede deste ambiente não alcança as casas nem o CDN.
+- **v0.76.0**: mesmo selo (lote + barra) também na seção "Acontecendo agora" (`LiveAuctions`,
+  `src/components/vinyl/live-auctions.tsx`) — leilões que já começaram e somem da listagem
+  pública. Card compacto de 2 linhas (nome da casa + 1 linha de info): a linha "Início hh:mm ·
+  UF · N lote(s)" (`HouseInfoLine`, local ao arquivo) é TROCADA pelo lote em pregão agora assim
+  que a consulta carrega, em vez de virar uma 3ª linha — mantém o tamanho do card igual, com ou
+  sem dado. Mesma `queryKey ["presencial-now", url]` do `LiveLotNow`, então a consulta é
+  deduplicada com a lista principal/`/ao-vivo` quando a mesma casa aparece nos dois — nenhuma
+  requisição extra.
 
 ## Ferramenta separada: `tools/missleiloes-sniper.user.js`
 
@@ -1671,7 +1679,8 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.75.0      | Lote em pregão agora ("Lote 457" + barra "135/322 · 41%") ao lado de "Ao vivo agora" na lista principal e no `/ao-vivo`, via endpoint de polling do presencial (`le_registro_pregao_cfbr_v1.asp`), atualizado a cada 5 min só com a aba visível |
 | v0.75.1      | Selo do lote em pregão atualiza a cada 1 min (era 5 min); cache do servidor 60 s → 30 s para não virar o piso |
 | v0.75.2      | Pedido do usuário: remove a barra de chips das casas do header (introduzida em v0.74.0, com botão pra ocultar) pra liberar espaço — clicar na casa direto na grade principal continua abrindo/fechando a seção (`openHouses`/`toggleHouse`, inalterados) |
-| v0.75.3      | Pedido do usuário: botão "Incluir/Ocultar finalizados" move da barra de controles do dia pro final da faixa de dias (depois de "Lances") — novo alvo de portal `finishedToggleHost` em `_authenticated/index.tsx`, populado dentro do loop de dias (mesma lógica de `finishedCount`/`showFinished`/`toggleShowFinished` de antes, só muda o destino do portal) |
+| v0.76.0      | Selo do lote em pregão (nº + barra) também em "Acontecendo agora", trocando a linha "Início hh:mm" — card mantém o mesmo tamanho |
+| v0.76.1      | Pedido do usuário: botão "Incluir/Ocultar finalizados" move da barra de controles do dia pro final da faixa de dias (depois de "Lances") — novo alvo de portal `finishedToggleHost` em `_authenticated/index.tsx`, populado dentro do loop de dias (mesma lógica de `finishedCount`/`showFinished`/`toggleShowFinished` de antes, só muda o destino do portal) |
 
 ## Pendências
 
