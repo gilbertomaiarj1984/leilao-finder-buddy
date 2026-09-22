@@ -1,13 +1,38 @@
 -- =====================================================================
 -- Setup consolidado do schema (estado final das migrations existentes).
--- Rode isto UMA vez no projeto Supabase novo (SQL Editor) para recriar
--- toda a estrutura. Depois importe os DADOS do export do Lovable.
+-- Não é mais Supabase hospedado — Postgres próprio em VPS (Docker Compose),
+-- reaplicado automaticamente pelo `deploy.yml` a cada deploy (idempotente,
+-- tudo `IF NOT EXISTS`; ver docs/notas-desenvolvimento.md, "Restrições do
+-- ambiente"). `anon`/`authenticated`/`service_role` abaixo são papéis do
+-- Postgres do Supabase (não existem por padrão aqui) — recriados como
+-- NOLOGIN logo abaixo só para preservar as políticas de RLS herdadas da
+-- migração; a conexão real do app (`DATABASE_URL`) usa o dono das tabelas
+-- (`POSTGRES_USER`), que ignora RLS por padrão (dono da tabela sempre
+-- ignora RLS, a menos que a tabela tenha FORCE ROW LEVEL SECURITY).
 --
 -- Estado de segurança: RLS habilitado em todas as tabelas e acesso
--- concedido apenas a service_role. O app lê/escreve pelo servidor com a
--- SUPABASE_SERVICE_ROLE_KEY; o login do Google apenas controla o acesso
--- ao app (não dá acesso direto às tabelas).
+-- concedido apenas a service_role.
 -- =====================================================================
+
+-- Papéis herdados do Supabase (não existem por padrão no Postgres puro) —
+-- recriados aqui, idempotente, só para as linhas de RLS abaixo não falharem
+-- num Postgres novo/self-hosted (achado v0.72.1: o deploy.yml passou a
+-- reaplicar este arquivo contra o Postgres já rodando e a GRANT em
+-- `service_role` — que nunca existiu como papel real neste Postgres,
+-- só era decorativo — travava o script inteiro no meio, antes de chegar
+-- nas tabelas mais recentes como `excluded_lots`).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    CREATE ROLE anon NOLOGIN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    CREATE ROLE authenticated NOLOGIN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    CREATE ROLE service_role NOLOGIN BYPASSRLS;
+  END IF;
+END $$;
 
 -- Função utilitária de updated_at (usada pelos triggers abaixo)
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
@@ -298,13 +323,6 @@ CREATE TABLE IF NOT EXISTS public.collection_items (
 CREATE INDEX IF NOT EXISTS collection_items_artist_idx ON public.collection_items (artist);
 -- Coluna adicionada depois (bancos já criados): descritivo do disco buscado pela IA.
 ALTER TABLE public.collection_items ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT '';
-
--- Bucket de Storage para fotos da coleção (upload manual pela edição/inserção). Público
--- (leitura pela URL, usada direto no <img>); os uploads passam pelo servidor com
--- service_role, então não precisa de policy de escrita para anon/authenticated.
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('collection', 'collection', true)
-ON CONFLICT (id) DO UPDATE SET public = true;
 
 DROP TRIGGER IF EXISTS update_collection_items_updated_at ON public.collection_items;
 CREATE TRIGGER update_collection_items_updated_at BEFORE UPDATE ON public.collection_items
