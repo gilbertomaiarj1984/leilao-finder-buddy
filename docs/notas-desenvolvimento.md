@@ -628,21 +628,28 @@ Curadoria de **exclusão** (ocultar, NÃO deletar do banco) — reversível, apl
 Três valores de **fontes diferentes** — não confundir:
 
 - **Valor atual** = `price` (`.venda-price` na listagem; `<b class="pb-1">` nas páginas de conta).
+  **Defasa** (a varredura geral roda só 3×/dia via cron) e **some de vez** quando o leilão entra
+  ao vivo (o lote sai da listagem pública) — por isso, para vigiados + lances, é sobrescrito pelo
+  valor AO VIVO abaixo quando disponível.
 - **Meu lance** = `myBid` (só na página "Meus lances", `l=4`).
-- **Próximo lance** = **NÃO** existe na listagem nem nas páginas de conta. Só no **detalhe do
-  lote** (`peca.asp`, JSON `loadData`): **`data[0].NOVO_VALOR`** (já calculado pelo site). **Só
-  o lote ABERTO traz `NOVO_VALOR`** → **1 requisição por lote** → buscado só para
-  **vigiados + lances** (conjunto pequeno), nunca a listagem inteira. Implementação:
-  `leiloesbr-lot-details.server.ts` (`fetchNextBids`, concorrência 8, teto 100, regex
-  `"NOVO_VALOR":"(\d+)"`) → `getNextBids` → query `["next-bids"]` (`staleTime` 3min). Não
-  persiste (busca ao vivo, cache curto).
+- **Próximo lance e valor atual AO VIVO** = **NÃO** existem na listagem nem nas páginas de conta
+  (o "atual" da conta é o mesmo `price` defasado acima). Só no **detalhe do lote** (`peca.asp`,
+  JSON `loadData`): **`data[0].VALOR_VALUE`** (atual) e **`data[0].NOVO_VALOR`** (próximo, já
+  calculado pelo site). **Só o lote ABERTO traz esses campos** → **1 requisição por lote** →
+  buscado só para **vigiados + lances** (conjunto pequeno), nunca a listagem inteira.
+  Implementação: `leiloesbr-lot-details.server.ts` (`fetchLotDetails`, concorrência 8, teto 100,
+  regex `"VALOR_VALUE":"(\d+)"` / `"NOVO_VALOR":"(\d+)"`) → `getLotDetails` → query
+  `["lot-details", ...]` (`staleTime` 3min, `refetchOnMount: "always"`). Não persiste (busca ao
+  vivo, cache curto).
 - **NÃO inferir o incremento** — o `NOVO_VALOR` real diverge dos "termos" da casa; ele é
   autoritativo. **`base`** (do `data-watch`) NÃO é o incremento (é a base/plataforma).
 - **Regra de UI (card):** sempre "Atual"; "Próximo" quando há `nextBid`; "Meu lance" quando há
   `myBid` (linha abaixo). **Correção do "Atual" quando VENCENDO:** a listagem pública traz
   valor defasado → o `LotCard` usa `myBid` como "Atual" quando `bidIsWinning(status)`; por isso
   `myBid` é passado a **todos** os cards (`myBidById`). "Meus lances" (`l=4`) não traz o atual →
-  casar por `id` com a varredura geral (`priceById`).
+  casar por `id` com a varredura geral (`priceById`), sobrescrito pelo valor AO VIVO
+  (`currentValueById`/`effectivePriceById`, em `index.tsx`) quando o `peca.asp` traz
+  `VALOR_VALUE` — cobre tanto o caso "defasado" quanto o caso "sumiu da listagem geral".
 
 ### Referência: JSON `loadData` do `peca.asp`
 
@@ -1580,6 +1587,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.72.2      | Fix: busca por relevância (`searchRelevance`, `vinyl-parse.ts`) casava substring SOLTA dentro de outra palavra — usuário achou (buscando "rita") lotes sem nenhuma relação, ex. um LP do Airton Lima Barbosa cuja descrição só cita "dedicatória **manus­crita**" (contém "rita" grudado). Confirmado por eliminação: sem IA associada ao lote (sem `aiLabel` no card) e usuário confirmou ter vindo da caixa de busca, não do filtro por artista — descartando erro de identificação da IA. Todos os `hay.includes(needle)` (identidade e campos fracos, camadas 2–4) e o `startsWith` (camada 5) passaram a exigir borda de PALAVRA INTEIRA (haystack e agulha com espaço nas pontas) — "manuscrita"/"margarita"/"sanscrita" não batem mais em "rita", mas frases/termos legítimos continuam batendo igual |
 | v0.73.0      | Pedido do usuário: clicar no badge "possível lixo" remove o aviso e ENSINA o modelo que aqueles termos não indicam lixo ("adaptando e melhorando o modelo"). Nova chave `app_state.trash_keyword_denylist` (array simples, só cresce); `matchPossibleTrash` (`lot-exclusion.ts`) ganha parâmetro `denylist` filtrado dos dois lados do casamento — o termo negado deixa de gerar falso positivo em QUALQUER lote futuro, não só no clicado. Badge vira botão clicável ("✕") com atualização otimista via `dismissTrashMutation`. Ver seção "Exclusão de lotes" |
 | v0.73.1      | Merge de v0.72.2 (fix de busca por palavra inteira) sobre a base já em v0.73.0 (badge "possível lixo" clicável) — sem conflito de lógica, só de versão/changelog |
+| v0.73.2      | Fix: "Atual"/"Próximo" desatualizados ou ausentes nos cards de vigiados/lances — `leiloesbr-lot-details.server.ts` passa a ler também `VALOR_VALUE` (valor atual AO VIVO) do `peca.asp`, não só `NOVO_VALOR`; `index.tsx` sobrescreve `price`/`priceById` com esse valor quando disponível (`currentValueById`/`effectivePriceById`) e corrige a aba "Vigiados", que não passava `nextBid` ao `LotCard` |
 
 ## Pendências
 
