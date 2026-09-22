@@ -1161,6 +1161,22 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   `service_role` logo no topo de `setup.sql` (só pra RLS não falhar — a conexão real do app
   ignora RLS por ser dona das tabelas) + removida a linha morta do Storage bucket (fotos da
   Coleção são arquivo em disco desde a Fase 5).
+- **Badge "possível lixo" clicável → aprendizado por negação (v0.73.0):** clicar no badge diz
+  "isto NÃO é lixo" — não precisa excluir nada nem existe mais um lote pra apontar (o casamento
+  é por palavras-chave, não por id). O clique nega os TERMOS que causaram aquele casamento
+  específico (`ExclusionSignal.matchedTerms`), não só aquele lote: `app_state` ganha a chave
+  `trash_keyword_denylist` (array simples, mesmo padrão de `verified_houses`, só cresce — nunca
+  esquece um termo já negado), via `getTrashKeywordDenylist`/`addTrashKeywordDenylist`
+  (`app-state.server.ts`) e as server functions `getTrashKeywordDenylist`/`dismissPossibleTrash`
+  (`lot-exclusion.functions.ts`). `matchPossibleTrash` (`lot-exclusion.ts`) ganhou um 3º
+  parâmetro opcional `denylist: ReadonlySet<string>`, filtrado de AMBOS os lados (keywords do
+  lote novo E do lote excluído) antes de contar o overlap — assim o termo negado deixa de gerar
+  falso positivo em QUALQUER lote futuro, não só no que foi clicado (é isso que "melhora o
+  modelo": a heurística fica mais precisa a cada correção, sem precisar reexcluir nada). UI:
+  o badge vira `<button>` com "✕" quando `onDismissTrash` está presente (`LotCard`); clique
+  chama `dismissTrashMutation` (`index.tsx`) com atualização OTIMISTA de
+  `["trash-keyword-denylist"]` — o badge some da tela na hora, antes mesmo da resposta do
+  servidor, e reverte com toast de erro se a gravação falhar.
 
 ## Páginas / UI
 
@@ -1557,6 +1573,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.71.3      | Mais uma rodada do mesmo padrão (v0.69.42–v0.71.1): usuário mostrou 6 lotes de documentos/livros históricos ("Brochura autografada", "OPÚSCULO / Monumento...", "Prova de Fogo", "Cap Recona"...) e apontou que vários não têm NENHUM termo bloqueável no título (sem "livro"/"joia"/etc., só o texto da capa/folheto). `NON_MEDIA_COLLECTIBLE_RE` (`vinyl-parse.ts`) ganha termos de documentos/impressos históricos: rascunho, bilhete, manuscrito, carta, brochura, página, escrita, opúsculo, folheto, panfleto (lista dada pelo usuário). Título como "INTEGRALISMO Antônio Pompeo com dedicatória" continua passando — não tem termo seguro pra bloquear ("dedicatória" sozinha é arriscada: aparece também em LP autografado genuíno) — reforça a nota já registrada em Pendências: lista de termos está batendo o teto de escala pra essa casa, próximo passo é exclusão por casa, não por termo |
 | v0.72.0      | Pedido do usuário: excluir um lote manualmente (nunca mais volta, mesmo em varreduras futuras) e o sistema aprender com a exclusão para sinalizar "possível lixo" em lotes parecidos (sem esconder sozinho). Nova tabela `excluded_lots` (DELETE físico em `lots`, cascade limpa `lot_ai`/`lot_ident`/`lot_market`/`lot_condition`); heurística por palavras-chave do título sem IA (`lot-exclusion.ts`); filtro em `persistLots` bloqueia reinserção pelo cron; badge "possível lixo" calculado no cliente, não persistido. Botão de excluir só nas listagens de descoberta (busca e "por casa → artista"), não em Vigiados/Lances. Corrigida de passagem a convenção desatualizada de aplicar `setup.sql` ("SQL Editor", resquício do Supabase hospedado) — `deploy.yml` agora reaplica o schema sozinho a cada deploy. Ver seção "Exclusão de lotes" |
 | v0.72.1      | Fix P0: o v0.72.0 fez `deploy.yml` reaplicar `setup.sql` contra o Postgres já rodando em produção, e isso quebrou o deploy — `service_role` (papel do Postgres do Supabase, nunca existiu de verdade neste Postgres self-hosted) travava o script inteiro no meio (`ON_ERROR_STOP=1`), ANTES de chegar em `excluded_lots`, então a tabela nunca foi criada e a exclusão de lote falhava em produção ("relation \"excluded_lots\" does not exist"). `setup.sql` ganha um bloco `CREATE ROLE IF NOT EXISTS` (idempotente) para `anon`/`authenticated`/`service_role` antes do primeiro uso; a conexão real do app ignora RLS por ser dona das tabelas, então isso só existe para as linhas de RLS não falharem. De quebra, removida a linha morta `INSERT INTO storage.buckets` (Storage do Supabase não existe mais — fotos da Coleção são arquivo em disco desde a Fase 5, ver "Fotos da Coleção") — que ia quebrar a mesma execução um pouco mais adiante. Validado rodando `setup.sql` 3x seguidas contra um Postgres 17 local (fresh + 2 reruns), todas saída 0 |
+| v0.73.0      | Pedido do usuário: clicar no badge "possível lixo" remove o aviso e ENSINA o modelo que aqueles termos não indicam lixo ("adaptando e melhorando o modelo"). Nova chave `app_state.trash_keyword_denylist` (array simples, só cresce); `matchPossibleTrash` (`lot-exclusion.ts`) ganha parâmetro `denylist` filtrado dos dois lados do casamento — o termo negado deixa de gerar falso positivo em QUALQUER lote futuro, não só no clicado. Badge vira botão clicável ("✕") com atualização otimista via `dismissTrashMutation`. Ver seção "Exclusão de lotes" |
 
 ## Pendências
 

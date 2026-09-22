@@ -68,15 +68,23 @@ export type ExclusionSignal = { matchedTerms: string[]; excludedTitle: string };
  * Compara as keywords de um lote NOVO contra os lotes já excluídos e devolve o primeiro
  * casamento (ou null). Overlap por contagem, não percentual — mais previsível para títulos
  * curtos. Não esconde nada sozinho: só sinaliza (ver LotCard `possibleTrash`).
+ *
+ * `denylist` são termos que o usuário já confirmou NÃO indicarem lixo (clicou no badge —
+ * ver `addTrashKeywordDenylist` em `app-state.server.ts`): removidos de AMBOS os lados antes
+ * de contar o overlap, então o aprendizado vale pra qualquer lote futuro que só bateria por
+ * esses termos, não só o lote que foi clicado.
  */
 export function matchPossibleTrash(
   lotKeywords: string[],
   excluded: { title: string; keywords: string[] }[],
+  denylist?: ReadonlySet<string>,
 ): ExclusionSignal | null {
-  if (lotKeywords.length < MIN_OVERLAP) return null;
-  const lotSet = new Set(lotKeywords);
+  const lotFiltered = denylist ? lotKeywords.filter((k) => !denylist.has(k)) : lotKeywords;
+  if (lotFiltered.length < MIN_OVERLAP) return null;
+  const lotSet = new Set(lotFiltered);
   for (const ex of excluded) {
-    const hit = ex.keywords.filter((k) => lotSet.has(k));
+    const exFiltered = denylist ? ex.keywords.filter((k) => !denylist.has(k)) : ex.keywords;
+    const hit = exFiltered.filter((k) => lotSet.has(k));
     if (hit.length >= MIN_OVERLAP) return { matchedTerms: hit, excludedTitle: ex.title };
   }
   return null;
