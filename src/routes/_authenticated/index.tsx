@@ -266,6 +266,54 @@ function formatUpdatedAt(iso: string | null | undefined): string {
   return fmt.format(date).replace(", ", " às ");
 }
 
+// Caixa de busca isolada num componente próprio: o rascunho digitado (`draft`) fica em estado
+// local, então cada tecla só re-renderiza esta caixa — não a árvore inteira de `RouteComponent`
+// (que é pesada, com centenas de lotes) — evitando o travamento ao digitar. A busca de fato só
+// é aplicada (via `onSearch`) no Enter ou no clique do botão.
+function LotSearchBox({
+  committed,
+  onSearch,
+  onClear,
+}: {
+  committed: string;
+  onSearch: (value: string) => void;
+  onClear: () => void;
+}) {
+  const [draft, setDraft] = useState(committed);
+  return (
+    <div className="flex items-center gap-2">
+      <Input
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            onSearch(draft);
+          }
+        }}
+        placeholder="Buscar por título, artista, casa ou nº do lote… (Enter para pesquisar)"
+        className="h-8 w-[220px] text-xs sm:w-64"
+      />
+      <Button size="sm" onClick={() => onSearch(draft)}>
+        <SearchIcon className="mr-2 h-4 w-4" />
+        Pesquisar
+      </Button>
+      {committed || draft ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setDraft("");
+            onClear();
+          }}
+        >
+          Limpar busca
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 // Mede a altura de um elemento ao vivo via `ResizeObserver`, reanexando sozinho quando o nó
 // muda (cobre conteúdo condicional, ex.: só monta depois que `lots` carrega).
 function useMeasuredHeight() {
@@ -311,9 +359,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     setFooterExtraHost(document.getElementById("footer-extra"));
   }, []);
   const [artistFilter, setArtistFilter] = useState<string>("");
+  // A busca só roda ao confirmar (Enter/botão) — evita filtrar a lista a cada tecla. O rascunho
+  // digitado vive isolado em `LotSearchBox` para não re-renderizar esta árvore inteira a cada
+  // tecla (era isso que travava a digitação, mesmo já não filtrando em tempo real).
   const [search, setSearch] = useState<string>("");
-  // A busca só roda ao confirmar (Enter/botão) — evita filtrar a lista a cada tecla.
-  const [searchDraft, setSearchDraft] = useState<string>("");
   const [watchedViewDay, setWatchedViewDay] = useState<string | null>(null);
   const [bidsViewDay, setBidsViewDay] = useState<string | null>(null);
   // Estado de abertura dos grupos por dia nas abas gerais de Vigiados/Lances (chave =
@@ -1379,36 +1428,11 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                       Analytics
                     </Link>
                   </Button>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={searchDraft}
-                      onChange={(event) => setSearchDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          setSearch(searchDraft);
-                        }
-                      }}
-                      placeholder="Buscar por título, artista, casa ou nº do lote… (Enter para pesquisar)"
-                      className="h-8 w-[220px] text-xs sm:w-64"
-                    />
-                    <Button size="sm" onClick={() => setSearch(searchDraft)}>
-                      <SearchIcon className="mr-2 h-4 w-4" />
-                      Pesquisar
-                    </Button>
-                    {search || searchDraft ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setSearch("");
-                          setSearchDraft("");
-                        }}
-                      >
-                        Limpar busca
-                      </Button>
-                    ) : null}
-                  </div>
+                  <LotSearchBox
+                    committed={search}
+                    onSearch={setSearch}
+                    onClear={() => setSearch("")}
+                  />
                 </div>
               </div>
 
