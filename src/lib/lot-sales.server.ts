@@ -245,7 +245,7 @@ async function readSeenAuctions(): Promise<SeenAuctionRow[]> {
 }
 
 /** Identidade dos nossos lotes de VINIL (por id), para filtrar o catálogo e nomear a venda. */
-export type VinylInfo = { title: string; artist: string; image?: string | null };
+export type VinylInfo = { title: string; artist: string };
 
 // Sinal POSITIVO de vinil no texto do card (formato). NÃO usa "disco" solto (fraco: casa
 // "Catavento Discos", "disco voador"…). Grau de Disco/Capa também conta como vinil.
@@ -432,10 +432,6 @@ const AI_CONDITION_CAP = 25;
 // Teto por RODADA de vendas cujo ARTISTA é genérico/lixo e vão à IA de identificação
 // (extrai "Artista - Álbum" corretos do texto do catálogo; grava também em `lot_ident`).
 const AI_IDENT_CAP = 25;
-// Teto por RODADA de vendas que ganham thumbnail (baixa + comprime + sobe pro nosso storage) —
-// mais caro por item que a IA (download da imagem + `sharp`), mantém a rodada rápida. O resto
-// completa nas rodadas seguintes (`vinylById` só cobre a JANELA atual — ver `captureSaleThumbnail`).
-const THUMB_CAP = 20;
 
 /** Lado maior e qualidade do WEBP do thumbnail de venda — bem menor que as fotos da Coleção
  * (`COMPRESS_MAX_DIMENSION`/`COMPRESS_WEBP_QUALITY` em `collection.server.ts`), pois aqui é só
@@ -552,9 +548,9 @@ export async function backfillSaleThumbnails(max = 15): Promise<{
  * até `AI_CONDITION_CAP` por rodada (somado entre os leilões do batch) passam por
  * `conditionAiSync` (só quando algum provedor está configurado — best-effort).
  *
- * **Thumbnail**: até `THUMB_CAP` por rodada ganham um thumbnail (`captureSaleThumbnail`), a
- * partir da imagem que `vinylById` já tinha capturado enquanto o lote estava na listagem geral
- * — sempre best-effort, nunca bloqueia a captura da venda em si.
+ * **Thumbnail**: NÃO tentado aqui (o snapshot ao vivo que esta função usa nunca tem os lotes
+ * que ela captura — ver comentário no corpo). Fica para o `backfillSaleThumbnails`, que roda
+ * logo depois no cron e busca a imagem em `lots` (o banco), não no snapshot.
  */
 export async function captureFinishedSales(maxAuctions = 8): Promise<{
   sales: number;
@@ -563,7 +559,6 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   done: boolean;
   aiUsed?: number;
   identUsed?: number;
-  thumbsUsed?: number;
 }> {
   const { parseAuctionRef, fetchCatalogData } = await import("./leiloesbr-catalog.server");
   const { getSalesCaptured, markSalesCaptured } = await import("./app-state.server");
@@ -588,8 +583,7 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   for (const r of identRows) {
     if (r.album) vinylById.set(r.id, { title: r.album, artist: extractArtist(r.album) });
   }
-  for (const lot of snapshot.lots)
-    vinylById.set(lot.id, { title: lot.title, artist: lot.artist, image: lot.image });
+  for (const lot of snapshot.lots) vinylById.set(lot.id, { title: lot.title, artist: lot.artist });
 
   // Leilões terminados, com link de catálogo válido, ainda não capturados. Mais RECENTES
   // primeiro: o catálogo da casa só fica de pé por um tempo após o leilão (os antigos já
@@ -609,7 +603,6 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   let sales = 0;
   let aiUsed = 0;
   let identUsed = 0;
-  let thumbsUsed = 0;
   const doneIds: string[] = [];
   for (const { row, ref } of batch) {
     try {
@@ -701,25 +694,12 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
         }
       }
 
-      // Thumbnail: até esgotar o teto da RODADA, baixa+comprime+sobe a imagem que `vinylById`
-      // capturou enquanto o lote ainda estava na listagem geral. Best-effort — o resto (sem
-      // fonte nesta rodada, ou além do teto) fica `image: null` e é tentado de novo depois
-      // (fluxo contínuo) ou pelo backfill (`backfillSaleThumbnails`, quando `lots` ainda existir).
-      if (thumbsUsed < THUMB_CAP && rows.length) {
-        const budget = THUMB_CAP - thumbsUsed;
-        const candidates = rows
-          .map((r) => ({ row: r, src: vinylById.get(r.lot_id)?.image ?? null }))
-          .filter((c): c is { row: LotSaleRow; src: string } => Boolean(c.src))
-          .slice(0, budget);
-        for (const c of candidates) {
-          const url = await captureSaleThumbnail(c.row.lot_id, c.src);
-          if (url) {
-            c.row.image = url;
-            thumbsUsed += 1;
-          }
-        }
-      }
-
+      // Thumbnail: NÃO tentado aqui. `vinylById` vem da listagem geral AO VIVO
+      // (`scrapeVinylLots`), que já não traz mais o lote assim que o leilão fica "ao vivo" —
+      // exatamente os lotes que esta função captura (JÁ TERMINADOS) nunca estão nela. Fica
+      // `image: null` e é resolvido pelo `backfillSaleThumbnails` (busca a imagem em `lots`, o
+      // banco — não o snapshot ao vivo), que roda logo em seguida no mesmo cron e prioriza as
+      // vendas mais recentes (`ORDER BY captured_at DESC`) — pega estas assim que capturadas.
       if (rows.length) sales += await upsertLotSales(rows);
       // Catálogo lido com sucesso → leilão capturado (não revisita), mesmo com 0 vendas
       // reconhecidas (leilão terminado tem catálogo estável).
@@ -739,7 +719,6 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
     done: remaining === 0,
     aiUsed,
     identUsed,
-    thumbsUsed,
   };
 }
 
