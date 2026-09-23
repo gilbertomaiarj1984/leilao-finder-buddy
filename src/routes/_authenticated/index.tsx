@@ -70,11 +70,14 @@ import {
 import {
   analyzeOnDemand,
   applyCollectionDecision,
+  dismissCollectionMatchTerms,
   enrichLotes,
   getAccessStatus,
   getAiMode,
   getAiProvider,
+  getAnalyticsAliases,
   getCollectionFeedback,
+  getCollectionKeywordDenylist,
   getCollectionLinks,
   getGeminiModel,
   getLotAi,
@@ -135,9 +138,11 @@ import {
 } from "@/lib/vinyl-parse";
 import {
   lotIdentity,
+  matchedAlbumTerms,
   ownedCandidate,
   ownedMatchForLot,
   ownedSignatureFromLot,
+  resolveArtistAlias,
   resolveOwned,
   type CollectionLinks,
   type LotIdentity,
@@ -456,6 +461,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const fetchCollectionLinks = useServerFn(getCollectionLinks);
   const fetchCollectionFeedback = useServerFn(getCollectionFeedback);
   const runApplyDecision = useServerFn(applyCollectionDecision);
+  const fetchCollectionKeywordDenylist = useServerFn(getCollectionKeywordDenylist);
+  const runDismissCollectionMatch = useServerFn(dismissCollectionMatchTerms);
+  const fetchAnalyticsAliases = useServerFn(getAnalyticsAliases);
   const runExcludeLot = useServerFn(excludeLot);
   const fetchExcludedLots = useServerFn(getExcludedLotsForMatching);
   const fetchTrashDenylist = useServerFn(getTrashKeywordDenylist);
@@ -833,6 +841,40 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     refetchOnWindowFocus: false,
     retry: false,
   });
+  // Termos negados como genéricos demais para casar a Coleção (clique no painel de relação
+  // quando o casamento foi falso positivo por causa de uma palavra específica — ver
+  // `matchedAlbumTerms`/`ownedScore` em `wantlist-match.ts`). Mesmo padrão do
+  // "possível lixo": filtrado dos dois lados, só cresce, vale globalmente.
+  const collectionKeywordDenylistQuery = useQuery<string[]>({
+    queryKey: ["collection-keyword-denylist"] as const,
+    queryFn: async () => {
+      try {
+        return ((await fetchCollectionKeywordDenylist()) as string[]) ?? [];
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+  const collectionKeywordDenylist = useMemo(
+    () => new Set(collectionKeywordDenylistQuery.data ?? []),
+    [collectionKeywordDenylistQuery.data],
+  );
+  // Apelidos de artista curados no Analytics (fusão manual de grafias) — mesma chave/cache da
+  // tela de Analytics (`["analytics-aliases"]`). Reusados aqui pra uma correção de grafia feita
+  // lá também valer no casamento da Coleção, sem precisar corrigir duas vezes.
+  const analyticsAliasesQuery = useQuery({
+    queryKey: ["analytics-aliases"] as const,
+    queryFn: () => fetchAnalyticsAliases(),
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const artistAliases = useMemo(
+    () => analyticsAliasesQuery.data?.artists ?? {},
+    [analyticsAliasesQuery.data],
+  );
   const collById = useMemo(() => {
     const map = new Map<string, CollectionItem>();
     for (const it of collectionQuery.data ?? []) map.set(it.id, it);
@@ -856,9 +898,14 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             it.artist !== UNCLASSIFIED_LABEL,
         )
         .map((it) =>
-          ownedCandidate({ id: it.id, artist: it.artist, album: it.album, year: it.year }),
+          ownedCandidate({
+            id: it.id,
+            artist: resolveArtistAlias(it.artist, artistAliases),
+            album: it.album,
+            year: it.year,
+          }),
         ),
-    [collectionQuery.data],
+    [collectionQuery.data, artistAliases],
   );
   // `lot_id` das peças EXATAS já arrematadas → id do item da coleção (casamento 100% preciso).
   const ownedByLotId = useMemo(() => {
@@ -884,7 +931,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           lot.id,
           lotIdentity({
             title: lot.title,
-            artist,
+            artist: resolveArtistAlias(artist, artistAliases),
             album: albumById.get(lot.id) ?? null,
             marketTitle: market?.releaseTitle ?? null,
             marketYear: market?.year ?? null,
@@ -895,7 +942,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       }
     }
     return map;
-  }, [lots.data, albumById, marketById]);
+  }, [lots.data, albumById, marketById, artistAliases]);
   // Casamento AUTOMÁTICO cru (antes de override/aprendizado): peça exata (score 1) ou ≥50%.
   const ownedAutoById = useMemo(() => {
     const map = new Map<string, OwnedHit>();
@@ -909,7 +956,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         if (!ownedCands.length) continue;
         const identity = identityById.get(lot.id);
         if (!identity) continue;
-        const best = ownedMatchForLot(ownedCands, identity);
+        const best = ownedMatchForLot(ownedCands, identity, collectionKeywordDenylist);
         if (best) map.set(lot.id, best);
       } catch {
         /* idem: falha de casamento de um lote é ignorada */
@@ -918,7 +965,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     return map;
     // collLabel depende de collById (memo estável); ownedByLotId/identityById cobrem os dados.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ownedCands, ownedByLotId, identityById, collById]);
+  }, [ownedCands, ownedByLotId, identityById, collById, collectionKeywordDenylist]);
 
   const EMPTY_IDENTITY: LotIdentity = useMemo(
     () => ({ text: "", tokens: new Set<string>(), years: new Set<number>() }),
@@ -1007,6 +1054,22 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         void queryClient.invalidateQueries({ queryKey: ["collection-feedback"] });
       });
   };
+
+  // "Este termo não deveria contar" (painel de relação, casamento com falso positivo) — mesmo
+  // padrão otimista do `dismissTrashMutation`: o termo some do cálculo do score na hora.
+  const dismissCollectionMatchMutation = useMutation({
+    mutationFn: async (terms: string[]) => await runDismissCollectionMatch({ data: { terms } }),
+    onMutate: (terms) => {
+      const prev = collectionKeywordDenylistQuery.data ?? [];
+      queryClient.setQueryData(["collection-keyword-denylist"], [...new Set([...prev, ...terms])]);
+      return { prev };
+    },
+    onError: (error: unknown, _terms, ctx) => {
+      if (ctx) queryClient.setQueryData(["collection-keyword-denylist"], ctx.prev);
+      toast.error((error as Error)?.message || "Não foi possível salvar");
+    },
+    onSuccess: () => toast.success("Termo marcado como genérico — o casamento vai melhorar"),
+  });
 
   // Exclusão definitiva de lote (DELETE físico + aprendizado — ver
   // src/lib/lot-exclusion.server.ts). Um diálogo só, controlado por este estado.
@@ -2671,6 +2734,22 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                   ? res.hit.id
                   : null;
             const relatedItem = relatedId ? (collById.get(relatedId) ?? null) : null;
+            // Termos que causaram o casamento AUTOMÁTICO/sugerido (só faz sentido oferecer
+            // negar quando não foi o próprio usuário quem vinculou manualmente).
+            const matchedTerms =
+              relatedId && (res.kind === "auto" || res.kind === "suggested")
+                ? matchedAlbumTerms(
+                    ownedCands.find((c) => c.id === relatedId) ?? {
+                      id: "",
+                      label: "",
+                      artistTokens: [],
+                      albumTokens: [],
+                      genericTokens: [],
+                      year: null,
+                    },
+                    identityById.get(lot.id) ?? EMPTY_IDENTITY,
+                  )
+                : [];
             return (
               <OwnedPanel
                 open
@@ -2680,6 +2759,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 relatedItem={relatedItem}
                 collection={collectionQuery.data ?? []}
                 busy={collectionLinksQuery.isFetching || collectionFeedbackQuery.isFetching}
+                matchedTerms={matchedTerms}
+                onDismissTerm={(term) => dismissCollectionMatchMutation.mutate([term])}
                 onConfirm={() => {
                   if (relatedId) applyDecision(lot, relatedId, relatedId);
                   setOwnedPanelLot(null);

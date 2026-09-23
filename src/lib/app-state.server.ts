@@ -27,6 +27,7 @@ const ANALYTICS_SALE_OVERRIDES_KEY = "analytics_sale_overrides";
 const ANALYTICS_EXCLUDED_SALES_KEY = "analytics_excluded_sales";
 const ANALYTICS_EXCLUDED_ARTISTS_KEY = "analytics_excluded_artists";
 const TRASH_KEYWORD_DENYLIST_KEY = "trash_keyword_denylist";
+const COLLECTION_KEYWORD_DENYLIST_KEY = "collection_keyword_denylist";
 
 /**
  * Casas de leilão marcadas como "verificadas" (chaves `${dia}|${casa}`). Global, um
@@ -114,6 +115,54 @@ export async function addTrashKeywordDenylist(terms: string[]): Promise<{ savedA
       "[app-state] não foi possível gravar os termos negados de 'possível lixo'",
       error,
     );
+    throw new Error(`Não foi possível gravar: ${error.message}`);
+  }
+  return { savedAt };
+}
+
+/**
+ * Termos que o usuário já confirmou serem GENÉRICOS demais para casar um disco da Coleção
+ * (ex.: "sucessos" fazendo dois discos diferentes do mesmo artista casarem por engano) — ver
+ * `src/lib/wantlist-match.ts` (`ownedScore`). Mesmo padrão do `trash_keyword_denylist`: filtrado
+ * dos tokens distintivos/genéricos do disco ANTES de calcular a cobertura, então o aprendizado
+ * vale pra qualquer lote futuro, não só o que gerou o falso positivo. Só cresce.
+ */
+export async function getCollectionKeywordDenylist(): Promise<string[]> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("app_state")
+      .select("value")
+      .eq("key", COLLECTION_KEYWORD_DENYLIST_KEY)
+      .maybeSingle();
+    if (error) throw error;
+    const value = data?.value;
+    return Array.isArray(value)
+      ? (value as unknown[]).filter((v): v is string => typeof v === "string")
+      : [];
+  } catch (error) {
+    console.error(
+      "[app-state] não foi possível ler os termos genéricos da Coleção (usando vazio)",
+      error,
+    );
+    return [];
+  }
+}
+
+/** Acrescenta termos à negação (read-modify-write, union — nunca remove). */
+export async function addCollectionKeywordDenylist(terms: string[]): Promise<{ savedAt: string }> {
+  const clean = terms.filter((t): t is string => typeof t === "string" && t.length > 0);
+  if (!clean.length) return { savedAt: new Date().toISOString() };
+  const current = await getCollectionKeywordDenylist();
+  const unique = [...new Set([...current, ...clean])];
+  const savedAt = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from("app_state")
+    .upsert(
+      { key: COLLECTION_KEYWORD_DENYLIST_KEY, value: unique, updated_at: savedAt },
+      { onConflict: "key" },
+    );
+  if (error) {
+    console.error("[app-state] não foi possível gravar os termos genéricos da Coleção", error);
     throw new Error(`Não foi possível gravar: ${error.message}`);
   }
   return { savedAt };

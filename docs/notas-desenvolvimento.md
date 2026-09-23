@@ -386,6 +386,35 @@ feedback, id)` → `none|rejected|linked|auto|suggested`. Confirmar grava feedba
     esconde). Reativar remove o feedback do lote (`ownedSignatureFromLot`/`OwnedFeedback` em
     `wantlist-match.ts`). Vale em **todos** os cards da home, incl. "Meus lances"
     (`bid-house-sections.tsx` recebe `ownedFor`/`onOpenOwned`).
+  - **Redução de falso positivo (v0.77.0):** três frentes, priorizadas por custo/risco:
+    - **Denylist de termos genéricos aprendida** (`app_state.collection_keyword_denylist`,
+      `getCollectionKeywordDenylist`/`addCollectionKeywordDenylist` em `app-state.server.ts`),
+      mesmo padrão do `trash_keyword_denylist` (só cresce, filtra dos dois lados). No painel de
+      relação (`OwnedPanel`), quando o casamento foi automático/sugerido, os termos distintivos
+      que causaram o score (`matchedAlbumTerms` em `wantlist-match.ts`) aparecem como chips
+      clicáveis — clicar nega aquele termo GLOBALMENTE (não só no lote aberto), então um falso
+      positivo causado por uma palavra genérica que `GENERIC_ALBUM_TOKENS` não previu deixa de
+      se repetir em qualquer lote futuro, sem precisar reeditar o código. `ownedScore`/
+      `ownedMatchForLot`/`coverage` ganharam um parâmetro opcional `denylist` que filtra os
+      tokens do candidato ANTES de calcular cobertura.
+    - **Apelidos do Analytics compartilhados com a Coleção:** `analytics_artist_aliases`
+      (fusão manual de grafias, curada em "Análise de Vendas") antes só valia lá — agora
+      `resolveArtistAlias(nome, aliases)` (`wantlist-match.ts`, mesma chave
+      `normalizeForMatch` de `analytics.ts`) é aplicado ao nome do artista tanto em
+      `ownedCandidate` (disco da Coleção) quanto em `lotIdentity` (lote) antes do casamento —
+      uma correção de grafia feita numa tela passa a valer na outra. Query
+      `["analytics-aliases"]` (mesma chave da tela de Analytics, cache compartilhado) também
+      buscada na home.
+    - **Calibração offline dos limiares:** `scripts/calibrate-collection-thresholds.ts`
+      (`bun run calibrate-collection-thresholds`) reconstrói, a partir de
+      `lots`/`lot_ident`/`lot_market`, a identidade de cada lote já presente em
+      `collection_feedback` e roda `ownedScore` (agora exportado) contra os limiares atuais e
+      uma varredura de cortes (0.50–0.95), reportando precisão/recall por corte — permite
+      ajustar `OWNED_MATCH_MIN`/`OWNED_CONFIDENT_MIN`/`OWNED_ARTIST_MIN` com dado real em vez de
+      no chute. Não roda automaticamente (é um script de análise manual, não um step do cron).
+    - **Não implementado nesta rodada:** âncora por `release_id` do Discogs em
+      `collection_items` (`lot_market.release_id` como sinal de altíssima confiança antes do
+      fallback textual) — maior impacto estrutural, mas mexe em schema; fica como próximo passo.
 - Helpers de classificação/agrupamento em `src/components/vinyl/grouping.ts` (`classifyBid`,
   `houseAnchor`, `computeHouseStats`, `groupByHouse`/`groupByHouseSimple`, `groupByArtist`,
   `watchedMatchesSearch`/`bidMatchesSearch`, `groupWatchedByHouse`, `loteNum` — ordena por nº
@@ -1682,6 +1711,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.76.0      | Selo do lote em pregão (nº + barra) também em "Acontecendo agora", trocando a linha "Início hh:mm" — card mantém o mesmo tamanho |
 | v0.76.1      | Pedido do usuário: botão "Incluir/Ocultar finalizados" move da barra de controles do dia pro final da faixa de dias (depois de "Lances") — novo alvo de portal `finishedToggleHost` em `_authenticated/index.tsx`, populado dentro do loop de dias (mesma lógica de `finishedCount`/`showFinished`/`toggleShowFinished` de antes, só muda o destino do portal) |
 | v0.76.2      | **Causa raiz do 500 recorrente no cron resolvida** (pendência aberta desde v0.74.1). Runs `#160`/`#161`/`#162` do `refresh.yml` (2026-09-22) falharam em steps DIFERENTES a cada vez (`aiident`, `condition`, `reident`) — investigação por log da VPS (`docker compose logs app`) achou duas causas distintas, não uma: (1) run `#161` colidiu com um deploy em andamento (`docker compose up -d` recriando o container `app` no meio da chamada do cron — nada a corrigir, risco aceito de rodar deploy+cron em paralelo); (2) run `#162`, o real bug: `upsertLotIdent` (`lot-ident.server.ts`) explode com `insert or update on table "lot_ident" violates foreign key constraint "lot_ident_id_fkey"` (código `23503`) quando o `id` não existe mais em `lots` — `lot_ident` tem FK `ON DELETE CASCADE` pra `lots(id)` (v0.67.0), mas `reidentifyAllSales` escreve identificações a partir de `lot_id` de `lot_sales`, tabela histórica que NUNCA é apagada; uma venda cujo lote original foi podado (`step=prune`) ou excluído manualmente (`step=aiident` tem o mesmo risco — lote pode sumir de `lots` entre a seleção do batch e o upsert) gera uma linha órfã que quebra o upsert inteiro do lote e sobe sem tratamento até `handleCron`, virando HTTP 500 pro `curl` do `refresh.yml` e derrubando o resto da run (`sales`/`purchases`/`prune` inclusive). Fix: `upsertLotIdent` agora trata o `code: "23503"` como best-effort — consulta quais `id`s do payload ainda existem em `lots`, descarta os órfãos (loga quantos) e regrava só os válidos, em vez de propagar a exceção. Nenhuma mudança em `reidentifyAllSales`/`cron.server.ts` — o filtro fica centralizado no writer compartilhado, protegendo `aiident` e `reident` ao mesmo tempo |
+| v0.77.0      | Pedido do usuário: reduz falso positivo do casamento "já tenho na Coleção" — denylist de termos genéricos aprendida (chips clicáveis no `OwnedPanel`, `collection_keyword_denylist`), apelidos de artista do Analytics agora compartilhados com a Coleção (`resolveArtistAlias`), e script `scripts/calibrate-collection-thresholds.ts` para calibrar `OWNED_MATCH_MIN`/`OWNED_CONFIDENT_MIN` com os dados reais de `collection_feedback` — ver seção "Curadoria com aprendizado" / Coleção acima |
 
 ## Pendências
 
