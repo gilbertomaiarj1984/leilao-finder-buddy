@@ -269,6 +269,10 @@ ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS bundle        boolean NOT 
 -- ---------------------------------------------------------------------
 -- get_unidentified_lot_sales — anti-join (lot_sales sem linha em lot_ident), limitado.
 -- Usado por `reidentifyAllSales` para não baixar as duas tabelas inteiras a cada chamada.
+-- Exige que o lote AINDA exista em `lots` (v0.76.4): `lot_ident` tem FK ON DELETE CASCADE
+-- pra `lots(id)`, então uma venda de lote já podado/excluído NUNCA consegue ganhar linha em
+-- `lot_ident` — sem esse filtro, a mesma venda órfã volta pra sempre como "não identificada"
+-- e o cron gasta uma chamada de IA por rodada nela, sem nunca convergir.
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_unidentified_lot_sales(p_limit integer)
 RETURNS SETOF public.lot_sales
@@ -279,6 +283,7 @@ AS $$
   SELECT ls.*
   FROM public.lot_sales ls
   WHERE NOT EXISTS (SELECT 1 FROM public.lot_ident li WHERE li.id = ls.lot_id)
+    AND EXISTS (SELECT 1 FROM public.lots l WHERE l.id = ls.lot_id)
   ORDER BY ls.lot_id
   LIMIT p_limit;
 $$;
