@@ -265,6 +265,12 @@ ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS orig_text     text NOT NUL
 -- Sinal de lote/kit (vários discos no mesmo preço), calculado na captura a partir de `orig_text`
 -- — evita reler `orig_text` (coluna mais pesada) só para filtrar lotes no Vinil Analytics.
 ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS bundle        boolean NOT NULL DEFAULT false;
+-- Thumbnail pequeno/comprimido (WEBP, ~200px, nosso storage em `/collection/sales/<lot_id>.webp`
+-- — mesmo volume em disco das fotos da Coleção) só para AJUDAR a identificação visual no Vinil
+-- Analytics — NUNCA a URL crua do CDN do catálogo (que morre pouco depois do leilão). NULL =
+-- ainda não tentado (retenta); '' = tentado sem imagem-fonte disponível (marcador definitivo,
+-- não retenta). Ver `captureSaleThumbnail`/`backfillSaleThumbnails` em `lot-sales.server.ts`.
+ALTER TABLE public.lot_sales ADD COLUMN IF NOT EXISTS image         text;
 
 -- ---------------------------------------------------------------------
 -- get_unidentified_lot_sales — anti-join (lot_sales sem linha em lot_ident), limitado.

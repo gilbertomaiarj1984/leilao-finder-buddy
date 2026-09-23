@@ -42,6 +42,8 @@ export type SaleRow = {
   orig_text?: string | null; // descritivo completo do catálogo (texto original do lote) — normalmente
   // NÃO vem em `getVinylSales` (coluna pesada); use `bundle` para o filtro de lote/kit.
   bundle?: boolean; // lote/kit com vários discos (preço do CONJUNTO), calculado na captura
+  image?: string | null; // thumbnail pequeno/comprimido (nosso storage), só para ajudar a
+  // identificação visual — "" (tentado sem fonte) e null (ainda não tentado) tratam-se iguais na UI.
 };
 
 export type FaixaAgg = { label: string; count: number; avgPrice: number | null };

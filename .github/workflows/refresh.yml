@@ -189,6 +189,16 @@ jobs:
             if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
           done
 
+          echo "== Thumbnail das vendas (histórico + o que passou do teto da captura) =="
+          # Só recupera imagem para vendas cujo lote AINDA tenha linha em `lots` (janela curta) —
+          # o resto ganha o marcador definitivo `""` e nunca mais é reprocessado, então o laço
+          # sempre converge. Chunked: repetimos até done=true.
+          for i in $(seq 1 30); do
+            res="$(call "/api/cron?step=salesthumbs&max=15")"
+            echo "salesthumbs $i: $res"
+            if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
+          done
+
           echo "== Reidentificação por IA de TODO o histórico (artista/álbum + padronização) =="
           # Passa a IA (título + descrição → "Artista - Álbum") pelas vendas ainda não
           # identificadas (via RPC de anti-join no banco, não baixa mais as tabelas inteiras) e

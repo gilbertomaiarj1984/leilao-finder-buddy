@@ -47,14 +47,16 @@ export type LotSaleRow = {
   // pela reidentificação por IA, que só ajusta title/artist)
   bundle: boolean; // lote/kit com vários discos (preço do CONJUNTO) — calculado na captura a
   // partir de `orig_text`, persistido para o Vinil Analytics filtrar sem reler `orig_text`.
+  image: string | null; // thumbnail pequeno/comprimido (nosso storage) — NUNCA a URL crua do
+  // catálogo. null = ainda não tentado; "" = tentado sem imagem-fonte disponível.
 };
 
 const PAGE = 1000;
-// Colunas base (sempre presentes, incl. `bundle`) e a coluna `orig_text` — a mais pesada por
-// linha —, pedida à parte (`withOrig`). A leitura/escrita toleram a ausência de `orig_text`
+// Colunas base (sempre presentes, incl. `bundle`/`image`) e a coluna `orig_text` — a mais pesada
+// por linha —, pedida à parte (`withOrig`). A leitura/escrita toleram a ausência de `orig_text`
 // (banco sem a migração da coluna ainda) — ver `isMissingColumn`.
 const BASE_SALE_COLUMNS =
-  "lot_id, id_leilao, id_peca, artist, title, sold_price, sold_price_raw, sold_date, house, uf, media, sleeve, score, faixa, insert_state, source_url, views, bids, fee_pct, initial_price, bundle";
+  "lot_id, id_leilao, id_peca, artist, title, sold_price, sold_price_raw, sold_date, house, uf, media, sleeve, score, faixa, insert_state, source_url, views, bids, fee_pct, initial_price, bundle, image";
 const SALE_COLUMNS = `${BASE_SALE_COLUMNS}, orig_text`;
 
 /** Erro do Postgres/PostgREST de coluna inexistente (antes de aplicar a migração `orig_text`). */
@@ -243,7 +245,7 @@ async function readSeenAuctions(): Promise<SeenAuctionRow[]> {
 }
 
 /** Identidade dos nossos lotes de VINIL (por id), para filtrar o catálogo e nomear a venda. */
-export type VinylInfo = { title: string; artist: string };
+export type VinylInfo = { title: string; artist: string; image?: string | null };
 
 // Sinal POSITIVO de vinil no texto do card (formato). NÃO usa "disco" solto (fraco: casa
 // "Catavento Discos", "disco voador"…). Grau de Disco/Capa também conta como vinil.
@@ -357,6 +359,9 @@ function salesRowsFromCatalog(
       // Lote/kit com vários discos (preço do CONJUNTO) — calculado UMA vez aqui a partir do
       // texto original, para o Vinil Analytics filtrar sem reler `orig_text` depois.
       bundle: isDiscBundle(data.text ?? ""),
+      // Preenchido best-effort logo abaixo (`captureFinishedSales`), a partir de `known.image`
+      // — a captura do catálogo aqui não traz imagem, só o valor de venda + descritivo.
+      image: null,
     });
   }
   return rows;
@@ -427,6 +432,114 @@ const AI_CONDITION_CAP = 25;
 // Teto por RODADA de vendas cujo ARTISTA é genérico/lixo e vão à IA de identificação
 // (extrai "Artista - Álbum" corretos do texto do catálogo; grava também em `lot_ident`).
 const AI_IDENT_CAP = 25;
+// Teto por RODADA de vendas que ganham thumbnail (baixa + comprime + sobe pro nosso storage) —
+// mais caro por item que a IA (download da imagem + `sharp`), mantém a rodada rápida. O resto
+// completa nas rodadas seguintes (`vinylById` só cobre a JANELA atual — ver `captureSaleThumbnail`).
+const THUMB_CAP = 20;
+
+/** Lado maior e qualidade do WEBP do thumbnail de venda — bem menor que as fotos da Coleção
+ * (`COMPRESS_MAX_DIMENSION`/`COMPRESS_WEBP_QUALITY` em `collection.server.ts`), pois aqui é só
+ * para AJUDAR a identificar visualmente no hover/detalhe do Vinil Analytics, não para exibir em
+ * tamanho grande. */
+const SALE_THUMB_MAX_DIMENSION = 200;
+const SALE_THUMB_WEBP_QUALITY = 70;
+
+/**
+ * Baixa a imagem de origem (URL crua do CDN do catálogo, capturada enquanto o lote ainda estava
+ * na listagem geral — `lots.image`/`VinylInfo.image`), redimensiona pequeno e recodifica em WEBP,
+ * e sobe para o nosso storage em disco (mesmo volume das fotos da Coleção,
+ * `collection-storage.server.ts`), em `sales/<lot_id>.webp` — path FIXO (não UUID: uma nova
+ * chamada para o mesmo lote apenas sobrescreve, sem sobra de arquivo órfão). Best-effort: `null`
+ * em qualquer falha (rede, imagem inválida) — o chamador decide se retenta depois.
+ */
+export async function captureSaleThumbnail(lotId: string, srcUrl: string): Promise<string | null> {
+  if (!srcUrl) return null;
+  try {
+    const res = await fetch(srcUrl);
+    if (!res.ok) return null;
+    const raw = Buffer.from(await res.arrayBuffer());
+    if (!raw.length) return null;
+    const sharp = (await import("sharp")).default;
+    const out = await sharp(raw)
+      .rotate()
+      .resize({
+        width: SALE_THUMB_MAX_DIMENSION,
+        height: SALE_THUMB_MAX_DIMENSION,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .webp({ quality: SALE_THUMB_WEBP_QUALITY })
+      .toBuffer();
+    const { uploadCollectionFile } = await import("./collection-storage.server");
+    const { publicUrl } = await uploadCollectionFile(`sales/${lotId}.webp`, out);
+    return publicUrl;
+  } catch (error) {
+    console.error(`[lot-sales] falha ao gerar thumbnail de ${lotId}`, error);
+    return null;
+  }
+}
+
+/**
+ * Backfill de thumbnail para vendas já gravadas em `lot_sales` ANTES (ou além do teto por
+ * rodada) da captura ganhar essa etapa — cobre o HISTÓRICO, não só o fluxo novo. Só funciona
+ * enquanto o lote ainda tiver linha em `lots` com `image` (a janela é `WINDOW_DAYS` = 5 dias;
+ * `lots` nunca é apagada sozinha, mas sai da janela e é podada eventualmente) — vendas mais
+ * antigas que isso não têm mais de onde vir a imagem-fonte e ganham o marcador `""` (tentado,
+ * sem fonte; nunca mais reprocessado). Chunked como `compressimages`: chame em laço até
+ * `done=true` (`step=salesthumbs`).
+ */
+export async function backfillSaleThumbnails(max = 15): Promise<{
+  scanned: number;
+  updated: number;
+  noSource: number;
+  done: boolean;
+}> {
+  const { data, error } = await supabaseAdmin
+    .from("lot_sales")
+    .select("lot_id")
+    .is("image", null)
+    // Mais RECENTES primeiro: maior chance do lote ainda ter linha em `lots` (janela curta).
+    .order("captured_at", { ascending: false })
+    .limit(max);
+  if (error) throw new Error(`Falha ao listar vendas sem thumbnail: ${error.message}`);
+  const ids = ((data ?? []) as { lot_id: string }[]).map((r) => r.lot_id);
+  if (!ids.length) return { scanned: 0, updated: 0, noSource: 0, done: true };
+
+  const { data: lotsData, error: lotsErr } = await supabaseAdmin
+    .from("lots")
+    .select("id, image")
+    .in("id", ids);
+  if (lotsErr) throw new Error(`Falha ao ler imagem dos lotes: ${lotsErr.message}`);
+  const imgById = new Map<string, string>();
+  for (const l of (lotsData ?? []) as { id: string; image: string | null }[]) {
+    if (l.image) imgById.set(l.id, l.image);
+  }
+
+  let updated = 0;
+  let noSource = 0;
+  for (const id of ids) {
+    const src = imgById.get(id);
+    if (!src) {
+      // Sem `lots.image` disponível — marcador definitivo (`""`), não o mesmo lote pra sempre.
+      const { error: markErr } = await supabaseAdmin
+        .from("lot_sales")
+        .update({ image: "" })
+        .eq("lot_id", id);
+      if (!markErr) noSource += 1;
+      continue;
+    }
+    const url = await captureSaleThumbnail(id, src);
+    if (!url) continue; // falha transitória (rede/imagem) — retenta na próxima rodada
+    const { error: upErr } = await supabaseAdmin
+      .from("lot_sales")
+      .update({ image: url })
+      .eq("lot_id", id);
+    if (!upErr) updated += 1;
+  }
+  if (updated || noSource) noOrigCache = null;
+
+  return { scanned: ids.length, updated, noSource, done: ids.length < max };
+}
 
 /**
  * Varredura pós-leilão: para os leilões JÁ CONHECIDOS (`seen_auctions`) que terminaram e
@@ -438,6 +551,10 @@ const AI_IDENT_CAP = 25;
  * **Fallback de IA**: das vendas que ficaram sem estado pelo regex mas TÊM texto descritivo,
  * até `AI_CONDITION_CAP` por rodada (somado entre os leilões do batch) passam por
  * `conditionAiSync` (só quando algum provedor está configurado — best-effort).
+ *
+ * **Thumbnail**: até `THUMB_CAP` por rodada ganham um thumbnail (`captureSaleThumbnail`), a
+ * partir da imagem que `vinylById` já tinha capturado enquanto o lote estava na listagem geral
+ * — sempre best-effort, nunca bloqueia a captura da venda em si.
  */
 export async function captureFinishedSales(maxAuctions = 8): Promise<{
   sales: number;
@@ -446,6 +563,7 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   done: boolean;
   aiUsed?: number;
   identUsed?: number;
+  thumbsUsed?: number;
 }> {
   const { parseAuctionRef, fetchCatalogData } = await import("./leiloesbr-catalog.server");
   const { getSalesCaptured, markSalesCaptured } = await import("./app-state.server");
@@ -470,7 +588,8 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   for (const r of identRows) {
     if (r.album) vinylById.set(r.id, { title: r.album, artist: extractArtist(r.album) });
   }
-  for (const lot of snapshot.lots) vinylById.set(lot.id, { title: lot.title, artist: lot.artist });
+  for (const lot of snapshot.lots)
+    vinylById.set(lot.id, { title: lot.title, artist: lot.artist, image: lot.image });
 
   // Leilões terminados, com link de catálogo válido, ainda não capturados. Mais RECENTES
   // primeiro: o catálogo da casa só fica de pé por um tempo após o leilão (os antigos já
@@ -490,6 +609,7 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   let sales = 0;
   let aiUsed = 0;
   let identUsed = 0;
+  let thumbsUsed = 0;
   const doneIds: string[] = [];
   for (const { row, ref } of batch) {
     try {
@@ -581,6 +701,25 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
         }
       }
 
+      // Thumbnail: até esgotar o teto da RODADA, baixa+comprime+sobe a imagem que `vinylById`
+      // capturou enquanto o lote ainda estava na listagem geral. Best-effort — o resto (sem
+      // fonte nesta rodada, ou além do teto) fica `image: null` e é tentado de novo depois
+      // (fluxo contínuo) ou pelo backfill (`backfillSaleThumbnails`, quando `lots` ainda existir).
+      if (thumbsUsed < THUMB_CAP && rows.length) {
+        const budget = THUMB_CAP - thumbsUsed;
+        const candidates = rows
+          .map((r) => ({ row: r, src: vinylById.get(r.lot_id)?.image ?? null }))
+          .filter((c): c is { row: LotSaleRow; src: string } => Boolean(c.src))
+          .slice(0, budget);
+        for (const c of candidates) {
+          const url = await captureSaleThumbnail(c.row.lot_id, c.src);
+          if (url) {
+            c.row.image = url;
+            thumbsUsed += 1;
+          }
+        }
+      }
+
       if (rows.length) sales += await upsertLotSales(rows);
       // Catálogo lido com sucesso → leilão capturado (não revisita), mesmo com 0 vendas
       // reconhecidas (leilão terminado tem catálogo estável).
@@ -593,7 +732,15 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   if (doneIds.length) await markSalesCaptured(doneIds);
 
   const remaining = Math.max(0, pending.length - doneIds.length);
-  return { sales, auctions: doneIds.length, remaining, done: remaining === 0, aiUsed, identUsed };
+  return {
+    sales,
+    auctions: doneIds.length,
+    remaining,
+    done: remaining === 0,
+    aiUsed,
+    identUsed,
+    thumbsUsed,
+  };
 }
 
 // Teto de vendas por RODADA que passam pela IA de identificação (mantém a rodada barata/rápida;

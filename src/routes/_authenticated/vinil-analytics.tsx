@@ -1065,7 +1065,7 @@ function SalePreview({
   albumName: string;
   condition: Condition;
 }) {
-  const img = (sale as SaleRow & { image?: string | null }).image ?? null;
+  const img = sale.image || null;
   const orig = (sale.orig_text || sale.title || "").trim();
   return (
     <div className="flex flex-col gap-2">
@@ -1188,6 +1188,16 @@ function SaleDetailDialog({
           <DialogTitle className="truncate">Detalhe da venda</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4">
+          {sale.image ? (
+            <div className="h-40 w-full overflow-hidden rounded bg-secondary">
+              <img
+                src={sale.image}
+                alt=""
+                loading="lazy"
+                className="h-full w-full object-contain p-1"
+              />
+            </div>
+          ) : null}
           {/* Texto ORIGINAL completo do lote — o que o card do catálogo trazia. */}
           <div>
             <p className="mb-1 text-xs font-medium text-muted-foreground">Texto original do lote</p>
