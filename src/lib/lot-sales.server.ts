@@ -4,6 +4,7 @@ import { type Condition, parseConditionFromText, scoreCondition } from "./gradin
 import type { LotIdentRow } from "./lot-ident.server";
 import {
   auctionFinished,
+  decodeHtmlEntities,
   extractArtist,
   isDiscBundle,
   isGenericArtist,
@@ -475,15 +476,58 @@ export async function captureSaleThumbnail(lotId: string, srcUrl: string): Promi
   }
 }
 
+// Regex de logo/banner do SITE (não do lote) — filtra fora da varredura de `<img>` do
+// template antigo. Casas variam o nome ("logo.png", "banner1.jpg", "header-bg.jpg"…), então é
+// heurística, não garantia — mas evitou os 3 falsos positivos vistos na prática (Padicaio).
+const LOT_IMG_NOISE_RE = /logo|banner|icone|icon|header/i;
+const LOT_IMG_EXT_RE = /\.(?:jpe?g|png|webp)(?:\?|$)/i;
+
+/**
+ * Busca a página do LOTE (`peca.asp`, o mesmo link salvo em `source_url`) e extrai a foto —
+ * pra quando `lots.image` já não existe mais (lote saiu da janela/foi podado). Confirmado NA
+ * PRÁTICA (não só por leitura da doc) que a foto sobrevive ao lote fechado/vendido, em duas
+ * gerações de template — mesma dualidade que `fetchCatalogData` já trata pro catálogo:
+ * - **Template NOVO** (JSON `loadData` embutido, ex.: dasantigasleiloes): campo `VPASTA` — não é
+ *   exclusivo do lote "aberto" como a doc antiga sugeria (`docs/notas-desenvolvimento.md`,
+ *   seção "Referência: JSON loadData do peca.asp" — atualizar depois de confirmado).
+ * - **Template ANTIGO** (HTML server-side puro, sem JSON, ex.: Padicaio): primeiro `<img>` que
+ *   pareça foto (extensão de imagem) e não pareça logo/banner do site.
+ * Best-effort: `null` em qualquer falha (rede, sem imagem reconhecível). 1 requisição por LOTE —
+ * bem mais caro que a captura em si (1 por leilão) — só usado quando `lots.image` já não existe.
+ */
+async function fetchLotPageImage(url: string): Promise<string | null> {
+  if (!url) return null;
+  try {
+    const { publicFetch } = await import("./leiloesbr-auth.server");
+    const html = await publicFetch(url, {});
+    const vpasta = html.match(/"VPASTA"\s*:\s*"([^"]*)"/)?.[1];
+    if (vpasta) return decodeHtmlEntities(vpasta.replace(/\\\//g, "/"));
+    for (const m of html.matchAll(/<img[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)) {
+      const src = m[1] ?? "";
+      if (LOT_IMG_EXT_RE.test(src) && !LOT_IMG_NOISE_RE.test(src)) return decodeHtmlEntities(src);
+    }
+    return null;
+  } catch (error) {
+    console.error(`[lot-sales] falha ao buscar a página do lote (${url})`, error);
+    return null;
+  }
+}
+
 /**
  * Backfill de thumbnail para vendas já gravadas em `lot_sales` ANTES (ou além do teto por
- * rodada) da captura ganhar essa etapa — cobre o HISTÓRICO, não só o fluxo novo. Só funciona
- * enquanto o lote ainda tiver linha em `lots` com `image` (a janela é `WINDOW_DAYS` = 5 dias;
- * `lots` nunca é apagada sozinha, mas sai da janela e é podada eventualmente) — vendas mais
- * antigas que isso não têm mais de onde vir a imagem-fonte e ganham o marcador `""` (tentado,
- * sem fonte; nunca mais reprocessado). Chunked como `compressimages`: chame em laço até
- * `done=true` (`step=salesthumbs`).
+ * rodada) da captura ganhar essa etapa — cobre o HISTÓRICO, não só o fluxo novo. Duas fontes,
+ * na ordem (mais barata primeiro): (1) `lots.image` — só funciona enquanto o lote ainda tiver
+ * linha em `lots` (a janela é `WINDOW_DAYS` = 5 dias); (2) `fetchLotPageImage(source_url)` —
+ * 1 requisição por LOTE à página do leiloeiro, fallback pro que `lots` já não tem mais. Só
+ * quando NENHUMA das duas acha imagem é que a venda ganha o marcador `""` (tentado, sem fonte;
+ * nunca mais reprocessado). Chunked como `compressimages`: chame em laço até `done=true`
+ * (`step=salesthumbs`).
  */
+// Pausa entre requisições à página do LOTE (fallback caro, site do leiloeiro) — nunca dispara
+// vários de uma vez nem em sequência acelerada; `lots.image` (o caminho barato) não é pausado.
+const LOT_PAGE_THROTTLE_MS = 350;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export async function backfillSaleThumbnails(max = 15): Promise<{
   scanned: number;
   updated: number;
@@ -492,14 +536,15 @@ export async function backfillSaleThumbnails(max = 15): Promise<{
 }> {
   const { data, error } = await supabaseAdmin
     .from("lot_sales")
-    .select("lot_id")
+    .select("lot_id, source_url")
     .is("image", null)
     // Mais RECENTES primeiro: maior chance do lote ainda ter linha em `lots` (janela curta).
     .order("captured_at", { ascending: false })
     .limit(max);
   if (error) throw new Error(`Falha ao listar vendas sem thumbnail: ${error.message}`);
-  const ids = ((data ?? []) as { lot_id: string }[]).map((r) => r.lot_id);
-  if (!ids.length) return { scanned: 0, updated: 0, noSource: 0, done: true };
+  const rows = (data ?? []) as { lot_id: string; source_url: string | null }[];
+  if (!rows.length) return { scanned: 0, updated: 0, noSource: 0, done: true };
+  const ids = rows.map((r) => r.lot_id);
 
   const { data: lotsData, error: lotsErr } = await supabaseAdmin
     .from("lots")
@@ -513,28 +558,53 @@ export async function backfillSaleThumbnails(max = 15): Promise<{
 
   let updated = 0;
   let noSource = 0;
-  for (const id of ids) {
-    const src = imgById.get(id);
+  for (const row of rows) {
+    let src = imgById.get(row.lot_id) ?? null;
+    if (!src && row.source_url) {
+      // Fallback caro (1 req à página do lote) — só quando `lots.image` já não existe mais.
+      await sleep(LOT_PAGE_THROTTLE_MS);
+      src = await fetchLotPageImage(row.source_url);
+    }
     if (!src) {
-      // Sem `lots.image` disponível — marcador definitivo (`""`), não o mesmo lote pra sempre.
+      // Sem imagem em NENHUMA das duas fontes — marcador definitivo (`""`), não retenta.
       const { error: markErr } = await supabaseAdmin
         .from("lot_sales")
         .update({ image: "" })
-        .eq("lot_id", id);
+        .eq("lot_id", row.lot_id);
       if (!markErr) noSource += 1;
       continue;
     }
-    const url = await captureSaleThumbnail(id, src);
+    const url = await captureSaleThumbnail(row.lot_id, src);
     if (!url) continue; // falha transitória (rede/imagem) — retenta na próxima rodada
     const { error: upErr } = await supabaseAdmin
       .from("lot_sales")
       .update({ image: url })
-      .eq("lot_id", id);
+      .eq("lot_id", row.lot_id);
     if (!upErr) updated += 1;
   }
   if (updated || noSource) noOrigCache = null;
 
-  return { scanned: ids.length, updated, noSource, done: ids.length < max };
+  return { scanned: rows.length, updated, noSource, done: rows.length < max };
+}
+
+/**
+ * ÚNICA VEZ (não faz parte do laço do cron): as vendas marcadas `""` (sem fonte) ANTES do
+ * `fetchLotPageImage` existir foram julgadas sem checar a página do lote — resultado errado,
+ * porque a foto sobrevive ao lote fechado (confirmado na prática, ver `fetchLotPageImage`).
+ * Volta essas vendas pra `NULL` para `backfillSaleThumbnails` reavaliar com a lógica completa.
+ * Rode uma vez (`step=resetnosourcethumbs`); depois disso o `""` volta a ser confiável e não
+ * precisa mais desse reset.
+ */
+export async function resetNoSourceThumbnails(): Promise<{ reset: number }> {
+  const { data, error } = await supabaseAdmin
+    .from("lot_sales")
+    .update({ image: null })
+    .eq("image", "")
+    .select("lot_id");
+  if (error) throw new Error(`Falha ao resetar vendas sem fonte: ${error.message}`);
+  const reset = (data ?? []).length;
+  if (reset) noOrigCache = null;
+  return { reset };
 }
 
 /**
