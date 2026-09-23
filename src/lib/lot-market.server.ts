@@ -93,6 +93,27 @@ export async function upsertLotMarket(rows: LotMarketRow[]): Promise<number> {
       }
       return payload.length;
     }
+    // Ver lot-orphan-guard.server.ts: `lot_market` tem FK ON DELETE CASCADE pra `lots(id)`; um
+    // lote podado/excluído entre a seleção do batch e este upsert vira linha órfã que quebra o
+    // upsert inteiro e derruba o resto do cron.
+    if (error.code === "23503") {
+      const { filterExistingLotIds } = await import("./lot-orphan-guard.server");
+      const validIds = await filterExistingLotIds(payload.map((r) => r.id));
+      const filtered = payload.filter((r) => validIds.has(r.id));
+      const dropped = payload.length - filtered.length;
+      if (dropped > 0) {
+        console.warn(
+          `[lot-market] ${dropped} âncora(s) órfã(s) ignorada(s) (lote não existe mais em lots)`,
+        );
+      }
+      if (!filtered.length) return 0;
+      const retry = await supabaseAdmin.from("lot_market").upsert(filtered, { onConflict: "id" });
+      if (retry.error) {
+        console.error("[lot-market] falha ao gravar", retry.error);
+        throw new Error(`Não foi possível gravar o mercado: ${retry.error.message}`);
+      }
+      return filtered.length;
+    }
     console.error("[lot-market] falha ao gravar", error);
     throw new Error(`Não foi possível gravar o mercado: ${error.message}`);
   }

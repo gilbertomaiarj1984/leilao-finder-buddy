@@ -67,6 +67,30 @@ export async function upsertLotCondition(rows: LotConditionRow[]): Promise<numbe
   const payload = rows.map((r) => ({ ...r, evaluated_at: evaluatedAt }));
   const { error } = await supabaseAdmin.from("lot_condition").upsert(payload, { onConflict: "id" });
   if (error) {
+    // Ver lot-orphan-guard.server.ts: `lot_condition` tem FK ON DELETE CASCADE pra `lots(id)`;
+    // um lote podado/excluído entre a seleção do lote (`enrichConditions`) e este upsert vira
+    // linha órfã que quebra o upsert inteiro e derruba o resto do cron.
+    if (error.code === "23503") {
+      const { filterExistingLotIds } = await import("./lot-orphan-guard.server");
+      const validIds = await filterExistingLotIds(payload.map((r) => r.id));
+      const filtered = payload.filter((r) => validIds.has(r.id));
+      const dropped = payload.length - filtered.length;
+      if (dropped > 0) {
+        console.warn(
+          `[lot-condition] ${dropped} estado(s) órfão(s) ignorado(s) (lote não existe mais em lots)`,
+        );
+      }
+      if (!filtered.length) return 0;
+      const { error: retryError } = await supabaseAdmin
+        .from("lot_condition")
+        .upsert(filtered, { onConflict: "id" });
+      if (retryError) {
+        console.error("[lot-condition] falha ao gravar estado", retryError);
+        throw new Error(`Não foi possível gravar o estado: ${retryError.message}`);
+      }
+      allCache = null;
+      return filtered.length;
+    }
     console.error("[lot-condition] falha ao gravar estado", error);
     throw new Error(`Não foi possível gravar o estado: ${error.message}`);
   }
