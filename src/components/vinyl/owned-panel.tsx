@@ -27,6 +27,8 @@ export function OwnedPanel({
   relatedItem,
   collection,
   busy,
+  matchedTerms,
+  onDismissTerm,
   onConfirm,
   onReject,
   onReactivate,
@@ -39,6 +41,10 @@ export function OwnedPanel({
   relatedItem: CollectionItem | null;
   collection: CollectionItem[];
   busy: boolean;
+  // Palavras do álbum que causaram o casamento automático/sugerido (vazio quando vínculo
+  // manual, ou quando não há o que explicar). Ver `matchedAlbumTerms` em `wantlist-match.ts`.
+  matchedTerms?: string[];
+  onDismissTerm?: (term: string) => void; // "esta palavra não deveria contar" (aprendizado)
   onConfirm: () => void; // confirmar o disco sugerido/detectado (vira vínculo)
   onReject: () => void; // "não tenho este disco" (fica cinza; alimenta o aprendizado)
   onReactivate: () => void; // voltar ao automático (limpa override + aprendizado do lote)
@@ -77,6 +83,27 @@ export function OwnedPanel({
             Este lote não está relacionado a nenhum disco da sua Coleção.
           </p>
         )}
+
+        {matchedTerms && matchedTerms.length > 0 && onDismissTerm ? (
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Casou por causa de: (clique numa palavra se ela não deveria contar)
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {matchedTerms.map((term) => (
+                <button
+                  key={term}
+                  type="button"
+                  onClick={() => onDismissTerm(term)}
+                  className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground hover:border-destructive hover:text-destructive"
+                  title={`Marcar "${term}" como genérico demais — não conta mais em nenhum casamento`}
+                >
+                  {term} ✕
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap gap-2">
           {showConfirm ? (

@@ -1,7 +1,7 @@
 {
   "name": "tanstack_start_ts",
   "private": true,
-  "version": "0.78.0",
+  "version": "0.79.0",
   "sideEffects": false,
   "type": "module",
   "scripts": {
@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "compress-images": "bun run scripts/compress-collection-images.ts"
+    "compress-images": "bun run scripts/compress-collection-images.ts",
+    "calibrate-collection-thresholds": "bun run scripts/calibrate-collection-thresholds.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",

@@ -39,6 +39,23 @@ function significantTokens(text: string): string[] {
     .filter((t) => t.length >= 3 || /^\d+$/.test(t));
 }
 
+/**
+ * Resolve um nome de artista pelos apelidos já curados no Analytics
+ * (`app_state.analytics_artist_aliases` — fusão manual de grafias, ver `analytics.ts`). Mesma
+ * chave `normalizeForMatch` usada lá, então uma correção feita em QUALQUER uma das duas telas
+ * (Analytics ou Coleção) passa a valer nas duas — hoje elas resolviam grafias de forma
+ * independente e uma correção feita numa não beneficiava a outra.
+ */
+export function resolveArtistAlias(
+  name: string | null | undefined,
+  aliases: Readonly<Record<string, string>> | undefined,
+): string {
+  if (!name) return name ?? "";
+  if (!aliases) return name;
+  const canonical = aliases[normalizeForMatch(name)];
+  return canonical || name;
+}
+
 export function wantCandidate(item: {
   id: string;
   work: string;
@@ -322,16 +339,32 @@ export function ownedCandidate(item: {
   };
 }
 
-/** Fração dos tokens presentes na identidade do lote (0..1). */
-function coverage(tokens: string[], id: LotIdentity, fuzzyMinLen = 5): number {
-  if (!tokens.length) return 0;
+/** Fração dos tokens presentes na identidade do lote (0..1), ignorando os termos negados. */
+function coverage(
+  tokens: string[],
+  id: LotIdentity,
+  fuzzyMinLen = 5,
+  denylist?: ReadonlySet<string>,
+): number {
+  const kept = denylist ? tokens.filter((t) => !denylist.has(t)) : tokens;
+  if (!kept.length) return 0;
   let hit = 0;
-  for (const t of tokens) if (tokenPresent(t, id, fuzzyMinLen)) hit++;
-  return hit / tokens.length;
+  for (const t of kept) if (tokenPresent(t, id, fuzzyMinLen)) hit++;
+  return hit / kept.length;
 }
 
-/** Score 0..1 de o disco `c` da coleção ser o mesmo do lote `id`. */
-function ownedScore(c: OwnedCandidate, id: LotIdentity): number {
+/**
+ * Score 0..1 de o disco `c` da coleção ser o mesmo do lote `id`. `denylist` são termos que o
+ * usuário já negou como "genéricos demais para distinguir disco" (ver
+ * `app_state.collection_keyword_denylist`, clique no painel de relação) — removidos dos tokens
+ * distintivos/genéricos ANTES de calcular a cobertura, então um falso positivo corrigido uma
+ * vez deixa de acontecer em QUALQUER lote futuro, não só no que foi corrigido.
+ */
+export function ownedScore(
+  c: OwnedCandidate,
+  id: LotIdentity,
+  denylist?: ReadonlySet<string>,
+): number {
   // Artista com fuzzy mais tolerante (4+) → aceita "Ellis Regina" para "Elis Regina".
   const artistCov = coverage(c.artistTokens, id, 4);
   if (artistCov < OWNED_ARTIST_MIN) return 0; // o artista precisa estar claramente presente
@@ -346,7 +379,7 @@ function ownedScore(c: OwnedCandidate, id: LotIdentity): number {
   // só reforça; num conflito, cobertura alta ainda é reedição do mesmo disco (penaliza pouco),
   // cobertura parcial com ano diferente cai fora.
   if (c.albumTokens.length) {
-    const albumCov = coverage(c.albumTokens, id);
+    const albumCov = coverage(c.albumTokens, id, 5, denylist);
     if (albumCov <= 0) return 0; // o álbum não aparece no lote → não é este disco
     let s = albumCov;
     if (yearMatch) s += 0.1;
@@ -358,17 +391,31 @@ function ownedScore(c: OwnedCandidate, id: LotIdentity): number {
   // distingue disco, o ANO vira o desambiguador: exige artista + TODAS as palavras do título +
   // ano EXATO. Assim "Ao Vivo (1989)"/"Seus Sucessos (1978)" casam o disco certo, e um outro
   // ano do mesmo tipo não casa. Sem ano exato → não marca.
-  if (c.genericTokens.length && yearExact && coverage(c.genericTokens, id) >= 1) {
+  if (c.genericTokens.length && yearExact && coverage(c.genericTokens, id, 5, denylist) >= 1) {
     return 0.85;
   }
   return 0; // sem álbum confirmável → não marca (só a peça exata por lot_id, no chamador)
 }
 
+/**
+ * Termos DISTINTIVOS do disco `c` que efetivamente casaram no lote `id` — a "causa" do score.
+ * Serve para a UI oferecer negar um termo específico (`collection_keyword_denylist`) quando o
+ * casamento foi falso positivo por causa dele (ex.: "sucessos" casando o disco errado).
+ */
+export function matchedAlbumTerms(c: OwnedCandidate, id: LotIdentity): string[] {
+  const pool = c.albumTokens.length ? c.albumTokens : c.genericTokens;
+  return pool.filter((t) => tokenPresent(t, id));
+}
+
 /** Melhor disco da coleção para o lote (score ≥ 50%), ou null. */
-export function ownedMatchForLot(cands: OwnedCandidate[], id: LotIdentity): OwnedHit | null {
+export function ownedMatchForLot(
+  cands: OwnedCandidate[],
+  id: LotIdentity,
+  denylist?: ReadonlySet<string>,
+): OwnedHit | null {
   let best: OwnedHit | null = null;
   for (const c of cands) {
-    const score = ownedScore(c, id);
+    const score = ownedScore(c, id, denylist);
     if (score < OWNED_MATCH_MIN) continue;
     if (!best || score > best.score) best = { id: c.id, label: c.label, score };
   }
