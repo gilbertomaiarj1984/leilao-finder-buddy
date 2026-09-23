@@ -1,7 +1,7 @@
 // Shim que reproduz a fatia do PostgrestQueryBuilder do supabase-js realmente
 // usada pelo código de negócio (ver "Surface real" em
 // docs/economia-fase-2-vps-unico.md, Fase 1) — from/select/eq/upsert/
-// maybeSingle/range/order/update/insert/delete/single/not/gte/lte/rpc/or/
+// maybeSingle/range/order/update/insert/delete/single/not/is/gte/lte/rpc/or/
 // limit/like/in, e .storage passa direto (fica no Supabase até a Fase 3).
 // Contrato: resolve sempre para { data, error } (mesmo formato que o código
 // já trata), nunca lança — erros do Postgres viram { error: { message, code } }.
@@ -26,6 +26,7 @@ class ParamBuilder {
 type SimpleOp = "eq" | "neq" | "gte" | "lte" | "gt" | "lt" | "like" | "ilike" | "in";
 type Filter =
   | { kind: "simple"; op: SimpleOp; col: string; val: unknown }
+  | { kind: "is_null"; col: string }
   | { kind: "not_is_null"; col: string }
   | { kind: "not_ilike"; col: string; val: unknown }
   | { kind: "not_generic"; col: string; op: SimpleOp; val: unknown };
@@ -52,6 +53,8 @@ function conditionSql(f: Filter, pb: ParamBuilder): string {
   switch (f.kind) {
     case "simple":
       return simpleConditionSql(f.col, f.op, f.val, pb);
+    case "is_null":
+      return `${ident(f.col)} IS NULL`;
     case "not_is_null":
       return `${ident(f.col)} IS NOT NULL`;
     case "not_ilike":
@@ -152,6 +155,11 @@ class QueryBuilder<T = Row, M extends Mode = "list"> {
     if (op === "is" && val === null) this.filters.push({ kind: "not_is_null", col });
     else if (op === "ilike") this.filters.push({ kind: "not_ilike", col, val });
     else this.filters.push({ kind: "not_generic", col, op: op as SimpleOp, val });
+    return this;
+  }
+  /** Só cobre o uso real do código: `.is(col, null)` (IS NULL). */
+  is(col: string, val: null): this {
+    if (val === null) this.filters.push({ kind: "is_null", col });
     return this;
   }
   or(expr: string): this {

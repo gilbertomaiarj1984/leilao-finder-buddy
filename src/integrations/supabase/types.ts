@@ -238,6 +238,7 @@ export type Database = {
           house: string
           id_leilao: string
           id_peca: string
+          image: string | null
           initial_price: number | null
           insert_state: string
           lot_id: string
@@ -263,6 +264,7 @@ export type Database = {
           house?: string
           id_leilao: string
           id_peca: string
+          image?: string | null
           initial_price?: number | null
           insert_state?: string
           lot_id: string
@@ -288,6 +290,7 @@ export type Database = {
           house?: string
           id_leilao?: string
           id_peca?: string
+          image?: string | null
           initial_price?: number | null
           insert_state?: string
           lot_id?: string
