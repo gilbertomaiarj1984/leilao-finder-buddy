@@ -235,6 +235,36 @@ export const getCollectionFeedback = createServerFn({ method: "GET" })
     return await getCollectionFeedback();
   });
 
+/** Termos negados como genéricos demais para casar a Coleção (ver `wantlist-match.ts`). */
+export const getCollectionKeywordDenylist = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getCollectionKeywordDenylist: read } = await import("./app-state.server");
+    return await read();
+  });
+
+/**
+ * Clique num termo do painel de relação → "este termo não deveria contar": nega o(s) termo(s)
+ * que causaram um casamento errado com a Coleção (nunca esquece — read-modify-write).
+ */
+export const dismissCollectionMatchTerms = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { terms?: string[] } | undefined) => {
+    const terms = Array.isArray(input?.terms)
+      ? input.terms.filter((t): t is string => typeof t === "string" && t.length > 0)
+      : [];
+    if (!terms.length) throw new Error("terms obrigatório");
+    return { terms };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { addCollectionKeywordDenylist } = await import("./app-state.server");
+    return await addCollectionKeywordDenylist(data.terms);
+  });
+
 /**
  * Aplica UMA decisão de relação lote↔Coleção e alimenta o aprendizado numa tacada:
  * - `value` = itemId (vincular) | false ("não tenho") | null (reativar automático);
