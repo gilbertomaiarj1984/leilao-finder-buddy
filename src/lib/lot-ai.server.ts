@@ -115,6 +115,30 @@ export async function upsertLotAi(rows: LotAiRow[]): Promise<number> {
   }));
   const { error } = await supabaseAdmin.from("lot_ai").upsert(payload, { onConflict: "id" });
   if (error) {
+    // Ver lot-orphan-guard.server.ts: `lot_ai` tem FK ON DELETE CASCADE pra `lots(id)`; um lote
+    // podado/excluído entre a seleção do batch e este upsert vira linha órfã que quebra o
+    // upsert inteiro e derruba o resto do cron.
+    if (error.code === "23503") {
+      const { filterExistingLotIds } = await import("./lot-orphan-guard.server");
+      const validIds = await filterExistingLotIds(payload.map((r) => r.id));
+      const filtered = payload.filter((r) => validIds.has(r.id));
+      const dropped = payload.length - filtered.length;
+      if (dropped > 0) {
+        console.warn(
+          `[lot-ai] ${dropped} avaliação(ões) órfã(s) ignorada(s) (lote não existe mais em lots)`,
+        );
+      }
+      if (!filtered.length) return 0;
+      const { error: retryError } = await supabaseAdmin
+        .from("lot_ai")
+        .upsert(filtered, { onConflict: "id" });
+      if (retryError) {
+        console.error("[lot-ai] falha ao gravar avaliações", retryError);
+        throw new Error(`Não foi possível gravar as avaliações: ${retryError.message}`);
+      }
+      allCache = null;
+      return filtered.length;
+    }
     console.error("[lot-ai] falha ao gravar avaliações", error);
     throw new Error(`Não foi possível gravar as avaliações: ${error.message}`);
   }
