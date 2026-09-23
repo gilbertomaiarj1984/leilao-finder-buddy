@@ -380,12 +380,22 @@ export async function handleCron(request: Request): Promise<Response | null> {
 
     // Backfill de thumbnail em `lot_sales` (histórico + o que passou do teto por rodada da
     // captura em si). Chunked como `compressimages`: cada chamada processa até `max` vendas
-    // ainda sem `image`; repete até `done=true`. Só recupera imagem para vendas cujo lote AINDA
-    // tenha linha em `lots` (janela curta) — o resto ganha o marcador `""` (sem fonte, definitivo).
+    // ainda sem `image`; repete até `done=true`. Duas fontes: `lots.image` (barata, só enquanto
+    // o lote ainda tiver linha em `lots`) e, quando essa já não existe, a página do lote
+    // (`fetchLotPageImage`, 1 req por lote, throttled) — só quando NENHUMA das duas acha
+    // imagem é que a venda ganha o marcador `""` (sem fonte, definitivo).
     if (step === "salesthumbs") {
       const { backfillSaleThumbnails } = await import("./lot-sales.server");
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 15, 1), 30);
       return json(await backfillSaleThumbnails(max));
+    }
+
+    // ÚNICA VEZ (não faz parte do laço do cron): as vendas marcadas `""` ANTES de
+    // `fetchLotPageImage` existir foram julgadas "sem fonte" sem checar a página do lote —
+    // volta pra `NULL` pra `salesthumbs` reavaliar com a lógica completa. Rode uma vez.
+    if (step === "resetnosourcethumbs") {
+      const { resetNoSourceThumbnails } = await import("./lot-sales.server");
+      return json(await resetNoSourceThumbnails());
     }
 
     // Backfill (v0.57.0): recomprime fotos da coleção enviadas antes da compressão automática
@@ -597,7 +607,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     return json(
       {
         error:
-          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|salesthumbs|reident|purchases|backfillbundle|compressimages|prune|cleannonvinyl|salesdebug|catdebug|findlot|findlot2|findlotraw|findlotcat|galleries|galleryscan|catalogdebug)",
+          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|salesthumbs|resetnosourcethumbs|reident|purchases|backfillbundle|compressimages|prune|cleannonvinyl|salesdebug|catdebug|findlot|findlot2|findlotraw|findlotcat|galleries|galleryscan|catalogdebug)",
         // Diagnóstico (v0.69.4): step=prune vinha falhando com 400 só quando chamado pelo
         // GitHub Actions (curl direto do VPS sempre respondia 200). Sem log de acesso no
         // Caddy nem log de aplicação chegando no `docker logs` (Nitro usa logger próprio,
