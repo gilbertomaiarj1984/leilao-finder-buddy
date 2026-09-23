@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import type { DragEvent } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -105,6 +106,14 @@ type ArtistSort = "count" | "alpha";
 type AlbumSort = "count" | "alpha";
 type Suggestions = { artists: string[]; albums: string[] };
 type ApplySaleOverride = (lotId: string, value: { artist: string; album: string } | null) => void;
+
+// Drag-and-drop de venda entre álbuns do MESMO artista (organização mais rápida que abrir o
+// diálogo de correção toda vez). Tipo MIME próprio no `dataTransfer` — só `AlbumRow` reage a ele
+// (`types.includes(...)`), então arrastar um card não interfere em nenhum outro drop nativo da
+// página. Payload carrega o artista/álbum de ORIGEM: o alvo confere o artista (nunca move entre
+// artistas diferentes, mesmo que o DOM permita o drop) e ignora o drop se já é o álbum atual.
+const SALE_DRAG_TYPE = "application/x-vinyl-sale";
+type SaleDragPayload = { lotId: string; artist: string; album: string };
 type ReidentGroup = (lotIds: string[]) => Promise<void>;
 type ExcludeSale = (sale: SaleRow, label: string) => void;
 type ExcludeArtist = (artist: ArtistAgg) => void;
@@ -857,14 +866,56 @@ function AlbumRow({
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState(false);
   const [edit, setEdit] = useState(false);
+  const [dropHover, setDropHover] = useState(false);
   const albumLotIds = useMemo(() => album.sales.map((s) => s.lot_id), [album.sales]);
   // Faixas do agregador vêm melhor→pior (ordem de FAIXAS). O eixo dos cards abaixo é
   // pior→melhor (esquerda = pior), então mostramos os chips no MESMO racional (pior→melhor).
   const faixasAsc = useMemo(() => [...album.faixas].reverse(), [album.faixas]);
 
+  // Recebe o drop de um `SaleMarker` arrastado (ver `SALE_DRAG_TYPE`): move a venda para ESTE
+  // álbum via a mesma correção manual por venda que o diálogo já usa (`onApplySaleOverride`) —
+  // sem mutação nova, só um atalho de UI. Confere o artista (nunca move entre artistas
+  // diferentes) e ignora se a venda já está neste álbum.
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes(SALE_DRAG_TYPE)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+  const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes(SALE_DRAG_TYPE)) return;
+    setDropHover(true);
+  };
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setDropHover(false);
+  };
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    setDropHover(false);
+    const raw = e.dataTransfer.getData(SALE_DRAG_TYPE);
+    if (!raw) return;
+    e.preventDefault();
+    let payload: SaleDragPayload;
+    try {
+      payload = JSON.parse(raw) as SaleDragPayload;
+    } catch {
+      return;
+    }
+    if (payload.artist !== artistName) return; // nunca move entre artistas diferentes
+    if (payload.album === album.album) return; // já está neste álbum
+    onApplySaleOverride(payload.lotId, { artist: artistName, album: album.album });
+  };
+
   return (
     <div className="rounded-md border border-border bg-background">
-      <div className="flex items-center gap-2 px-3 py-2">
+      <div
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`flex items-center gap-2 px-3 py-2 transition-colors ${
+          dropHover ? "bg-primary/10 ring-2 ring-inset ring-primary" : ""
+        }`}
+      >
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -980,6 +1031,7 @@ function SaleMarker({
 }) {
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cond = useMemo(() => conditionFromSale(sale), [sale]);
   const grade =
@@ -1002,14 +1054,30 @@ function SaleMarker({
         <PopoverAnchor asChild>
           <button
             type="button"
+            draggable
+            onDragStart={(e) => {
+              cancelClose();
+              setOpen(false);
+              setDragging(true);
+              e.dataTransfer.effectAllowed = "move";
+              const payload: SaleDragPayload = {
+                lotId: sale.lot_id,
+                artist: artistName,
+                album: albumName,
+              };
+              e.dataTransfer.setData(SALE_DRAG_TYPE, JSON.stringify(payload));
+            }}
+            onDragEnd={() => setDragging(false)}
             onMouseEnter={() => {
               cancelClose();
               setOpen(true);
             }}
             onMouseLeave={scheduleClose}
             onClick={() => setDetail(true)}
-            title="Abrir detalhe / corrigir"
-            className="flex w-24 shrink-0 cursor-pointer flex-col items-center gap-1 rounded border border-border bg-card p-2 text-center hover:border-primary/60"
+            title="Arraste para outro álbum deste artista para mover · clique para abrir detalhe/corrigir"
+            className={`flex w-24 shrink-0 cursor-grab flex-col items-center gap-1 rounded border border-border bg-card p-2 text-center hover:border-primary/60 active:cursor-grabbing ${
+              dragging ? "opacity-40" : ""
+            }`}
           >
             {/* VALOR (antes era a nota que ficava aqui em cima) */}
             <span className="w-full truncate text-xs font-semibold text-foreground">
