@@ -1,0 +1,1716 @@
+import { useMemo, useRef, useState } from "react";
+import type { DragEvent, ReactNode } from "react";
+
+import {
+  ArrowUpDown,
+  BarChart3,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Disc3,
+  EyeOff,
+  ExternalLink,
+  Layers,
+  Pencil,
+  RefreshCw,
+  RotateCcw,
+  Sparkles,
+} from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { AiProviderSelect, GeminiModelSelect } from "@/components/vinyl/ai-provider-controls";
+import { fmtMoney, scoreTone } from "@/components/vinyl/ai-score-utils";
+import { ConditionBadges } from "@/components/vinyl/condition-badges";
+import { HideableBar } from "@/components/vinyl/hideable-bar";
+import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
+import type { AiProvider, GeminiModel } from "@/lib/ai-provider";
+import {
+  type AlbumAgg,
+  type AnalyticsAliases,
+  type ArtistAgg,
+  buildAnalytics,
+  type SaleRow,
+} from "@/lib/analytics";
+import { type Condition, EMPTY_CONDITION, normalizeGrade, scoreCondition } from "@/lib/grading";
+import { normalizeForMatch } from "@/lib/vinyl-parse";
+
+// Componente COMPARTILHADO entre a página autenticada (`/vinil-analytics`, com curadoria/IA) e a
+// pública somente-leitura (`/vinil-analytics-publico`, link com token diário — ver
+// `access.server.ts`/`leiloesbr.functions.ts`). `readOnly=true` esconde TODO controle de
+// mutação (editar/fundir artista ou álbum, corrigir/excluir venda, excluir artista,
+// reidentificar por IA, seletor de provedor/modelo de IA) — só ordenação/filtro/expansão
+// continuam ativos. `handlers`/`ai` são omitidos no modo público (só existem no modo editável).
+
+const money = (n: number | null) => fmtMoney(n, "BRL");
+
+/** Custo real = valor de venda + comissão do leiloeiro (quando a taxa é conhecida). */
+function netCost(s: SaleRow): number | null {
+  if (s.sold_price == null || s.fee_pct == null) return null;
+  return Math.round(s.sold_price * (1 + s.fee_pct / 100));
+}
+function feeTip(s: SaleRow): string {
+  return s.fee_pct != null ? `Taxa do leiloeiro: ${s.fee_pct}%` : "Taxa do leiloeiro desconhecida";
+}
+/** Ágio/desconto do valor de venda sobre o valor inicial. */
+function discountTip(s: SaleRow): string {
+  if (s.initial_price == null || !s.initial_price || s.sold_price == null) return "Valor inicial";
+  const pct = Math.round(((s.sold_price - s.initial_price) / s.initial_price) * 100);
+  return `Valor inicial ${money(s.initial_price)} → venda ${money(s.sold_price)} (${
+    pct >= 0 ? "+" : ""
+  }${pct}%)`;
+}
+/** Rótulo compacto de demanda: "👁 26 · 🔨 3" (só o que houver). */
+function demandLabel(s: SaleRow): string {
+  const parts: string[] = [];
+  if (s.views != null) parts.push(`👁 ${s.views}`);
+  if (s.bids != null) parts.push(`🔨 ${s.bids}`);
+  return parts.length ? parts.join(" · ") : "—";
+}
+
+/** Reconstrói o estado (Disco/Capa/Score/Faixa/encarte) de uma venda para os badges (mesma
+ *  regra de espelhamento do resto do app, via `scoreCondition`). */
+function conditionFromSale(s: SaleRow): Condition {
+  const g = scoreCondition(normalizeGrade(s.media), normalizeGrade(s.sleeve));
+  return {
+    ...EMPTY_CONDITION,
+    media: g.media,
+    sleeve: g.sleeve,
+    score: g.score,
+    faixa: g.faixa,
+    insert: s.insert_state === "sim" ? "sim" : s.insert_state === "nao" ? "nao" : null,
+  };
+}
+
+type ArtistSort = "count" | "alpha";
+type AlbumSort = "count" | "alpha";
+// `albumsByArtist`: álbuns já vistos, por CHAVE normalizada do artista — a caixa de correção por
+// venda usa isso para só oferecer álbuns DAQUELE artista (artista é a chave principal; o álbum
+// só faz sentido dentro do universo dele).
+type Suggestions = { artists: string[]; albums: string[]; albumsByArtist: Map<string, string[]> };
+type ApplySaleOverride = (lotId: string, value: { artist: string; album: string } | null) => void;
+
+// Drag-and-drop de venda entre álbuns do MESMO artista (organização mais rápida que abrir o
+// diálogo de correção toda vez). Tipo MIME próprio no `dataTransfer` — só `AlbumRow` reage a ele
+// (`types.includes(...)`), então arrastar um card não interfere em nenhum outro drop nativo da
+// página. Payload carrega o artista/álbum de ORIGEM: o alvo confere o artista (nunca move entre
+// artistas diferentes, mesmo que o DOM permita o drop) e ignora o drop se já é o álbum atual.
+// Desativado inteiramente em `readOnly` (é uma mutação).
+const SALE_DRAG_TYPE = "application/x-vinyl-sale";
+type SaleDragPayload = { lotId: string; artist: string; album: string };
+type ReidentGroup = (lotIds: string[]) => Promise<void>;
+// Roda a IA em CADA álbum de um artista, um de cada vez (mesma chamada por grupo que o botão de
+// UM álbum já faz) — poupa o usuário de abrir álbum por álbum manualmente.
+type ReidentAllAlbums = (albums: AlbumAgg[]) => Promise<void>;
+type ExcludeSale = (sale: SaleRow, label: string) => void;
+type ExcludeArtist = (artist: ArtistAgg) => void;
+
+/** Handlers de MUTAÇÃO — só existem no modo editável (autenticado). No modo `readOnly`, todo
+ *  controle que os chamaria é omitido do DOM (não só desabilitado). */
+export type AnalyticsMutationHandlers = {
+  onApplyArtistAlias: (sourceKeys: string[], name: string) => void;
+  onClearArtist: (artist: ArtistAgg) => void;
+  onApplyAlbumAlias: (keys: string[], name: string) => void;
+  onApplySaleOverride: ApplySaleOverride;
+  onExcludeSale: ExcludeSale;
+  onExcludeArtist: ExcludeArtist;
+  onReidentGroup: ReidentGroup;
+  onReidentAllAlbums: ReidentAllAlbums;
+  onRestoreSale: (lotId: string) => void;
+  onRestoreArtist: (key: string) => void;
+};
+
+export type AnalyticsAiControls = {
+  provider: AiProvider;
+  geminiModel: GeminiModel;
+  onChangeProvider: (provider: AiProvider) => void;
+  onChangeGeminiModel: (model: GeminiModel) => void;
+  reidentifying: boolean;
+  onReidentifyAll: () => void;
+};
+
+export function AnalyticsView({
+  rows,
+  aliases,
+  readOnly,
+  isLoading = false,
+  isFetching = false,
+  onRefetch,
+  handlers,
+  ai,
+  headerExtra,
+}: {
+  rows: SaleRow[];
+  aliases: AnalyticsAliases | undefined;
+  readOnly: boolean;
+  isLoading?: boolean;
+  isFetching?: boolean;
+  onRefetch?: () => void;
+  handlers?: AnalyticsMutationHandlers;
+  ai?: AnalyticsAiControls;
+  headerExtra?: ReactNode;
+}) {
+  // Esconder/mostrar o topo é MANUAL — botão `MobileTopToggle`, só no mobile.
+  const [barsHidden, setBarsHidden] = useState(false);
+  const canEdit = !readOnly && !!handlers;
+
+  const analytics = useMemo(() => buildAnalytics(rows, aliases), [rows, aliases]);
+
+  const [search, setSearch] = useState("");
+  const [artistSort, setArtistSort] = useState<ArtistSort>("count");
+  const searchNorm = normalizeForMatch(search);
+  const artists = useMemo(() => {
+    const filtered = !searchNorm
+      ? analytics
+      : analytics.filter(
+          (a) =>
+            normalizeForMatch(a.artist).includes(searchNorm) ||
+            a.albums.some((al) => normalizeForMatch(al.album).includes(searchNorm)),
+        );
+    const sorted = [...filtered];
+    if (artistSort === "alpha") {
+      sorted.sort((a, b) => a.artist.localeCompare(b.artist, "pt-BR"));
+    } else {
+      // Nº de álbuns (desc), desempate alfabético.
+      sorted.sort(
+        (a, b) => b.albums.length - a.albums.length || a.artist.localeCompare(b.artist, "pt-BR"),
+      );
+    }
+    return sorted;
+  }, [analytics, searchNorm, artistSort]);
+
+  const totals = useMemo(
+    () => ({ sales: rows.length, artists: analytics.length }),
+    [rows, analytics],
+  );
+
+  // Sugestões (nomes já existentes) para a correção por venda — datalist de artistas/álbuns.
+  const suggestions = useMemo(() => {
+    const artistsSet = new Set<string>();
+    const albumsSet = new Set<string>();
+    const albumsByArtist = new Map<string, string[]>();
+    for (const a of analytics) {
+      artistsSet.add(a.artist);
+      const albumNames = a.albums.map((al) => al.album);
+      for (const name of albumNames) albumsSet.add(name);
+      albumsByArtist.set(normalizeForMatch(a.artist), albumNames);
+    }
+    const sort = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    return { artists: sort(artistsSet), albums: sort(albumsSet), albumsByArtist };
+  }, [analytics]);
+
+  return (
+    <main className="min-h-screen bg-background">
+      <MobileTopToggle collapsed={barsHidden} onToggle={() => setBarsHidden((c) => !c)} />
+      <HideableBar hidden={barsHidden} className="top-0 z-30">
+        <header className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">
+            <div>
+              <div className="flex items-center gap-3">
+                {headerExtra}
+                <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
+                  <BarChart3 className="h-5 w-5 text-primary" />
+                  Vinil Analytics
+                  {readOnly ? (
+                    <span className="rounded bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                      Somente leitura
+                    </span>
+                  ) : null}
+                </h1>
+              </div>
+              <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
+                Preços de venda por artista e álbum (a casa de leilão é irrelevante). Da pior à
+                melhor conservação, com médias por Faixa de Classificação.
+              </p>
+            </div>
+            <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible sm:pb-0">
+              {canEdit && ai ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={ai.onReidentifyAll}
+                  disabled={ai.reidentifying}
+                  title="Passar a IA por todo o histórico: ajusta artista/álbum (título + descrição) e padroniza os nomes para não duplicar registros. Usa o provedor de IA selecionado ao lado."
+                >
+                  <Sparkles className={`mr-2 h-4 w-4 ${ai.reidentifying ? "animate-pulse" : ""}`} />
+                  {ai.reidentifying ? "Reidentificando…" : "Reidentificar (IA)"}
+                </Button>
+              ) : null}
+              {onRefetch ? (
+                <Button variant="outline" size="sm" onClick={onRefetch} disabled={isFetching}>
+                  <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+                  Atualizar
+                </Button>
+              ) : null}
+              {canEdit && ai ? (
+                <>
+                  <AiProviderSelect
+                    value={ai.provider}
+                    onChange={ai.onChangeProvider}
+                    disabled={ai.reidentifying}
+                  />
+                  <GeminiModelSelect
+                    value={ai.geminiModel}
+                    onChange={ai.onChangeGeminiModel}
+                    disabled={ai.reidentifying}
+                  />
+                </>
+              ) : null}
+            </div>
+          </div>
+        </header>
+      </HideableBar>
+
+      <div className="mx-auto max-w-6xl px-4 py-6">
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <StatChip label="Vendas" value={String(totals.sales)} />
+          <StatChip label="Artistas" value={String(totals.artists)} />
+          {/* Ordenação da lista de artistas: alfabética ou por nº de álbuns. */}
+          <SortToggle
+            label="Artistas"
+            options={[
+              { value: "count", label: "Nº álbuns" },
+              { value: "alpha", label: "A→Z" },
+            ]}
+            value={artistSort}
+            onChange={(v) => setArtistSort(v as ArtistSort)}
+          />
+          <div className="ml-auto w-full sm:w-64">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar artista ou álbum…"
+            />
+          </div>
+        </div>
+
+        {isLoading ? (
+          <p className="py-16 text-center text-sm text-muted-foreground">Carregando histórico…</p>
+        ) : rows.length === 0 ? (
+          <EmptyState />
+        ) : artists.length === 0 ? (
+          <p className="py-16 text-center text-sm text-muted-foreground">
+            Nada encontrado para “{search}”.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {artists.map((a) => (
+              <ArtistRow
+                key={a.key}
+                artist={a}
+                allArtists={analytics}
+                suggestions={suggestions}
+                readOnly={readOnly}
+                onApplyArtist={handlers?.onApplyArtistAlias}
+                onClearArtist={handlers ? () => handlers.onClearArtist(a) : undefined}
+                onApplyAlbum={handlers?.onApplyAlbumAlias}
+                onApplySaleOverride={handlers?.onApplySaleOverride}
+                onReidentGroup={handlers?.onReidentGroup}
+                onReidentAllAlbums={handlers?.onReidentAllAlbums}
+                onExcludeArtist={handlers?.onExcludeArtist}
+                onExcludeSale={handlers?.onExcludeSale}
+              />
+            ))}
+          </div>
+        )}
+
+        {!readOnly && handlers ? (
+          <HiddenPanel
+            aliases={aliases}
+            onRestoreSale={handlers.onRestoreSale}
+            onRestoreArtist={handlers.onRestoreArtist}
+          />
+        ) : null}
+      </div>
+    </main>
+  );
+}
+
+/** Painel "Ocultos": lista artistas e vendas excluídos do Analytics, com ação de reincluir. Só no
+ *  modo editável (é uma mutação — reincluir). */
+function HiddenPanel({
+  aliases,
+  onRestoreSale,
+  onRestoreArtist,
+}: {
+  aliases: AnalyticsAliases | undefined;
+  onRestoreSale: (lotId: string) => void;
+  onRestoreArtist: (key: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  // Artistas: de-dup por RÓTULO (guardamos key final + sourceKeys com o mesmo nome) — mostra um
+  // item por artista, guardando uma chave representativa para reincluir.
+  const artistItems = useMemo(() => {
+    const byLabel = new Map<string, string>();
+    for (const [key, label] of Object.entries(aliases?.excludedArtists ?? {})) {
+      if (!byLabel.has(label)) byLabel.set(label, key);
+    }
+    return [...byLabel.entries()].map(([label, key]) => ({ label, key }));
+  }, [aliases?.excludedArtists]);
+  const saleItems = useMemo(
+    () => Object.entries(aliases?.excludedSales ?? {}),
+    [aliases?.excludedSales],
+  );
+  const total = artistItems.length + saleItems.length;
+  if (!total) return null;
+
+  return (
+    <section className="mt-4 overflow-hidden rounded-md border border-dashed border-border bg-card/60">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left hover:opacity-80"
+      >
+        {open ? (
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        )}
+        <EyeOff className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="flex-1 text-sm font-medium text-foreground">Ocultos do Analytics</span>
+        <span className="text-xs text-muted-foreground">
+          {artistItems.length} artista(s) · {saleItems.length} venda(s)
+        </span>
+      </button>
+      {open ? (
+        <div className="flex flex-col gap-3 border-t border-border p-3">
+          {artistItems.length ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Artistas
+              </span>
+              {artistItems.map((it) => (
+                <div
+                  key={it.key}
+                  className="flex items-center gap-2 rounded border border-border bg-background px-3 py-2 text-sm"
+                >
+                  <span className="flex-1 truncate text-foreground">{it.label}</span>
+                  <Button variant="ghost" size="sm" onClick={() => onRestoreArtist(it.key)}>
+                    <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                    Reincluir
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {saleItems.length ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Vendas
+              </span>
+              {saleItems.map(([lotId, label]) => (
+                <div
+                  key={lotId}
+                  className="flex items-center gap-2 rounded border border-border bg-background px-3 py-2 text-sm"
+                >
+                  <span className="flex-1 truncate text-foreground" title={lotId}>
+                    {label || lotId}
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={() => onRestoreSale(lotId)}>
+                    <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                    Reincluir
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function StatChip({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="rounded bg-secondary px-2 py-1 text-foreground">
+      <span className="text-muted-foreground">{label}:</span>{" "}
+      <span className="font-semibold">{value}</span>
+    </span>
+  );
+}
+
+/** Alternador compacto de ordenação (segmentado). */
+function SortToggle({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded bg-secondary px-2 py-1">
+      <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+      <span className="text-muted-foreground">{label}:</span>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+            value === o.value
+              ? "bg-primary text-primary-foreground"
+              : "text-foreground hover:bg-background"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="rounded-md border border-border bg-card p-8 text-center">
+      <Disc3 className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+      <p className="text-sm font-medium text-foreground">Ainda não há vendas no histórico.</p>
+      <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+        O histórico é preenchido automaticamente após os leilões (varredura do catálogo das casas).
+        Conforme os leilões acompanhados terminam, os valores de venda aparecem aqui.
+      </p>
+    </div>
+  );
+}
+
+/** Botão "rodar a IA" num escopo (artista/álbum): identifica pela IA só as vendas de `lotIds`. */
+function IaButton({
+  lotIds,
+  onReident,
+  title,
+}: {
+  lotIds: string[];
+  onReident: ReidentGroup;
+  title: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const run = (e: { stopPropagation: () => void }) => {
+    e.stopPropagation();
+    if (busy || !lotIds.length) return;
+    setBusy(true);
+    void onReident(lotIds).finally(() => setBusy(false));
+  };
+  return (
+    <button
+      type="button"
+      onClick={run}
+      disabled={busy || !lotIds.length}
+      title={title}
+      aria-label={title}
+      className="shrink-0 rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+    >
+      <Sparkles className={`h-4 w-4 ${busy ? "animate-pulse" : ""}`} />
+    </button>
+  );
+}
+
+/** Botão "rodar a IA em todos os álbuns" do artista: dispara `onReident` (a mesma rotina do
+ *  botão de UM álbum) uma vez por álbum, em sequência — poupa o usuário de abrir álbum por
+ *  álbum e clicar em cada um. */
+function IaAllAlbumsButton({
+  albums,
+  onReident,
+  title,
+}: {
+  albums: AlbumAgg[];
+  onReident: ReidentAllAlbums;
+  title: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const run = (e: { stopPropagation: () => void }) => {
+    e.stopPropagation();
+    if (busy || !albums.length) return;
+    setBusy(true);
+    void onReident(albums).finally(() => setBusy(false));
+  };
+  return (
+    <button
+      type="button"
+      onClick={run}
+      disabled={busy || !albums.length}
+      title={title}
+      aria-label={title}
+      className="shrink-0 rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+    >
+      <Layers className={`h-4 w-4 ${busy ? "animate-pulse" : ""}`} />
+    </button>
+  );
+}
+
+function ArtistRow({
+  artist,
+  allArtists,
+  suggestions,
+  readOnly,
+  onApplyArtist,
+  onClearArtist,
+  onApplyAlbum,
+  onApplySaleOverride,
+  onReidentGroup,
+  onReidentAllAlbums,
+  onExcludeArtist,
+  onExcludeSale,
+}: {
+  artist: ArtistAgg;
+  allArtists: ArtistAgg[];
+  suggestions: Suggestions;
+  readOnly: boolean;
+  onApplyArtist?: (sourceKeys: string[], name: string) => void;
+  onClearArtist?: () => void;
+  onApplyAlbum?: (keys: string[], name: string) => void;
+  onApplySaleOverride?: ApplySaleOverride;
+  onReidentGroup?: ReidentGroup;
+  onReidentAllAlbums?: ReidentAllAlbums;
+  onExcludeArtist?: ExcludeArtist;
+  onExcludeSale?: ExcludeSale;
+}) {
+  const [open, setOpen] = useState(false);
+  const [edit, setEdit] = useState(false);
+  const [albumSort, setAlbumSort] = useState<AlbumSort>("count");
+  const canEdit = !readOnly;
+
+  const sortedAlbums = useMemo(() => {
+    const list = [...artist.albums];
+    if (albumSort === "alpha") list.sort((a, b) => a.album.localeCompare(b.album, "pt-BR"));
+    else list.sort((a, b) => b.count - a.count || (b.avgPrice ?? 0) - (a.avgPrice ?? 0));
+    return list;
+  }, [artist.albums, albumSort]);
+
+  // Todos os `lot_id`s do artista (para rodar a IA no artista inteiro).
+  const artistLotIds = useMemo(
+    () => artist.albums.flatMap((al) => al.sales.map((s) => s.lot_id)),
+    [artist.albums],
+  );
+
+  return (
+    <section className="overflow-hidden rounded-md border border-border bg-card">
+      <div className="flex items-center gap-2 px-4 py-3">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex flex-1 items-center gap-2 text-left hover:opacity-80"
+        >
+          {open ? (
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          )}
+          <span className="flex-1 font-semibold text-foreground">{artist.artist}</span>
+          <span className="text-xs text-muted-foreground">
+            {artist.count} {artist.count === 1 ? "venda" : "vendas"} · {artist.albums.length}{" "}
+            {artist.albums.length === 1 ? "álbum" : "álbuns"}
+          </span>
+          <span className="ml-2 rounded bg-secondary px-2 py-0.5 text-sm font-semibold text-primary">
+            {money(artist.avgPrice)}
+          </span>
+        </button>
+        {canEdit && onReidentGroup ? (
+          <IaButton
+            lotIds={artistLotIds}
+            onReident={onReidentGroup}
+            title="Rodar a IA neste artista (identifica as vendas ainda sem álbum)"
+          />
+        ) : null}
+        {canEdit && onReidentAllAlbums ? (
+          <IaAllAlbumsButton
+            albums={artist.albums}
+            onReident={onReidentAllAlbums}
+            title="Rodar a IA em cada álbum deste artista, um de cada vez (sem precisar abrir álbum por álbum)"
+          />
+        ) : null}
+        {canEdit ? (
+          <button
+            type="button"
+            onClick={() => setEdit(true)}
+            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+            title="Editar nome ou juntar com outro artista"
+            aria-label="Editar artista"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        ) : null}
+      </div>
+      {open ? (
+        <div className="border-t border-border p-3">
+          <div className="mb-2 flex justify-end">
+            <SortToggle
+              label="Álbuns"
+              options={[
+                { value: "count", label: "Nº na base" },
+                { value: "alpha", label: "A→Z" },
+              ]}
+              value={albumSort}
+              onChange={(v) => setAlbumSort(v as AlbumSort)}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            {sortedAlbums.map((al) => (
+              <AlbumRow
+                key={al.key}
+                album={al}
+                artistKey={artist.key}
+                artistName={artist.artist}
+                siblings={artist.albums}
+                suggestions={suggestions}
+                readOnly={readOnly}
+                onApplyAlbum={onApplyAlbum}
+                onApplySaleOverride={onApplySaleOverride}
+                onReidentGroup={onReidentGroup}
+                onExcludeSale={onExcludeSale}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {canEdit && onApplyArtist && onClearArtist && onExcludeArtist ? (
+        <ArtistEditDialog
+          artist={artist}
+          allArtists={allArtists}
+          open={edit}
+          onClose={() => setEdit(false)}
+          onApply={onApplyArtist}
+          onClear={onClearArtist}
+          onExclude={() => onExcludeArtist(artist)}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function AlbumRow({
+  album,
+  artistKey,
+  artistName,
+  siblings,
+  suggestions,
+  readOnly,
+  onApplyAlbum,
+  onApplySaleOverride,
+  onReidentGroup,
+  onExcludeSale,
+}: {
+  album: AlbumAgg;
+  artistKey: string;
+  artistName: string;
+  siblings: AlbumAgg[];
+  suggestions: Suggestions;
+  readOnly: boolean;
+  onApplyAlbum?: (keys: string[], name: string) => void;
+  onApplySaleOverride?: ApplySaleOverride;
+  onReidentGroup?: ReidentGroup;
+  onExcludeSale?: ExcludeSale;
+}) {
+  const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState(false);
+  const [edit, setEdit] = useState(false);
+  const [dropHover, setDropHover] = useState(false);
+  const canEdit = !readOnly;
+  const albumLotIds = useMemo(() => album.sales.map((s) => s.lot_id), [album.sales]);
+  // Faixas do agregador vêm melhor→pior (ordem de FAIXAS). O eixo dos cards abaixo é
+  // pior→melhor (esquerda = pior), então mostramos os chips no MESMO racional (pior→melhor).
+  const faixasAsc = useMemo(() => [...album.faixas].reverse(), [album.faixas]);
+
+  // Recebe o drop de um `SaleMarker` arrastado (ver `SALE_DRAG_TYPE`): move a venda para ESTE
+  // álbum via a mesma correção manual por venda que o diálogo já usa (`onApplySaleOverride`) —
+  // sem mutação nova, só um atalho de UI. Confere o artista (nunca move entre artistas
+  // diferentes) e ignora se a venda já está neste álbum. Desativado em `readOnly`.
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (!canEdit || !e.dataTransfer.types.includes(SALE_DRAG_TYPE)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+  const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
+    if (!canEdit || !e.dataTransfer.types.includes(SALE_DRAG_TYPE)) return;
+    setDropHover(true);
+  };
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setDropHover(false);
+  };
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    setDropHover(false);
+    if (!canEdit || !onApplySaleOverride) return;
+    const raw = e.dataTransfer.getData(SALE_DRAG_TYPE);
+    if (!raw) return;
+    e.preventDefault();
+    let payload: SaleDragPayload;
+    try {
+      payload = JSON.parse(raw) as SaleDragPayload;
+    } catch {
+      return;
+    }
+    if (payload.artist !== artistName) return; // nunca move entre artistas diferentes
+    if (payload.album === album.album) return; // já está neste álbum
+    onApplySaleOverride(payload.lotId, { artist: artistName, album: album.album });
+  };
+
+  return (
+    <div className="rounded-md border border-border bg-background">
+      <div
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`flex items-center gap-2 px-3 py-2 transition-colors ${
+          dropHover ? "bg-primary/10 ring-2 ring-inset ring-primary" : ""
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="shrink-0 text-muted-foreground hover:text-foreground"
+          aria-label={open ? "Recolher" : "Expandir"}
+        >
+          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </button>
+        {/* O NOME do álbum abre a curadoria (renomear / juntar com outro álbum) — só editável. */}
+        {canEdit ? (
+          <button
+            type="button"
+            onClick={() => setEdit(true)}
+            className="flex-1 truncate text-left text-sm font-medium text-foreground hover:underline"
+            title="Editar nome ou juntar com outro álbum"
+          >
+            {album.album}
+          </button>
+        ) : (
+          <span className="flex-1 truncate text-left text-sm font-medium text-foreground">
+            {album.album}
+          </span>
+        )}
+        {canEdit && onReidentGroup ? (
+          <IaButton
+            lotIds={albumLotIds}
+            onReident={onReidentGroup}
+            title="Rodar a IA neste álbum (identifica as vendas ainda sem álbum)"
+          />
+        ) : null}
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-2 text-left"
+        >
+          <span className="text-xs text-muted-foreground">
+            {album.count} na base · {money(album.minPrice)}–{money(album.maxPrice)}
+          </span>
+          <span className="ml-2 rounded bg-secondary px-2 py-0.5 text-sm font-semibold text-primary">
+            {money(album.avgPrice)}
+          </span>
+        </button>
+      </div>
+      {open ? (
+        <div className="border-t border-border p-3">
+          {/* Médias por Faixa de Classificação (pior → melhor, casando com o eixo abaixo). */}
+          {faixasAsc.length ? (
+            <div className="mb-3 flex flex-wrap items-center gap-1.5">
+              {faixasAsc.map((f) => (
+                <span
+                  key={f.label}
+                  className="rounded bg-secondary px-1.5 py-0.5 text-xs text-foreground"
+                  title={`${f.count} venda(s) na faixa ${f.label}`}
+                >
+                  {f.label}: <span className="font-semibold">{money(f.avgPrice)}</span>
+                  <span className="text-muted-foreground"> ({f.count})</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          {/* Eixo horizontal: pior (esquerda) → melhor (direita). */}
+          <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wide text-muted-foreground">
+            <span>◀ pior conservação</span>
+            <span>melhor conservação ▶</span>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {album.sales.map((s) => (
+              <SaleMarker
+                key={s.lot_id}
+                sale={s}
+                albumName={album.album}
+                artistName={artistName}
+                suggestions={suggestions}
+                readOnly={readOnly}
+                onApplySaleOverride={onApplySaleOverride}
+                onExcludeSale={onExcludeSale}
+              />
+            ))}
+          </div>
+
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              {album.count} {album.count === 1 ? "disco" : "discos"} na nossa base
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setDetail(true)}>
+              Detalhes
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      <DetailDialog album={album} open={detail} onClose={() => setDetail(false)} />
+      {canEdit && onApplyAlbum ? (
+        <AlbumEditDialog
+          album={album}
+          artistKey={artistKey}
+          siblings={siblings}
+          open={edit}
+          onClose={() => setEdit(false)}
+          onApply={onApplyAlbum}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** Mini card horizontal: VALOR em cima, estado no meio, NOTA (score) embaixo. Ao passar o
+ *  mouse, mostra um preview compacto (Popover portalizado → não é cortado pelo scroll); ao
+ *  CLICAR, abre o detalhe da venda (texto original + correção por venda, quando editável). */
+function SaleMarker({
+  sale,
+  albumName,
+  artistName,
+  suggestions,
+  readOnly,
+  onApplySaleOverride,
+  onExcludeSale,
+}: {
+  sale: SaleRow;
+  albumName: string;
+  artistName: string;
+  suggestions: Suggestions;
+  readOnly: boolean;
+  onApplySaleOverride?: ApplySaleOverride;
+  onExcludeSale?: ExcludeSale;
+}) {
+  const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cond = useMemo(() => conditionFromSale(sale), [sale]);
+  const grade =
+    sale.media || sale.sleeve
+      ? `${sale.media || "?"}/${sale.sleeve || "?"}`
+      : sale.faixa || "estado —";
+  const canEdit = !readOnly;
+
+  const cancelClose = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setOpen(false), 120);
+  };
+
+  return (
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverAnchor asChild>
+          <button
+            type="button"
+            draggable={canEdit}
+            onDragStart={(e) => {
+              if (!canEdit) return;
+              cancelClose();
+              setOpen(false);
+              setDragging(true);
+              e.dataTransfer.effectAllowed = "move";
+              const payload: SaleDragPayload = {
+                lotId: sale.lot_id,
+                artist: artistName,
+                album: albumName,
+              };
+              e.dataTransfer.setData(SALE_DRAG_TYPE, JSON.stringify(payload));
+            }}
+            onDragEnd={() => setDragging(false)}
+            onMouseEnter={() => {
+              cancelClose();
+              setOpen(true);
+            }}
+            onMouseLeave={scheduleClose}
+            onClick={() => setDetail(true)}
+            title={
+              canEdit
+                ? "Arraste para outro álbum deste artista para mover · clique para abrir detalhe/corrigir"
+                : "Clique para abrir o detalhe"
+            }
+            className={`flex w-24 shrink-0 flex-col items-center gap-1 rounded border border-border bg-card p-2 text-center hover:border-primary/60 ${
+              canEdit ? "cursor-grab active:cursor-grabbing" : ""
+            } ${dragging ? "opacity-40" : ""}`}
+          >
+            {/* VALOR (antes era a nota que ficava aqui em cima) */}
+            <span className="w-full truncate text-xs font-semibold text-foreground">
+              {money(sale.sold_price)}
+            </span>
+            <span className="w-full truncate text-[10px] text-muted-foreground" title={grade}>
+              {grade}
+            </span>
+            {/* NOTA/score (invertida com o valor) */}
+            <span
+              className={`w-full truncate rounded px-1 py-0.5 text-[11px] font-semibold ${scoreTone(sale.score)}`}
+              title={`Disco ${sale.media || "—"} · Capa ${sale.sleeve || "—"}${
+                sale.score !== null ? ` · Score ${sale.score}` : ""
+              }`}
+            >
+              {sale.score !== null ? sale.score : "—"}
+            </span>
+          </button>
+        </PopoverAnchor>
+        <PopoverContent
+          align="center"
+          side="top"
+          className="w-64 p-3"
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <SalePreview sale={sale} albumName={albumName} condition={cond} />
+        </PopoverContent>
+      </Popover>
+      <SaleDetailDialog
+        sale={sale}
+        albumName={albumName}
+        artistName={artistName}
+        condition={cond}
+        suggestions={suggestions}
+        readOnly={readOnly}
+        open={detail}
+        onClose={() => setDetail(false)}
+        onApply={onApplySaleOverride}
+        onExclude={onExcludeSale ? (label) => onExcludeSale(sale, label) : undefined}
+      />
+    </>
+  );
+}
+
+/** Preview compacto do lote (hover). Mostra artista, álbum, TEXTO ORIGINAL e mais campos. */
+function SalePreview({
+  sale,
+  albumName,
+  condition,
+}: {
+  sale: SaleRow;
+  albumName: string;
+  condition: Condition;
+}) {
+  const img = sale.image || null;
+  const orig = (sale.orig_text || sale.title || "").trim();
+  return (
+    <div className="flex flex-col gap-2">
+      {img ? (
+        <div className="h-32 w-full overflow-hidden rounded bg-secondary">
+          <img src={img} alt="" loading="lazy" className="h-full w-full object-contain p-1" />
+        </div>
+      ) : null}
+      <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">{albumName}</p>
+      {/* Texto original do lote (descritivo do catálogo, ou o título quando não há) — com rolagem
+          quando é longo, para os casos não identificados. */}
+      {orig ? (
+        <div className="max-h-20 overflow-y-auto rounded bg-secondary/50 p-1.5 text-xs leading-snug text-muted-foreground">
+          {orig}
+        </div>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+        <ConditionBadges condition={condition} />
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="font-semibold text-primary" title="Valor de venda">
+          {money(sale.sold_price)}
+        </span>
+        {sale.initial_price != null ? (
+          <span className="text-muted-foreground" title={discountTip(sale)}>
+            inicial {money(sale.initial_price)}
+          </span>
+        ) : null}
+        {netCost(sale) != null ? (
+          <span className="text-muted-foreground" title={feeTip(sale)}>
+            c/ taxa {money(netCost(sale))}
+          </span>
+        ) : null}
+      </div>
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>
+          {sale.sold_date ?? "—"} · {demandLabel(sale)}
+        </span>
+        {sale.source_url ? (
+          <a
+            href={sale.source_url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-primary hover:underline"
+          >
+            Lote <ExternalLink className="h-3 w-3" />
+          </a>
+        ) : null}
+      </div>
+      <p className="text-[10px] italic text-muted-foreground">
+        Clique no card para abrir / corrigir
+      </p>
+    </div>
+  );
+}
+
+/** Detalhe da venda (clique no mini card): texto ORIGINAL completo + todos os campos + link. No
+ *  modo editável, também a correção POR VENDA (define artista/álbum só desta venda) para separar
+ *  os não identificados — omitida inteiramente em `readOnly`. */
+function SaleDetailDialog({
+  sale,
+  albumName,
+  artistName,
+  condition,
+  suggestions,
+  readOnly,
+  open,
+  onClose,
+  onApply,
+  onExclude,
+}: {
+  sale: SaleRow;
+  albumName: string;
+  artistName: string;
+  condition: Condition;
+  suggestions: Suggestions;
+  readOnly: boolean;
+  open: boolean;
+  onClose: () => void;
+  onApply?: ApplySaleOverride;
+  onExclude?: (label: string) => void;
+}) {
+  const [artist, setArtist] = useState(artistName);
+  const [album, setAlbum] = useState(albumName);
+  const listId = `sale-${sale.lot_id}`;
+  const canEdit = !readOnly && !!onApply;
+
+  // Álbuns sugeridos: SÓ os do artista digitado/selecionado (artista é a chave principal; o
+  // álbum só existe dentro do universo dele) — o artista atual, se ainda sem álbuns conhecidos,
+  // cai de volta na lista COMPLETA em vez de ficar vazio.
+  const albumSuggestions = useMemo(() => {
+    const byArtist = suggestions.albumsByArtist.get(normalizeForMatch(artist));
+    return byArtist?.length ? byArtist : suggestions.albums;
+  }, [suggestions, artist]);
+
+  // Reinicia os campos ao (re)abrir para esta venda, com os valores atuais do grupo.
+  const openedFor = useRef<string | null>(null);
+  if (open && openedFor.current !== sale.lot_id) {
+    openedFor.current = sale.lot_id;
+    setArtist(artistName);
+    setAlbum(albumName);
+  }
+  if (!open && openedFor.current !== null) openedFor.current = null;
+
+  const orig = (sale.orig_text || "").trim();
+  const save = () => {
+    onApply?.(sale.lot_id, { artist, album });
+    onClose();
+  };
+  const reset = () => {
+    onApply?.(sale.lot_id, null);
+    onClose();
+  };
+  const exclude = () => {
+    // Rótulo amigável para a lista de "Ocultos" (artista — álbum, ou o título como fallback).
+    const label = [artistName, albumName].filter(Boolean).join(" — ") || sale.title;
+    onExclude?.(label);
+    onClose();
+  };
+
+  const Field = ({ label, value }: { label: string; value: string }) => (
+    <div className="flex justify-between gap-3 border-b border-border/60 py-1">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="text-right text-foreground">{value || "—"}</span>
+    </div>
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="truncate">Detalhe da venda</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          {sale.image ? (
+            <div className="h-40 w-full overflow-hidden rounded bg-secondary">
+              <img
+                src={sale.image}
+                alt=""
+                loading="lazy"
+                className="h-full w-full object-contain p-1"
+              />
+            </div>
+          ) : null}
+          {/* Texto ORIGINAL completo do lote — o que o card do catálogo trazia. */}
+          <div>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">Texto original do lote</p>
+            <div className="max-h-40 overflow-y-auto rounded border border-border bg-secondary/40 p-2 text-sm leading-snug text-foreground">
+              {orig || sale.title || "—"}
+              {!orig && sale.title ? (
+                <span className="mt-1 block text-[10px] italic text-muted-foreground">
+                  (descritivo completo não guardado nesta venda — texto acima é o título; abra o
+                  lote para ver tudo)
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Todos os campos da venda. */}
+          <div className="text-xs">
+            <Field label="Artista (atual)" value={artistName} />
+            <Field label="Álbum (atual)" value={albumName} />
+            <Field label="Título armazenado" value={sale.title} />
+            <Field
+              label="Estado"
+              value={`Disco ${sale.media || "—"} · Capa ${sale.sleeve || "—"}`}
+            />
+            <Field
+              label="Score / Faixa"
+              value={`${sale.score ?? "—"}${sale.faixa ? ` · ${sale.faixa}` : ""}`}
+            />
+            <Field label="Valor" value={money(sale.sold_price)} />
+            <Field
+              label="Inicial / c/ taxa"
+              value={`${sale.initial_price != null ? money(sale.initial_price) : "—"} / ${
+                netCost(sale) != null ? money(netCost(sale)) : "—"
+              }`}
+            />
+            <Field label="Demanda" value={demandLabel(sale)} />
+            <Field
+              label="Casa / UF"
+              value={`${sale.house || "—"}${sale.uf ? ` · ${sale.uf}` : ""}`}
+            />
+            <Field label="Data" value={sale.sold_date ?? "—"} />
+            <Field label="Lote (id)" value={sale.lot_id} />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <ConditionBadges condition={condition} />
+            {sale.source_url ? (
+              <a
+                href={sale.source_url}
+                target="_blank"
+                rel="noreferrer"
+                className="ml-auto inline-flex items-center gap-1 text-primary hover:underline"
+              >
+                Abrir lote no leiloeiro <ExternalLink className="h-3 w-3" />
+              </a>
+            ) : null}
+          </div>
+
+          {/* Correção POR VENDA: separa este disco do balaio, atribuindo artista/álbum SÓ dele. */}
+          {canEdit ? (
+            <div className="flex flex-col gap-2 rounded border border-border p-3">
+              <span className="text-sm font-medium text-foreground">Corrigir esta venda</span>
+              <span className="text-xs text-muted-foreground">
+                Define o artista e o álbum SÓ deste disco — útil para tirar os não identificados do
+                balaio. Pode escolher um nome existente ou digitar um novo.
+              </span>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-muted-foreground">Artista</span>
+                <Input
+                  value={artist}
+                  onChange={(e) => setArtist(e.target.value)}
+                  list={`${listId}-artists`}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-muted-foreground">Álbum</span>
+                <Input
+                  value={album}
+                  onChange={(e) => setAlbum(e.target.value)}
+                  list={`${listId}-albums`}
+                />
+              </label>
+              <datalist id={`${listId}-artists`}>
+                {suggestions.artists.map((a) => (
+                  <option key={a} value={a} />
+                ))}
+              </datalist>
+              <datalist id={`${listId}-albums`}>
+                {albumSuggestions.map((a) => (
+                  <option key={a} value={a} />
+                ))}
+              </datalist>
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {canEdit ? (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={reset}
+                  title="Remover a correção manual desta venda"
+                >
+                  Voltar ao automático
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={exclude}
+                  title="Ocultar esta venda do Analytics (não apaga do banco; dá para reincluir em 'Ocultos')"
+                  className="text-destructive hover:text-destructive"
+                >
+                  <EyeOff className="mr-1 h-3.5 w-3.5" />
+                  Excluir do Analytics
+                </Button>
+              </div>
+            ) : (
+              <span />
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={onClose}>
+                {canEdit ? "Cancelar" : "Fechar"}
+              </Button>
+              {canEdit ? (
+                <Button size="sm" onClick={save}>
+                  Salvar
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Editar/renomear/fundir ARTISTA. Alvo = nome digitado; origem = este artista + selecionados. */
+function ArtistEditDialog({
+  artist,
+  allArtists,
+  open,
+  onClose,
+  onApply,
+  onClear,
+  onExclude,
+}: {
+  artist: ArtistAgg;
+  allArtists: ArtistAgg[];
+  open: boolean;
+  onClose: () => void;
+  onApply: (sourceKeys: string[], name: string) => void;
+  onClear: () => void;
+  onExclude: () => void;
+}) {
+  const [name, setName] = useState(artist.artist);
+  const [filter, setFilter] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // Reinicia o estado ao (re)abrir para este artista.
+  const openedFor = useRef<string | null>(null);
+  if (open && openedFor.current !== artist.key) {
+    openedFor.current = artist.key;
+    setName(artist.artist);
+    setFilter("");
+    setSelected(new Set());
+  }
+  if (!open && openedFor.current !== null) openedFor.current = null;
+
+  const filterNorm = normalizeForMatch(filter);
+  const candidates = useMemo(
+    () =>
+      allArtists
+        .filter((a) => a.key !== artist.key)
+        .filter((a) => !filterNorm || normalizeForMatch(a.artist).includes(filterNorm))
+        .slice(0, 60),
+    [allArtists, artist.key, filterNorm],
+  );
+
+  const toggle = (key: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const save = () => {
+    const target = name.trim() || artist.artist;
+    // Chaves de origem: as deste artista + as de cada artista selecionado (fusão).
+    const merged = allArtists.filter((a) => selected.has(a.key));
+    const sourceKeys = [...new Set([...artist.sourceKeys, ...merged.flatMap((a) => a.sourceKeys)])];
+    onApply(sourceKeys, target);
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Editar artista</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-muted-foreground">Nome do artista</span>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-sm text-muted-foreground">
+              Juntar com outro artista (os álbuns são agrupados; álbuns coincidentes se somam)
+            </span>
+            <Input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Buscar artista para juntar…"
+            />
+            <div className="max-h-56 overflow-y-auto rounded border border-border">
+              {candidates.length === 0 ? (
+                <p className="p-3 text-sm text-muted-foreground">Nenhum artista encontrado.</p>
+              ) : (
+                candidates.map((a) => {
+                  const on = selected.has(a.key);
+                  return (
+                    <button
+                      key={a.key}
+                      type="button"
+                      onClick={() => toggle(a.key)}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-secondary/60 ${
+                        on ? "bg-secondary" : ""
+                      }`}
+                    >
+                      <span
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                          on ? "border-primary bg-primary text-primary-foreground" : "border-border"
+                        }`}
+                      >
+                        {on ? <Check className="h-3 w-3" /> : null}
+                      </span>
+                      <span className="flex-1 truncate text-foreground">{a.artist}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {a.albums.length} álbuns · {a.count} vendas
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Isso vira um aprendizado do sistema: variações desses nomes passam a cair sempre neste
+              grupo, agora e no futuro.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClear}
+                title="Voltar ao agrupamento automático"
+              >
+                Desfazer curadoria
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  onExclude();
+                  onClose();
+                }}
+                title="Ocultar este artista do Analytics (não apaga do banco; dá para reincluir em 'Ocultos')"
+                className="text-destructive hover:text-destructive"
+              >
+                <EyeOff className="mr-1 h-3.5 w-3.5" />
+                Excluir artista
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={onClose}>
+                Cancelar
+              </Button>
+              <Button size="sm" onClick={save}>
+                Salvar
+              </Button>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Editar/renomear/fundir ÁLBUM no escopo do artista. Mantém o nome DESTE álbum (salvo se
+ *  renomeado); os selecionados se juntam a ele. */
+function AlbumEditDialog({
+  album,
+  artistKey,
+  siblings,
+  open,
+  onClose,
+  onApply,
+}: {
+  album: AlbumAgg;
+  artistKey: string;
+  siblings: AlbumAgg[];
+  open: boolean;
+  onClose: () => void;
+  onApply: (keys: string[], name: string) => void;
+}) {
+  const [name, setName] = useState(album.album);
+  const [filter, setFilter] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const openedFor = useRef<string | null>(null);
+  if (open && openedFor.current !== album.key) {
+    openedFor.current = album.key;
+    setName(album.album);
+    setFilter("");
+    setSelected(new Set());
+  }
+  if (!open && openedFor.current !== null) openedFor.current = null;
+
+  const filterNorm = normalizeForMatch(filter);
+  const candidates = useMemo(
+    () =>
+      siblings
+        .filter((a) => a.key !== album.key)
+        .filter((a) => !filterNorm || normalizeForMatch(a.album).includes(filterNorm)),
+    [siblings, album.key, filterNorm],
+  );
+
+  const toggle = (key: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const save = () => {
+    const target = name.trim() || album.album;
+    const merged = siblings.filter((a) => selected.has(a.key));
+    // Chaves de origem, no escopo do artista: `${artistKey}|${albumSourceKey}`.
+    const rawKeys = [...new Set([...album.sourceKeys, ...merged.flatMap((a) => a.sourceKeys)])];
+    const keys = rawKeys.map((k) => `${artistKey}|${k}`);
+    onApply(keys, target);
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Editar álbum</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-muted-foreground">Nome do álbum</span>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-sm text-muted-foreground">
+              Juntar com outro álbum deste artista (viram o mesmo, mantendo este nome)
+            </span>
+            <Input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Buscar álbum para juntar…"
+            />
+            <div className="max-h-56 overflow-y-auto rounded border border-border">
+              {candidates.length === 0 ? (
+                <p className="p-3 text-sm text-muted-foreground">
+                  Nenhum outro álbum deste artista.
+                </p>
+              ) : (
+                candidates.map((a) => {
+                  const on = selected.has(a.key);
+                  return (
+                    <button
+                      key={a.key}
+                      type="button"
+                      onClick={() => toggle(a.key)}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-secondary/60 ${
+                        on ? "bg-secondary" : ""
+                      }`}
+                    >
+                      <span
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                          on ? "border-primary bg-primary text-primary-foreground" : "border-border"
+                        }`}
+                      >
+                        {on ? <Check className="h-3 w-3" /> : null}
+                      </span>
+                      <span className="flex-1 truncate text-foreground">{a.album}</span>
+                      <span className="text-xs text-muted-foreground">{a.count} na base</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Isso vira um aprendizado do sistema: os discos desses álbuns passam a contar como este
+              álbum, agora e no futuro.
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button size="sm" onClick={save}>
+              Salvar
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Colunas ordenáveis da tabela de Detalhes.
+type SortCol =
+  "data" | "disco" | "capa" | "score" | "faixa" | "inicial" | "valor" | "custo" | "demanda";
+const GRADE_INDEX: Record<string, number> = {
+  M: 0,
+  NM: 1,
+  EX: 2,
+  "VG+": 3,
+  VG: 4,
+  "VG-": 5,
+  "G+": 6,
+  G: 7,
+  "G-": 8,
+  "F/P": 9,
+};
+/** Valor comparável de uma venda para cada coluna (null = sempre no fim). */
+function sortValue(s: SaleRow, col: SortCol): number | string | null {
+  switch (col) {
+    case "data":
+      return s.sold_date ?? null;
+    case "disco":
+      return s.media ? (GRADE_INDEX[s.media] ?? null) : null;
+    case "capa":
+      return s.sleeve ? (GRADE_INDEX[s.sleeve] ?? null) : null;
+    case "score":
+    case "faixa":
+      return s.score;
+    case "inicial":
+      return s.initial_price ?? null;
+    case "valor":
+      return s.sold_price;
+    case "custo":
+      return netCost(s);
+    case "demanda":
+      return s.views ?? s.bids ?? null;
+    default:
+      return null;
+  }
+}
+
+function DetailDialog({
+  album,
+  open,
+  onClose,
+}: {
+  album: AlbumAgg;
+  open: boolean;
+  onClose: () => void;
+}) {
+  // Padrão: score ascendente (pior → melhor), como o eixo dos mini cards.
+  const [sort, setSort] = useState<{ col: SortCol; dir: 1 | -1 }>({ col: "score", dir: 1 });
+  const sorted = useMemo(() => {
+    const list = [...album.sales];
+    const { col, dir } = sort;
+    list.sort((a, b) => {
+      const va = sortValue(a, col);
+      const vb = sortValue(b, col);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1; // nulos sempre ao fim
+      if (vb == null) return -1;
+      if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
+      return String(va).localeCompare(String(vb), "pt-BR") * dir;
+    });
+    return list;
+  }, [album.sales, sort]);
+
+  const onSort = (col: SortCol) =>
+    setSort((prev) => (prev.col === col ? { col, dir: prev.dir === 1 ? -1 : 1 } : { col, dir: 1 }));
+
+  const arrow = (col: SortCol) => (sort.col === col ? (sort.dir === 1 ? " ▲" : " ▼") : "");
+  const Th = ({ col, label, extra }: { col: SortCol; label: string; extra?: string }) => (
+    <th className="py-1 pr-3" title={extra}>
+      <button
+        type="button"
+        onClick={() => onSort(col)}
+        className={`inline-flex items-center hover:text-foreground ${
+          sort.col === col ? "font-semibold text-foreground" : ""
+        }`}
+      >
+        {label}
+        {arrow(col)}
+      </button>
+    </th>
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{album.album}</DialogTitle>
+        </DialogHeader>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-xs text-muted-foreground">
+              <tr>
+                <Th col="data" label="Data" />
+                <Th col="disco" label="Disco" />
+                <Th col="capa" label="Capa" />
+                <Th col="score" label="Score" />
+                <Th col="faixa" label="Faixa" />
+                <Th col="inicial" label="Inicial" />
+                <Th col="valor" label="Valor" />
+                <Th
+                  col="custo"
+                  label="Custo c/ taxa"
+                  extra="Custo real = valor + taxa do leiloeiro"
+                />
+                <Th col="demanda" label="Demanda" extra="Visualizações · lances" />
+                <th className="py-1">Lote</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((s) => (
+                <tr key={s.lot_id} className="border-t border-border">
+                  <td className="py-1 pr-3 text-muted-foreground">{s.sold_date ?? "—"}</td>
+                  <td className="py-1 pr-3">{s.media || "—"}</td>
+                  <td className="py-1 pr-3">{s.sleeve || "—"}</td>
+                  <td className="py-1 pr-3">{s.score ?? "—"}</td>
+                  <td className="py-1 pr-3">{s.faixa || "—"}</td>
+                  <td className="py-1 pr-3 text-muted-foreground" title={discountTip(s)}>
+                    {s.initial_price != null ? money(s.initial_price) : "—"}
+                  </td>
+                  <td className="py-1 pr-3 font-semibold text-foreground">{money(s.sold_price)}</td>
+                  <td className="py-1 pr-3 text-muted-foreground" title={feeTip(s)}>
+                    {netCost(s) != null ? money(netCost(s)) : "—"}
+                  </td>
+                  <td className="py-1 pr-3 text-muted-foreground">{demandLabel(s)}</td>
+                  <td className="py-1">
+                    {s.source_url ? (
+                      <a
+                        href={s.source_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center text-primary hover:underline"
+                        aria-label="Abrir lote no leiloeiro"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
