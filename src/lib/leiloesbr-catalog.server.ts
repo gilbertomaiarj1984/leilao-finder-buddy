@@ -249,7 +249,11 @@ async function fetchCatalogJson(
       const text = decodeEntities(
         fixMojibake(String(p["DESCRICAO"] ?? p["MINI_DESCRICAO"] ?? "").trim()),
       );
-      const lote = String(p["LOTE"] ?? "").trim() || null;
+      // Algumas casas (ex.: Catavento Discos) devolvem, para certos lotes multi-item, o campo
+      // `LOTE` preenchido com a descrição inteira em vez de um número curto — valida no mesmo
+      // formato aceito pelo parser HTML irmão (parseCatalogData) e descarta o resto.
+      const loteRaw = String(p["LOTE"] ?? "").trim();
+      const lote = /^[0-9]+[a-zA-Z]?$/.test(loteRaw) ? loteRaw : null;
       map.set(id, {
         lote,
         sold: sold && soldPrice !== null,

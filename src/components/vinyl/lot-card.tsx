@@ -194,8 +194,8 @@ export function LotCard({
       {lot.lote ? (
         <div className="absolute left-2 top-2 z-10">
           <span
-            className="rounded-full bg-secondary px-2 py-0.5 text-xs font-bold text-foreground shadow"
-            title="Nº do lote"
+            className="max-w-[7rem] truncate whitespace-nowrap rounded-full bg-secondary px-2 py-0.5 text-xs font-bold text-foreground shadow"
+            title={`Nº do lote: ${lot.lote}`}
           >
             Lote {lot.lote}
           </span>
