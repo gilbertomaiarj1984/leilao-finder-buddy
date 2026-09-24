@@ -1,14 +1,17 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
+import { deriveAlbum } from "./analytics";
 import { type Condition, parseConditionFromText, scoreCondition } from "./grading";
 import type { LotIdentRow } from "./lot-ident.server";
 import {
   auctionFinished,
   decodeHtmlEntities,
+  extractAlbumPart,
   extractArtist,
   isDiscBundle,
   isGenericArtist,
   looksNonVinylSale,
+  matchExistingAlbum,
   normalizeForMatch,
   parsePrice,
   pickCanonical,
@@ -996,15 +999,41 @@ export async function reidentifyAllSales(
     return variants?.length ? pickCanonical(variants) : a;
   };
 
+  // Universo de álbuns JÁ CONHECIDOS por artista (chave = artista CANÔNICO normalizado): base
+  // para a IA agregar ao bucket de álbum que já existe em vez de criar um quase-duplicado por
+  // pequena diferença de grafia/edição. O artista é sempre a chave principal — só entram álbuns
+  // do MESMO artista canônico; o álbum vem em segundo lugar, dentro desse universo.
+  const albumsByArtist = new Map<string, string[]>();
+  for (const s of sales) {
+    const artistCanon = canonicalArtist(targetArtist(s) || s.artist);
+    const artistKey = normalizeForMatch(artistCanon);
+    if (!artistKey) continue;
+    const guess = deriveAlbum(s.title, artistCanon);
+    if (!guess || guess === "(álbum não identificado)") continue;
+    const list = albumsByArtist.get(artistKey) ?? [];
+    list.push(guess);
+    albumsByArtist.set(artistKey, list);
+  }
+
   // Regrava só as vendas que mudam (título/artista canonizados). SEM `orig_text` na leitura
   // GLOBAL (slim) — omite a chave do payload em vez de mandar "" (que apagaria o texto original
   // já gravado; ver `upsertLotSales`).
   const changed: (Omit<LotSaleRow, "orig_text"> & { orig_text?: string })[] = [];
   for (const s of sales) {
     const album = albumById.get(s.lot_id);
-    const newTitle = album || s.title;
     const rawArtist = (album ? extractArtist(album) : s.artist)?.trim() || s.artist;
     const newArtist = canonicalArtist(rawArtist);
+    // Álbum recém-identificado pela IA: verifica o mais provável já existente NO UNIVERSO deste
+    // artista (canônico) e agrega a ele, em vez de gravar a grafia nova da IA como se fosse um
+    // álbum diferente. Sem identificação nova (venda já resolvida em rodada anterior), mantém o
+    // título como está.
+    let newTitle = s.title;
+    if (album) {
+      const albumPart = extractAlbumPart(album) || album;
+      const existingAlbums = albumsByArtist.get(normalizeForMatch(newArtist)) ?? [];
+      const finalAlbum = matchExistingAlbum(albumPart, existingAlbums) ?? albumPart;
+      newTitle = `${newArtist} - ${finalAlbum}`;
+    }
     if (newArtist !== s.artist || newTitle !== s.title) {
       const { orig_text: _origText, ...base } = s;
       changed.push(

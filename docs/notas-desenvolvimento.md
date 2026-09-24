@@ -622,6 +622,23 @@ Visão de mercado por obra, independente da casa de leilão, sobre o histórico 
   Por grupo, só grava os SUCESSOS em `lot_ident` (não rebaixa uma identificação a nulo). Server fn
   `reidentifySales` aceita `lotIds` (cap maior, chamada única — a UI não roda em laço no modo por
   grupo, evitando reprocessar eternamente os sem solução); ao terminar, invalida `["vinyl-sales"]`.
+- **IA agrega ao álbum já existente do artista (v0.81.0):** pedido do usuário — a reidentificação
+  por IA (global e por artista/álbum, `reidentifyAllSales`) tratava cada álbum identificado pela
+  IA como grafia nova, então uma pequena variação ("Construção" vs "A Construção") virava um
+  balaio **quase-duplicado** em vez de cair no álbum que já existe. Ordem agora é **artista
+  primeiro (chave principal), álbum depois, dentro do universo daquele artista**: depois de
+  canonizar o artista (como já fazia), monta `albumsByArtist` (chave = artista canônico
+  normalizado → álbuns já vistos naquele artista, via `deriveAlbum` sobre os títulos atuais) e,
+  pro álbum que a IA identificou (lado direito de "Artista - Álbum", novo `extractAlbumPart` em
+  `vinyl-parse.ts` — mais confiável que `deriveAlbum` porque o formato da IA já é limpo), procura
+  o **mais provável já existente NAQUELE artista** com o novo `matchExistingAlbum` (exato por
+  `normalizeForMatch` vence; senão, maior similaridade por token — Jaccard — acima de `0.6`) e
+  usa a grafia existente em vez da nova, agregando a venda ao bucket que já existe. Só entra em
+  jogo quando a IA identifica algo NESTA rodada (`albumById`); vendas já resolvidas antes não são
+  tocadas. Também corrigido o diálogo de **correção manual por venda** (`SaleDetailDialog`): a
+  sugestão (`<datalist>`) de álbum agora só oferece os álbuns **daquele artista** digitado/
+  selecionado (novo `Suggestions.albumsByArtist`, montado junto dos apelidos na página) — cai de
+  volta na lista completa só quando o artista ainda não tem nenhum álbum conhecido.
 - **Lotes ocultos + balaio de coletâneas/novelas (v0.45.0):** limpeza dos balaios-lixo do
   Analytics ("Lote", códigos de casa tipo "Discos5"/"Discos 6", "Proposta de Lote Para Leilão").
   Aplicado na **leitura** (`buildAnalytics`, sobre o histórico já gravado, sem re-capturar nem
@@ -1719,6 +1736,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.79.1      | Fix do v0.78.0: validado em produção (`workflow_dispatch` do `refresh.yml`) que a etapa de thumbnail DENTRO de `captureFinishedSales` nunca funcionava — `sales`/`thumbsUsed` sempre voltava 0, e o `backfillSaleThumbnails` do histórico batia `noSource` em TODO o backlog escaneado (450 registros em 30 rodadas). Causa: essa etapa buscava a imagem em `vinylById` (o snapshot AO VIVO da listagem geral, `scrapeVinylLots`) — mas um leilão **some da listagem geral assim que fica "ao vivo"** (comportamento já documentado em "Scraping do LeilõesBR"), então os lotes que `captureFinishedSales` processa (JÁ TERMINADOS) NUNCA estão nesse snapshot; a etapa buscava no lugar errado, sempre vazio. Removida (código morto) — `backfillSaleThumbnails` já cobre o caso: busca a imagem em `lots` (o BANCO, que ainda tem a linha por até `WINDOW_DAYS`=5 dias), roda logo depois no mesmo `refresh.yml`, e ordena por `captured_at DESC` — então uma venda recém-capturada sempre entra na FRENTE da fila do backfill, sem depender do snapshot ao vivo. `THUMB_CAP`/`thumbsUsed`/`VinylInfo.image` removidos (não tinham mais uso) |
 | v0.80.0      | Pedido do usuário: recupera thumbnail do backlog mesmo depois que `lots.image` já não existe mais — validado NA PRÁTICA (SSH manual no VPS, não só leitura de doc) que a página do LOTE (`peca.asp`, o mesmo link de `source_url`) continua trazendo a foto mesmo com o lote fechado/vendido, em duas gerações de template (mesma dualidade que `fetchCatalogData` já trata pro catálogo): template NOVO (JSON `loadData` embutido, campo `VPASTA` — sobrevive ao fechamento, **não** é exclusivo do lote "aberto" como a doc antiga (`docs/notas-desenvolvimento.md`, "Referência: JSON loadData do peca.asp") sugeria) e template ANTIGO (HTML server-side puro, sem JSON — primeiro `<img>` que não pareça logo/banner). Nova `fetchLotPageImage` (`lot-sales.server.ts`) tenta essa página como fallback DENTRO de `backfillSaleThumbnails`, só quando `lots.image` já não existe (1 requisição extra por lote, throttled com `LOT_PAGE_THROTTLE_MS`=350ms — bem mais caro que o caminho barato, por isso só como fallback). Nova `resetNoSourceThumbnails` (`step=resetnosourcethumbs`, ÚNICA VEZ, fora do laço do `refresh.yml`) volta pra `NULL` as vendas que o v0.78.0/v0.79.1 tinham marcado `""` (sem fonte) julgando só por `lots.image` — julgamento errado agora que se sabe que a página do lote é uma segunda fonte válida |
 | v0.80.1      | Fix badge "Lote N" cobrindo o card inteiro em alguns lotes do Catavento Discos: o campo `LOTE` do endpoint JSON (`fetchCatalogJson`, `leiloesbr-catalog.server.ts`) vinha, para alguns registros (aparentemente multi-item), com a descrição inteira em vez do número curto — sem validação nenhuma antes de virar `data.lote`. Agora só aceita `LOTE` no formato `[0-9]+[a-zA-Z]?` (mesmo padrão já usado pelo parser HTML irmão, `parseCatalogData`), caindo pra `null` (sem badge) caso contrário. Badge (`lot-card.tsx`) também ganhou `max-w`/`truncate`/`whitespace-nowrap` como defesa em profundidade, pra uma string longa nesse campo nunca mais crescer sobre o card |
+| v0.81.0      | Pedido do usuário: a IA do Analytics (`reidentifyAllSales`, global e por artista/álbum) passa a agregar o álbum identificado ao bucket **já existente do artista** em vez de criar quase-duplicados por variação de grafia/edição — artista é a chave principal (canonizado primeiro, como já era), álbum entra depois, DENTRO do universo daquele artista: `albumsByArtist` (via `deriveAlbum` sobre os títulos atuais) + novo `matchExistingAlbum`/`extractAlbumPart` (`vinyl-parse.ts`, exato por `normalizeForMatch` ou similaridade por token ≥ `0.6`) escolhem a grafia já conhecida em vez da nova da IA. Diálogo de correção manual por venda também ganhou o mesmo espírito: o `<datalist>` de álbum só sugere os do artista digitado (`Suggestions.albumsByArtist`) |
 
 ## Pendências
 

@@ -104,7 +104,10 @@ function conditionFromSale(s: SaleRow): Condition {
 
 type ArtistSort = "count" | "alpha";
 type AlbumSort = "count" | "alpha";
-type Suggestions = { artists: string[]; albums: string[] };
+// `albumsByArtist`: álbuns já vistos, por CHAVE normalizada do artista — a caixa de correção por
+// venda usa isso para só oferecer álbuns DAQUELE artista (artista é a chave principal; o álbum
+// só faz sentido dentro do universo dele).
+type Suggestions = { artists: string[]; albums: string[]; albumsByArtist: Map<string, string[]> };
 type ApplySaleOverride = (lotId: string, value: { artist: string; album: string } | null) => void;
 
 // Drag-and-drop de venda entre álbuns do MESMO artista (organização mais rápida que abrir o
@@ -406,12 +409,15 @@ function VinilAnalyticsPage() {
   const suggestions = useMemo(() => {
     const artistsSet = new Set<string>();
     const albumsSet = new Set<string>();
+    const albumsByArtist = new Map<string, string[]>();
     for (const a of analytics) {
       artistsSet.add(a.artist);
-      for (const al of a.albums) albumsSet.add(al.album);
+      const albumNames = a.albums.map((al) => al.album);
+      for (const name of albumNames) albumsSet.add(name);
+      albumsByArtist.set(normalizeForMatch(a.artist), albumNames);
     }
     const sort = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b, "pt-BR"));
-    return { artists: sort(artistsSet), albums: sort(albumsSet) };
+    return { artists: sort(artistsSet), albums: sort(albumsSet), albumsByArtist };
   }, [analytics]);
 
   return (
@@ -1217,6 +1223,14 @@ function SaleDetailDialog({
   const [album, setAlbum] = useState(albumName);
   const listId = `sale-${sale.lot_id}`;
 
+  // Álbuns sugeridos: SÓ os do artista digitado/selecionado (artista é a chave principal; o
+  // álbum só existe dentro do universo dele) — o artista atual, se ainda sem álbuns conhecidos,
+  // cai de volta na lista COMPLETA em vez de ficar vazio.
+  const albumSuggestions = useMemo(() => {
+    const byArtist = suggestions.albumsByArtist.get(normalizeForMatch(artist));
+    return byArtist?.length ? byArtist : suggestions.albums;
+  }, [suggestions, artist]);
+
   // Reinicia os campos ao (re)abrir para esta venda, com os valores atuais do grupo.
   const openedFor = useRef<string | null>(null);
   if (open && openedFor.current !== sale.lot_id) {
@@ -1352,7 +1366,7 @@ function SaleDetailDialog({
               ))}
             </datalist>
             <datalist id={`${listId}-albums`}>
-              {suggestions.albums.map((a) => (
+              {albumSuggestions.map((a) => (
                 <option key={a} value={a} />
               ))}
             </datalist>
