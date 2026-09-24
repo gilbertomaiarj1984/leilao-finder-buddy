@@ -877,6 +877,47 @@ export const setAnalyticsExcludedArtist = createServerFn({ method: "POST" })
     return await save(data.keys, data.excluded, data.label);
   });
 
+/** Token de HOJE do link público (somente leitura) do Vinil Analytics — ver `access.server.ts`.
+ *  Só o token derivado é exposto ao cliente; o `PUBLIC_ANALYTICS_SECRET` nunca sai do servidor. */
+export const getTodayPublicAnalyticsToken = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { todayPublicAnalyticsToken } = await import("./access.server");
+    return { token: await todayPublicAnalyticsToken() };
+  });
+
+/**
+ * Variante PÚBLICA (sem login) do Vinil Analytics: mesmos dados de `getVinylSales` +
+ * `getAnalyticsAliases`, gated SÓ pelo token diário (`?token=` — ver `access.server.ts`), sem
+ * `requireSupabaseAuth` nem `assertAllowed`. Propositalmente sem nenhuma escrita/mutação — só
+ * leitura, para a página `/vinil-analytics-publico`.
+ */
+export const getPublicVinylAnalytics = createServerFn({ method: "GET" })
+  .inputValidator((input: { token?: string } | undefined) => ({
+    token: typeof input?.token === "string" ? input.token : undefined,
+  }))
+  .handler(async ({ data }) => {
+    const { assertPublicAnalyticsToken } = await import("./access.server");
+    await assertPublicAnalyticsToken(data.token);
+    try {
+      const { getAllLotSales } = await import("./lot-sales.server");
+      const { getAnalyticsAliases: readAliases } = await import("./app-state.server");
+      const [sales, aliases] = await Promise.all([
+        getAllLotSales({ withOrig: false }),
+        readAliases(),
+      ]);
+      return { sales, aliases };
+    } catch (error) {
+      console.error("[analytics] não foi possível ler o Analytics público", error);
+      return {
+        sales: [],
+        aliases: { artists: {}, albums: {}, sales: {}, excludedSales: {}, excludedArtists: {} },
+      };
+    }
+  });
+
 /** Âncora de mercado do Discogs por lote (preço/demanda). Best-effort: [] em erro. */
 export const getLotMarket = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
