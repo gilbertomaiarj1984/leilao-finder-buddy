@@ -14,6 +14,7 @@ import {
   Disc3,
   EyeOff,
   ExternalLink,
+  Layers,
   Pencil,
   RefreshCw,
   RotateCcw,
@@ -118,6 +119,9 @@ type ApplySaleOverride = (lotId: string, value: { artist: string; album: string 
 const SALE_DRAG_TYPE = "application/x-vinyl-sale";
 type SaleDragPayload = { lotId: string; artist: string; album: string };
 type ReidentGroup = (lotIds: string[]) => Promise<void>;
+// Roda a IA em CADA álbum de um artista, um de cada vez (mesma chamada por grupo que o botão de
+// UM álbum já faz) — poupa o usuário de abrir álbum por álbum manualmente.
+type ReidentAllAlbums = (albums: AlbumAgg[]) => Promise<void>;
 type ExcludeSale = (sale: SaleRow, label: string) => void;
 type ExcludeArtist = (artist: ArtistAgg) => void;
 
@@ -371,6 +375,38 @@ function VinilAnalyticsPage() {
     }
   };
 
+  // Reidentifica pela IA TODOS os álbuns de um artista de uma vez — uma chamada por álbum (o
+  // mesmo que o botão de UM álbum já faz), só que em sequência automática, sem precisar abrir e
+  // clicar álbum por álbum. Agrega o resultado num único toast/invalidação ao final.
+  const reidentifyAllAlbums: ReidentAllAlbums = async (albums) => {
+    const groups = albums.map((al) => al.sales.map((s) => s.lot_id)).filter((ids) => ids.length);
+    if (!groups.length) return;
+    let identified = 0;
+    let remaining = 0;
+    try {
+      for (const lotIds of groups) {
+        const res = await runReident({ data: { lotIds, max: Math.min(lotIds.length, 100) } });
+        identified += res.identified;
+        remaining += res.remaining;
+      }
+      await queryClient.invalidateQueries({ queryKey: ["vinyl-sales"] });
+      await sales.refetch();
+      if (identified > 0) {
+        toast.success(
+          `IA: ${identified} identificado(s) em ${groups.length} álbum(ns)${
+            remaining ? ` · ${remaining} restante(s) — rode de novo` : ""
+          }`,
+        );
+      } else if (remaining > 0) {
+        toast.info(`Nada novo pela IA · ${remaining} venda(s) sem identificação`);
+      } else {
+        toast.success("Nada a identificar nos álbuns deste artista");
+      }
+    } catch (error) {
+      toast.error((error as Error)?.message || "Não foi possível reidentificar os álbuns");
+    }
+  };
+
   const rows = useMemo(() => (sales.data ?? []) as SaleRow[], [sales.data]);
   const analytics = useMemo(
     () => buildAnalytics(rows, aliasesQuery.data),
@@ -523,6 +559,7 @@ function VinilAnalyticsPage() {
                 onApplyAlbum={applyAlbumAlias}
                 onApplySaleOverride={applySaleOverride}
                 onReidentGroup={reidentifyGroupSales}
+                onReidentAllAlbums={reidentifyAllAlbums}
                 onExcludeArtist={excludeArtist}
                 onExcludeSale={excludeSale}
               />
@@ -727,6 +764,39 @@ function IaButton({
   );
 }
 
+/** Botão "rodar a IA em todos os álbuns" do artista: dispara `onReident` (a mesma rotina do
+ *  botão de UM álbum) uma vez por álbum, em sequência — poupa o usuário de abrir álbum por
+ *  álbum e clicar em cada um. */
+function IaAllAlbumsButton({
+  albums,
+  onReident,
+  title,
+}: {
+  albums: AlbumAgg[];
+  onReident: ReidentAllAlbums;
+  title: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const run = (e: { stopPropagation: () => void }) => {
+    e.stopPropagation();
+    if (busy || !albums.length) return;
+    setBusy(true);
+    void onReident(albums).finally(() => setBusy(false));
+  };
+  return (
+    <button
+      type="button"
+      onClick={run}
+      disabled={busy || !albums.length}
+      title={title}
+      aria-label={title}
+      className="shrink-0 rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+    >
+      <Layers className={`h-4 w-4 ${busy ? "animate-pulse" : ""}`} />
+    </button>
+  );
+}
+
 function ArtistRow({
   artist,
   allArtists,
@@ -736,6 +806,7 @@ function ArtistRow({
   onApplyAlbum,
   onApplySaleOverride,
   onReidentGroup,
+  onReidentAllAlbums,
   onExcludeArtist,
   onExcludeSale,
 }: {
@@ -747,6 +818,7 @@ function ArtistRow({
   onApplyAlbum: (keys: string[], name: string) => void;
   onApplySaleOverride: ApplySaleOverride;
   onReidentGroup: ReidentGroup;
+  onReidentAllAlbums: ReidentAllAlbums;
   onExcludeArtist: ExcludeArtist;
   onExcludeSale: ExcludeSale;
 }) {
@@ -793,6 +865,11 @@ function ArtistRow({
           lotIds={artistLotIds}
           onReident={onReidentGroup}
           title="Rodar a IA neste artista (identifica as vendas ainda sem álbum)"
+        />
+        <IaAllAlbumsButton
+          albums={artist.albums}
+          onReident={onReidentAllAlbums}
+          title="Rodar a IA em cada álbum deste artista, um de cada vez (sem precisar abrir álbum por álbum)"
         />
         <button
           type="button"
