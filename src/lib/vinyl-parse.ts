@@ -794,6 +794,51 @@ export function pickCanonical(names: string[]): string {
   )[0]!;
 }
 
+/** Lado direito de um "Artista - Álbum" (formato pedido à IA de identificação/reidentificação —
+ *  ver `ai-eval.server.ts`). Corta no PRIMEIRO " - "; sem separador, devolve a frase inteira
+ *  (a IA não achou o artista, então tudo é o "álbum"). Mais simples e confiável que `deriveAlbum`
+ *  (heurística p/ texto bruto e ruidoso do catálogo) porque o formato aqui já é limpo/garantido. */
+export function extractAlbumPart(full: string): string {
+  const idx = full.indexOf(" - ");
+  if (idx === -1) return full.trim();
+  return full.slice(idx + 3).trim();
+}
+
+/** Similaridade por token (Jaccard) entre dois nomes, já `normalizeForMatch` — 0 a 1. */
+function tokenSimilarity(a: string, b: string): number {
+  const setA = new Set(normalizeForMatch(a).split(" ").filter(Boolean));
+  const setB = new Set(normalizeForMatch(b).split(" ").filter(Boolean));
+  if (!setA.size || !setB.size) return 0;
+  let shared = 0;
+  for (const t of setA) if (setB.has(t)) shared += 1;
+  return shared / Math.max(setA.size, setB.size);
+}
+
+// Limiar de similaridade por token para considerar dois nomes de álbum "o mesmo, com variação
+// de grafia/edição" (ex.: "Construção" vs "A Construção (Remasterizado)"). Abaixo disso, são
+// álbuns diferentes mesmo — não arrisca fundir discos distintos do mesmo artista.
+const ALBUM_MATCH_THRESHOLD = 0.6;
+
+/**
+ * Acha, entre os álbuns JÁ EXISTENTES de UM artista, o mais provável de ser o MESMO álbum que
+ * `candidate` — usado pela reidentificação por IA para agregar a venda ao bucket de álbum que
+ * já existe (em vez de criar um quase-duplicado por pequena diferença de grafia/edição).
+ * Casamento EXATO (`normalizeForMatch`) sempre vence; senão, o de maior similaridade por token
+ * acima do limiar. `null` quando nada é parecido o bastante (é um álbum novo mesmo) — o artista
+ * é sempre a chave principal (o chamador já restringe `existing` ao universo daquele artista).
+ */
+export function matchExistingAlbum(candidate: string, existing: string[]): string | null {
+  const candNorm = normalizeForMatch(candidate);
+  if (!candNorm) return null;
+  for (const name of existing) if (normalizeForMatch(name) === candNorm) return name;
+  let best: { name: string; score: number } | null = null;
+  for (const name of existing) {
+    const score = tokenSimilarity(candidate, name);
+    if (score >= ALBUM_MATCH_THRESHOLD && (!best || score > best.score)) best = { name, score };
+  }
+  return best?.name ?? null;
+}
+
 /**
  * Relevância de um lote para a busca, para ordenar "mais exato primeiro, parecidos depois".
  * `queryNorm` já vem normalizado (via `normalizeForMatch`). Camadas, da mais forte à mais
