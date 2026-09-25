@@ -99,7 +99,11 @@ async function fetchOne(target: {
   const url = pecaUrl(target.url, target.idPeca);
   if (!url) return null;
   try {
-    const html = await publicFetch(url, {});
+    // Referer da própria casa (não o padrão leiloesbr.com.br de `publicFetch`) — ver o
+    // mesmo fix em `leiloesbr-catalog.server.ts` (v0.85.0): Referer de origem cruzada
+    // pro domínio da casa zera a resposta em silêncio (HTTP 200 vazio, nunca um erro).
+    const domain = auctionHouseDomain(target.url);
+    const html = await publicFetch(url, domain ? { referer: `${domain}/` } : {});
     const details: LotDetails = {};
     const currentValue = parseCurrentValue(html);
     if (currentValue) details.currentValue = currentValue;

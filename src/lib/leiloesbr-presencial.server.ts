@@ -38,7 +38,10 @@ export async function fetchPresencialNow(raw: string): Promise<PresencialNow | n
   try {
     let ids = idsCache.get(key);
     if (!ids) {
-      ids = parsePresencialIds(await publicFetch(key)) ?? undefined;
+      // Referer da própria casa (não o padrão leiloesbr.com.br de `publicFetch`) — mesmo
+      // fix de `leiloesbr-catalog.server.ts` (v0.85.0): Referer de origem cruzada pro
+      // domínio da casa zera a resposta em silêncio (HTTP 200 vazio, nunca um erro).
+      ids = parsePresencialIds(await publicFetch(key, { referer: `${url.origin}/` })) ?? undefined;
       if (!ids) throw new Error("idleilao/idsite não encontrados no presencial.asp");
       idsCache.set(key, ids);
     }

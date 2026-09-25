@@ -213,6 +213,15 @@ export function extractPecas(parsed: unknown): Record<string, unknown>[] {
  * `ID, LOTE, VALOR_VENDA, DESCRICAO, MOSTRABTN_CLASS ('is-vendido'|'is-naovendido')`.
  * ⚠️ `VALOR_VENDA` é o valor REAL (mesmo quando `VALOR_VALUE` vem "--"/escondido nos leilões
  * antigos) — por isso os antigos ainda dão para capturar. Paginado (`limit=30`).
+ * ⚠️ **Fix v0.85.0 — Referer de origem cruzada zerava o catálogo em silêncio**: `publicFetch`
+ * (`leiloesbr-auth.server.ts`) manda por padrão `Referer: <BASE_URL leiloesbr.com.br>/default.asp`
+ * — correto pra URLs da própria LeilõesBR (listagem geral), mas aqui a URL é do domínio da
+ * CASA. Um Referer de origem diferente do destino é sinal clássico de bot pra proteções
+ * anti-scraping — o servidor da casa respondia **HTTP 200 com corpo vazio/diferente** (nunca
+ * um erro, por isso nunca aparecia no `try/catch`), então `fetchCatalogData` sempre devolvia
+ * 0 itens pra QUALQUER leilão, mesmo com o catálogo saudável e público (confirmado por fetch
+ * cru sem Referer, `step=catdebug`). Passar `referer: ${domain}/` (a própria casa) resolve —
+ * mesmo espírito de um usuário navegando dentro do site dela.
  */
 async function fetchCatalogJson(
   domain: string,
@@ -228,7 +237,7 @@ async function fetchCatalogJson(
       `&pag=${pag}&remote=1&limit=${LIMIT}&_=${Date.now()}`;
     let raw: string;
     try {
-      raw = await publicFetch(url, {});
+      raw = await publicFetch(url, { referer: `${domain}/` });
     } catch {
       break;
     }
@@ -284,7 +293,7 @@ async function fetchCatalogHtml(
         : `${domain}/catalogo.asp?Num=${idLeilao}&pag=${page}`;
     let html: string;
     try {
-      html = await publicFetch(pageUrl, {});
+      html = await publicFetch(pageUrl, { referer: `${domain}/` });
     } catch {
       break;
     }

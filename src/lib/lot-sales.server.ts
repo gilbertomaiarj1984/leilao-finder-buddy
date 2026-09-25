@@ -502,7 +502,10 @@ async function fetchLotPageImage(url: string): Promise<string | null> {
   if (!url) return null;
   try {
     const { publicFetch } = await import("./leiloesbr-auth.server");
-    const html = await publicFetch(url, {});
+    // Referer da própria casa (não o padrão leiloesbr.com.br de `publicFetch`) — mesmo fix
+    // de `leiloesbr-catalog.server.ts` (v0.85.0): Referer de origem cruzada pro domínio da
+    // casa zera a resposta em silêncio (HTTP 200 vazio, nunca um erro).
+    const html = await publicFetch(url, { referer: `${new URL(url).origin}/` });
     const vpasta = html.match(/"VPASTA"\s*:\s*"([^"]*)"/)?.[1];
     if (vpasta) return decodeHtmlEntities(vpasta.replace(/\\\//g, "/"));
     for (const m of html.matchAll(/<img[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)) {
