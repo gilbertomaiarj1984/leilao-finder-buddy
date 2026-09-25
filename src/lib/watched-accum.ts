@@ -12,10 +12,10 @@
 import { auctionFinished, recentDayKeys, upcomingDayKeys } from "./vinyl-parse";
 
 // Para lances (`MyBid`), `date` é o dia em que o lance foi DADO (normalmente hoje ou um pouco
-// antes do pregão), não o dia do leilão — ao contrário de `WatchedLot`. Por isso a poda de
-// lances olha para os últimos N dias (passado), não para os próximos (`upcomingDayKeys`), com
-// margem suficiente para cobrir o intervalo entre dar o lance e o leilão fechar.
-export const BID_RETENTION_DAYS = 14;
+// antes do pregão), não o dia do leilão — ao contrário de `WatchedLot`. Um lance para um leilão
+// futuro tem que continuar aparecendo (nunca é podado por estar "à frente"); só os lances
+// PASSADOS saem, e só depois de `BID_RETENTION_DAYS` dias (hoje + esta margem para trás).
+export const BID_RETENTION_DAYS = 3; // hoje + 2 dias pra trás
 export const WATCHED_ACCUM_STORAGE_KEY = "leilao-finder:watched-accum:v1";
 export const BIDS_ACCUM_STORAGE_KEY = "leilao-finder:bids-accum:v1";
 
@@ -71,9 +71,9 @@ export function mergeWatchedAccum<T extends { id: string; date: string; time?: s
     // `leiloesbr-scrape.server.ts`) — o lote ainda não estar "na ferramenta" (na tabela `lots`)
     // não significa que a vigia não exista; ela vem direto da conta do LeilõesBR (`l=8`). Em
     // `MyBid` (sem `time`), `date` é o dia em que o lance foi DADO — normalmente hoje ou um
-    // pouco antes do pregão —, então a poda olha para trás (`recentDayKeys`); podar pela janela
-    // "só futuro" apagava o lance do acumulador assim que ele era mesclado, e o card nunca
-    // chegava a mostrar "Meu lance".
+    // pouco antes do pregão. Dias FUTUROS nunca são podados aqui (senão o lance sumia assim que
+    // era mesclado, e o card nunca chegava a mostrar "Meu lance"); só os dias já passados caem
+    // na janela de retenção (`recentDayKeys(BID_RETENTION_DAYS)`).
     if (item.time !== undefined) {
       if (!dayKey || dayKey < todayKey) {
         acc.delete(id);
@@ -86,6 +86,9 @@ export function mergeWatchedAccum<T extends { id: string; date: string; time?: s
       if (!freshIds.has(id) && !auctionFinished(dayKey, item.time)) {
         acc.delete(id);
       }
+    } else if (dayKey && dayKey > todayKey) {
+      // Lance para leilão futuro (ou dado antes de um pregão futuro) — nunca poda por data,
+      // só quando o próprio dia virar passado e sair da janela de retenção acima.
     } else if (!validBidDays.has(dayKey)) {
       acc.delete(id);
     }
