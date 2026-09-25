@@ -116,6 +116,51 @@ export const enrichLotes = createServerFn({ method: "POST" })
     return await enrichMissingLotes(data.max, data.offset);
   });
 
+// Descoberta por galeria (casas fora da plataforma, ou cuja categoria "Disco de Vinil" não
+// bate com a marcação da LeilõesBR — ex.: Abreu Colecionismo). Mesmo padrão chunked de
+// `enrichLotes` (cursor `offset` no servidor), reaproveitado pelo cron (`step=galleryscan`)
+// e pelo botão manual "Atualizar tudo" (v0.84.0).
+export const runGalleryscan = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { offset?: number; count?: number } | undefined) => ({
+    offset: Math.max(0, Number(input?.offset) || 0),
+    count: Math.min(Math.max(Number(input?.count) || 3, 1), 10),
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { scanGalleries } = await import("./leiloesbr-scrape.server");
+    return await scanGalleries(data.offset, data.count);
+  });
+
+// Estado (Disco/Capa) dos lotes pré-leilão, lido do catálogo da casa (`lot_condition`).
+// Chunked como `enrichLotes`; reaproveitado pelo botão manual "Atualizar tudo" (v0.84.0).
+export const runCondition = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { max?: number } | undefined) => ({
+    max: Math.min(Math.max(Number(input?.max) || 8, 1), 20),
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { enrichConditions } = await import("./lot-condition.server");
+    return await enrichConditions(data.max);
+  });
+
+// Identificação simplificada por IA (artista/álbum, `lot_ident`). UMA chamada só SUBMETE
+// (Claude batch) ou GRAVA na hora (Gemini síncrono) — nunca espera o batch terminar, então
+// o chamador (aqui, o botão manual "Atualizar tudo") só informa "enviado, completa sozinho"
+// e segue. Mesma lógica de `cron.server.ts`/`step=aiident`, extraída em v0.84.0 pra
+// `ai-ident-step.server.ts` e reaproveitada aqui.
+export const runAiident = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { runAiIdentStep } = await import("./ai-ident-step.server");
+    return await runAiIdentStep();
+  });
+
 /** Lances dados pelo usuário (conta_site.asp?l=4). Best-effort: [] em erro. */
 export const listMyBids = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
