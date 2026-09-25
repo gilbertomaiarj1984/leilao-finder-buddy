@@ -90,6 +90,9 @@ import {
   getVerifiedHouses,
   getVinylLots,
   listMyBids,
+  runAiident,
+  runCondition,
+  runGalleryscan,
   scrapeVinylChunk,
   setAiMode,
   setAiProvider,
@@ -439,7 +442,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const fetchBids = useServerFn(listMyBids);
   const runToggle = useServerFn(toggleWatch);
   const runChunk = useServerFn(scrapeVinylChunk);
+  const runGalleryscanFn = useServerFn(runGalleryscan);
   const runEnrich = useServerFn(enrichLotes);
+  const runConditionFn = useServerFn(runCondition);
+  const runAiidentFn = useServerFn(runAiident);
   const fetchVerified = useServerFn(getVerifiedHouses);
   const saveVerified = useServerFn(setVerifiedHouses);
   const fetchLotDetails = useServerFn(getLotDetails);
@@ -1243,12 +1249,19 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
 
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [refreshPct, setRefreshPct] = useState<number | null>(null);
-  // Atualiza tudo em BLOCOS sequenciais de páginas (uma requisição por vez),
-  // evitando uma varredura completa que estoura o tempo do servidor em produção.
+  // Fase atual (rótulo no botão) depois que a varredura geral (com % preciso) termina —
+  // as fases seguintes têm tamanhos heterogêneos demais pra uma % confiável, então só
+  // mostram o que estão fazendo (mesmo espírito das seções do `refresh.yml`).
+  const [refreshPhase, setRefreshPhase] = useState<string | null>(null);
+  // Atualiza tudo em BLOCOS sequenciais (uma requisição por vez), evitando uma varredura
+  // completa que estoura o tempo do servidor em produção — mesma ordem do cron automático
+  // (`refresh.yml`): varredura geral → descoberta por galeria → nº de lote → estado
+  // Disco/Capa → identificação por IA (só dispara, não espera terminar).
   const refreshAll = () => {
     void (async () => {
       setRefreshingAll(true);
       setRefreshPct(0);
+      setRefreshPhase(null);
       try {
         const SIZE = 15;
         let fromPage: number | null = null;
@@ -1262,22 +1275,65 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           setRefreshPct(total ? Math.min(99, Math.round((scannedTop / total) * 100)) : null);
           if (fromPage === null) break;
         }
+        setRefreshPct(null);
+
+        // Descoberta por galeria: casas fora da plataforma ou cuja categoria "Disco de
+        // Vinil" não bate com a marcação da LeilõesBR (ex.: Abreu Colecionismo) — sem isso
+        // essas casas nunca aparecem só pela varredura geral acima.
+        setRefreshPhase("Descobrindo por galeria…");
+        let galleryOffset = 0;
+        for (let guard = 0; guard < 25; guard += 1) {
+          const res = await runGalleryscanFn({ data: { offset: galleryOffset, count: 3 } });
+          if (res.done || res.nextOffset == null) break;
+          galleryOffset = res.nextOffset;
+        }
+
         // Preenche o nº do lote (via catálogo das casas) percorrendo os leilões por cursor.
+        setRefreshPhase("Preenchendo nº de lote…");
         let enrichOffset = 0;
         for (let guard = 0; guard < 60; guard += 1) {
           const res = await runEnrich({ data: { max: 6, offset: enrichOffset } });
           if (res.done || res.nextOffset == null) break;
           enrichOffset = res.nextOffset;
         }
+
+        // Estado Disco/Capa (lê o mesmo catálogo já usado acima, sem custo extra de rede).
+        setRefreshPhase("Lendo estado Disco/Capa…");
+        for (let guard = 0; guard < 40; guard += 1) {
+          const res = await runConditionFn({ data: { max: 8 } });
+          if (res.done) break;
+        }
+
         const fresh = await fetchLots({ data: {} });
         queryClient.setQueryData(lotsQuery.queryKey, fresh);
-        setRefreshPct(100);
         toast.success("Lista atualizada");
+
+        // Identificação por IA (artista/álbum): UMA chamada só, nunca espera o batch
+        // terminar — a Claude processa em Batches (minutos) e o resto completa sozinho no
+        // próximo ciclo do cron ou no próximo "Atualizar tudo".
+        setRefreshPhase("Enviando identificação por IA…");
+        try {
+          const identRes = await runAiidentFn();
+          if ("skipped" in identRes) {
+            // nenhum provedor de IA configurado — nada a informar
+          } else if ("pending" in identRes) {
+            toast.info("Identificação por IA: coletando o lote anterior — vai completar sozinho");
+          } else if ("submitted" in identRes && (identRes.submitted ?? 0) > 0) {
+            toast.info(
+              `Identificação por IA enviada (${identRes.submitted} lote(s)) — vai completar sozinho`,
+            );
+          } else if ("sync" in identRes && !identRes.done) {
+            toast.info("Identificação por IA: mais um lote processado — o resto completa sozinho");
+          }
+        } catch (error) {
+          console.error("[refreshAll] falha ao disparar identificação por IA", error);
+        }
       } catch (error) {
         toast.error((error as Error)?.message || "Não foi possível atualizar a lista agora");
       } finally {
         setRefreshingAll(false);
         setRefreshPct(null);
+        setRefreshPhase(null);
         void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
       }
     })();
@@ -2827,7 +2883,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               )}
               {refreshingAll && refreshPct !== null
                 ? `Atualizando… ${refreshPct}%`
-                : "Atualizar tudo"}
+                : refreshingAll && refreshPhase
+                  ? refreshPhase
+                  : "Atualizar tudo"}
             </Button>
             {lots.data?.updatedAt ? (
               <span title="Última atualização da lista">
