@@ -244,6 +244,75 @@ export async function publicFetch(url: string, init: AuthFetchInit = {}): Promis
   return await fetchWithRetry(url, init);
 }
 
+export type RawFetchResult = {
+  status: number | "ERR";
+  error?: string;
+  finalUrl: string;
+  redirected: boolean;
+  ms: number;
+  contentType: string | null;
+  retryAfter: string | null;
+  server: string | null;
+  /** Cookie jar resultante (o recebido + os `Set-Cookie` desta resposta). */
+  cookie: string;
+  body: string;
+};
+
+/**
+ * Diagnóstico: um GET público SEM retry e SEM lançar — devolve status HTTP, URL final
+ * (pós-redirect), tempo e corpo, exatamente o que `publicFetch` esconde (ele só lança
+ * `LeiloesBrHttpError` e os chamadores engolem com `catch { continue }`). Mesmos headers
+ * de `fetchOnce`. `cookie` opcional permite testar a hipótese de a paginação depender da
+ * sessão ASP (`ASPSESSIONID`) criada na 1ª página.
+ */
+export async function publicFetchRaw(
+  url: string,
+  opts: { cookie?: string; referer?: string } = {},
+): Promise<RawFetchResult> {
+  const started = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent": UA,
+        Accept: "text/html",
+        ...(opts.cookie ? { Cookie: opts.cookie } : {}),
+        Referer: opts.referer ?? `${BASE_URL}/default.asp`,
+      },
+      signal: controller.signal,
+    });
+    const body = await response.text();
+    return {
+      status: response.status,
+      finalUrl: response.url,
+      redirected: response.redirected,
+      ms: Date.now() - started,
+      contentType: response.headers.get("content-type"),
+      retryAfter: response.headers.get("retry-after"),
+      server: response.headers.get("server"),
+      cookie: mergeCookies(opts.cookie, response),
+      body,
+    };
+  } catch (error) {
+    return {
+      status: "ERR",
+      error: (error as Error)?.message ?? "fetch failed",
+      finalUrl: url,
+      redirected: false,
+      ms: Date.now() - started,
+      contentType: null,
+      retryAfter: null,
+      server: null,
+      cookie: opts.cookie ?? "",
+      body: "",
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Fetches a LeilõesBR URL with the shared logged-in session. When `isLoggedOut`
  * says the response came back anonymous, it logs in again and retries once.
