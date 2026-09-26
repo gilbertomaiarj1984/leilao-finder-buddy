@@ -91,8 +91,32 @@ export function normalize(value: string): string {
     .trim();
 }
 
-export function isVinylTitle(title: string): boolean {
+// Objetos que NÃO são disco mas cujo título traz "vinil"/"disco"/"LP" em outro sentido
+// (achado v0.85.4, `step=windowaudit` em produção, depois que a varredura passou a ler a
+// listagem inteira): "vinil" como MATERIAL ("BONECO ERIC CARTMAN… EM VINIL 14 CM", "King
+// Kong, em vinil", "Apontador… em vinil"), "disco" como PEÇA ("Telefone à disco", "Toca
+// discos Gradiente", brinco "em formato de disco"), "LPs" em nome de produto ("VIDEO GAME
+// RETRO LPS 505", "móvel porta-LPs") e box de série ("1 Temporada, contendo 6 discos"). Esses
+// termos "salvavam" o lote nos dois filtros (`looksNonVinyl` na varredura por categoria,
+// `isVinylTitle` no `galleryscan`). Só vale quando NÃO há uma frase inequívoca de disco
+// (`RECORD_PHRASE_RE`) — "LP Toquinho - Boneca de Pano" continua passando.
+const NON_RECORD_OBJECT_RE =
+  /\b(?:bonec[oa]s?|brinquedos?|miniaturas?|apontador(?:es)?|action\s*figures?|estatuetas?|relogios?|telefones?|toca[\s-]?discos?|vitrolas?|radiolas?|receivers?|amplificador(?:es)?|cassete\s+deck|tape\s+deck|agulhas?|capsulas?|porta[\s-]?lps?|porta[\s-]?discos?|moveis?|movel|maquinas?\s+de\s+costura|licoreiras?|aventa(?:l|is)|video\s*games?|consoles?|obras?\s+de\s+arte|paineis|painel|temporadas?|reproducao\s+grafica|kit\s+(?:de|para)\s+limpeza|limpeza\s+de\s+(?:vinil|discos?)|brincos?|pulseiras?|colar(?:es)?|an(?:el|eis)|em\s+vinil)\b/;
+const RECORD_PHRASE_RE =
+  /\b(?:lp\b|long\s*play|discos?\s+(?:de|em)\s+vinil|vinil\s+lp\b|compactos?\b(?!\s+disc)|(?:33|45|78)\s*rpm)/;
+
+/** true quando o título descreve um OBJETO que não é disco (ver `NON_RECORD_OBJECT_RE`). */
+export function isNonRecordObject(title: string): boolean {
   const t = ` ${normalize(title)} `;
+  return NON_RECORD_OBJECT_RE.test(t) && !RECORD_PHRASE_RE.test(t);
+}
+
+const DVD_BLURAY_RE = /\b(?:dvds?|blu[-\s]?ray)\b/;
+
+export function isVinylTitle(title: string): boolean {
+  if (isNonRecordObject(title)) return false;
+  const t = ` ${normalize(title)} `;
+  if (DVD_BLURAY_RE.test(t) && !VINYL_STRONG_RE.test(t)) return false;
   const hasVinyl = VINYL_HINTS.some((hint) =>
     hint.length <= 3 ? new RegExp(`\\b${hint}\\b`).test(t) : t.includes(hint),
   );
@@ -112,7 +136,12 @@ export function isVinylTitle(title: string): boolean {
  * OUTRO formato (CD/DVD/K7) e não menciona vinil.
  */
 export function looksNonVinyl(title: string): boolean {
+  if (isNonRecordObject(title)) return true;
   const t = ` ${normalize(title)} `;
+  // DVD/Blu-ray com "N discos" (box de série/filme): "disco" sozinho não pode salvar — só um
+  // sinal FORTE de vinil (LP, vinil, compacto…). Achado v0.85.4 ("DVD - Box Carnivàle - 6
+  // discos", "Box em Blu Ray Saga Completa de Star Wars… 3 discos de bônus").
+  if (DVD_BLURAY_RE.test(t) && !VINYL_STRONG_RE.test(t)) return true;
   const mentionsVinyl =
     t.includes("vinil") ||
     t.includes("vinyl") ||
