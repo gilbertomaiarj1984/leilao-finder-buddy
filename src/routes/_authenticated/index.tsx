@@ -2795,14 +2795,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             const matchedTerms =
               relatedId && (res.kind === "auto" || res.kind === "suggested")
                 ? matchedAlbumTerms(
-                    ownedCands.find((c) => c.id === relatedId) ?? {
-                      id: "",
-                      label: "",
-                      artistTokens: [],
-                      albumTokens: [],
-                      genericTokens: [],
-                      year: null,
-                    },
+                    ownedCands.find((c) => c.id === relatedId) ??
+                      ownedCandidate({ id: "", artist: "", album: null, year: null }),
                     identityById.get(lot.id) ?? EMPTY_IDENTITY,
                   )
                 : [];

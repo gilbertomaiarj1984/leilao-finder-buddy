@@ -375,18 +375,48 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
   Casamento em `wantlist-match.ts` (`ownedCandidate`/`ownedMatchForLot`), **precisão em 1º
-  lugar** (falso positivo é pior que faltar): **EXIGE o nome do álbum**, e só com tokens
-  **distintivos** — descontando os que também são do **artista** (ex.: "A Arte de Jorge Ben" →
-  distintivo só "arte"; senão "jorge"/"ben" casariam quando o lote só CITA o artista como
-  compositor) e palavras **genéricas** (`GENERIC_ALBUM_TOKENS`: "ao vivo"/"sucessos"/…). Score
-  0..1 dirigido pela **cobertura do álbum**, com o **artista** claramente presente
-  (`OWNED_ARTIST_MIN` 0.75); o **ano** só reforça / desempata reedição. Faixas: `>=
-OWNED_CONFIDENT_MIN` (80%) = ícone confiante; `>= OWNED_MATCH_MIN` (60%) = ícone **com "?"**;
-  abaixo não marca. **Sem álbum distintivo → não marca** (só a peça exata por `lot_id`, score
-  1, no chamador). `ownedCands` ignora buckets Lote/Coletâneas/Não classificados; mapa
-  `ownedById` memoizado; prop `owned: OwnedHit` no `LotCard`.
+  lugar** (falso positivo é pior que faltar). **Desde a v0.86.0 a comparação é POR CAMPO** —
+  artista com artista, álbum com álbum, em palavras inteiras — em vez do antigo "saco de
+  palavras" (título + artista + álbum juntos, com substring: "arte" casava "parte", o artista
+  citado como compositor valia como artista, "Clube da Esquina" casava "Clube da Esquina 2").
+  `lotIdentity` passou a carregar, além do saco de palavras (ainda usado pela sondagem), os
+  campos estruturados `titleWords`/`titleSegments` (título em ordem + trecho separado por
+  " - "/"|"), `artists` (artista efetivo + "Artista" do álbum da IA e do release do Discogs,
+  via `splitArtistAlbum`), `albums` (álbum da IA + título do release) e `bundle` (artista
+  "Lote" → nada estruturado vale). O score (`ownedScore`) segue "um leva ao outro":
+  1. **Artista primeiro** (`artistEvidence`): bate com um artista ESTRUTURADO do lote →
+     `confirmed`; nomes aproximados porém bem relacionados (`artistsRelated`: ≥ 75% NOS DOIS
+     sentidos, 1 letra de diferença a partir de 4 letras, ou um nome contido no outro com 2+
+     palavras — "Elis Regina" ⊂ "Elis Regina & Tom Jobim"; "Milton Nascimento" × "Milton
+     Banana" e "Queen" × "Queen Latifah" NÃO). Se o lote é de OUTRO artista o disco nem é
+     avaliado (então, com artista confirmado, só os discos DELE disputam o lote); uma
+     ocorrência dentro do nome desse outro artista não conta como citação. Sem artista
+     estruturado (ou com os dois artistas citados no título — dueto/"X interpreta Y"), basta o
+     nome como FRASE no título, mas o score fica limitado a **0.7 ("?")** — sem certeza do
+     artista, nunca confiante.
+  2. **Álbum depois, nos dois sentidos**: com álbum estruturado (`albumVsStructured`), os nomes
+     precisam ter similaridade ≥ 75% (ou um contido no outro com 2+ palavras) e os MESMOS
+     números de volume → 0.80–0.95; se o lote foi identificado como OUTRO disco → 0, mesmo que o
+     nome apareça no texto (faixa, "contém…"); só um nome de 1 palavra contido no outro
+     (subtítulo) → "?". Sem álbum estruturado (`albumInTitle`), o nome precisa estar no título
+     como FRASE (palavras inteiras em ordem; entre elas só "enchimento" — "de"/"da"/genéricos,
+     no máximo 2): num trecho próprio ("Artista - Álbum - LP") → 0.9; colado ao artista → 0.9
+     (1 palavra: 0.75, 0.9 com ano exato); em outro ponto → 0.75/0.65 (+ano); espalhado → 0.6.
+     Número logo depois da frase ("… 2", "Vol. 3") que o disco da coleção não tem invalida.
+  Tokens do álbum descontam os do **artista** ("A Arte de Jorge Ben" → distintivo só "arte") e
+  palavras **genéricas** (`GENERIC_ALBUM_TOKENS`: "ao vivo"/"sucessos"/formato/edição —
+  "remasterizado", "deluxe", "vinil"…/estado/stopwords). Disco **homônimo** ("Djavan - Djavan")
+  exige artista confirmado + álbum estruturado também homônimo (só com ano exato → "?"). Faixas:
+  `>= OWNED_CONFIDENT_MIN` (80%) = ícone confiante; `>= OWNED_MATCH_MIN` (60%) = ícone **com
+  "?"**; abaixo não marca. **Sem álbum → não marca** (só a peça exata por `lot_id`, score 1, no
+  chamador). Desempenho: pré-filtro por índice de chaves (`fuzzyKeys`: palavra + variações com 1
+  letra apagada, cache por identidade em `WeakMap`, chaves do artista pré-calculadas em
+  `OwnedCandidate.artistKeys`) descarta de cara os discos cujo artista não aparece no lote.
+  `ownedCands` ignora buckets Lote/Coletâneas/Não classificados; mapa `ownedById` memoizado;
+  prop `owned: OwnedHit` no `LotCard`.
   - **Coletânea/ao vivo (título genérico)** casa pelo **nome + ano EXATO** (`ownedScore`
-    separa tokens distintivos × genéricos; "Ao Vivo (1989)"/"Seus Sucessos (1978)").
+    separa tokens distintivos × genéricos; "Ao Vivo (1989)"/"Seus Sucessos (1978)"), sempre
+    com o artista verificado antes (confiante só com artista estruturado).
   - **Relação MANUAL + gerenciável (v0.24.0):** o ícone aparece em **TODO card** — **cinza**
     (sem relação), **roxo** (relação), **roxo + "?"** (incerta/sugerida). Ao tocar abre o
     **`OwnedPanel`** (`owned-panel.tsx`) com o **`CollectionCard`** do disco relacionado e ações:
@@ -1778,6 +1808,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.85.3      | **Diagnóstico**: após o v0.85.2 (varredura geral lendo TODAS as páginas da categoria vinil) o usuário viu entrar "bastante lixo" (relógio, brinquedo…) — casas generalistas que etiquetam qualquer item como "Disco de Vinil" e antes ficavam escondidas pelo bug das páginas vazias. Novo `auditWindowLots`/`step=windowaudit[&house=][&sample=]` (só leitura): por casa e por leilão da janela, quantos lotes têm sinal de vinil no título (`isVinylTitle`) e amostras dos dois grupos, pra calibrar o filtro com dado real |
 | v0.85.4      | Fix do lixo que entrou depois do v0.85.2 (usuário: "relógio, brinquedos etc."). `step=windowaudit` mostrou que quase todo o lixo PASSAVA nos filtros por ter "vinil"/"disco"/"LP" no título em outro sentido: "vinil" como material ("BONECO… EM VINIL 14 CM", "King Kong, em vinil", apontador, Minnie), "disco" como peça ("Telefone à disco", "Toca discos Gradiente", brinco "em formato de disco"), "LPs" em nome de produto ("VIDEO GAME RETRO LPS 505", "móvel porta-LPs") e boxes de DVD/Blu-ray com "N discos". Novo `isNonRecordObject` (`vinyl-parse.ts`, `NON_RECORD_OBJECT_RE` — boneco/brinquedo/miniatura/relógio/telefone/toca-discos/vitrola/receiver/porta-LPs/móvel/máquina de costura/video game/temporada/obra de arte/joia/"em vinil"… — salvo frase inequívoca de disco em `RECORD_PHRASE_RE`: "LP", "disco de vinil", "compacto", "78 rpm"…) aplicado em `looksNonVinyl` (varredura por categoria + Compras) e `isVinylTitle` (`galleryscan`); DVD/Blu-ray sem sinal forte de vinil agora é rejeitado nos dois mesmo com "discos". Validado com os títulos reais do audit (27 lixos rejeitados, 14 discos reais — incl. "LP Toquinho - Boneca de Pano", "Compacto - Telefone" — mantidos). Limpeza do que já entrou: `step=cleannonvinyl` (reaplica `looksNonVinyl`) |
 | v0.85.5      | Fix de falso positivo do v0.85.4, pego ANTES de apagar: a simulação de `step=cleannonvinyl` (dry-run) listou 44 lotes, 35 lixo real mas **9 LPs lacrados da Abreu Colecionismo** (fichas longas "Álbum: … \| Código: … \| Edição Nova em Vinil … estreado em seu toca-discos … DISCO LACRADO") — "em vinil"/"toca-discos" na descrição acionavam `NON_RECORD_OBJECT_RE`. `RECORD_PHRASE_RE` ganha `album:` (formato de ficha Abreu/Vinil 11) e `disco(s) lacrado(s)`. Revalidado: 31 lixos rejeitados, 19 discos reais mantidos (incl. os 9 da Abreu) |
+| v0.86.0      | Relação lote ↔ Coleção muito mais rígida (usuário: "muito falso positivo"): `ownedScore` compara **por campo** — artista × artista estruturado do lote (IA/Discogs/efetivo, nomes aproximados nos dois sentidos; lote de OUTRO artista nem é avaliado; sem artista estruturado → no máximo "?") e depois álbum × álbum (IA/Discogs, similaridade ≥ 75% nos dois sentidos + mesmos números de volume; lote identificado como outro disco → não casa) ou, sem álbum estruturado, nome como FRASE de palavras inteiras no título. Acaba o casamento por substring e por palavras soltas espalhadas. `lotIdentity` ganha campos estruturados (`titleWords`/`titleSegments`/`artists`/`albums`/`bundle`); aprendizado (`feedbackMatches`) usa as mesmas regras; pré-filtro por chaves aproximadas mantém o custo igual/menor |
 
 ## Pendências
 
