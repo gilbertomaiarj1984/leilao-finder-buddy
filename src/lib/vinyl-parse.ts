@@ -424,6 +424,37 @@ const COMPILATION_TAIL_RE =
 // artista chamado "Ouro" — sem essa trava, o padrão acima promoveria o qualificador a "artista".
 const COMPILATION_SERIES_QUALIFIERS = new Set(["ouro", "prata", "bronze", "platina", "epoca"]);
 
+// Títulos em formato de FICHA estruturada, com campos rotulados separados por "|" (visto em
+// casas que exportam do próprio catálogo): "Álbum: Produto Do Morro | Código: 109.0118 |
+// Artista(s): [`Bezerra Da Silva`] | Ano: 1983 | Estilo(s): Samba". O artista mora no campo
+// "Artista(s)"/"Artista"/"Intérprete", NÃO no início — sem isso a heurística de candidato abaixo
+// pegava o 1º campo e o NOME DO ÁLBUM virava artista ("Produto do Morro | Código").
+const STRUCTURED_ARTIST_FIELD_RE =
+  /(?:^|[|:])\s*(?:artista|artistas|artista\s*\(s\)|int[eé]rpretes?|int[eé]rprete\s*\(s\))\s*:\s*([^|]*)/i;
+
+/**
+ * Artista do campo rotulado de um título-ficha ("... | Artista(s): [`X`] | ..."). Devolve o
+ * PRIMEIRO nome da lista (valores vêm como "[`A`, `B`]", "['A']" ou texto puro), já em
+ * title case; `null` quando o título não traz o campo (segue a heurística normal); "" quando
+ * o campo existe mas está vazio.
+ */
+function extractStructuredArtist(title: string): string | null {
+  const m = title.match(STRUCTURED_ARTIST_FIELD_RE);
+  if (!m) return null;
+  const raw = m[1]!
+    .trim()
+    .replace(/^\[|\]$/g, "")
+    .trim();
+  const quoted = raw.match(/[`'"‘’“”]([^`'"‘’“”]+)[`'"‘’“”]/);
+  const first = (quoted ? quoted[1]! : raw.split(/\s*[,;]\s*/)[0]!)
+    .replace(/[`'"‘’“”[\]]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  // Coletânea ("Various", "Vários") → "" como o resto de `extractArtist` (vai p/ não classificados).
+  if (!first || isVariousArtists(first)) return "";
+  return canonicalizeCollapsedArtist(titleCase(first));
+}
+
 /**
  * Best-effort artist extraction from a lot title. Returns `LOTE_LABEL` for lots that are a
  * bundle of several discs, and "" when the title looks like a compilation / soundtrack or
@@ -431,6 +462,9 @@ const COMPILATION_SERIES_QUALIFIERS = new Set(["ouro", "prata", "bronze", "plati
  */
 export function extractArtist(title: string): string {
   if (isDiscBundle(title)) return LOTE_LABEL;
+
+  const structured = extractStructuredArtist(title);
+  if (structured !== null) return structured;
 
   let rest = title.replace(/\s+/g, " ").trim();
   let changed = true;

@@ -4,6 +4,7 @@ import { publicFetch, BASE_URL } from "./leiloesbr-auth.server";
 import {
   decodeHtmlEntities,
   extractArtist,
+  isGenericArtist,
   isVinylTitle,
   looksNonVinyl,
   parseInfoLine,
@@ -885,7 +886,10 @@ function rowToLot(row: LotRow): VinylLot {
     uf: row.uf,
     house: row.house,
     houseUrl: row.house_url,
-    artist: row.artist,
+    // Artista gravado por uma versão anterior do `extractArtist` pode ser lixo (ex.: título-ficha
+    // "Álbum: X | Código: … | Artista(s): [`Y`]" gravou "X | Código") — rederiva do título na
+    // leitura quando o gravado é genérico, sem esperar a próxima varredura regravar o lote.
+    artist: isGenericArtist(row.artist) ? extractArtist(row.title) || row.artist : row.artist,
   };
 }
 
