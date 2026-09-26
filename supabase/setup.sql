@@ -126,6 +126,10 @@ CREATE TABLE IF NOT EXISTS public.lot_ai (
   model        text,
   evaluated_at timestamptz NOT NULL DEFAULT now()
 );
+-- Preço (R$) do lote NO MOMENTO da avaliação — a nota mistura raridade + oportunidade, então
+-- quando o preço de um vigiado/lance sobe o bastante a avaliação é refeita (ver
+-- `src/lib/ai-reprice.ts`). NULL = avaliação antiga (antes desta coluna) ou sem preço.
+ALTER TABLE public.lot_ai ADD COLUMN IF NOT EXISTS eval_price numeric;
 
 -- ---------------------------------------------------------------------
 -- lot_ident — identificação SIMPLIFICADA da IA por lote (só artista/álbum/ano).

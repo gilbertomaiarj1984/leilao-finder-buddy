@@ -756,10 +756,18 @@ Três valores de **fontes diferentes** — não confundir:
   JSON `loadData`): **`data[0].VALOR_VALUE`** (atual) e **`data[0].NOVO_VALOR`** (próximo, já
   calculado pelo site). **Só o lote ABERTO traz esses campos** → **1 requisição por lote** →
   buscado só para **vigiados + lances** (conjunto pequeno), nunca a listagem inteira.
-  Implementação: `leiloesbr-lot-details.server.ts` (`fetchLotDetails`, concorrência 8, teto 100,
-  regex `"VALOR_VALUE":"(\d+)"` / `"NOVO_VALOR":"(\d+)"`) → `getLotDetails` → query
-  `["lot-details", ...]` (`staleTime` 3min, `refetchOnMount: "always"`). Não persiste (busca ao
-  vivo, cache curto).
+  Implementação: `leiloesbr-lot-details.server.ts` (`fetchLotDetails`, concorrência 8, teto 100
+  POR CHAMADA; campo lido por `loadDataField` — com ou sem aspas — e convertido por
+  `parseLoadDataNumber`, que aceita "105", "105.00", "105,00", "1.050,00", "1,050.00") →
+  `getLotDetails` → queries `["lot-details", <ids do bloco>]` via `useQueries` (`staleTime` 3min,
+  `refetchOnMount: "always"`). Não persiste (busca ao vivo, cache curto).
+- **Fatiamento/prioridade (v0.88.0):** os vigiados ACUMULAM (`watched-accum`, incluem dias já
+  passados) — com ~180 vigiados + lances, o teto de 100 do servidor cortava lotes arbitrários
+  (inclusive de hoje) e o card ficava sem "Próximo". Agora o cliente ORDENA os alvos (pregões de
+  hoje/próximos primeiro, do mais cedo pro mais tarde; depois os passados, do mais recente pro
+  mais antigo) e busca em blocos de `LOT_DETAILS_CHUNK`=50, 1 query por bloco (`combine` junta
+  num mapa por `id`). Lance sem dia na varredura (lote sumiu dela porque o pregão está AO VIVO;
+  `b.date` é a data do LANCE, não do pregão) conta como pregão de hoje.
 - **NÃO inferir o incremento** — o `NOVO_VALOR` real diverge dos "termos" da casa; ele é
   autoritativo. **`base`** (do `data-watch`) NÃO é o incremento (é a base/plataforma).
 - **Regra de UI (card):** sempre "Atual"; "Próximo" quando há `nextBid`; "Meu lance" quando há
@@ -997,6 +1005,20 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
 - **`matchesInterests` é da UI, NÃO da IA:** `buildInterestMatcher` (`ai-score-utils.ts`) casa
   a lista `app_state.user_interests` com o título via `normalizeForMatch` (determinístico,
   não gasta tokens); destaca com ⭐.
+- **Nota acompanha o preço — `lot_ai.eval_price` (v0.88.0):** a nota mistura raridade +
+  OPORTUNIDADE, então uma nota dada com o lote a R$ 5 ficava otimista depois que os lances o
+  levavam a R$ 100. `eval_price` guarda o preço usado na avaliação (sync: `parsePrice(lot.price)`;
+  Batches: `prices` gravado junto dos `hashes` em `app_state.ai_batch`). `priceRoseSinceEval`
+  (`ai-reprice.ts`, client-safe): reavalia quando o preço atual ≥ `eval_price` × 1,2 **e** subiu
+  ≥ R$ 10 (`eval_price` null = avaliação antiga → reavalia 1× se houver preço). Só para
+  VIGIADOS + LANCES, por dois caminhos: (1) **cron `step=aieval`** — `selectLotsToEvaluate(...,
+  repriceIds)` com os ids de vigiados ∪ lances (lidos agora em qualquer modo, não só "watched");
+  (2) **cliente** (`index.tsx`, efeito após o `lot-details`) — com o valor AO VIVO do `peca.asp`
+  (o cron defasa e perde o lote quando o pregão entra ao vivo), manda os lotes que subiram para
+  a server fn `repriceLotAi` (≤10 por chamada; o servidor RECONFERE contra `eval_price`, só
+  reavalia lote que já tem avaliação, respeita o modo "off") e grava as linhas no cache
+  `["lot-ai"]`. Cada `id|preço` é tentado 1× por sessão; pregões de dias passados são ignorados.
+  O painel da nota mostra "Avaliado a: R$ X".
 - **Refazer consulta por lote (v0.60.0):** botão "refazer consulta" no painel de detalhes da
   nota (`ScoreDetails`, aberto ao passar o mouse/focar o selo — `ScoreCorner` nos cards,
   `ScoreBadge` nas tabelas da Análise). Server fn `reevaluateLot({id, title, price, house,
@@ -1834,6 +1856,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.86.0      | Relação lote ↔ Coleção muito mais rígida (usuário: "muito falso positivo"): `ownedScore` compara **por campo** — artista × artista estruturado do lote (IA/Discogs/efetivo, nomes aproximados nos dois sentidos; lote de OUTRO artista nem é avaliado; sem artista estruturado → no máximo "?") e depois álbum × álbum (IA/Discogs, similaridade ≥ 75% nos dois sentidos + mesmos números de volume; lote identificado como outro disco → não casa) ou, sem álbum estruturado, nome como FRASE de palavras inteiras no título. Acaba o casamento por substring e por palavras soltas espalhadas. `lotIdentity` ganha campos estruturados (`titleWords`/`titleSegments`/`artists`/`albums`/`bundle`); aprendizado (`feedbackMatches`) usa as mesmas regras; pré-filtro por chaves aproximadas mantém o custo igual/menor |
 | v0.87.0      | "Possível lixo" reescrito (usuário: um LP sem DVD no texto era marcado por parecer um DVD excluído): em vez de 2 palavras quaisquer em comum, compara o MOTIVO de o excluído ser lixo — (1) motivo digitado ao excluir vira expressão aprendida ("máquina de costura"), (2) indicador de tipo de objeto/formato (DVD/CD/livro/boneco…) só casa lote com o mesmo indicador, (3) senão 2+ termos raros, nunca contra lote claramente vinil. Artista/álbum do próprio lote, palavras de conteúdo e termos comuns na listagem não contam. Ver "Exclusão de lotes" |
 | v0.87.1      | Fix (usuário: "muitos casos onde o nome do álbum ficou no lugar do artista"): casas que exportam título-ficha "Álbum: Saúde \| Código: 403.6243 \| Artista(s): [`Rita Lee & Roberto`] \| Ano: 1981 \| ..." agrupavam pelo 1º campo ("Saúde \| Código"). `extractArtist` (`vinyl-parse.ts`) agora lê primeiro o campo rotulado `Artista(s)`/`Artista`/`Intérprete` (após início, "\|" ou ":"), pega o 1º nome da lista (crases/aspas/texto puro) e devolve "" para "Various"/vazio. `rowToLot` (`leiloesbr-scrape.server.ts`) rederiva do título na leitura quando o artista gravado é genérico (`isGenericArtist`, que já pega "\|"), sem esperar a próxima varredura |
+| v0.88.0      | Pedido do usuário: (1) "Próximo lance" ausente em vários vigiados/lances — o `getLotDetails` tem teto de 100 alvos e os vigiados acumulados (~180, incluindo dias passados) + lances passavam disso, cortando lotes arbitrários; agora o cliente prioriza (hoje/próximos primeiro) e busca em blocos de 50 (`useQueries`), e o parse de `NOVO_VALOR`/`VALOR_VALUE` aceita milhar formatado e número sem aspas. (2) Nota da IA acompanha o preço: nova coluna `lot_ai.eval_price` (preço da avaliação); vigiados/lances cujo preço subiu ≥20% e ≥R$ 10 são reavaliados (cron `aieval` + server fn `repriceLotAi` disparada pelo cliente com o valor ao vivo) — ver IA, "Nota acompanha o preço" |
 
 ## Pendências
 

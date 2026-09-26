@@ -93,7 +93,11 @@ export async function handleCron(request: Request): Promise<Response | null> {
       // 1) Há batch (Claude) em andamento? Tenta coletar — independe do provedor atual.
       const pending = await getPendingAiBatch();
       if (pending) {
-        const { done, rows } = await collectEvalBatch(pending.batchId, pending.hashes);
+        const { done, rows } = await collectEvalBatch(
+          pending.batchId,
+          pending.hashes,
+          pending.prices,
+        );
         if (!done) return json({ pending: true, batchId: pending.batchId });
         const collected = await upsertLotAi(rows);
         await setPendingAiBatch(null);
@@ -113,35 +117,40 @@ export async function handleCron(request: Request): Promise<Response | null> {
       const [snapshot, aiRows] = await Promise.all([scrapeVinylLots(false), getAllLotAi()]);
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 800, 1), 2000);
 
-      // Modo "watched": só avalia lotes que o usuário VIGIA ou já deu LANCE (união). As
-      // contas são lidas com a sessão de servidor (credenciais de ambiente). Best-effort:
-      // se a leitura falhar, cai para conjunto vazio (nada a submeter nesta rodada).
-      let candidates = snapshot.lots;
-      if (mode === "watched") {
-        const ids = new Set<string>();
-        try {
-          const { listWatchedFromSite } = await import("./leiloesbr-watch.server");
-          for (const w of await listWatchedFromSite()) ids.add(w.id);
-        } catch (error) {
-          console.error("[cron] aieval: falha ao ler vigiados (modo watched)", error);
-        }
-        try {
-          const { listMyBidsFromSite } = await import("./leiloesbr-bids.server");
-          for (const b of await listMyBidsFromSite()) ids.add(b.id);
-        } catch (error) {
-          console.error("[cron] aieval: falha ao ler lances (modo watched)", error);
-        }
-        candidates = snapshot.lots.filter((lot) => ids.has(lot.id));
+      // Vigiados ∪ lances, lidos com a sessão de servidor (credenciais de ambiente).
+      // Best-effort: se a leitura falhar, cai para conjunto vazio. Usado nos dois modos:
+      // - "watched": só avalia esses lotes;
+      // - sempre: esses lotes são REAVALIADOS quando o preço subiu desde a avaliação (a nota
+      //   inclui a oportunidade — ver `ai-reprice.ts`).
+      const ids = new Set<string>();
+      try {
+        const { listWatchedFromSite } = await import("./leiloesbr-watch.server");
+        for (const w of await listWatchedFromSite()) ids.add(w.id);
+      } catch (error) {
+        console.error("[cron] aieval: falha ao ler vigiados", error);
       }
+      try {
+        const { listMyBidsFromSite } = await import("./leiloesbr-bids.server");
+        for (const b of await listMyBidsFromSite()) ids.add(b.id);
+      } catch (error) {
+        console.error("[cron] aieval: falha ao ler lances", error);
+      }
+      let candidates = snapshot.lots;
+      if (mode === "watched") candidates = snapshot.lots.filter((lot) => ids.has(lot.id));
 
-      const toEval = selectLotsToEvaluate(candidates, aiRows, max);
+      const toEval = selectLotsToEvaluate(candidates, aiRows, max, ids);
       if (!toEval.length) return json({ done: true, submitted: 0, mode, provider });
 
       // 3a) Claude → Batches API. Se estiver sem créditos e houver Gemini, cai p/ o síncrono.
       if (providerSupportsBatch(provider)) {
         try {
-          const { batchId, hashes, count } = await submitEvalBatch(toEval);
-          await setPendingAiBatch({ batchId, submittedAt: new Date().toISOString(), hashes });
+          const { batchId, hashes, prices, count } = await submitEvalBatch(toEval);
+          await setPendingAiBatch({
+            batchId,
+            submittedAt: new Date().toISOString(),
+            hashes,
+            prices,
+          });
           return json({ submitted: count, batchId, mode, provider });
         } catch (error) {
           if (!isQuotaError(error) || !providerConfigured("gemini")) throw error;

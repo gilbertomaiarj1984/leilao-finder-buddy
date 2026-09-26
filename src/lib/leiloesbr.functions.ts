@@ -545,6 +545,79 @@ export const reevaluateLot = createServerFn({ method: "POST" })
     return { row };
   });
 
+/**
+ * Reavalia a nota da IA de vigiados/lances cujo preço ATUAL (ao vivo, do `peca.asp`) subiu o
+ * bastante desde a avaliação (`priceRoseSinceEval`, ver `ai-reprice.ts`) — a nota mistura
+ * raridade + oportunidade, então fica otimista demais quando os lances sobem. Disparado pelo
+ * cliente quando o valor ao vivo chega (a varredura do cron defasa e perde o lote quando o
+ * pregão entra ao vivo). O servidor RECONFERE a subida contra `lot_ai.eval_price` (não confia
+ * só no cliente), só reavalia lotes que JÁ têm avaliação (não gasta com lote nunca avaliado —
+ * isso continua com o cron/"Analisar") e respeita o modo "off". Teto de 10 por chamada.
+ */
+export const repriceLotAi = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (
+      input:
+        | {
+            lots?: {
+              id?: string;
+              title?: string;
+              price?: string;
+              house?: string;
+              image?: string | null;
+            }[];
+          }
+        | undefined,
+    ) => ({
+      lots: (Array.isArray(input?.lots) ? input!.lots : [])
+        .filter(
+          (l) =>
+            l &&
+            typeof l.id === "string" &&
+            l.id &&
+            typeof l.title === "string" &&
+            l.title &&
+            typeof l.price === "string",
+        )
+        .slice(0, 10)
+        .map((l) => ({
+          id: l.id as string,
+          title: l.title as string,
+          price: l.price as string,
+          house: typeof l.house === "string" ? l.house : "",
+          image: typeof l.image === "string" ? l.image : null,
+        })),
+    }),
+  )
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const empty = { rows: [] as import("./lot-ai.server").LotAiRow[] };
+    if (!data.lots.length) return empty;
+    const { aiConfigured, evalLotsSync } = await import("./ai-eval.server");
+    if (!aiConfigured()) return empty;
+    const { getAiMode, getAiProvider } = await import("./app-state.server");
+    if ((await getAiMode()) === "off") return empty;
+    const { getAllLotAi, upsertLotAi } = await import("./lot-ai.server");
+    const { priceRoseSinceEval } = await import("./ai-reprice");
+    const { parsePrice } = await import("./vinyl-parse");
+    const byId = new Map((await getAllLotAi()).map((r) => [r.id, r]));
+    const toEval = data.lots.filter((l) => {
+      const row = byId.get(l.id);
+      return row ? priceRoseSinceEval(row.eval_price, parsePrice(l.price)) : false;
+    });
+    if (!toEval.length) return empty;
+    try {
+      const { rows } = await evalLotsSync(toEval, await getAiProvider());
+      await upsertLotAi(rows);
+      return { rows };
+    } catch (error) {
+      console.error("[lot-ai] falha ao reavaliar lotes por subida de preço", error);
+      return empty;
+    }
+  });
+
 /** Modo da avaliação por IA da rodada automática: "off" | "all" | "watched". Global. */
 export const getAiMode = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

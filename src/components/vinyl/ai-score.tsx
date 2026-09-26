@@ -402,6 +402,12 @@ export function ScoreDetails({
         </dd>
         <dt>Oportunidade:</dt>
         <dd className={`font-medium ${dealTone(ai.deal)}`}>{dealLabel(ai.deal)}</dd>
+        {ai.evalPrice ? (
+          <>
+            <dt>Avaliado a:</dt>
+            <dd>{ai.evalPrice.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</dd>
+          </>
+        ) : null}
         {ai.matchesInterests ? (
           <>
             <dt>Interesse:</dt>

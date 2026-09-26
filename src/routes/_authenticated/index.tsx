@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -85,6 +85,7 @@ import {
   getLotIdent,
   getLotMarket,
   getLotDetails,
+  repriceLotAi,
   getSoldLots,
   getUserInterests,
   getVerifiedHouses,
@@ -134,11 +135,13 @@ import {
   isDiscBundle,
   LOTE_LABEL,
   normalizeForMatch,
+  parsePrice,
   searchRelevance,
   titleCase,
   UNCLASSIFIED_LABEL,
   type VinylLot,
 } from "@/lib/vinyl-parse";
+import { priceRoseSinceEval } from "@/lib/ai-reprice";
 import {
   lotIdentity,
   matchedAlbumTerms,
@@ -265,6 +268,26 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
     }
     return this.props.children;
   }
+}
+
+/** Tamanho de cada bloco da busca de detalhes (peca.asp) — o servidor aceita até 100. */
+const LOT_DETAILS_CHUNK = 50;
+
+type LotDetailsMap = Record<string, { currentValue?: string; nextBid?: string; sold?: string }>;
+
+/** Dia de hoje (fuso local) no formato das chaves de dia do app (`yyyy-mm-dd`). */
+function localTodayKey(): string {
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${mm}-${dd}`;
+}
+
+/** Junta os blocos da busca de detalhes num só mapa por `id` (estável: fora do componente). */
+function combineLotDetails(results: { data?: LotDetailsMap }[]): LotDetailsMap {
+  const out: LotDetailsMap = {};
+  for (const r of results) if (r.data) Object.assign(out, r.data);
+  return out;
 }
 
 /** "26/08 às 14:30" no fuso de São Paulo, ou "" quando não há data. */
@@ -449,6 +472,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const fetchVerified = useServerFn(getVerifiedHouses);
   const saveVerified = useServerFn(setVerifiedHouses);
   const fetchLotDetails = useServerFn(getLotDetails);
+  const runRepriceLotAi = useServerFn(repriceLotAi);
   const fetchSoldLots = useServerFn(getSoldLots);
   const fetchLotAi = useServerFn(getLotAi);
   const fetchLotIdent = useServerFn(getLotIdent);
@@ -684,6 +708,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         album: r.album,
         reason: r.reason,
         tags: r.tags,
+        evalPrice: r.eval_price,
       });
     return map;
   }, [lotAiQuery.data]);
@@ -1519,52 +1544,175 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   // plataforma, com sua própria contagem) — indexar por `idPeca` já misturou o resultado de
   // venda de um lote vigiado de uma casa com outro lote (de outra casa/leilão) que só
   // coincidia no número.
+  //
+  // Ordem = prioridade (os pregões de HOJE/próximos primeiro, depois os passados do mais
+  // recente pro mais antigo) e busca FATIADA em blocos de `LOT_DETAILS_CHUNK`: o servidor tem
+  // teto de 100 alvos por chamada e os vigiados ACUMULAM (`watched-accum`, incluem dias já
+  // passados) — com ~180 vigiados + lances, o teto cortava lotes arbitrários (inclusive de
+  // hoje) e o card ficava sem "Próximo". Cada bloco é uma query própria (renderiza assim que
+  // chega; o primeiro traz justamente os pregões mais próximos).
   const lotDetailTargets = useMemo(() => {
-    const byId = new Map<string, { id: string; idPeca: string; url: string }>();
+    const today = localTodayKey();
+    const byId = new Map<string, { id: string; idPeca: string; url: string; day: string }>();
     for (const w of watched.data ?? [])
-      if (w.id && w.idPeca && w.url) byId.set(w.id, { id: w.id, idPeca: w.idPeca, url: w.url });
+      if (w.id && w.idPeca && w.url)
+        byId.set(w.id, {
+          id: w.id,
+          idPeca: w.idPeca,
+          url: w.url,
+          day: dayKeyByLotId.get(w.id) || watchedDateToKey(w.date),
+        });
     for (const b of bids.data ?? [])
       if (b.id && b.idPeca && b.url && !byId.has(b.id))
-        byId.set(b.id, { id: b.id, idPeca: b.idPeca, url: b.url });
-    return [...byId.values()];
-  }, [watched.data, bids.data]);
-  const lotDetailTargetsKey = useMemo(
-    () =>
-      lotDetailTargets
-        .map((t) => t.id)
-        .sort()
-        .join(","),
-    [lotDetailTargets],
-  );
-  const lotDetails = useQuery({
-    queryKey: ["lot-details", lotDetailTargetsKey] as const,
-    queryFn: () => fetchLotDetails({ data: { targets: lotDetailTargets } }),
-    enabled: lotDetailTargets.length > 0,
-    staleTime: 3 * 60 * 1000,
-    // Sempre rechecar ao abrir a tela (o conjunto já é pequeno/escopado — vigiados+lances,
-    // nunca mais que 100 — então isso não pesa mais do que o request que já existia).
-    refetchOnMount: "always",
-    refetchOnWindowFocus: false,
+        byId.set(b.id, {
+          id: b.id,
+          idPeca: b.idPeca,
+          url: b.url,
+          // `b.date` é a data do LANCE, não a do pregão: sem o dia da varredura (o lote some
+          // dela quando o pregão entra AO VIVO), trata como pregão atual — lances são poucos e
+          // são justamente os que mais precisam do "Próximo".
+          day: dayKeyByLotId.get(b.id) || today,
+        });
+    const rank = (day: string) => (!day ? 2 : day >= today ? 0 : 1);
+    return [...byId.values()]
+      .sort((a, b) => {
+        const ra = rank(a.day);
+        const rb = rank(b.day);
+        if (ra !== rb) return ra - rb;
+        if (ra === 0) return a.day < b.day ? -1 : a.day > b.day ? 1 : 0; // próximos: mais cedo 1º
+        return a.day > b.day ? -1 : a.day < b.day ? 1 : 0; // passados: mais recente 1º
+      })
+      .map(({ id, idPeca, url }) => ({ id, idPeca, url }));
+  }, [watched.data, bids.data, dayKeyByLotId]);
+  const lotDetailChunks = useMemo(() => {
+    const chunks: (typeof lotDetailTargets)[] = [];
+    for (let i = 0; i < lotDetailTargets.length; i += LOT_DETAILS_CHUNK)
+      chunks.push(lotDetailTargets.slice(i, i + LOT_DETAILS_CHUNK));
+    return chunks;
+  }, [lotDetailTargets]);
+  const lotDetailsData = useQueries({
+    queries: lotDetailChunks.map((chunk) => ({
+      queryKey: [
+        "lot-details",
+        chunk
+          .map((t) => t.id)
+          .sort()
+          .join(","),
+      ] as const,
+      queryFn: () => fetchLotDetails({ data: { targets: chunk } }),
+      staleTime: 3 * 60 * 1000,
+      // Sempre rechecar ao abrir a tela (o conjunto já é pequeno/escopado — vigiados+lances).
+      refetchOnMount: "always" as const,
+      refetchOnWindowFocus: false,
+    })),
+    combine: combineLotDetails,
   });
   const nextBidById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const [id, d] of Object.entries(lotDetails.data ?? {}))
-      if (d.nextBid) map.set(id, d.nextBid);
+    for (const [id, d] of Object.entries(lotDetailsData)) if (d.nextBid) map.set(id, d.nextBid);
     return map;
-  }, [lotDetails.data]);
+  }, [lotDetailsData]);
   // Valor atual AO VIVO (VALOR_VALUE do peca.asp) — para VIGIADOS + LANCES, mesmo fetch que já
   // traz `nextBid`/`sold`. Mais fresco que `priceById` (varredura geral, cron 3×/dia) e cobre o
   // caso em que o leilão já está ao vivo e o lote some da listagem pública (`priceById` fica
   // sem entrada nesse caso). Usado como override em `currentPriceFor` abaixo.
   const currentValueById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const [id, d] of Object.entries(lotDetails.data ?? {}))
+    for (const [id, d] of Object.entries(lotDetailsData))
       if (d.currentValue) map.set(id, d.currentValue);
     return map;
-  }, [lotDetails.data]);
+  }, [lotDetailsData]);
   // "Atual" preferindo o valor AO VIVO (peca.asp) sobre o da varredura geral/conta, quando
   // disponível — ver comentário de `currentValueById`.
   const currentPriceFor = (id: string, fallback: string) => currentValueById.get(id) || fallback;
+  // Nota da IA acompanha o PREÇO (vigiados + lances): a nota mistura raridade + oportunidade
+  // e é dada com o preço do momento da avaliação (`lot_ai.eval_price`). Quando o valor atual
+  // (ao vivo quando houver, senão varredura/vigia) sobe o bastante (`priceRoseSinceEval`,
+  // `ai-reprice.ts`), pede a reavaliação desses lotes ao servidor (que reconfere a subida) e
+  // grava as linhas novas direto no cache `["lot-ai"]`. Cada `id|preço` só é tentado 1× por
+  // sessão (sem laço se a IA falhar). Nada acontece com a IA no modo "off".
+  const repriceAttemptedRef = useRef<Set<string>>(new Set());
+  const repriceRunningRef = useRef(false);
+  useEffect(() => {
+    if (aiMode === "off" || repriceRunningRef.current || !lotAiQuery.data) return;
+    const aiRowById = new Map(lotAiQuery.data.map((r) => [r.id, r]));
+    const info = new Map<
+      string,
+      {
+        id: string;
+        title: string;
+        price: string;
+        house: string;
+        image: string | null;
+        day: string;
+      }
+    >();
+    for (const w of watched.data ?? [])
+      if (w.id && w.title)
+        info.set(w.id, {
+          id: w.id,
+          title: w.title,
+          price: currentValueById.get(w.id) || priceById.get(w.id) || w.price,
+          house: w.house,
+          image: w.image,
+          day: watchedDateToKey(w.date),
+        });
+    for (const b of bids.data ?? [])
+      if (b.id && b.title && !info.has(b.id))
+        info.set(b.id, {
+          id: b.id,
+          title: b.title,
+          price: currentValueById.get(b.id) || priceById.get(b.id) || "",
+          house: b.house,
+          image: b.image,
+          // `b.date` é a data do LANCE, não a do pregão — sem ela, só `dayKeyByLotId` decide.
+          day: "",
+        });
+    const today = localTodayKey();
+    const pending = [...info.values()].filter((l) => {
+      // Pregão já encerrado: a nota não serve mais pra decidir lance — não gasta IA.
+      const day = dayKeyByLotId.get(l.id) || l.day;
+      if (day && day < today) return false;
+      const row = aiRowById.get(l.id);
+      if (!row || !l.price) return false;
+      if (repriceAttemptedRef.current.has(`${l.id}|${l.price}`)) return false;
+      return priceRoseSinceEval(row.eval_price, parsePrice(l.price));
+    });
+    if (!pending.length) return;
+    for (const l of pending) repriceAttemptedRef.current.add(`${l.id}|${l.price}`);
+    repriceRunningRef.current = true;
+    void (async () => {
+      try {
+        for (let i = 0; i < pending.length; i += 10) {
+          const lots = pending.slice(i, i + 10).map(({ day: _day, ...l }) => l);
+          const { rows } = await runRepriceLotAi({ data: { lots } });
+          if (!rows.length) continue;
+          const byId = new Map(rows.map((r) => [r.id, r]));
+          queryClient.setQueryData(["lot-ai"], (old: unknown) =>
+            Array.isArray(old)
+              ? [
+                  ...old.map((r) => byId.get((r as { id: string })?.id) ?? r),
+                  ...rows.filter((r) => !old.some((o) => (o as { id: string })?.id === r.id)),
+                ]
+              : old,
+          );
+        }
+      } catch (error) {
+        console.error("[lot-ai] reavaliação por subida de preço falhou", error);
+      } finally {
+        repriceRunningRef.current = false;
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runRepriceLotAi/queryClient estáveis
+  }, [
+    aiMode,
+    lotAiQuery.data,
+    watched.data,
+    bids.data,
+    currentValueById,
+    priceById,
+    dayKeyByLotId,
+  ]);
   // `priceById` (varredura geral) com o valor AO VIVO sobrescrevendo quando disponível — usado
   // pelas seções de "Meus lances" (`BidHouseSections`, que não tem preço próprio nenhum).
   const effectivePriceById = useMemo(() => {
@@ -1596,12 +1744,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     // Fallback do peca.asp (mais rápido que lot_sales, único sinal para vigiados sem lance) —
     // já vem indexado por `id` (${idLeilao}-${idPeca}); só preenche o que a lot_sales ainda
     // não trouxe.
-    for (const [id, d] of Object.entries(lotDetails.data ?? {})) {
+    for (const [id, d] of Object.entries(lotDetailsData)) {
       if (!d.sold) continue;
       if (!map.has(id)) map.set(id, d.sold);
     }
     return map;
-  }, [soldLots.data, lotDetails.data]);
+  }, [soldLots.data, lotDetailsData]);
   // A URL do site da casa não vem na página de lances — casamos pelo nome da casa
   // com o que já lemos da varredura geral e dos vigiados.
   const houseUrlByName = useMemo(() => {
