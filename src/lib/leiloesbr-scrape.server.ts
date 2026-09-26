@@ -205,23 +205,33 @@ export type FindLotMatch = {
  * lado — categorização é da casa/plataforma) de "está na categoria mas o NOSSO
  * parser/filtro descartou" (bug nosso). Não persiste nada.
  */
-export async function findLotDebug(
-  query: string,
-): Promise<{ query: string; totalPages: number; scannedPages: number; matches: FindLotMatch[] }> {
+export async function findLotDebug(query: string): Promise<{
+  query: string;
+  totalPages: number;
+  scannedPages: number;
+  failedPages: string[];
+  emptyPages: number[];
+  matches: FindLotMatch[];
+}> {
   const q = query.trim().toLowerCase();
   const firstHtml = await fetchPage(1);
   const total = lastPage(firstHtml);
   const matches: FindLotMatch[] = [];
+  const failedPages: string[] = [];
+  const emptyPages: number[] = [];
   let scanned = 0;
   for (let page = total; page >= 1 && scanned < MAX_PAGES; page -= 1) {
     scanned += 1;
     let html: string;
     try {
       html = await fetchPage(page);
-    } catch {
+    } catch (error) {
+      failedPages.push(`${page}: ${(error as Error)?.message ?? "falha"}`);
       continue;
     }
-    for (const lot of parseCards(html)) {
+    const lots = parseCards(html);
+    if (!lots.length) emptyPages.push(page);
+    for (const lot of lots) {
       const hit =
         lot.idLeilao === q ||
         lot.house.toLowerCase().includes(q) ||
@@ -238,7 +248,7 @@ export async function findLotDebug(
       });
     }
   }
-  return { query, totalPages: total, scannedPages: scanned, matches };
+  return { query, totalPages: total, scannedPages: scanned, failedPages, emptyPages, matches };
 }
 
 // `tp` é passado CRU (sem URL-encode dos `|`) igual ao resto do arquivo — é assim que o
@@ -412,6 +422,119 @@ export async function findLotByCategory(
   return { idLeilao, pesquisa, tp, totalPages: total, scannedPages: scanned, matches };
 }
 
+/**
+ * Diagnóstico por PÁGINA da listagem (`step=pagedebug`, v0.85.1). Achado de produção
+ * (2026-09-26, casa "Miss leilões" ausente com 96 lotes no dia): a listagem geral tem 85
+ * páginas, mas só 1-2 páginas por chamada de `chunk` rendem lotes — `findlot q=flavia`
+ * varreu as 85 páginas em ~3s e não achou NENHUM lote da Flavia Santos (que tem 39 no dia
+ * e está na lista de galerias da categoria vinil). `fetchPage`/`parseCards` falham ou vêm
+ * vazios em silêncio (`catch { continue }` / `if (!lots.length) continue`). Aqui cada página
+ * é buscada com `publicFetchRaw` (sem retry, sem lançar) e devolvemos status HTTP, URL
+ * final, tempo, nº de cards/lotes parseados, histograma de dia/casa e, quando não vier
+ * card nenhum, um trecho do corpo — pra ver O QUE o site responde. Modos pra testar as
+ * hipóteses de uma vez: `cookie=1` (reaproveita o `ASPSESSIONID` da 1ª página, hipótese
+ * de paginação por sessão ASP) e `delayMs` (pausa entre páginas, hipótese de limite de
+ * taxa). Não persiste nada.
+ */
+export async function debugListingPages(opts: {
+  pages: string;
+  ga?: string;
+  tp?: string | null;
+  pesquisa?: string;
+  useCookie?: boolean;
+  delayMs?: number;
+}): Promise<unknown> {
+  const { publicFetchRaw } = await import("./leiloesbr-auth.server");
+  const tp = opts.tp === undefined ? VINYL_CATEGORY : opts.tp;
+  const pesquisa = opts.pesquisa ?? "";
+  const days = upcomingDayKeys(WINDOW_DAYS);
+  const windowStart = days[0]!;
+  const windowEnd = days[days.length - 1]!;
+  const delayMs = Math.min(Math.max(opts.delayMs ?? 0, 0), 5000);
+
+  const first = await publicFetchRaw(listUrlSearch(1, pesquisa, tp, opts.ga));
+  const total = lastPage(first.body);
+  let cookie = opts.useCookie ? first.cookie : "";
+
+  const wanted = opts.pages
+    .split(",")
+    .map((p) => p.trim().toLowerCase())
+    .filter(Boolean)
+    .map((p) => {
+      const m = p.match(/^last(?:-(\d+))?$/);
+      return m ? total - Number(m[1] ?? 0) : Number(p);
+    })
+    .filter((n) => Number.isInteger(n) && n >= 1 && n <= total)
+    .slice(0, 12);
+
+  const describe = (page: number, res: Awaited<ReturnType<typeof publicFetchRaw>>) => {
+    const root = parse(res.body);
+    const cards = root.querySelectorAll(".mostbidded .product");
+    const lots = cards.map(parseCard);
+    const parsed = lots.filter((lot): lot is VinylLot => lot !== null);
+    const byDay: Record<string, number> = {};
+    const byHouse: Record<string, number> = {};
+    for (const lot of parsed) {
+      byDay[lot.dayKey] = (byDay[lot.dayKey] ?? 0) + 1;
+      byHouse[lot.house] = (byHouse[lot.house] ?? 0) + 1;
+    }
+    const firstUnparsed = cards.find((_, i) => lots[i] === null);
+    const bodyText = res.body
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return {
+      page,
+      status: res.status,
+      error: res.error,
+      finalUrl: res.finalUrl,
+      redirected: res.redirected,
+      ms: res.ms,
+      contentType: res.contentType,
+      retryAfter: res.retryAfter,
+      server: res.server,
+      len: res.body.length,
+      htmlTitle: res.body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim() ?? null,
+      maxPagLink: lastPage(res.body),
+      cards: cards.length,
+      parsed: parsed.length,
+      unparsed: cards.length - parsed.length,
+      inWindow: parsed.filter((l) => l.dayKey >= windowStart && l.dayKey <= windowEnd).length,
+      byDay,
+      byHouse,
+      firstTitle: parsed[0]?.title ?? null,
+      firstUnparsedCard: firstUnparsed ? firstUnparsed.outerHTML.slice(0, 1500) : null,
+      bodyTextSnippet: cards.length ? null : bodyText.slice(0, 1200),
+    };
+  };
+
+  const results = [describe(1, first)];
+  for (const page of wanted) {
+    if (page === 1) continue;
+    if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    const res = await publicFetchRaw(listUrlSearch(page, pesquisa, tp, opts.ga), {
+      cookie: cookie || undefined,
+    });
+    if (opts.useCookie) cookie = res.cookie;
+    results.push(describe(page, res));
+  }
+
+  return {
+    url1: listUrlSearch(1, pesquisa, tp, opts.ga),
+    totalPages: total,
+    window: [windowStart, windowEnd],
+    useCookie: Boolean(opts.useCookie),
+    cookieNames: cookie
+      .split("; ")
+      .map((c) => c.split("=")[0])
+      .filter(Boolean),
+    delayMs,
+    results,
+  };
+}
+
 export type GalleryEntry = { code: string; name: string; count: number | null };
 
 /**
@@ -484,7 +607,19 @@ export async function listGalleries(
  * Usamos `isVinylTitle` (exige palavra de vinil no título) em vez disso — mais restritivo,
  * mas correto pra uma fonte sem confirmação de categoria da plataforma.
  */
-export async function listGalleryAuctions(galleryCode: string): Promise<VinylLot[]> {
+export type GalleryScanStats = {
+  code: string;
+  name: string;
+  pages: number;
+  cards: number;
+  kept: number;
+  failedPages: string[];
+  emptyPages: number[];
+};
+
+export async function listGalleryAuctions(
+  galleryCode: string,
+): Promise<{ lots: VinylLot[]; stats: Omit<GalleryScanStats, "code" | "name"> }> {
   const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
@@ -492,22 +627,32 @@ export async function listGalleryAuctions(galleryCode: string): Promise<VinylLot
   const firstHtml = await fetchPageSearch(1, "", null, galleryCode);
   const total = lastPage(firstHtml);
   const byId = new Map<string, VinylLot>();
+  const failedPages: string[] = [];
+  const emptyPages: number[] = [];
+  let cards = 0;
   let scanned = 0;
   for (let page = total; page >= 1 && scanned < MAX_PAGES; page -= 1) {
     scanned += 1;
     let html: string;
     try {
       html = page === 1 ? firstHtml : await fetchPageSearch(page, "", null, galleryCode);
-    } catch {
+    } catch (error) {
+      failedPages.push(`${page}: ${(error as Error)?.message ?? "falha"}`);
       continue;
     }
-    for (const lot of parseCards(html)) {
+    const lots = parseCards(html);
+    if (!lots.length) emptyPages.push(page);
+    cards += lots.length;
+    for (const lot of lots) {
       if (lot.dayKey < windowStart || lot.dayKey > windowEnd) continue;
       if (!isVinylTitle(lot.title) || isBlockedHouse(lot.house)) continue;
       byId.set(lot.id, lot);
     }
   }
-  return [...byId.values()];
+  return {
+    lots: [...byId.values()],
+    stats: { pages: total, cards, kept: byId.size, failedPages, emptyPages },
+  };
 }
 
 /**
@@ -527,6 +672,7 @@ export async function scanGalleries(
   done: boolean;
   scraped: number;
   persisted: boolean;
+  galleries: GalleryScanStats[];
 }> {
   const { galleries } = await listGalleries(tp);
   const total = galleries.length;
@@ -537,9 +683,15 @@ export async function scanGalleries(
   const nextOffset = done ? null : nextStart;
 
   const byId = new Map<string, VinylLot>();
+  // Estatística por galeria na resposta (v0.85.1): antes o log do cron só mostrava o total
+  // do bloco, sem como saber QUAL casa rendeu 0 nem por quê (página falhou x veio vazia x
+  // filtro descartou).
+  const stats: GalleryScanStats[] = [];
   for (const gallery of batch) {
     try {
-      for (const lot of await listGalleryAuctions(gallery.code)) {
+      const { lots, stats: s } = await listGalleryAuctions(gallery.code);
+      stats.push({ code: gallery.code, name: gallery.name, ...s });
+      for (const lot of lots) {
         byId.set(lot.id, lot);
       }
     } catch (error) {
@@ -559,7 +711,7 @@ export async function scanGalleries(
     }
   }
 
-  return { total, nextOffset, done, scraped: fresh.length, persisted };
+  return { total, nextOffset, done, scraped: fresh.length, persisted, galleries: stats };
 }
 
 /** Faz upsert dos lotes no banco e registra os leilões vistos (best-effort). */
@@ -1002,7 +1154,14 @@ export async function refreshVinylDay(
 export async function scrapeVinylChunk(
   fromPage: number | null,
   size: number,
-): Promise<{ total: number; nextPage: number | null; scraped: number; persisted: boolean }> {
+): Promise<{
+  total: number;
+  nextPage: number | null;
+  scraped: number;
+  persisted: boolean;
+  failedPages: string[];
+  emptyPages: number[];
+}> {
   const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
@@ -1022,15 +1181,24 @@ export async function scrapeVinylChunk(
   // (ou `page=1`); o filtro por `dayKey` dentro do loop decide o que entra.
   const end = Math.max(start - size + 1, 1);
   const byId = new Map<string, VinylLot>();
+  // Páginas que falharam/vieram sem card nenhum — antes eram puladas em silêncio, o que
+  // escondeu por tempo indeterminado que a maior parte da listagem não rendia lote
+  // (achado v0.85.1, ver `debugListingPages`). Expostas na resposta pro log do cron.
+  const failedPages: string[] = [];
+  const emptyPages: number[] = [];
   for (let page = start; page >= end; page -= 1) {
     let html: string;
     try {
       html = await fetchPage(page);
-    } catch {
+    } catch (error) {
+      failedPages.push(`${page}: ${(error as Error)?.message ?? "falha"}`);
       continue;
     }
     const lots = parseCards(html);
-    if (!lots.length) continue;
+    if (!lots.length) {
+      emptyPages.push(page);
+      continue;
+    }
     for (const lot of lots) {
       if (lot.dayKey < windowStart || lot.dayKey > windowEnd) continue;
       if (looksNonVinyl(lot.title) || isBlockedHouse(lot.house)) continue;
@@ -1058,5 +1226,12 @@ export async function scrapeVinylChunk(
       console.error("[leiloesbr] não foi possível limpar lotes fora da janela", error);
     }
   }
-  return { total: fromPage == null ? total : start, nextPage, scraped: fresh.length, persisted };
+  return {
+    total: fromPage == null ? total : start,
+    nextPage,
+    scraped: fresh.length,
+    persisted,
+    failedPages,
+    emptyPages,
+  };
 }

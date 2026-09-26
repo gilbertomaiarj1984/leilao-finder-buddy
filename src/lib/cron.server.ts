@@ -467,6 +467,26 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await scanGalleries(offset, count, tp));
     }
 
+    // Diagnóstico por PÁGINA da listagem geral (v0.85.1 — casa "Miss leilões" ausente;
+    // a maioria das páginas da categoria vinil não rende lote e o motivo era engolido em
+    // silêncio). ?pages=1,2,40,last,last-1 (até 12); ?ga=<código> filtra uma galeria;
+    // ?tp=none tira a categoria; ?cookie=1 reaproveita a sessão ASP da 1ª página;
+    // ?delayMs=<n> pausa entre páginas. Devolve status/URL final/cards/dias/casas por página.
+    if (step === "pagedebug") {
+      const { debugListingPages } = await import("./leiloesbr-scrape.server");
+      const tpParam = url.searchParams.get("tp");
+      return json(
+        await debugListingPages({
+          pages: url.searchParams.get("pages") ?? "1,2,3,last-1,last",
+          ga: url.searchParams.get("ga")?.trim() || undefined,
+          tp: tpParam === "none" ? null : (tpParam ?? undefined),
+          pesquisa: url.searchParams.get("pesquisa") ?? "",
+          useCookie: url.searchParams.get("cookie") === "1",
+          delayMs: Number(url.searchParams.get("delayMs")) || 0,
+        }),
+      );
+    }
+
     // Diagnóstico: chama fetchCatalogData(domain, idLeilao) direto (já usado por
     // enrich/condition/sales) — confirma que, uma vez conhecido o idLeilao, o catálogo da
     // casa já traz os itens certos (isola "descoberta" de "extração").
@@ -508,7 +528,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     return json(
       {
         error:
-          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|salesthumbs|resetnosourcethumbs|reident|purchases|backfillbundle|compressimages|prune|cleannonvinyl|salesdebug|catdebug|findlot|findlot2|findlotraw|findlotcat|galleries|galleryscan|catalogdebug)",
+          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|salesthumbs|resetnosourcethumbs|reident|purchases|backfillbundle|compressimages|prune|cleannonvinyl|salesdebug|catdebug|findlot|findlot2|findlotraw|findlotcat|galleries|galleryscan|pagedebug|catalogdebug)",
         // Diagnóstico (v0.69.4): step=prune vinha falhando com 400 só quando chamado pelo
         // GitHub Actions (curl direto do VPS sempre respondia 200). Sem log de acesso no
         // Caddy nem log de aplicação chegando no `docker logs` (Nitro usa logger próprio,
