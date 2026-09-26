@@ -119,7 +119,7 @@ import {
   getExcludedLotsForMatching,
   getTrashKeywordDenylist,
 } from "@/lib/lot-exclusion.functions";
-import { extractKeywords, matchPossibleTrash } from "@/lib/lot-exclusion";
+import { buildTrashModel, matchPossibleTrash, trashProfile } from "@/lib/lot-exclusion";
 import { ExcludeLotDialog } from "@/components/vinyl/exclude-lot-dialog";
 import {
   BIDS_ACCUM_STORAGE_KEY,
@@ -771,18 +771,31 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     staleTime: 30 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
+  // "Possível lixo": cada lote vira um perfil (termos do título SEM artista/álbum do próprio
+  // lote, indicadores de tipo de objeto, sinal forte de vinil) e é comparado com o MOTIVO de
+  // cada lote excluído (motivo digitado, indicador DVD/CD/livro…, ou termos raros) — ver
+  // `buildTrashModel`/`matchPossibleTrash` em `lot-exclusion.ts`. A própria listagem serve de
+  // corpus para saber quais termos são comuns demais para indicar lixo.
   const possibleTrashById = useMemo(() => {
     const excluded = excludedLotsQuery.data ?? [];
     const map = new Map<string, ReturnType<typeof matchPossibleTrash>>();
     if (!excluded.length) return map;
-    const denylist = new Set(trashDenylistQuery.data ?? []);
-    for (const lot of lots.data?.lots ?? []) {
-      const keywords = extractKeywords(lot.title, lot.artist);
-      const signal = matchPossibleTrash(keywords, excluded, denylist);
+    const all = lots.data?.lots ?? [];
+    const profiles = all.map((lot) => {
+      const album = albumById.get(lot.id) ?? null;
+      return trashProfile({
+        title: lot.title,
+        artist: lot.artist,
+        content: [parseAiAlbum(album).artist, album, marketById.get(lot.id)?.releaseTitle],
+      });
+    });
+    const model = buildTrashModel(excluded, profiles, new Set(trashDenylistQuery.data ?? []));
+    all.forEach((lot, i) => {
+      const signal = matchPossibleTrash(profiles[i]!, model);
       if (signal) map.set(lot.id, signal);
-    }
+    });
     return map;
-  }, [excludedLotsQuery.data, trashDenylistQuery.data, lots.data]);
+  }, [excludedLotsQuery.data, trashDenylistQuery.data, lots.data, albumById, marketById]);
   const possibleTrashFor = (lot: { id: string }) => possibleTrashById.get(lot.id) ?? null;
   const dismissTrashMutation = useMutation({
     mutationFn: async (terms: string[]) => await runDismissTrash({ data: { terms } }),

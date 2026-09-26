@@ -1293,6 +1293,29 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   próprio artista (evita falso positivo por nome comum); `matchPossibleTrash` compara por
   OVERLAP DE CONTAGEM (não percentual, `MIN_OVERLAP=2`) contra os lotes já excluídos — o
   primeiro casamento vira o sinal (`{ matchedTerms, excludedTitle }`).
+- **Reescrita v0.87.0 — o MOTIVO de ser lixo, não as palavras em comum:** a regra acima (2
+  palavras quaisquer em comum) casava por CONTEÚDO — excluir um "DVD Fulano Ao Vivo Show"
+  marcava todo "LP Beltrano Ao Vivo Show", sem DVD nenhum. Agora `buildTrashModel` reduz cada
+  lote excluído ao motivo e `matchPossibleTrash(perfil, modelo)` compara em três camadas:
+  1. **Motivo digitado ao excluir** (`excluded_lots.reason`, agora lido por
+     `getAllExcludedLots`): `reasonPhrases` separa por vírgula/";"/"/"/" ou " e tira ruído
+     ("não é vinil", "lixo", "item"…) — cada trecho ("máquina de costura", "kit de limpeza")
+     vira uma expressão aprendida que sinaliza QUALQUER lote que a tenha no título (palavras em
+     ordem, plural tolerado; vale até para lote com "vinil" no nome). Expressão presente em
+     muitos lotes da listagem (ex.: "capa") é descartada por genérica. O `ExcludeLotDialog`
+     explica isso no campo.
+  2. **Indicador de tipo de objeto/formato** (`INDICATORS`: DVD, CD, blu-ray, VHS, K7, HQ,
+     livro, boneco, relógio, toca-discos, aparelho de som, móvel, pôster, chaveiro, joia…) no
+     título do excluído → só sinaliza lote com o MESMO indicador; lote com sinal forte de vinil
+     (`hasStrongVinylSignal`, exportado de `vinyl-parse.ts`) exige ainda mais 1 termo raro em
+     comum ("LP + DVD bônus" não basta).
+  3. **Sem motivo nem indicador** → 2+ termos RAROS em comum, nunca contra lote claramente
+     vinil quando o excluído não era.
+  Termos do lote novo saem do casamento quando são CONTEÚDO: artista efetivo, álbum da IA e
+  release do Discogs (`trashProfile({content})`), palavras de conteúdo (`CONTENT_WORDS`: "ao
+  vivo", "show", "sucessos", estado…) e termos COMUNS na listagem atual (usados por ≥ 20 lotes
+  e ≥ 3% dela — a própria listagem é o corpus). O `trash_keyword_denylist` (clique no badge)
+  vale para os três tipos de termo (expressão, indicador, termo raro).
 - **Calculado no CLIENTE, NÃO persistido:** `index.tsx` busca `getExcludedLotsForMatching`
   (`["excluded-lots"]`, `staleTime` 30 min) e monta `possibleTrashById` num `useMemo` a partir de
   `lots.data.lots` — mesmo padrão de `albumById`/`marketById`. Decisão deliberada: volume baixo
@@ -1809,6 +1832,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.85.4      | Fix do lixo que entrou depois do v0.85.2 (usuário: "relógio, brinquedos etc."). `step=windowaudit` mostrou que quase todo o lixo PASSAVA nos filtros por ter "vinil"/"disco"/"LP" no título em outro sentido: "vinil" como material ("BONECO… EM VINIL 14 CM", "King Kong, em vinil", apontador, Minnie), "disco" como peça ("Telefone à disco", "Toca discos Gradiente", brinco "em formato de disco"), "LPs" em nome de produto ("VIDEO GAME RETRO LPS 505", "móvel porta-LPs") e boxes de DVD/Blu-ray com "N discos". Novo `isNonRecordObject` (`vinyl-parse.ts`, `NON_RECORD_OBJECT_RE` — boneco/brinquedo/miniatura/relógio/telefone/toca-discos/vitrola/receiver/porta-LPs/móvel/máquina de costura/video game/temporada/obra de arte/joia/"em vinil"… — salvo frase inequívoca de disco em `RECORD_PHRASE_RE`: "LP", "disco de vinil", "compacto", "78 rpm"…) aplicado em `looksNonVinyl` (varredura por categoria + Compras) e `isVinylTitle` (`galleryscan`); DVD/Blu-ray sem sinal forte de vinil agora é rejeitado nos dois mesmo com "discos". Validado com os títulos reais do audit (27 lixos rejeitados, 14 discos reais — incl. "LP Toquinho - Boneca de Pano", "Compacto - Telefone" — mantidos). Limpeza do que já entrou: `step=cleannonvinyl` (reaplica `looksNonVinyl`) |
 | v0.85.5      | Fix de falso positivo do v0.85.4, pego ANTES de apagar: a simulação de `step=cleannonvinyl` (dry-run) listou 44 lotes, 35 lixo real mas **9 LPs lacrados da Abreu Colecionismo** (fichas longas "Álbum: … \| Código: … \| Edição Nova em Vinil … estreado em seu toca-discos … DISCO LACRADO") — "em vinil"/"toca-discos" na descrição acionavam `NON_RECORD_OBJECT_RE`. `RECORD_PHRASE_RE` ganha `album:` (formato de ficha Abreu/Vinil 11) e `disco(s) lacrado(s)`. Revalidado: 31 lixos rejeitados, 19 discos reais mantidos (incl. os 9 da Abreu) |
 | v0.86.0      | Relação lote ↔ Coleção muito mais rígida (usuário: "muito falso positivo"): `ownedScore` compara **por campo** — artista × artista estruturado do lote (IA/Discogs/efetivo, nomes aproximados nos dois sentidos; lote de OUTRO artista nem é avaliado; sem artista estruturado → no máximo "?") e depois álbum × álbum (IA/Discogs, similaridade ≥ 75% nos dois sentidos + mesmos números de volume; lote identificado como outro disco → não casa) ou, sem álbum estruturado, nome como FRASE de palavras inteiras no título. Acaba o casamento por substring e por palavras soltas espalhadas. `lotIdentity` ganha campos estruturados (`titleWords`/`titleSegments`/`artists`/`albums`/`bundle`); aprendizado (`feedbackMatches`) usa as mesmas regras; pré-filtro por chaves aproximadas mantém o custo igual/menor |
+| v0.87.0      | "Possível lixo" reescrito (usuário: um LP sem DVD no texto era marcado por parecer um DVD excluído): em vez de 2 palavras quaisquer em comum, compara o MOTIVO de o excluído ser lixo — (1) motivo digitado ao excluir vira expressão aprendida ("máquina de costura"), (2) indicador de tipo de objeto/formato (DVD/CD/livro/boneco…) só casa lote com o mesmo indicador, (3) senão 2+ termos raros, nunca contra lote claramente vinil. Artista/álbum do próprio lote, palavras de conteúdo e termos comuns na listagem não contam. Ver "Exclusão de lotes" |
 
 ## Pendências
 

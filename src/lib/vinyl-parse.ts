@@ -165,6 +165,10 @@ export function looksNonVinyl(title: string): boolean {
 // Sinal FORTE de vinil (formato explícito) — "disco" sozinho NÃO conta (DVD também é "disco").
 const VINYL_STRONG_RE =
   /\b(?:lps?|vinil|vinyl|compactos?|bolach[aã]o|long\s*play|78\s*rpm|33\s*rpm)\b/;
+/** true quando o texto traz um sinal FORTE de vinil (LP, vinil, compacto, rpm…; "disco" não). */
+export function hasStrongVinylSignal(text: string): boolean {
+  return VINYL_STRONG_RE.test(` ${normalize(text)} `);
+}
 // Formatos que NÃO são vinil (inequívocos) — no histórico de vendas/Analytics excluímos o
 // lote inteiro quando aparecem SEM sinal forte de vinil. Cobre DVD/HQ/revista/livro/K7/VHS…
 const NON_VINYL_SALE_RE =
