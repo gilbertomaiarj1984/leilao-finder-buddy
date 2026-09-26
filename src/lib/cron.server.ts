@@ -487,6 +487,19 @@ export async function handleCron(request: Request): Promise<Response | null> {
       );
     }
 
+    // Diagnóstico (v0.85.3): lotes da janela por casa/leilão, com e sem sinal de vinil no
+    // título — pra calibrar o filtro de lixo de casas generalistas. ?house=<parte do nome>
+    // filtra; ?sample=<n> amostras por grupo (padrão 8). Só leitura.
+    if (step === "windowaudit") {
+      const { auditWindowLots } = await import("./leiloesbr-scrape.server");
+      return json(
+        await auditWindowLots({
+          house: url.searchParams.get("house") ?? undefined,
+          sample: Number(url.searchParams.get("sample")) || undefined,
+        }),
+      );
+    }
+
     // Diagnóstico: chama fetchCatalogData(domain, idLeilao) direto (já usado por
     // enrich/condition/sales) — confirma que, uma vez conhecido o idLeilao, o catálogo da
     // casa já traz os itens certos (isola "descoberta" de "extração").
@@ -528,7 +541,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     return json(
       {
         error:
-          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|salesthumbs|resetnosourcethumbs|reident|purchases|backfillbundle|compressimages|prune|cleannonvinyl|salesdebug|catdebug|findlot|findlot2|findlotraw|findlotcat|galleries|galleryscan|pagedebug|catalogdebug)",
+          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|salesthumbs|resetnosourcethumbs|reident|purchases|backfillbundle|compressimages|prune|cleannonvinyl|salesdebug|catdebug|findlot|findlot2|findlotraw|findlotcat|galleries|galleryscan|pagedebug|windowaudit|catalogdebug)",
         // Diagnóstico (v0.69.4): step=prune vinha falhando com 400 só quando chamado pelo
         // GitHub Actions (curl direto do VPS sempre respondia 200). Sem log de acesso no
         // Caddy nem log de aplicação chegando no `docker logs` (Nitro usa logger próprio,
