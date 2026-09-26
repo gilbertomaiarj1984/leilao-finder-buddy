@@ -763,6 +763,8 @@ export type PendingAiBatch = {
   batchId: string;
   submittedAt: string;
   hashes: Record<string, string>;
+  /** Preço (R$) por lote no envio (`lot_ai.eval_price`); ausente em batches antigos. */
+  prices?: Record<string, number>;
 };
 
 /** Batch de avaliação da IA em andamento (para o cron coletar). null quando não há. */
@@ -785,7 +787,19 @@ export async function getPendingAiBatch(): Promise<PendingAiBatch | null> {
             if (typeof hv === "string") hashes[k] = hv;
           }
         }
-        return { batchId: v["batchId"], submittedAt: String(v["submittedAt"] ?? ""), hashes };
+        const rawPrices = v["prices"];
+        const prices: Record<string, number> = {};
+        if (rawPrices && typeof rawPrices === "object" && !Array.isArray(rawPrices)) {
+          for (const [k, pv] of Object.entries(rawPrices as Record<string, unknown>)) {
+            if (typeof pv === "number" && Number.isFinite(pv)) prices[k] = pv;
+          }
+        }
+        return {
+          batchId: v["batchId"],
+          submittedAt: String(v["submittedAt"] ?? ""),
+          hashes,
+          prices,
+        };
       }
     }
     return null;

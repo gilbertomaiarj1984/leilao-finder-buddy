@@ -15,6 +15,7 @@
  * só lotes novos entram).
  */
 import { parsePrice, type VinylLot } from "./vinyl-parse";
+import { priceRoseSinceEval } from "./ai-reprice";
 import type { LotAiRow } from "./lot-ai.server";
 import type { LotIdentRow } from "./lot-ident.server";
 import { GRADE_ORDER, normalizeGrade, type Grade, type InsertState } from "./grading";
@@ -57,17 +58,26 @@ export function titleHash(title: string): string {
 /**
  * Seleciona os lotes que ainda precisam de avaliação: sem linha em `lot_ai` ou com
  * `title_hash` divergente (título mudou). Teto por rodada.
+ * `repriceIds` (opcional — vigiados + lances): esses lotes também voltam para a fila quando o
+ * preço atual subiu o bastante desde a avaliação (`priceRoseSinceEval`, ver `ai-reprice.ts`) —
+ * a nota inclui a oportunidade (preço vs. valor), então fica defasada quando os lances sobem.
  */
 export function selectLotsToEvaluate(
   lots: Pick<VinylLot, "id" | "title" | "price" | "house" | "image">[],
-  aiRows: Pick<LotAiRow, "id" | "title_hash">[],
+  aiRows: (Pick<LotAiRow, "id" | "title_hash"> & { eval_price?: number | null })[],
   max = MAX_PER_ROUND,
+  repriceIds?: ReadonlySet<string>,
 ): EvalLot[] {
-  const known = new Map(aiRows.map((r) => [r.id, r.title_hash]));
+  const known = new Map(aiRows.map((r) => [r.id, r]));
   const out: EvalLot[] = [];
   for (const lot of lots) {
     if (!lot.id || !lot.title) continue;
-    if (known.get(lot.id) === titleHash(lot.title)) continue;
+    const row = known.get(lot.id);
+    if (row && row.title_hash === titleHash(lot.title)) {
+      const reprice =
+        repriceIds?.has(lot.id) && priceRoseSinceEval(row.eval_price, parsePrice(lot.price));
+      if (!reprice) continue;
+    }
     out.push({
       id: lot.id,
       title: lot.title,
@@ -141,7 +151,7 @@ export function buildLotParams(lot: EvalLot) {
  */
 export function parseEvalObject(
   text: string,
-): Omit<LotAiRow, "id" | "title_hash" | "model"> | null {
+): Omit<LotAiRow, "id" | "title_hash" | "model" | "eval_price"> | null {
   if (!text) return null;
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
@@ -191,20 +201,29 @@ export function aiConfigured(): boolean {
   return anyProviderConfigured();
 }
 
-export type SubmitResult = { batchId: string; hashes: Record<string, string>; count: number };
+export type SubmitResult = {
+  batchId: string;
+  hashes: Record<string, string>;
+  /** Preço (R$) por lote no envio — só a avaliação usa (`lot_ai.eval_price`). */
+  prices?: Record<string, number>;
+  count: number;
+};
 
 /** Cria um batch com 1 request por lote (custom_id = id). Retorna id + hashes por lote. */
 export async function submitEvalBatch(lots: EvalLot[]): Promise<SubmitResult> {
   const client = await getAnthropicClient();
   const hashes: Record<string, string> = {};
+  const prices: Record<string, number> = {};
   const requests = lots.map((lot) => {
     hashes[lot.id] = titleHash(lot.title);
+    const price = parsePrice(lot.price);
+    if (price != null && price > 0) prices[lot.id] = price;
     return { custom_id: lot.id, params: buildLotParams(lot) };
   });
   // O SDK tipa `params` de forma estrita (MessageCreateParams); nosso builder devolve o
   // shape compatível, mas afrouxamos aqui para não duplicar os tipos do SDK.
   const batch = await client.messages.batches.create({ requests: requests as never });
-  return { batchId: batch.id, hashes, count: requests.length };
+  return { batchId: batch.id, hashes, prices, count: requests.length };
 }
 
 export type CollectResult = { done: boolean; rows: LotAiRow[] };
@@ -217,6 +236,7 @@ export type CollectResult = { done: boolean; rows: LotAiRow[] };
 export async function collectEvalBatch(
   batchId: string,
   hashes: Record<string, string>,
+  prices: Record<string, number> = {},
 ): Promise<CollectResult> {
   const client = await getAnthropicClient();
   const batch = await client.messages.batches.retrieve(batchId);
@@ -238,6 +258,7 @@ export async function collectEvalBatch(
       reason: parsed.reason,
       tags: parsed.tags,
       model: ANTHROPIC_MODEL,
+      eval_price: prices[id] ?? null,
     });
   }
   return { done: true, rows };
@@ -501,6 +522,7 @@ export async function evalLotsSync(
             reason: parsed.reason,
             tags: parsed.tags,
             model: r.model,
+            eval_price: parsePrice(lot.price) || null,
           });
         }
       } catch (error) {

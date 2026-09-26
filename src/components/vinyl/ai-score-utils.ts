@@ -64,6 +64,8 @@ export type LotAi = {
   album: string | null;
   reason: string | null;
   tags: string[];
+  /** Preço (R$) do lote quando a nota foi dada (`lot_ai.eval_price`) — ver `ai-reprice.ts`. */
+  evalPrice?: number | null;
   matchesInterests?: boolean;
 };
 

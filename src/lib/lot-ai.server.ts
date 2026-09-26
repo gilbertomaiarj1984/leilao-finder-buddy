@@ -15,9 +15,18 @@ export type LotAiRow = {
   reason: string | null;
   tags: string[];
   model: string | null;
+  /** Preço (R$) usado na avaliação — ver `ai-reprice.ts`. null = avaliação antiga/sem preço. */
+  eval_price: number | null;
 };
 
 const PAGE = 1000;
+
+/** `numeric` do Postgres chega como string (postgres.js) — normaliza para number|null. */
+function toPrice(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 function toTags(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
@@ -38,7 +47,7 @@ export async function getAllLotAi(): Promise<LotAiRow[]> {
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabaseAdmin
       .from<LotAiRow>("lot_ai")
-      .select("id, title_hash, score, rarity, deal, album, reason, tags, model")
+      .select("id, title_hash, score, rarity, deal, album, reason, tags, model, eval_price")
       .range(from, from + PAGE - 1);
     if (error) throw error;
     const batch = data ?? [];
@@ -53,6 +62,7 @@ export async function getAllLotAi(): Promise<LotAiRow[]> {
         reason: r.reason,
         tags: toTags(r.tags),
         model: r.model,
+        eval_price: toPrice(r.eval_price),
       });
     }
     if (batch.length < PAGE) break;
@@ -111,6 +121,7 @@ export async function upsertLotAi(rows: LotAiRow[]): Promise<number> {
     reason: r.reason,
     tags: r.tags,
     model: r.model,
+    eval_price: r.eval_price,
     evaluated_at: evaluatedAt,
   }));
   const { error } = await supabaseAdmin.from("lot_ai").upsert(payload, { onConflict: "id" });

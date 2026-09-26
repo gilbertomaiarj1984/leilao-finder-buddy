@@ -37,24 +37,54 @@ function pecaUrl(lotUrl: string, idPeca: string): string | null {
   return domain ? `${domain}/peca.asp?id=${idPeca}` : null;
 }
 
-/** Formata um valor cru (string numérica BR) do `loadData` em BRL, ou `null` se inválido. */
+/**
+ * Converte um valor cru do `loadData` em número. Aceita "105", "105.00", "105,00",
+ * "1.050,00" e "1,050.00" (com os dois separadores, o que vier POR ÚLTIMO é o decimal; ponto
+ * sozinho em grupos de exatamente 3 dígitos — "1.050" — é milhar). Antes só `\d+([.,]\d+)?` casava,
+ * e um lote acima de R$ 999 com milhar formatado ficava sem "Atual"/"Próximo".
+ */
+export function parseLoadDataNumber(raw: string | undefined): number | null {
+  const v = (raw ?? "").trim();
+  if (!/^\d[\d.,]*$/.test(v)) return null;
+  const lastDot = v.lastIndexOf(".");
+  const lastComma = v.lastIndexOf(",");
+  let normalized: string;
+  if (lastDot >= 0 && lastComma >= 0) {
+    const dec = lastDot > lastComma ? "." : ",";
+    const thousands = dec === "." ? "," : ".";
+    normalized = v.split(thousands).join("").replace(dec, ".");
+  } else if (lastComma >= 0) {
+    normalized = v.replace(",", "."); // vírgula sozinha = decimal (padrão BR)
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(v)) {
+    normalized = v.split(".").join("");
+  } else {
+    normalized = v;
+  }
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Formata um valor cru (string numérica) do `loadData` em BRL, ou `null` se inválido. */
 function formatValor(raw: string | undefined): string | null {
-  if (!raw) return null;
-  const n = Number(raw.replace(",", "."));
-  if (!Number.isFinite(n) || n <= 0) return null;
+  const n = parseLoadDataNumber(raw);
+  if (n == null || n <= 0) return null;
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+/** Valor de um campo numérico do `loadData` — com ou sem aspas (`"X":"105,00"` / `"X":105`). */
+function loadDataField(html: string, field: string): string | undefined {
+  const m = html.match(new RegExp(`"${field}"\\s*:\\s*"?\\s*(\\d[\\d.,]*)`));
+  return m?.[1]?.replace(/[.,]$/, "");
 }
 
 /** Extrai o valor atual (VALOR_VALUE) do HTML da peça e formata em BRL. */
 function parseCurrentValue(html: string): string | null {
-  const m = html.match(/"VALOR_VALUE":"(\d+(?:[.,]\d+)?)"/);
-  return m ? formatValor(m[1]) : null;
+  return formatValor(loadDataField(html, "VALOR_VALUE"));
 }
 
 /** Extrai o próximo lance (NOVO_VALOR) do HTML da peça e formata em BRL. */
 function parseNextBid(html: string): string | null {
-  const m = html.match(/"NOVO_VALOR":"(\d+(?:[.,]\d+)?)"/);
-  return m ? formatValor(m[1]) : null;
+  return formatValor(loadDataField(html, "NOVO_VALOR"));
 }
 
 // Classe do botão de lance quando o leiloeiro já bateu o martelo (template ANTIGO). Token CSS
