@@ -934,6 +934,64 @@ async function readLots(windowStart: string, windowEnd: string): Promise<VinylLo
 }
 
 /**
+ * Diagnóstico (`step=windowaudit`, v0.85.3): depois do fix do limite de taxa (v0.85.2) a
+ * varredura geral passou a ler TODAS as páginas da categoria "Disco de Vinil" — e o usuário
+ * viu entrar "bastante lixo" (relógio, brinquedo…), provavelmente de casas generalistas que
+ * etiquetam qualquer coisa nessa categoria e antes ficavam escondidas pelo bug. Aqui, por casa
+ * (e por leilão), contamos os lotes da janela com e sem sinal de vinil no título
+ * (`isVinylTitle`) e devolvemos amostras dos dois grupos — pra decidir o filtro com dado real
+ * em vez de ampliar lista de termos no escuro. Só leitura.
+ */
+export async function auditWindowLots(opts: { house?: string; sample?: number } = {}): Promise<{
+  window: [string, string];
+  total: number;
+  houses: {
+    house: string;
+    lots: number;
+    withSignal: number;
+    auctions: { idLeilao: string; lots: number; withSignal: number }[];
+    noSignalSample: string[];
+    withSignalSample: string[];
+  }[];
+}> {
+  const days = upcomingDayKeys(WINDOW_DAYS);
+  const windowStart = days[0]!;
+  const windowEnd = days[days.length - 1]!;
+  const sampleSize = Math.min(Math.max(opts.sample ?? 8, 1), 60);
+  const houseFilter = opts.house?.trim().toLowerCase();
+  const lots = (await readLots(windowStart, windowEnd)).filter(
+    (lot) => !houseFilter || lot.house.toLowerCase().includes(houseFilter),
+  );
+  const byHouse = new Map<string, VinylLot[]>();
+  for (const lot of lots) {
+    const list = byHouse.get(lot.house) ?? [];
+    list.push(lot);
+    byHouse.set(lot.house, list);
+  }
+  const houses = [...byHouse.entries()].map(([house, list]) => {
+    const signal = list.filter((lot) => isVinylTitle(lot.title));
+    const noSignal = list.filter((lot) => !isVinylTitle(lot.title));
+    const byAuction = new Map<string, { lots: number; withSignal: number }>();
+    for (const lot of list) {
+      const a = byAuction.get(lot.idLeilao) ?? { lots: 0, withSignal: 0 };
+      a.lots += 1;
+      if (isVinylTitle(lot.title)) a.withSignal += 1;
+      byAuction.set(lot.idLeilao, a);
+    }
+    return {
+      house,
+      lots: list.length,
+      withSignal: signal.length,
+      auctions: [...byAuction.entries()].map(([idLeilao, a]) => ({ idLeilao, ...a })),
+      noSignalSample: noSignal.slice(0, sampleSize).map((lot) => lot.title.slice(0, 90)),
+      withSignalSample: signal.slice(0, sampleSize).map((lot) => lot.title.slice(0, 90)),
+    };
+  });
+  houses.sort((a, b) => b.lots - b.withSignal - (a.lots - a.withSignal));
+  return { window: [windowStart, windowEnd], total: lots.length, houses };
+}
+
+/**
  * Limpeza retroativa: `lots` só recebe upsert (nunca apaga o que não veio na varredura
  * atual — merge durável), então itens capturados ANTES de um fix de filtro (ex.: joalheria/
  * colecionismo entrando pelo `galleryscan`, v0.69.42–44) ficam no banco pra sempre até
