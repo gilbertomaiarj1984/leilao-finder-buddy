@@ -15,6 +15,9 @@ const VINYL_CATEGORY = "|446973636F2064652076696E696C|";
 const PER_PAGE = 126;
 const WINDOW_DAYS = 5; // quantos dias de leilões trazer (hoje + próximos)
 const MAX_PAGES = 150; // teto de páginas por varredura (janela maior = mais páginas)
+// Orçamento de tempo por chamada chunked (`chunk`/`galleryscan`) — o cron chama com
+// `curl --max-time 120`; estourar derruba a run inteira (`set -e`). Ver `listingFetch`.
+const CHUNK_BUDGET_MS = 75_000;
 
 // Cache/merge em memória: GARANTE a lista mesmo que o banco esteja indisponível
 // (ex.: migração ainda não aplicada). O banco é usado como camada durável quando
@@ -41,10 +44,54 @@ function listUrl(page: number): string {
   return `${BASE_URL}/busca_andamento.asp?${params.toString()}&tp=${VINYL_CATEGORY}`;
 }
 
+// Limite de taxa da listagem (`busca_andamento.asp`) — CONFIRMADO em produção (v0.85.2,
+// `step=pagedebug`): a partir da 3ª requisição em sequência o IIS da LeilõesBR responde
+// HTTP 200 com corpo VAZIO (0 bytes, em ~5ms) em vez da página. Como o status é 200, nada
+// lançava e o `parseCards` simplesmente não achava card nenhum — a varredura geral rendia
+// só 1-2 páginas por chamada e o resto sumia em silêncio (casa "Miss leilões" inteira
+// ausente, Flavia Santos só aparecia via galeria, etc.). Com 2s E com 0,8s de intervalo
+// entre requisições, todas as páginas vieram completas (81-85 e 74-80, 126 lotes cada, os
+// 96 da Miss nas páginas 79-80) — usamos 1s, com folga sobre o mínimo testado.
+// Toda busca da listagem passa por aqui: fila única (serializa chamadas concorrentes do
+// mesmo processo — cron + botão "Atualizar tudo"), intervalo mínimo entre requisições e
+// nova tentativa com espera maior quando o corpo vier vazio.
+const LISTING_MIN_GAP_MS = 1000;
+const LISTING_EMPTY_BACKOFF_MS = [4000, 8000];
+let lastListingAt = 0;
+let listingQueue: Promise<unknown> = Promise.resolve();
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function listingFetchNow(url: string): Promise<string> {
+  for (let attempt = 0; ; attempt += 1) {
+    const wait = lastListingAt + LISTING_MIN_GAP_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    let html: string;
+    try {
+      html = await publicFetch(url, {});
+    } finally {
+      lastListingAt = Date.now();
+    }
+    if (html.trim()) return html;
+    const backoff = LISTING_EMPTY_BACKOFF_MS[attempt];
+    if (backoff === undefined) {
+      throw new Error("LeilõesBR devolveu página vazia (limite de taxa)");
+    }
+    await sleep(backoff);
+  }
+}
+
+function listingFetch(url: string): Promise<string> {
+  const run = () => listingFetchNow(url);
+  const result = listingQueue.then(run, run);
+  listingQueue = result.catch(() => undefined);
+  return result;
+}
+
 // A varredura geral é pública: buscamos deslogados para evitar o 500 intermitente
 // que o site devolve em sessões autenticadas sob carga. O login fica só para a vigia.
 async function fetchPage(page: number): Promise<string> {
-  return await publicFetch(listUrl(page), {});
+  return await listingFetch(listUrl(page));
 }
 
 function absolute(href: string | undefined): string {
@@ -275,7 +322,7 @@ async function fetchPageSearch(
   tp: string | null,
   ga?: string,
 ): Promise<string> {
-  return await publicFetch(listUrlSearch(page, pesquisa, tp, ga), {});
+  return await listingFetch(listUrlSearch(page, pesquisa, tp, ga));
 }
 
 /**
@@ -611,6 +658,8 @@ export type GalleryScanStats = {
   code: string;
   name: string;
   pages: number;
+  scanned: number;
+  truncated: boolean;
   cards: number;
   kept: number;
   failedPages: string[];
@@ -619,6 +668,7 @@ export type GalleryScanStats = {
 
 export async function listGalleryAuctions(
   galleryCode: string,
+  deadline = Number.POSITIVE_INFINITY,
 ): Promise<{ lots: VinylLot[]; stats: Omit<GalleryScanStats, "code" | "name"> }> {
   const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
@@ -631,7 +681,19 @@ export async function listGalleryAuctions(
   const emptyPages: number[] = [];
   let cards = 0;
   let scanned = 0;
+  // Sem `tp=` travado, uma galeria generalista pode ter dezenas de páginas — e com o
+  // intervalo obrigatório entre requisições (`listingFetch`, v0.85.2) cada uma custa ~3-4s.
+  // A listagem vem do dia mais distante (página 1) pro mais próximo (última), e varremos da
+  // última pra trás: depois de 2 páginas SEGUIDAS inteiras além da janela, o resto (páginas
+  // menores, datas ainda mais distantes) não interessa. `deadline` corta de vez se o
+  // orçamento do bloco (`scanGalleries`) estourar.
+  let beyondStreak = 0;
+  let truncated = false;
   for (let page = total; page >= 1 && scanned < MAX_PAGES; page -= 1) {
+    if (page < total && Date.now() > deadline) {
+      truncated = true;
+      break;
+    }
     scanned += 1;
     let html: string;
     try {
@@ -643,6 +705,8 @@ export async function listGalleryAuctions(
     const lots = parseCards(html);
     if (!lots.length) emptyPages.push(page);
     cards += lots.length;
+    beyondStreak = lots.length && lots.every((l) => l.dayKey > windowEnd) ? beyondStreak + 1 : 0;
+    if (beyondStreak >= 2) break;
     for (const lot of lots) {
       if (lot.dayKey < windowStart || lot.dayKey > windowEnd) continue;
       if (!isVinylTitle(lot.title) || isBlockedHouse(lot.house)) continue;
@@ -651,7 +715,7 @@ export async function listGalleryAuctions(
   }
   return {
     lots: [...byId.values()],
-    stats: { pages: total, cards, kept: byId.size, failedPages, emptyPages },
+    stats: { pages: total, scanned, truncated, cards, kept: byId.size, failedPages, emptyPages },
   };
 }
 
@@ -678,9 +742,13 @@ export async function scanGalleries(
   const total = galleries.length;
   const start = Math.max(0, offset);
   const batch = galleries.slice(start, start + count);
-  const nextStart = start + count;
-  const done = nextStart >= total;
-  const nextOffset = done ? null : nextStart;
+  // Orçamento de tempo (v0.85.2, ver `listingFetch`/`CHUNK_BUDGET_MS`): só começa uma
+  // galeria nova se ainda sobra orçamento (a 1ª sempre roda, pra garantir progresso), e
+  // `listGalleryAuctions` corta de vez perto do limite do `curl` do cron. O cursor
+  // (`nextOffset`) avança só pelo que foi de fato processado.
+  const started = Date.now();
+  const hardDeadline = started + CHUNK_BUDGET_MS;
+  let processed = 0;
 
   const byId = new Map<string, VinylLot>();
   // Estatística por galeria na resposta (v0.85.1): antes o log do cron só mostrava o total
@@ -688,8 +756,10 @@ export async function scanGalleries(
   // filtro descartou).
   const stats: GalleryScanStats[] = [];
   for (const gallery of batch) {
+    if (processed > 0 && Date.now() - started > CHUNK_BUDGET_MS * 0.6) break;
+    processed += 1;
     try {
-      const { lots, stats: s } = await listGalleryAuctions(gallery.code);
+      const { lots, stats: s } = await listGalleryAuctions(gallery.code, hardDeadline);
       stats.push({ code: gallery.code, name: gallery.name, ...s });
       for (const lot of lots) {
         byId.set(lot.id, lot);
@@ -711,6 +781,9 @@ export async function scanGalleries(
     }
   }
 
+  const nextStart = start + processed;
+  const done = nextStart >= total;
+  const nextOffset = done ? null : nextStart;
   return { total, nextOffset, done, scraped: fresh.length, persisted, galleries: stats };
 }
 
@@ -1179,6 +1252,11 @@ export async function scrapeVinylChunk(
   // estritamente ordenada por data, então uma página "fora da janela" não garante que
   // as páginas seguintes (números menores) também estejam. Sempre varremos até `end`
   // (ou `page=1`); o filtro por `dayKey` dentro do loop decide o que entra.
+  //
+  // (v0.85.2) Hipótese provável: a "intercalação" que motivou isso era o limite de taxa
+  // (páginas vindo vazias em silêncio, ver `listingFetch`) — medido em produção, a
+  // listagem vem ordenada do dia mais distante (página 1) pro mais próximo (última). Mesmo
+  // assim mantemos a varredura completa por segurança; o custo é só tempo.
   const end = Math.max(start - size + 1, 1);
   const byId = new Map<string, VinylLot>();
   // Páginas que falharam/vieram sem card nenhum — antes eram puladas em silêncio, o que
@@ -1186,7 +1264,15 @@ export async function scrapeVinylChunk(
   // (achado v0.85.1, ver `debugListingPages`). Expostas na resposta pro log do cron.
   const failedPages: string[] = [];
   const emptyPages: number[] = [];
+  // Com o intervalo obrigatório entre requisições (`listingFetch`), cada página custa
+  // ~3-4s; um bloco de 15 cabe folgado nos 120s do `curl` do cron, mas retries por página
+  // vazia podem esticar. Orçamento de tempo: ao estourar, devolvemos `nextPage` apontando
+  // pra primeira página NÃO processada e o chamador continua dali na próxima chamada.
+  const started = Date.now();
+  let lastDone = start + 1;
   for (let page = start; page >= end; page -= 1) {
+    if (page < start && Date.now() - started > CHUNK_BUDGET_MS) break;
+    lastDone = page;
     let html: string;
     try {
       html = await fetchPage(page);
@@ -1218,7 +1304,7 @@ export async function scrapeVinylChunk(
     }
   }
 
-  const nextPage = end <= 1 ? null : end - 1;
+  const nextPage = lastDone <= 1 ? null : lastDone - 1;
   if (nextPage == null) {
     try {
       await pruneOutOfWindow(windowStart, windowEnd);

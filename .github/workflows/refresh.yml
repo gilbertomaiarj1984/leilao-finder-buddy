@@ -87,8 +87,11 @@ jobs:
           # filtrando por TÍTULO em vez de categoria da plataforma — mesmo formato de VinylLot
           # completo da varredura geral, upsert de sempre. Roda ANTES do `enrich` abaixo de
           # propósito: os lotes recém-descobertos aqui já entram na mesma passada de nº de lote.
+          # 70 voltas (antes 25): desde v0.85.2 a listagem tem intervalo obrigatório entre
+          # requisições (limite de taxa da LeilõesBR) e cada chamada respeita um orçamento de
+          # tempo — pode processar menos de 3 galerias; `nextOffset` segue de onde parou.
           off=0
-          for i in $(seq 1 25); do
+          for i in $(seq 1 70); do
             res="$(call "/api/cron?step=galleryscan&offset=$off&count=3")"
             echo "galleryscan $i (offset $off): $res"
             if [ "$(echo "$res" | jq -r '.persisted')" = "false" ]; then
