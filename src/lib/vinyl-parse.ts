@@ -102,8 +102,12 @@ export function normalize(value: string): string {
 // (`RECORD_PHRASE_RE`) — "LP Toquinho - Boneca de Pano" continua passando.
 const NON_RECORD_OBJECT_RE =
   /\b(?:bonec[oa]s?|brinquedos?|miniaturas?|apontador(?:es)?|action\s*figures?|estatuetas?|relogios?|telefones?|toca[\s-]?discos?|vitrolas?|radiolas?|receivers?|amplificador(?:es)?|cassete\s+deck|tape\s+deck|agulhas?|capsulas?|porta[\s-]?lps?|porta[\s-]?discos?|moveis?|movel|maquinas?\s+de\s+costura|licoreiras?|aventa(?:l|is)|video\s*games?|consoles?|obras?\s+de\s+arte|paineis|painel|temporadas?|reproducao\s+grafica|kit\s+(?:de|para)\s+limpeza|limpeza\s+de\s+(?:vinil|discos?)|brincos?|pulseiras?|colar(?:es)?|an(?:el|eis)|em\s+vinil)\b/;
+// Frases inequívocas de DISCO que anulam `NON_RECORD_OBJECT_RE`. Inclui o formato de ficha
+// "Álbum: … | Código: …" (Abreu Colecionismo, Vinil 11) e "disco lacrado": as descrições
+// longas dessas casas citam "Edição Nova em Vinil" e "estreado em seu toca-discos" — achado
+// v0.85.5 na simulação do `cleannonvinyl`, que teria apagado 9 LPs lacrados da Abreu.
 const RECORD_PHRASE_RE =
-  /\b(?:lp\b|long\s*play|discos?\s+(?:de|em)\s+vinil|vinil\s+lp\b|compactos?\b(?!\s+disc)|(?:33|45|78)\s*rpm)/;
+  /\b(?:lp\b|long\s*play|discos?\s+(?:de|em)\s+vinil|vinil\s+lp\b|compactos?\b(?!\s+disc)|(?:33|45|78)\s*rpm|album\s*:|discos?\s+lacrados?)/;
 
 /** true quando o título descreve um OBJETO que não é disco (ver `NON_RECORD_OBJECT_RE`). */
 export function isNonRecordObject(title: string): boolean {
