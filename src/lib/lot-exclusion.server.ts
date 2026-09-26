@@ -4,7 +4,7 @@
 // reinserir o mesmo id e alimenta a heurística de "possível lixo" na listagem.
 import { extractKeywords } from "./lot-exclusion";
 
-type ExcludedLotRow = { id: string; title: string; keywords: string[] };
+type ExcludedLotRow = { id: string; title: string; keywords: string[]; reason: string | null };
 
 /** Ids já excluídos, para o filtro do cron (`persistLots`). Best-effort: nunca lança. */
 export async function getExcludedLotIds(): Promise<Set<string>> {
@@ -22,7 +22,9 @@ export async function getExcludedLotIds(): Promise<Set<string>> {
 /** Todos os lotes excluídos (título + keywords), para o cálculo de "possível lixo". */
 export async function getAllExcludedLots(): Promise<ExcludedLotRow[]> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin.from("excluded_lots").select("id, title, keywords");
+  const { data, error } = await supabaseAdmin
+    .from("excluded_lots")
+    .select("id, title, keywords, reason");
   if (error) throw error;
   return (data ?? []) as ExcludedLotRow[];
 }

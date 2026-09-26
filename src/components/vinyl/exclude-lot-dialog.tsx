@@ -44,11 +44,15 @@ export function ExcludeLotDialog({
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
           Some da listagem e das próximas varreduras — não tem como desfazer. O sistema aprende com
-          os termos do título para sinalizar lotes parecidos como "possível lixo" (sem escondê-los
-          automaticamente).
+          este lote para sinalizar parecidos como "possível lixo" (sem escondê-los automaticamente).
+        </p>
+        <p className="text-sm text-muted-foreground">
+          <strong>O que é o objeto?</strong> Escreva o que torna isto lixo (ex.: "máquina de
+          costura", "kit de limpeza") — cada expressão (separe por vírgula) passa a marcar qualquer
+          lote que a tenha no título.
         </p>
         <textarea
-          placeholder="Motivo (opcional) — ex.: joia, não é vinil, lote de outro tipo…"
+          placeholder="Ex.: máquina de costura, kit de limpeza (opcional)"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           rows={2}
