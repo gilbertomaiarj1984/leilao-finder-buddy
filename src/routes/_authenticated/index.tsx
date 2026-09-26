@@ -1282,7 +1282,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         // essas casas nunca aparecem só pela varredura geral acima.
         setRefreshPhase("Descobrindo por galeria…");
         let galleryOffset = 0;
-        for (let guard = 0; guard < 25; guard += 1) {
+        for (let guard = 0; guard < 70; guard += 1) {
           const res = await runGalleryscanFn({ data: { offset: galleryOffset, count: 3 } });
           if (res.done || res.nextOffset == null) break;
           galleryOffset = res.nextOffset;
