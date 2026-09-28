@@ -5,7 +5,7 @@ export function configuredEmail(): string | null {
   return normalized || null;
 }
 
-export function allowedEmail(): string {
+function allowedEmail(): string {
   const email = configuredEmail();
   if (!email) throw new Error("LEILOESBR_EMAIL não está configurado.");
   return email;
@@ -57,7 +57,7 @@ function publicAnalyticsSecret(): string {
 }
 
 /** Token do link público para um dia (`YYYY-MM-DD`) — determinístico, nunca gravado no banco. */
-export async function publicAnalyticsTokenFor(dateKey: string): Promise<string> {
+async function publicAnalyticsTokenFor(dateKey: string): Promise<string> {
   const full = await hmacHex(publicAnalyticsSecret(), `vinil-analytics:${dateKey}`);
   return full.slice(0, 16);
 }

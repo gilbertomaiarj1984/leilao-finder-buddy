@@ -198,7 +198,7 @@ const REASON_NOISE = new Set([
 ]);
 
 /** Um lote reduzido ao que interessa para o "possível lixo". */
-export type TrashProfile = {
+type TrashProfile = {
   /** Termos do título (sem artista/álbum do próprio lote, stopwords e palavras de conteúdo). */
   keywords: string[];
   /** Indicadores de tipo de objeto/formato não-vinil presentes no título (`INDICATORS`). */
@@ -244,7 +244,7 @@ export function trashProfile(lot: {
  * expressão (palavras significativas em ordem). Trechos que só dizem "não é vinil"/"lixo"
  * (sem descrever o objeto) não viram nada.
  */
-export function reasonPhrases(reason: string | null | undefined): string[][] {
+function reasonPhrases(reason: string | null | undefined): string[][] {
   if (!reason) return [];
   return reason
     .split(/[,;\n/]|\s+ou\s+/i)
@@ -295,7 +295,7 @@ type ExcludedProfile = {
   strongVinyl: boolean;
 };
 
-export type TrashModel = {
+type TrashModel = {
   excluded: ExcludedProfile[];
   /** Termos usados por muitos lotes da listagem atual — são conteúdo, não motivo de lixo. */
   common: ReadonlySet<string>;

@@ -12,9 +12,9 @@ import type { MyBid } from "./leiloesbr-bids.server";
 // Snapshot do último `status` visto por lote (`id`), para só avisar na TRANSIÇÃO para
 // "Coberto" — sem isso, todo carregamento de página reavisaria de lotes já cobertos
 // numa sessão anterior.
-export const BID_STATUS_SNAPSHOT_KEY = "leilao-finder:bid-status-snapshot:v1";
+const BID_STATUS_SNAPSHOT_KEY = "leilao-finder:bid-status-snapshot:v1";
 
-export function detectNewlyCoveredBids(
+function detectNewlyCoveredBids(
   bids: MyBid[],
   prevSnapshot: Map<string, string>,
 ): { newlyCovered: MyBid[]; nextSnapshot: Map<string, string> } {

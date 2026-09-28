@@ -50,7 +50,6 @@ export type CollectionItem = {
 
 const COLS =
   "id, lot_id, source, artist, album, title, year, image, house, uf, won_price, won_date, condition_media, condition_sleeve, notes, description, tags, market_low, market_high, source_url, position";
-const PAGE = 1000;
 
 type DbRow = {
   id: string;
@@ -104,21 +103,14 @@ function toItem(r: DbRow): CollectionItem {
 
 /** Lê a coleção inteira, ordenada por artista e depois posição (single-user). */
 export async function getAllCollection(): Promise<CollectionItem[]> {
-  const rows: CollectionItem[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabaseAdmin
-      .from("collection_items")
-      .select(COLS)
-      .order("artist", { ascending: true })
-      .order("position", { ascending: true })
-      .order("created_at", { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    const batch = (data ?? []) as DbRow[];
-    for (const r of batch) rows.push(toItem(r));
-    if (batch.length < PAGE) break;
-  }
-  return rows;
+  const { data, error } = await supabaseAdmin
+    .from("collection_items")
+    .select(COLS)
+    .order("artist", { ascending: true })
+    .order("position", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as DbRow[]).map(toItem);
 }
 
 /**
@@ -141,7 +133,7 @@ function albumKey(artist: string, album: string): string {
 }
 
 /** Resultado de uma passada de re-identificação (o cliente repete em laço pelo `nextOffset`). */
-export type ReidentifyResult = {
+type ReidentifyResult = {
   identified: number; // discos cujo artista/álbum a passada gravou
   processed: number; // discos examinados nesta passada
   nextOffset: number;
@@ -461,7 +453,7 @@ export async function identifyDraftFromTitle(
 }
 
 /** Campos editáveis de um disco (usado por add e update). */
-export type CollectionInput = {
+type CollectionInput = {
   artist?: string;
   album?: string;
   title?: string;
@@ -653,7 +645,7 @@ const COMPRESS_WEBP_QUALITY = 82;
  * egress do Storage, que é cobrado por byte servido — usado tanto no upload novo quanto no
  * backfill (`scripts/compress-collection-images.ts`) das fotos já existentes.
  */
-export async function compressCollectionImage(
+async function compressCollectionImage(
   bytes: Buffer,
 ): Promise<{ bytes: Buffer; contentType: string; ext: string }> {
   const sharp = (await import("sharp")).default;

@@ -6,7 +6,7 @@ import { normalizeForMatch } from "@/lib/vinyl-parse";
  * observação (rótulo de colchete e/ou o que sobra dentro dos parênteses) e `norm` o texto
  * normalizado de `work` (sem acento/pontuação) para casar com os títulos dos lotes.
  */
-export type ParsedWantItem = {
+type ParsedWantItem = {
   raw: string;
   work: string;
   year: number | null;
@@ -32,7 +32,7 @@ function cleanNote(s: string): string {
  *   "05. Tim Maia (1976 - \"Rodésia\")"
  *   "[Bônus/Cult: Tim Maia Racional, Vol. 2 (1975)]"
  */
-export function parseWantLine(line: string): ParsedWantItem | null {
+function parseWantLine(line: string): ParsedWantItem | null {
   const original = line.trim();
   if (!original) return null;
 

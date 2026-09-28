@@ -28,7 +28,6 @@ export type Purchase = {
 
 const COLS =
   "id, lot_id, id_peca, id_leilao, base, lote, title, won_price, won_date, url, image, house, uf, domain, created_at";
-const PAGE = 1000;
 
 type DbRow = {
   id: string;
@@ -105,20 +104,13 @@ function toRow(w: WonLot): TablesInsert<"purchases"> {
 
 /** Lê todas as compras gravadas, mais recente primeiro. */
 export async function getAllPurchases(): Promise<Purchase[]> {
-  const rows: Purchase[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabaseAdmin
-      .from("purchases")
-      .select(COLS)
-      .order("won_date", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false })
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    const batch = (data ?? []) as DbRow[];
-    for (const r of batch) rows.push(toPurchase(r));
-    if (batch.length < PAGE) break;
-  }
-  return rows;
+  const { data, error } = await supabaseAdmin
+    .from("purchases")
+    .select(COLS)
+    .order("won_date", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return ((data ?? []) as DbRow[]).map(toPurchase);
 }
 
 async function upsertWonLots(won: WonLot[]): Promise<{ added: number; scanned: number }> {

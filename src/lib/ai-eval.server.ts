@@ -34,9 +34,9 @@ import {
 const ANTHROPIC_MODEL = providerModel("anthropic");
 
 /** Teto de lotes avaliados por rodada de cron (evita batches gigantes). */
-export const MAX_PER_ROUND = 800;
+const MAX_PER_ROUND = 800;
 
-export type EvalLot = {
+type EvalLot = {
   id: string;
   title: string;
   price: string;
@@ -105,7 +105,7 @@ const SYSTEM_PROMPT =
   "nenhum texto fora do JSON.";
 
 /** Prompt de usuário (texto) para UM lote. A imagem, quando houver, vai num bloco à parte. */
-export function buildUserPrompt(lot: EvalLot): string {
+function buildUserPrompt(lot: EvalLot): string {
   const price = parsePrice(lot.price);
   const info = {
     titulo: lot.title,
@@ -129,7 +129,7 @@ export function buildUserPrompt(lot: EvalLot): string {
 }
 
 /** Requisição NEUTRA (provedor-agnóstica) para avaliar UM lote. Inclui a capa (visão). */
-export function buildEvalRequest(lot: EvalLot): AiRequest {
+function buildEvalRequest(lot: EvalLot): AiRequest {
   return {
     system: SYSTEM_PROMPT,
     maxTokens: 400,
@@ -140,7 +140,7 @@ export function buildEvalRequest(lot: EvalLot): AiRequest {
 }
 
 /** Parâmetros de mensagem (Anthropic) para um lote — usado no request de BATCH. */
-export function buildLotParams(lot: EvalLot) {
+function buildLotParams(lot: EvalLot) {
   return toAnthropicMessageParams(buildEvalRequest(lot), ANTHROPIC_MODEL);
 }
 
@@ -149,7 +149,7 @@ export function buildLotParams(lot: EvalLot) {
  * código e a texto ao redor: pega o primeiro `{...}` e valida os campos. Retorna null
  * quando não dá para aproveitar.
  */
-export function parseEvalObject(
+function parseEvalObject(
   text: string,
 ): Omit<LotAiRow, "id" | "title_hash" | "model" | "eval_price"> | null {
   if (!text) return null;
@@ -188,7 +188,7 @@ export function parseEvalObject(
 }
 
 /** Extrai o texto concatenado dos blocos `text` de uma mensagem de resposta. */
-export function messageText(message: { content?: Array<{ type: string; text?: string }> }): string {
+function messageText(message: { content?: Array<{ type: string; text?: string }> }): string {
   const blocks = message?.content ?? [];
   return blocks
     .filter((b) => b.type === "text" && typeof b.text === "string")
@@ -201,7 +201,7 @@ export function aiConfigured(): boolean {
   return anyProviderConfigured();
 }
 
-export type SubmitResult = {
+type SubmitResult = {
   batchId: string;
   hashes: Record<string, string>;
   /** Preço (R$) por lote no envio — só a avaliação usa (`lot_ai.eval_price`). */
@@ -226,7 +226,7 @@ export async function submitEvalBatch(lots: EvalLot[]): Promise<SubmitResult> {
   return { batchId: batch.id, hashes, prices, count: requests.length };
 }
 
-export type CollectResult = { done: boolean; rows: LotAiRow[] };
+type CollectResult = { done: boolean; rows: LotAiRow[] };
 
 /**
  * Coleta um batch. Se ainda processando, `{done:false}`. Se terminou, parseia os
@@ -284,7 +284,7 @@ const IDENT_SYSTEM_PROMPT =
   "JSON, sem nenhum texto fora do JSON.";
 
 /** Prompt de identificação de UM lote. Sem imagem por padrão (só o título). */
-export function buildIdentUserPrompt(lot: EvalLot, opts?: { withImage?: boolean }): string {
+function buildIdentUserPrompt(lot: EvalLot, opts?: { withImage?: boolean }): string {
   const withImage = Boolean(opts?.withImage) && Boolean(usableImage(lot.image));
   const info = { titulo: lot.title, casa: lot.house, tem_imagem: withImage };
   return (
@@ -304,7 +304,7 @@ export function buildIdentUserPrompt(lot: EvalLot, opts?: { withImage?: boolean 
 }
 
 /** Requisição NEUTRA para identificar UM lote. Inclui a capa só quando `withImage`. */
-export function buildIdentRequest(lot: EvalLot, withImage: boolean): AiRequest {
+function buildIdentRequest(lot: EvalLot, withImage: boolean): AiRequest {
   return {
     system: IDENT_SYSTEM_PROMPT,
     maxTokens: 120,
@@ -315,12 +315,12 @@ export function buildIdentRequest(lot: EvalLot, withImage: boolean): AiRequest {
 }
 
 /** Parâmetros de mensagem (Anthropic) para identificar UM lote — usado no request de BATCH. */
-export function buildIdentParams(lot: EvalLot, withImage: boolean) {
+function buildIdentParams(lot: EvalLot, withImage: boolean) {
   return toAnthropicMessageParams(buildIdentRequest(lot, withImage), ANTHROPIC_MODEL);
 }
 
 /** Extrai {album, year, confidence} do texto devolvido. Null quando não dá para aproveitar. */
-export function parseIdentObject(
+function parseIdentObject(
   text: string,
 ): { album: string | null; year: number | null; confidence: string | null } | null {
   if (!text) return null;
@@ -399,7 +399,7 @@ export async function submitIdentBatch(lots: EvalLot[], withImage: boolean): Pro
   return { batchId: batch.id, hashes, count: requests.length };
 }
 
-export type CollectIdentResult = { done: boolean; rows: LotIdentRow[] };
+type CollectIdentResult = { done: boolean; rows: LotIdentRow[] };
 
 /**
  * Coleta um batch de identificação. `source` marca de onde veio a identificação
@@ -443,7 +443,7 @@ const SYNC_CONCURRENCY = 4;
  * `failed` = quantos itens a IA NÃO conseguiu processar (erro/vazio); `error` = a 1ª mensagem
  * de erro, para o chamador distinguir "a IA falhou" de "não havia nada a fazer" e mostrá-la.
  */
-export type SyncOutcome<T> = {
+type SyncOutcome<T> = {
   rows: T[];
   served: AiProvider | null;
   switched: boolean;
@@ -547,7 +547,7 @@ export async function evalLotsSync(
 }
 
 /** Resultado da identificação síncrona por lote. */
-export type IdentResult = {
+type IdentResult = {
   id: string;
   album: string | null;
   year: number | null;
@@ -670,7 +670,7 @@ const COLLECTION_IDENT_SYSTEM_PROMPT =
   "informado (não há imagem). Responda SOMENTE com um objeto JSON, sem texto fora dele.";
 
 /** Entrada da identificação da Coleção: título do lote + artista/álbum/ano atuais (pista). */
-export type CollectionIdentInput = {
+type CollectionIdentInput = {
   id: string;
   title: string;
   artist?: string;
@@ -679,7 +679,7 @@ export type CollectionIdentInput = {
 };
 
 /** Resultado: identificação + descritivo do disco + tags de gênero/estilo. */
-export type CollectionIdentResult = {
+type CollectionIdentResult = {
   id: string;
   album: string | null;
   year: number | null;
@@ -689,7 +689,7 @@ export type CollectionIdentResult = {
 };
 
 /** Prompt de identificação+descrição de UM disco da coleção (só texto). */
-export function buildCollectionIdentPrompt(input: CollectionIdentInput): string {
+function buildCollectionIdentPrompt(input: CollectionIdentInput): string {
   const info = {
     titulo: input.title,
     artista_atual: input.artist || null,
@@ -721,7 +721,7 @@ export function buildCollectionIdentPrompt(input: CollectionIdentInput): string 
 }
 
 /** Requisição NEUTRA (só texto) para identificar+descrever UM disco da coleção. */
-export function buildCollectionRequest(input: CollectionIdentInput): AiRequest {
+function buildCollectionRequest(input: CollectionIdentInput): AiRequest {
   return {
     system: COLLECTION_IDENT_SYSTEM_PROMPT,
     // Descritivo longo (momento histórico + panorama + faixa a faixa) precisa de folga para o
@@ -733,13 +733,8 @@ export function buildCollectionRequest(input: CollectionIdentInput): AiRequest {
   };
 }
 
-/** Parâmetros de mensagem (Anthropic, só texto) para identificar+descrever UM disco. */
-export function buildCollectionIdentParams(input: CollectionIdentInput) {
-  return toAnthropicMessageParams(buildCollectionRequest(input), ANTHROPIC_MODEL);
-}
-
 /** Extrai {album, year, confidence, description} do texto devolvido. Null se nada aproveitável. */
-export function parseCollectionIdentObject(text: string): Omit<CollectionIdentResult, "id"> | null {
+function parseCollectionIdentObject(text: string): Omit<CollectionIdentResult, "id"> | null {
   if (!text) return null;
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
@@ -851,7 +846,7 @@ const CONDITION_SYSTEM_PROMPT =
   "encarte), use null para ele — melhor null do que um palpite.";
 
 /** Prompt de extração de estado de UM lote, a partir do texto do catálogo/título. */
-export function buildConditionUserPrompt(text: string): string {
+function buildConditionUserPrompt(text: string): string {
   return (
     "Leia a descrição abaixo de um lote de vinil em leilão e devolva um objeto JSON com " +
     "EXATAMENTE estas chaves:\n" +
@@ -869,7 +864,7 @@ export function buildConditionUserPrompt(text: string): string {
 }
 
 /** Requisição NEUTRA (só texto) para extrair o estado de UM lote. */
-export function buildConditionRequest(text: string): AiRequest {
+function buildConditionRequest(text: string): AiRequest {
   return {
     system: CONDITION_SYSTEM_PROMPT,
     maxTokens: 150,
@@ -884,7 +879,7 @@ export function buildConditionRequest(text: string): AiRequest {
  * `normalizeGrade` — só a escala canônica é aceita (qualquer outra coisa vira null, nunca
  * inventa um grau fora da escala). Null quando não dá para aproveitar nada.
  */
-export function parseConditionAiObject(
+function parseConditionAiObject(
   text: string,
 ): { media: Grade | null; sleeve: Grade | null; insert: InsertState } | null {
   if (!text) return null;
@@ -905,7 +900,7 @@ export function parseConditionAiObject(
   return { media, sleeve, insert };
 }
 
-export type ConditionAiResult = {
+type ConditionAiResult = {
   id: string;
   media: Grade | null;
   sleeve: Grade | null;
@@ -982,7 +977,7 @@ export async function resolveAiProvider(): Promise<AiProvider> {
  * cada `runText`. Best-effort: em qualquer falha de leitura, cai pro padrão de fábrica (mais
  * barato) — nunca impede a avaliação de rodar por causa da preferência de modelo.
  */
-export async function resolveGeminiModel(): Promise<string> {
+async function resolveGeminiModel(): Promise<string> {
   try {
     const { getGeminiModel } = await import("./app-state.server");
     return await getGeminiModel();

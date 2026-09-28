@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
+import type { CatalogLot } from "./leiloesbr-catalog.server";
 import { parseConditionFromText, scoreCondition } from "./grading";
 import type { VinylLot } from "./vinyl-parse";
 
@@ -10,7 +11,7 @@ import type { VinylLot } from "./vinyl-parse";
  * `lots.id`; `title_hash` re-avalia quando o título do lote muda. Espelha o padrão de
  * `lot_ident`/`lot_market`.
  */
-export type LotConditionRow = {
+type LotConditionRow = {
   id: string;
   title_hash: string;
   media: string; // grau do disco ou ''
@@ -23,7 +24,6 @@ export type LotConditionRow = {
   bids: number | null; // QTDLANCE — demanda (lances) do lote pré-leilão
 };
 
-const PAGE = 1000;
 const COND_COLUMNS =
   "id, title_hash, media, sleeve, insert_state, score, faixa, source, views, bids";
 
@@ -42,26 +42,18 @@ function titleHash(title: string): string {
 let allCache: { at: number; rows: LotConditionRow[] } | null = null;
 const ALL_TTL_MS = 30_000;
 
-/** Lê todo o cache de estado (single-user; paginado). Best-effort. */
+/** Lê todo o cache de estado (single-user). Best-effort. */
 export async function getAllLotCondition(): Promise<LotConditionRow[]> {
   if (allCache && Date.now() - allCache.at < ALL_TTL_MS) return allCache.rows;
-  const rows: LotConditionRow[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabaseAdmin
-      .from("lot_condition")
-      .select(COND_COLUMNS)
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    const batch = (data as LotConditionRow[] | null) ?? [];
-    rows.push(...batch);
-    if (batch.length < PAGE) break;
-  }
+  const { data, error } = await supabaseAdmin.from("lot_condition").select(COND_COLUMNS);
+  if (error) throw error;
+  const rows = (data as LotConditionRow[] | null) ?? [];
   allCache = { at: Date.now(), rows };
   return rows;
 }
 
 /** Grava/atualiza o estado por lote (upsert por `id`). */
-export async function upsertLotCondition(rows: LotConditionRow[]): Promise<number> {
+async function upsertLotCondition(rows: LotConditionRow[]): Promise<number> {
   if (!rows.length) return 0;
   const evaluatedAt = new Date().toISOString();
   const payload = rows.map((r) => ({ ...r, evaluated_at: evaluatedAt }));
@@ -99,10 +91,7 @@ export async function upsertLotCondition(rows: LotConditionRow[]): Promise<numbe
 }
 
 /** Monta a linha de estado de um lote a partir do lote do catálogo (com fallback ao título). */
-function conditionRow(
-  lot: VinylLot,
-  catalog?: import("./leiloesbr-catalog.server").CatalogLot,
-): LotConditionRow {
+function conditionRow(lot: VinylLot, catalog?: CatalogLot): LotConditionRow {
   const fromCatalog = parseConditionFromText(catalog?.text ?? "");
   const hasCatalog = Boolean(fromCatalog.media || fromCatalog.sleeve || fromCatalog.insert);
   const cond = hasCatalog ? fromCatalog : parseConditionFromText(lot.title);
@@ -175,7 +164,7 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
   // pelo fallback de IA quando o regex não encontra nada nele.
   const textByLotId = new Map<string, string>();
   for (const auction of batch) {
-    let catalog: Map<string, import("./leiloesbr-catalog.server").CatalogLot>;
+    let catalog: Map<string, CatalogLot>;
     try {
       catalog = await fetchCatalogData(auction.domain, auction.idLeilao);
     } catch (error) {

@@ -91,7 +91,7 @@ export type AnalyticsAliases = {
 };
 
 /** Média (arredondada) de uma lista, ignorando nulos; null quando não há número. */
-export function avg(values: (number | null)[]): number | null {
+function avg(values: (number | null)[]): number | null {
   const nums = values.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
   if (!nums.length) return null;
   return Math.round(nums.reduce((a, b) => a + b, 0) / nums.length);

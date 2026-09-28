@@ -1,7 +1,7 @@
 {
   "name": "tanstack_start_ts",
   "private": true,
-  "version": "0.88.0",
+  "version": "0.88.1",
   "sideEffects": false,
   "type": "module",
   "scripts": {
@@ -10,6 +10,10 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tests",
+    "test": "bun test",
+    "knip": "knip",
+    "check": "bun run lint && bun run typecheck && bun test && bun run knip",
     "format": "prettier --write .",
     "compress-images": "bun run scripts/compress-collection-images.ts",
     "calibrate-collection-thresholds": "bun run scripts/calibrate-collection-thresholds.ts"
@@ -25,7 +29,6 @@
     "@tanstack/react-query": "^5.101.1",
     "@tanstack/react-router": "^1.170.16",
     "@tanstack/react-start": "^1.168.26",
-    "@tanstack/router-plugin": "^1.168.18",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -43,6 +46,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
+    "@types/bun": "^1.4.2",
     "@types/node": "^22.16.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
@@ -53,6 +57,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
+    "knip": "5",
     "nitro": "3.0.260603-beta",
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",

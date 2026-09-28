@@ -15,7 +15,7 @@ import { auctionFinished, recentDayKeys, upcomingDayKeys } from "./vinyl-parse";
 // antes do pregão), não o dia do leilão — ao contrário de `WatchedLot`. Um lance para um leilão
 // futuro tem que continuar aparecendo (nunca é podado por estar "à frente"); só os lances
 // PASSADOS saem, e só depois de `BID_RETENTION_DAYS` dias (hoje + esta margem para trás).
-export const BID_RETENTION_DAYS = 3; // hoje + 2 dias pra trás
+const BID_RETENTION_DAYS = 3; // hoje + 2 dias pra trás
 export const WATCHED_ACCUM_STORAGE_KEY = "leilao-finder:watched-accum:v1";
 export const BIDS_ACCUM_STORAGE_KEY = "leilao-finder:bids-accum:v1";
 

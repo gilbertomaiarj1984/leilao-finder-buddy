@@ -34,11 +34,14 @@ bun run build:dev           # build em modo development
 bun run preview             # servir o build localmente
 bun run lint                # eslint .
 bun run format               # prettier --write .
-bunx tsc --noEmit           # checagem de tipos (sem script dedicado)
+bun run typecheck           # tsc (app + tests/)
+bun test                    # testes de funções puras (tests/*.test.ts)
+bun run knip                # código/export/dependência sem uso
+bun run check               # lint + typecheck + test + knip (rodar antes de todo push)
 ```
 
-Não há suite de testes automatizada. Funções puras podem ser checadas ad-hoc com
-`bun -e '...'`. **Scraping/lance não são testáveis neste ambiente** (sem rede para os sites de
+Testes cobrem só funções puras (parsing, grading, matching) — ao mexer nelas, acrescente um
+caso em `tests/`. **Scraping/lance não são testáveis neste ambiente** (sem rede para os sites de
 leilão) — validar por análise estática; quem testa contra o site real é o usuário, na prévia ou
 produção.
 

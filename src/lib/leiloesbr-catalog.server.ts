@@ -51,7 +51,7 @@ export type CatalogLot = {
  * está presente (byte líder C2/C3 seguido de byte de continuação 0x80–0xBF) e o reparo não
  * introduz o caractere de substituição (�) — assim texto já correto passa intacto.
  */
-export function fixMojibake(s: string): string {
+function fixMojibake(s: string): string {
   if (!s || !/[\u00c2\u00c3\u00e2][\u0080-\u00bf]/.test(s)) return s;
   try {
     const repaired = Buffer.from(s, "latin1").toString("utf8");
@@ -93,7 +93,7 @@ const UNSOLD_RE = /n[ãa]o\s+vendid|n[ãa]o\s+arrematad|sem\s+lances?|retirad[oa
  * template ANTIGO (HTML server-side, sem o JSON `loadData`/`MOSTRABTN_CLASS` — só essas casas
  * têm esse campo). Sem rótulo/marcador claro OU com marcador de "não vendido", `sold=false`.
  */
-export function parseSoldMarkers(text: string): { sold: boolean; soldPrice: string | null } {
+function parseSoldMarkers(text: string): { sold: boolean; soldPrice: string | null } {
   const unsold = UNSOLD_RE.test(text);
   const labeled = text.match(SALE_VALUE_RE);
   let soldPrice: string | null = null;
@@ -141,7 +141,7 @@ function longestAttr(seg: string): string {
  * marcador de "não vendido", `sold=false` e nada é gravado (nunca inventa venda). O layout
  * pode variar entre casas — calibrado a partir do catálogo do Discos Esquecidos (leilões br).
  */
-export function parseCatalogData(html: string): Map<string, CatalogLot> {
+function parseCatalogData(html: string): Map<string, CatalogLot> {
   const map = new Map<string, CatalogLot>();
   const matches = [...html.matchAll(/peca\.asp\?ID=\s*(\d+)/gi)];
   for (let i = 0; i < matches.length; i++) {
@@ -183,7 +183,7 @@ export function parseCatalogData(html: string): Map<string, CatalogLot> {
  *   `{ "Catalogo":[{ "PECAS":[…] }] }` (Catavento Discos)
  *   `{ "PECAS":[…] }`
  */
-export function extractPecas(parsed: unknown): Record<string, unknown>[] {
+function extractPecas(parsed: unknown): Record<string, unknown>[] {
   const fromNode = (n: unknown): Record<string, unknown>[] | null => {
     if (!n || typeof n !== "object") return null;
     const o = n as Record<string, unknown>;

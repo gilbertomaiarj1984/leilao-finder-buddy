@@ -20,7 +20,7 @@ export type PresencialAuction = LiveAuction & {
 };
 
 /** "19:30h" + "2026-08-21" -> ISO instant in São Paulo time (UTC-3). */
-export function auctionStartsAt(dayKey: string, time: string): string | null {
+function auctionStartsAt(dayKey: string, time: string): string | null {
   const match = time.match(/(\d{1,2})[:h.]?(\d{2})?/);
   if (!match) return null;
   const hh = String(Number(match[1])).padStart(2, "0");

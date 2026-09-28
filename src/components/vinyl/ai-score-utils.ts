@@ -91,7 +91,7 @@ export function rarityLabel(r: string | null): string {
  * Ordem da raridade, do MENOR para o MAIOR valor. Alimenta a legenda da Análise
  * (o usuário não sabia qual extremo é o "mais raro").
  */
-export const RARITY_ORDER = ["comum", "interessante", "raro", "muito_raro"] as const;
+const RARITY_ORDER = ["comum", "interessante", "raro", "muito_raro"] as const;
 export const RARITY_LEGEND: { key: string; label: string }[] = RARITY_ORDER.map((key) => ({
   key,
   label: RARITY_LABEL[key] ?? key,

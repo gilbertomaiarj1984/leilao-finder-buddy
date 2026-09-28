@@ -13,9 +13,6 @@ export type AiProvider = "anthropic" | "gemini";
 
 export const AI_PROVIDERS: readonly AiProvider[] = ["anthropic", "gemini"] as const;
 
-/** Provedor padrão de fábrica (usado quando nada foi configurado em `app_state`/env). */
-export const DEFAULT_AI_PROVIDER: AiProvider = "anthropic";
-
 /** Rótulo curto para a UI (Select/diálogo). */
 export const AI_PROVIDER_LABELS: Record<AiProvider, string> = {
   anthropic: "Claude (Anthropic)",
@@ -53,12 +50,6 @@ export const GEMINI_MODELS: readonly GeminiModel[] = [
   "gemini-3.1-flash-lite",
   "gemini-flash-latest",
 ] as const;
-
-/**
- * Modelo do Gemini padrão de fábrica: o mais barato confirmado SEM prazo de desligamento
- * anunciado (`gemini-2.5-flash-lite` é ainda mais barato, mas desliga em 16/out/2026).
- */
-export const DEFAULT_GEMINI_MODEL: GeminiModel = "gemini-3.1-flash-lite";
 
 /** Rótulo curto pra UI, com o preço aproximado (US$ por 1M de tokens, entrada/saída). */
 export const GEMINI_MODEL_LABELS: Record<GeminiModel, string> = {

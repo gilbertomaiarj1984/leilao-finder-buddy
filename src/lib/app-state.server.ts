@@ -2,7 +2,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 // Definido localmente (mesma forma do `OwnedFeedback` de `wantlist-match`) para o módulo do
 // SERVIDOR não depender de um módulo client-safe — evita surpresas de bundling no servidor.
-export type OwnedFeedback = {
+type OwnedFeedback = {
   lotId: string;
   itemId: string;
   verdict: "pos" | "neg";
@@ -214,7 +214,7 @@ export async function setUserInterests(items: string[]): Promise<{ savedAt: stri
  * - chave ausente         → vale o casamento automático (+ aprendizado).
  * `lotId = ${idLeilao}-${idPeca}`. Global, um único registro em `app_state`.
  */
-export type CollectionLinks = Record<string, string | false>;
+type CollectionLinks = Record<string, string | false>;
 
 export async function getCollectionLinks(): Promise<CollectionLinks> {
   try {
@@ -386,9 +386,9 @@ export async function markSalesCaptured(idLeiloes: string[]): Promise<void> {
  * - **`analytics_album_aliases`** (`Record<"${artistKey}|${albumKey}", nomeCanônico>`):
  *   renomear/fundir álbuns no escopo do artista (chave já com o `artistKey` FINAL, pós-alias).
  */
-export type SaleOverride = { artist?: string; album?: string };
+type SaleOverride = { artist?: string; album?: string };
 
-export type AnalyticsAliases = {
+type AnalyticsAliases = {
   artists: Record<string, string>;
   albums: Record<string, string>;
   // Correção POR VENDA (aprendizado por `lot_id`): define artista/álbum de UMA venda específica,
@@ -604,12 +604,12 @@ export async function clearAnalyticsAlias(
  * Global, um único registro em `app_state` (mesmo modelo das casas verificadas). NÃO afeta
  * a análise SOB DEMANDA (botões por dia/casa), que é explícita e sempre roda.
  */
-export type AiMode = "off" | "all" | "watched";
+type AiMode = "off" | "all" | "watched";
 
-export const AI_MODES: readonly AiMode[] = ["off", "all", "watched"] as const;
+const AI_MODES: readonly AiMode[] = ["off", "all", "watched"] as const;
 
 /** Modo padrão quando nada foi configurado: econômico (só vigiados + lances). */
-export const DEFAULT_AI_MODE: AiMode = "watched";
+const DEFAULT_AI_MODE: AiMode = "watched";
 
 export async function getAiMode(): Promise<AiMode> {
   try {
@@ -650,7 +650,7 @@ export async function setAiMode(mode: AiMode): Promise<{ savedAt: string }> {
  * Declarado localmente para o módulo do SERVIDOR não depender do client-safe `ai-provider.ts`
  * (mesma lição do `OwnedFeedback`). Precedência: `app_state` → env `AI_PROVIDER` → `anthropic`.
  */
-export type AiProvider = "anthropic" | "gemini";
+type AiProvider = "anthropic" | "gemini";
 
 const AI_PROVIDERS: readonly AiProvider[] = ["anthropic", "gemini"] as const;
 
@@ -713,7 +713,7 @@ const GEMINI_MODELS = [
   "gemini-3.1-flash-lite",
   "gemini-flash-latest",
 ] as const;
-export type GeminiModel = (typeof GEMINI_MODELS)[number];
+type GeminiModel = (typeof GEMINI_MODELS)[number];
 
 function envDefaultGeminiModel(): GeminiModel {
   const env = process.env["GEMINI_MODEL"];
@@ -759,7 +759,7 @@ export async function setGeminiModel(model: GeminiModel): Promise<{ savedAt: str
 // `hashes` guarda o title_hash de cada lote enviado (id → hash), calculado na SUBMISSÃO,
 // para o passo de COLETA (execução posterior do cron) gravar o cache com o hash correto
 // mesmo que o título tenha mudado no meio-tempo.
-export type PendingAiBatch = {
+type PendingAiBatch = {
   batchId: string;
   submittedAt: string;
   hashes: Record<string, string>;
@@ -830,7 +830,7 @@ export async function setPendingAiBatch(batch: PendingAiBatch | null): Promise<v
 // Batch da IDENTIFICAÇÃO simplificada (camada `lot_ident`), separado do de avaliação.
 // `source` diz se a passada foi por título ou por capa, para a coleta gravar o `source`
 // correto e o escalonamento título→capa funcionar.
-export type PendingAiIdentBatch = {
+type PendingAiIdentBatch = {
   batchId: string;
   submittedAt: string;
   hashes: Record<string, string>;

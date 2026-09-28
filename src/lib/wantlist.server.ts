@@ -6,7 +6,7 @@ import { parseWantlistText } from "@/lib/wantlist-parse";
  * Item da "sondagem" (tabela `wantlist_items`) como a UI consome. Espelha as colunas do
  * banco; `year` pode ser null (obra sem ano informado).
  */
-export type WantlistRow = {
+type WantlistRow = {
   id: string;
   raw: string;
   work: string;
@@ -18,7 +18,6 @@ export type WantlistRow = {
 };
 
 const COLS = "id, raw, work, year, note, norm, acquired, position";
-const PAGE = 1000;
 
 type DbRow = {
   id: string;
@@ -46,20 +45,13 @@ function toRow(r: DbRow): WantlistRow {
 
 /** Lê a sondagem inteira, ordenada por `position` (single-user; poucas linhas). */
 export async function getAllWantlist(): Promise<WantlistRow[]> {
-  const rows: WantlistRow[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabaseAdmin
-      .from("wantlist_items")
-      .select(COLS)
-      .order("position", { ascending: true })
-      .order("created_at", { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    const batch = (data ?? []) as DbRow[];
-    for (const r of batch) rows.push(toRow(r));
-    if (batch.length < PAGE) break;
-  }
-  return rows;
+  const { data, error } = await supabaseAdmin
+    .from("wantlist_items")
+    .select(COLS)
+    .order("position", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as DbRow[]).map(toRow);
 }
 
 /**

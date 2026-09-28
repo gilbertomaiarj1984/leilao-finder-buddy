@@ -21,7 +21,7 @@ import {
 } from "./ai-score-utils";
 
 /** Dados do lote necessários para refazer a consulta à IA (botão no painel de detalhes). */
-export type ReevalLot = {
+type ReevalLot = {
   id: string;
   title: string;
   price: string;
@@ -373,7 +373,7 @@ function ReevaluateButton({ lot }: { lot: ReevalLot }) {
 }
 
 /** Conteúdo do overlay/coluna: o que compõe a nota. Reutilizado no card e na Análise. */
-export function ScoreDetails({
+function ScoreDetails({
   ai,
   market,
   price,
@@ -459,28 +459,6 @@ export function ScoreCorner({
       >
         <ScoreDetails ai={ai} market={market} price={price} lot={lot} />
       </HoverDetails>
-    </div>
-  );
-}
-
-/** Chips compactos de nota/raridade/oportunidade/match para linhas de tabela. */
-export function ScoreChips({ ai }: { ai: LotAi }) {
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      <span
-        className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-bold ${scoreTone(ai.score)}`}
-      >
-        {ai.matchesInterests ? <Star className="h-3 w-3 fill-current" /> : null}
-        {ai.score ?? "—"}
-      </span>
-      {ai.rarity ? (
-        <span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] text-foreground">
-          {rarityLabel(ai.rarity)}
-        </span>
-      ) : null}
-      {ai.deal && ai.deal !== "indefinido" ? (
-        <span className={`text-[11px] font-medium ${dealTone(ai.deal)}`}>{dealLabel(ai.deal)}</span>
-      ) : null}
     </div>
   );
 }

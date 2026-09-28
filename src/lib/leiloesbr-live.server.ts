@@ -66,7 +66,7 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 
 /** Emite um token assinado que autoriza o proxy para UMA origem, por TOKEN_TTL_MS. */
-export async function mintLiveToken(origin: string): Promise<string> {
+async function mintLiveToken(origin: string): Promise<string> {
   const secret = proxySecret();
   if (!secret) throw new Error("Proxy do pregão ao vivo não configurado no servidor.");
   const payload = toBase64Url(
