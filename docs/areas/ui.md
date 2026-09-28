@@ -3,6 +3,12 @@
 > Parte das notas de desenvolvimento — índice em `docs/notas-desenvolvimento.md`.
 > Atualize esta página ao mudar a mecânica desta área.
 
+> **Onde está o código da home (v0.88.4):** as menções a "`index.tsx`" abaixo são históricas —
+> a rota só compõe a tela; estado/queries/derivações/mutações estão em
+> `src/components/vinyl/dashboard/use-dashboard-data.tsx` e cada parte em
+> `dashboard/{dashboard-header,day-tab,watched-tab,bids-tab,lot-search-box}.tsx`. Queries
+> compartilhadas entre telas: `src/lib/queries.ts`.
+
 ## Páginas / UI
 
 - **Header persistente (v0.41.0):** o `<header>` de todas as páginas autenticadas (index,

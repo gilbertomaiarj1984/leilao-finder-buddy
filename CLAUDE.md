@@ -98,7 +98,10 @@ versão obrigatório em todo PR, atualizar a documentação (página da área + 
   `useXQuery()` + `queryKeys` para invalidar/`setQueryData`) — não redefinir `useQuery` de uma
   chave que já existe lá.
 - **UI**: componentes shadcn-style em `src/components/ui/` (gerados, não seguem
-  necessariamente o lint estrito) + componentes de domínio em `src/components/vinyl/`.
+  necessariamente o lint estrito) + componentes de domínio em `src/components/vinyl/`. A home
+  (`routes/_authenticated/index.tsx`) só compõe: estado/dados em
+  `components/vinyl/dashboard/use-dashboard-data.tsx` (objeto `DashboardData`) e cada parte da
+  tela (`DashboardHeader`, `DayTab`, `WatchedTab`, `BidsTab`) num arquivo dessa pasta.
   Tailwind v4 via `@tailwindcss/vite`.
 - **Banco**: Postgres próprio (rodando em container, no `docker-compose.yml`); schema
   consolidado em `supabase/setup.sql` (nome histórico, mantido — schema puro, sem nada
