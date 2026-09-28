@@ -59,7 +59,9 @@ function UnsoldLotCard({ lot }: { lot: UnsoldLotItem }) {
  * Link "pregão presencial" da linha da casa (dia principal / vigiados) — perde sentido assim
  * que os lotes acabam, então vira o acesso à lista de lotes sem lance daquele pregão
  * (`getUnsoldLots`). Busca assim que detecta o fim (não só ao expandir) para já mostrar o
- * total de lotes do catálogo ao lado do botão; a lista em cards só renderiza ao expandir.
+ * total de lotes ao lado do botão; a lista em cards só renderiza ao expandir. `dayKey`
+ * restringe ao dia desta linha — o catálogo do site é por LEILÃO, não por dia, e leilões que
+ * se estendem por mais de um dia (mesmo `idLeilao`) trariam lotes de outros dias junto.
  *
  * Fim do pregão: sinal PRECISO de `usePresencialNow` (peça atual = total) OU, quando esse
  * dado não vem (`isFinished` nunca fica `true`), a heurística de 3h já usada pelo badge
@@ -70,10 +72,12 @@ function UnsoldLotCard({ lot }: { lot: UnsoldLotItem }) {
 export function PresencialOrUnsoldLink({
   presencialUrl,
   idLeilao,
+  dayKey,
   statusEnded,
 }: {
   presencialUrl: string;
   idLeilao: string;
+  dayKey: string;
   statusEnded: boolean;
 }) {
   const { isFinished: presencialFinished } = usePresencialNow(presencialUrl);
@@ -81,8 +85,8 @@ export function PresencialOrUnsoldLink({
   const [open, setOpen] = useState(false);
   const fetchUnsold = useServerFn(getUnsoldLots);
   const query = useQuery({
-    queryKey: ["unsold-lots", idLeilao] as const,
-    queryFn: () => fetchUnsold({ data: { idLeilao, presencialUrl } }),
+    queryKey: ["unsold-lots", idLeilao, dayKey] as const,
+    queryFn: () => fetchUnsold({ data: { idLeilao, presencialUrl, dayKey } }),
     enabled: isFinished,
     staleTime: 5 * 60 * 1000,
   });

@@ -201,8 +201,7 @@ type VinylInfo = { title: string; artist: string };
 const VINYL_FORMAT =
   /\b(?:lps?|vinil|vinyl|compacto|bolach[aã]o|long\s*play|33\s*rpm)\b|disco\s+de\s+vinil/i;
 
-/** Exportado para `unsold-lots.server.ts` reaproveitar o mesmo filtro de identidade. */
-export function looksVinyl(text: string, cond: Condition): boolean {
+function looksVinyl(text: string, cond: Condition): boolean {
   return Boolean(cond.media || cond.sleeve) || VINYL_FORMAT.test(text);
 }
 
@@ -219,8 +218,7 @@ const PECA_STATE_SUFFIX =
  * santavelharia: "Disco de vinil: Título. Gravadora…") → usa o campo **PECA** (título curado,
  * ex.: "Disco Rock In ELMA CHIPS - Novo"), limpo de prefixo de formato e sufixo de estado.
  */
-/** Exportado para `unsold-lots.server.ts` reaproveitar o mesmo título de identidade. */
-export function bestCatalogTitle(data: CatalogLot): string {
+function bestCatalogTitle(data: CatalogLot): string {
   const desc = catalogTitle(data.text);
   // Formato ESTRUTURADO (Discos Esquecidos): o DESCRICAO traz grau "CAPA/DISCO <sigla>" e vem
   // como "Artista - Álbum - CAPA …" — o descritivo (cortado no grau) é a melhor identidade.

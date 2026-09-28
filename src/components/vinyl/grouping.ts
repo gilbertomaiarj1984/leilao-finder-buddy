@@ -262,6 +262,7 @@ export type HouseAuctionInfo = {
   presencialUrl: string | null;
   catalogUrl: string | null;
   idLeilao: string;
+  dayKey: string;
 };
 
 /**
@@ -290,6 +291,7 @@ export function houseAuctionInfo(
     presencialUrl: presencialUrlFromLot(lot),
     catalogUrl: catalogUrlFromLot(lot),
     idLeilao: lot.idLeilao,
+    dayKey,
   };
 }
 
