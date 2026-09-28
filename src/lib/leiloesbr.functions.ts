@@ -100,6 +100,23 @@ export const getPresencialNow = createServerFn({ method: "GET" })
     return await fetchPresencialNow(data.url);
   });
 
+/** Lotes sem lance de um leilão já terminado — sob demanda, quando o card mostra que acabou. */
+export const getUnsoldLots = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .inputValidator((input: { idLeilao?: string; presencialUrl?: string } | undefined) => {
+    const idLeilao = typeof input?.idLeilao === "string" ? input.idLeilao.trim() : "";
+    const presencialUrl =
+      typeof input?.presencialUrl === "string" ? input.presencialUrl.trim() : "";
+    if (!idLeilao || !presencialUrl) throw new Error("idLeilao e presencialUrl obrigatórios.");
+    return { idLeilao, presencialUrl };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getUnsoldLotsForAuction } = await import("./unsold-lots.server");
+    return await getUnsoldLotsForAuction(data.idLeilao, data.presencialUrl);
+  });
+
 // Preenche o nº do lote (via catálogo da casa) em blocos de leilões, para caber no
 // tempo do servidor. O cliente chama em laço até `remaining` chegar a 0.
 export const enrichLotes = createServerFn({ method: "POST" })

@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, ChevronUp, ExternalLink, Radio } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp, ExternalLink } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,6 +14,7 @@ import {
   watchedMatchesSearch,
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
+import { PresencialOrUnsoldLink } from "@/components/vinyl/presencial-or-unsold-link";
 
 import type { DashboardData } from "./use-dashboard-data";
 
@@ -167,15 +168,10 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                                 <AuctionStatusInline info={auctionInfo} />
                                 <div className="ml-auto flex flex-wrap items-center gap-3">
                                   {auctionInfo?.presencialUrl ? (
-                                    <a
-                                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                      href={auctionInfo.presencialUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      title="Acompanhar o pregão presencial desta casa"
-                                    >
-                                      <Radio className="h-3 w-3" /> pregão presencial
-                                    </a>
+                                    <PresencialOrUnsoldLink
+                                      presencialUrl={auctionInfo.presencialUrl}
+                                      idLeilao={auctionInfo.idLeilao}
+                                    />
                                   ) : null}
                                   <a
                                     className="inline-flex items-center gap-1 text-xs text-primary hover:underline"

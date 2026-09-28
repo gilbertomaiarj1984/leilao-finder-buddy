@@ -1,10 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { ChevronDown, ExternalLink, Gavel, Radio } from "lucide-react";
 import { useState } from "react";
 
-import type { PresencialAuction } from "@/lib/leiloesbr-auctions.server";
 import { getLiveAuctions, getPresencialNow } from "@/lib/leiloesbr.functions";
+import type { PresencialNow } from "@/lib/presencial-now";
 
 /**
  * Linha "Início hh:mm · UF · N lote(s)" da casa — trocada pelo lote em pregão agora (nº +
@@ -12,25 +12,22 @@ import { getLiveAuctions, getPresencialNow } from "@/lib/leiloesbr.functions";
  * consulta carrega, sem trocar de linha nem de altura do card (mesma `queryKey`, deduplicada
  * com o selo das outras telas).
  */
-function HouseInfoLine({ auction }: { auction: PresencialAuction }) {
-  const fetchNow = useServerFn(getPresencialNow);
-  const url = auction.presencialUrl;
-  const query = useQuery({
-    queryKey: ["presencial-now", url ?? ""] as const,
-    queryFn: () => fetchNow({ data: { url: url! } }),
-    enabled: Boolean(url),
-    staleTime: 30 * 1000,
-    refetchInterval: 60 * 1000,
-    refetchIntervalInBackground: false,
-    refetchOnWindowFocus: true,
-  });
-
-  const now = query.data;
+function HouseInfoLine({
+  time,
+  uf,
+  lotCount,
+  now,
+}: {
+  time: string;
+  uf: string | null;
+  lotCount: number;
+  now: PresencialNow | null;
+}) {
   if (!now) {
     return (
       <span className="truncate">
-        Início {auction.time}
-        {auction.uf ? ` · ${auction.uf}` : ""} · {auction.lotCount} lote(s)
+        Início {time}
+        {uf ? ` · ${uf}` : ""} · {lotCount} lote(s)
       </span>
     );
   }
@@ -62,6 +59,10 @@ function HouseInfoLine({ auction }: { auction: PresencialAuction }) {
   );
 }
 
+function isPresencialFinished(now: PresencialNow | null | undefined): boolean {
+  return Boolean(now && now.peca !== null && now.total !== null && now.peca >= now.total);
+}
+
 /** Leilões que já começaram (somem da listagem pública) e tinham lotes de vinil. */
 export function LiveAuctions() {
   const [open, setOpen] = useState(false);
@@ -74,7 +75,29 @@ export function LiveAuctions() {
     refetchOnWindowFocus: false,
   });
 
-  const auctions = live.data ?? [];
+  const allAuctions = live.data ?? [];
+
+  // Sinal PRECISO de fim de pregão (peça atual = total), consultado para cada casa — mesma
+  // queryKey/config de `HouseInfoLine`, então dedup com qualquer outra tela que já esteja
+  // olhando o mesmo pregão (dia principal, `/ao-vivo`). Some da seção assim que termina; nas
+  // outras telas (dia, `/ao-vivo`) a casa continua disponível o dia inteiro.
+  const fetchNow = useServerFn(getPresencialNow);
+  const presencialQueries = useQueries({
+    queries: allAuctions.map((auction) => ({
+      queryKey: ["presencial-now", auction.presencialUrl ?? ""] as const,
+      queryFn: () => fetchNow({ data: { url: auction.presencialUrl! } }),
+      enabled: Boolean(auction.presencialUrl),
+      staleTime: 30 * 1000,
+      refetchInterval: 60 * 1000,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
+    })),
+  });
+
+  const auctions = allAuctions
+    .map((auction, i) => ({ auction, now: presencialQueries[i]?.data ?? null }))
+    .filter(({ now }) => !isPresencialFinished(now));
+
   if (!auctions.length) return null;
 
   return (
@@ -101,7 +124,7 @@ export function LiveAuctions() {
       </button>
       {open && (
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {auctions.map((auction) => (
+          {auctions.map(({ auction, now }) => (
             <a
               key={auction.idLeilao}
               href={auction.presencialUrl ?? auction.entryUrl ?? auction.houseUrl ?? "#"}
@@ -115,7 +138,12 @@ export function LiveAuctions() {
                 <Radio className="h-4 w-4 shrink-0 text-primary" />
               </div>
               <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                <HouseInfoLine auction={auction} />
+                <HouseInfoLine
+                  time={auction.time}
+                  uf={auction.uf}
+                  lotCount={auction.lotCount}
+                  now={now}
+                />
                 <ExternalLink className="ml-auto h-3 w-3 shrink-0 text-primary opacity-0 transition-opacity group-hover:opacity-100" />
               </p>
             </a>

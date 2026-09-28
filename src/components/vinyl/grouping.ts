@@ -261,6 +261,7 @@ export type HouseAuctionInfo = {
   status: AuctionStatus | null;
   presencialUrl: string | null;
   catalogUrl: string | null;
+  idLeilao: string;
 };
 
 /**
@@ -288,6 +289,7 @@ export function houseAuctionInfo(
     status,
     presencialUrl: presencialUrlFromLot(lot),
     catalogUrl: catalogUrlFromLot(lot),
+    idLeilao: lot.idLeilao,
   };
 }
 
