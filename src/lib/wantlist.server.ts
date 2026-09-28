@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { db } from "@/lib/db-client.server";
 import { normalizeForMatch } from "@/lib/vinyl-parse";
 import { parseWantlistText } from "@/lib/wantlist-parse";
 
@@ -45,7 +45,7 @@ function toRow(r: DbRow): WantlistRow {
 
 /** Lê a sondagem inteira, ordenada por `position` (single-user; poucas linhas). */
 export async function getAllWantlist(): Promise<WantlistRow[]> {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from("wantlist_items")
     .select(COLS)
     .order("position", { ascending: true })
@@ -92,7 +92,7 @@ export async function importWantlistText(text: string): Promise<{ added: number 
   }
   if (!payload.length) return { added: 0 };
 
-  const { error } = await supabaseAdmin.from("wantlist_items").insert(payload);
+  const { error } = await db.from("wantlist_items").insert(payload);
   if (error) {
     console.error("[wantlist] falha ao importar", error);
     throw new Error(`Não foi possível importar a sondagem: ${error.message}`);
@@ -110,7 +110,7 @@ export async function addWantlistItem(input: {
   if (!work) throw new Error("Informe a obra.");
   const existing = await getAllWantlist();
   const position = existing.reduce((max, r) => Math.max(max, r.position), 0) + 1;
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from("wantlist_items")
     .insert({
       raw: work,
@@ -155,7 +155,7 @@ export async function updateWantlistItem(input: {
   if (typeof input.note === "string") patch.note = input.note.trim();
   if (typeof input.acquired === "boolean") patch.acquired = input.acquired;
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from("wantlist_items")
     .update(patch)
     .eq("id", input.id)
@@ -170,7 +170,7 @@ export async function updateWantlistItem(input: {
 
 /** Remove uma obra da sondagem. */
 export async function deleteWantlistItem(id: string): Promise<{ ok: true }> {
-  const { error } = await supabaseAdmin.from("wantlist_items").delete().eq("id", id);
+  const { error } = await db.from("wantlist_items").delete().eq("id", id);
   if (error) {
     console.error("[wantlist] falha ao remover", error);
     throw new Error(`Não foi possível remover a obra: ${error.message}`);

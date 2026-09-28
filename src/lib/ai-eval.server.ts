@@ -2,7 +2,8 @@
  * Camada de IA (isolada; ponto plugável). Avalia/identifica lotes de vinil com um modelo
  * barato. O PROVEDOR é plugável (`ai-provider.server.ts`): **Claude (Anthropic)** ou
  * **Gemini (Google)**. Só as funções de rede tocam o provedor; as funções puras (hash,
- * seleção, prompt, parsing) são testáveis com `bun -e` sem chave de API.
+ * seleção, prompt, parsing) são testáveis sem chave de API. Coleção e estado de conservação
+ * ficam em `ai-collection.server.ts` e `ai-condition.server.ts`.
  *
  * Dois caminhos:
  * - **Batches API** da Anthropic (assíncrona, ~50% do preço) — só Claude, usada pelo cron.
@@ -18,7 +19,6 @@ import { parsePrice, type VinylLot } from "./vinyl-parse";
 import { priceRoseSinceEval } from "./ai-reprice";
 import type { LotAiRow } from "./lot-ai.server";
 import type { LotIdentRow } from "./lot-ident.server";
-import { GRADE_ORDER, normalizeGrade, type Grade, type InsertState } from "./grading";
 import {
   runText,
   providerModel,
@@ -45,6 +45,7 @@ type EvalLot = {
 };
 
 const RARITIES = ["comum", "interessante", "raro", "muito_raro"] as const;
+
 const DEALS = ["caro", "justo", "barato", "indefinido"] as const;
 
 /** Hash estável e curto do título (djb2 → base36). Muda ⇒ re-avaliar. */
@@ -273,7 +274,7 @@ export async function collectEvalBatch(
 // TÍTULO (barata); quando a confiança vem "baixa", uma 2ª passada usa a CAPA.
 // ---------------------------------------------------------------------------
 
-const CONFIDENCES = ["alta", "media", "baixa"] as const;
+export const CONFIDENCES = ["alta", "media", "baixa"] as const;
 
 const IDENT_SYSTEM_PROMPT =
   "Você identifica discos de vinil (artista e álbum) que vão a leilão no Brasil. " +
@@ -435,7 +436,7 @@ export async function collectIdentBatch(
 }
 
 /** Concorrência das chamadas síncronas sob demanda (mantém o servidor dentro do tempo). */
-const SYNC_CONCURRENCY = 4;
+export const SYNC_CONCURRENCY = 4;
 
 /**
  * Resultado de uma passada SÍNCRONA: as linhas + qual provedor de fato atendeu e se houve
@@ -443,7 +444,7 @@ const SYNC_CONCURRENCY = 4;
  * `failed` = quantos itens a IA NÃO conseguiu processar (erro/vazio); `error` = a 1ª mensagem
  * de erro, para o chamador distinguir "a IA falhou" de "não havia nada a fazer" e mostrá-la.
  */
-type SyncOutcome<T> = {
+export type SyncOutcome<T> = {
   rows: T[];
   served: AiProvider | null;
   switched: boolean;
@@ -454,7 +455,7 @@ type SyncOutcome<T> = {
 };
 
 /** Acumula, entre os workers concorrentes, o provedor que atendeu, se houve troca e por quê. */
-class ProviderTracker {
+export class ProviderTracker {
   private used = new Set<AiProvider>();
   private attemptErrors: Partial<Record<AiProvider, string>> = {};
   switched = false;
@@ -664,301 +665,6 @@ export async function identLotsSyncRows(
 // modelo). Recebe também o artista/álbum atuais como pista.
 // ---------------------------------------------------------------------------
 
-const COLLECTION_IDENT_SYSTEM_PROMPT =
-  "Você identifica e descreve discos de vinil de uma coleção, para um colecionador " +
-  "brasileiro. Use seu conhecimento de música e discografia. Baseie-se APENAS no texto " +
-  "informado (não há imagem). Responda SOMENTE com um objeto JSON, sem texto fora dele.";
-
-/** Entrada da identificação da Coleção: título do lote + artista/álbum/ano atuais (pista). */
-type CollectionIdentInput = {
-  id: string;
-  title: string;
-  artist?: string;
-  album?: string;
-  year?: number | null;
-};
-
-/** Resultado: identificação + descritivo do disco + tags de gênero/estilo. */
-type CollectionIdentResult = {
-  id: string;
-  album: string | null;
-  year: number | null;
-  confidence: string | null;
-  description: string | null;
-  tags: string[];
-};
-
-/** Prompt de identificação+descrição de UM disco da coleção (só texto). */
-function buildCollectionIdentPrompt(input: CollectionIdentInput): string {
-  const info = {
-    titulo: input.title,
-    artista_atual: input.artist || null,
-    album_atual: input.album || null,
-    ano_atual: input.year ?? null,
-  };
-  return (
-    "Identifique e descreva EM DETALHE este disco de vinil. Devolva um objeto JSON com " +
-    "EXATAMENTE estas chaves:\n" +
-    '- "album": "Artista - Álbum" (use " - " entre artista e álbum; "" se não souber). ' +
-    "Se for coletânea/vários artistas (sucessos, trilha sonora, novela, seleção), use " +
-    '"Vários Artistas" como artista.\n' +
-    '- "year": ano de lançamento (inteiro) ou null se não souber\n' +
-    '- "confidence": "alta" | "media" | "baixa" (sua confiança na identificação)\n' +
-    '- "tags": array de 2 a 5 tags curtas APENAS de ESTILO/GÊNERO MUSICAL em português ' +
-    '(ex.: "MPB", "Samba", "Bossa Nova", "Rock", "Jazz", "Forró"). NÃO inclua época/ano, ' +
-    "artista, país, formato nem qualquer outra coisa que não seja estilo musical; [] se não souber.\n" +
-    '- "description": um descritivo RICO e DETALHADO em português (vários parágrafos, ' +
-    "quanto mais completo melhor). Baseie-se PRINCIPALMENTE no NOME DO ÁLBUM (além do artista) e " +
-    "traga: (1) o momento histórico do álbum — contexto e ano de lançamento, gravadora, " +
-    "importância na carreira do artista e na música da época; (2) um panorama do artista; e " +
-    "(3) quando souber, comentários FAIXA A FAIXA, destacando as principais músicas. Seja " +
-    'informativo e específico deste álbum. "" só se realmente não conhecer o disco.\n\n' +
-    "Use os campos atuais só como pista — corrija se estiverem errados.\n" +
-    "Disco:\n" +
-    JSON.stringify(info) +
-    "\n\nResponda só com o objeto JSON."
-  );
-}
-
-/** Requisição NEUTRA (só texto) para identificar+descrever UM disco da coleção. */
-function buildCollectionRequest(input: CollectionIdentInput): AiRequest {
-  return {
-    system: COLLECTION_IDENT_SYSTEM_PROMPT,
-    // Descritivo longo (momento histórico + panorama + faixa a faixa) precisa de folga para o
-    // JSON COMPLETAR — 2000 truncava e o Gemini (modo JSON) devolvia vazio no `MAX_TOKENS`.
-    maxTokens: 4096,
-    text: buildCollectionIdentPrompt(input),
-    image: null,
-    json: true,
-  };
-}
-
-/** Extrai {album, year, confidence, description} do texto devolvido. Null se nada aproveitável. */
-function parseCollectionIdentObject(text: string): Omit<CollectionIdentResult, "id"> | null {
-  if (!text) return null;
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
-  let obj: Record<string, unknown>;
-  try {
-    obj = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-  const album =
-    typeof obj["album"] === "string" && obj["album"].trim()
-      ? obj["album"].trim().slice(0, 200)
-      : null;
-  const yearRaw = Number(obj["year"]);
-  const year =
-    Number.isFinite(yearRaw) && yearRaw >= 1900 && yearRaw <= 2100 ? Math.round(yearRaw) : null;
-  const c = typeof obj["confidence"] === "string" ? obj["confidence"].toLowerCase().trim() : "";
-  const confidence = (CONFIDENCES as readonly string[]).includes(c) ? c : null;
-  const description =
-    typeof obj["description"] === "string" && obj["description"].trim()
-      ? obj["description"].trim().slice(0, 6000)
-      : null;
-  const tags = Array.isArray(obj["tags"])
-    ? [
-        ...new Set(
-          obj["tags"]
-            .filter((t): t is string => typeof t === "string")
-            .map((t) => t.replace(/\s+/g, " ").trim().slice(0, 40))
-            .filter(Boolean),
-        ),
-      ].slice(0, 8)
-    : [];
-  if (
-    album === null &&
-    year === null &&
-    confidence === null &&
-    description === null &&
-    tags.length === 0
-  ) {
-    return null;
-  }
-  return { album, year, confidence, description, tags };
-}
-
-/**
- * Identificação + descrição SÍNCRONA (só texto) de um conjunto pequeno de discos da coleção.
- * Roda no `provider` pedido, com **failover** por quota. Best-effort POR DISCO; **não**
- * persiste (o chamador grava). Retorna só os discos que a IA de fato aproveitou (com álbum
- * OU descrição), além de `served`/`switched` (para a UI avisar sobre a troca de provedor).
- */
-export async function identCollectionSync(
-  inputs: CollectionIdentInput[],
-  provider: AiProvider,
-): Promise<SyncOutcome<CollectionIdentResult>> {
-  if (!inputs.length)
-    return { rows: [], served: null, switched: false, failed: 0, error: null, attemptErrors: {} };
-  const geminiModel = await resolveGeminiModel();
-  const rows: CollectionIdentResult[] = [];
-  const tracker = new ProviderTracker();
-  let failed = 0;
-  let firstError: string | null = null;
-  let cursor = 0;
-
-  const worker = async () => {
-    for (;;) {
-      const index = cursor;
-      cursor += 1;
-      const input = inputs[index];
-      if (!input) return;
-      try {
-        const r = await runText(buildCollectionRequest(input), provider, geminiModel);
-        tracker.note(r.provider, r.switched, r.attemptErrors);
-        const parsed = parseCollectionIdentObject(r.text);
-        if (parsed) rows.push({ id: input.id, ...parsed });
-      } catch (error) {
-        failed += 1;
-        if (!firstError) firstError = (error as Error)?.message || String(error);
-        console.error(`[ai-eval] falha ao identificar/descrever o disco ${input.id}`, error);
-      }
-    }
-  };
-
-  await Promise.all(
-    Array.from({ length: Math.min(SYNC_CONCURRENCY, inputs.length) }, () => worker()),
-  );
-  return {
-    rows,
-    served: tracker.served(provider),
-    switched: tracker.switched,
-    failed,
-    error: firstError,
-    attemptErrors: tracker.errors(),
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Fallback de IA para o ESTADO de conservação (Disco/Capa/encarte) — usado quando o regex
-// puro (`grading.ts:parseConditionFromText`) não encontra NADA no texto, mas há descritivo.
-// Alimenta tanto os cards PRÉ-leilão (`lot_condition`) quanto o histórico de vendas
-// (`lot_sales`/Analytics). Só texto (sem imagem — o estado é uma informação DESCRITA, não
-// visual) e barato (poucas dezenas de tokens de saída).
-// ---------------------------------------------------------------------------
-
-const CONDITION_SYSTEM_PROMPT =
-  "Você extrai o estado de conservação de um disco de vinil (Disco/mídia e Capa) a partir " +
-  "do texto de um anúncio de leilão. Responda SOMENTE com um objeto JSON, sem nenhum texto " +
-  "fora do JSON. NUNCA invente: se o texto não disser claramente o estado de um lado (ou do " +
-  "encarte), use null para ele — melhor null do que um palpite.";
-
-/** Prompt de extração de estado de UM lote, a partir do texto do catálogo/título. */
-function buildConditionUserPrompt(text: string): string {
-  return (
-    "Leia a descrição abaixo de um lote de vinil em leilão e devolva um objeto JSON com " +
-    "EXATAMENTE estas chaves:\n" +
-    `- "media": o estado do DISCO (mídia), como uma destas siglas EXATAS: ${GRADE_ORDER.join(", ")}` +
-    " — ou null se o texto não disser o estado do disco.\n" +
-    '- "sleeve": o estado da CAPA, mesma escala de siglas, ou null se não disser.\n' +
-    '- "insert": "sim" se o texto afirma CLARAMENTE que há encarte interno, "nao" se afirma ' +
-    "CLARAMENTE que não há, ou null se o texto não fala sobre encarte (nunca adivinhe).\n\n" +
-    "Escala (do melhor para o pior): M (Mint/Lacrado), NM (Near Mint), EX (Excelente), " +
-    "VG+ (Muito Bom), VG (Bom), VG-, G+, G, G-, F/P (Ruim/Danificado).\n\n" +
-    "Descrição do lote:\n" +
-    text.slice(0, 2000) +
-    "\n\nResponda só com o objeto JSON."
-  );
-}
-
-/** Requisição NEUTRA (só texto) para extrair o estado de UM lote. */
-function buildConditionRequest(text: string): AiRequest {
-  return {
-    system: CONDITION_SYSTEM_PROMPT,
-    maxTokens: 150,
-    text: buildConditionUserPrompt(text),
-    image: null,
-    json: true,
-  };
-}
-
-/**
- * Extrai {media, sleeve, insert} do texto devolvido pela IA. `media`/`sleeve` passam por
- * `normalizeGrade` — só a escala canônica é aceita (qualquer outra coisa vira null, nunca
- * inventa um grau fora da escala). Null quando não dá para aproveitar nada.
- */
-function parseConditionAiObject(
-  text: string,
-): { media: Grade | null; sleeve: Grade | null; insert: InsertState } | null {
-  if (!text) return null;
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
-  let obj: Record<string, unknown>;
-  try {
-    obj = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-  const media = typeof obj["media"] === "string" ? normalizeGrade(obj["media"]) : null;
-  const sleeve = typeof obj["sleeve"] === "string" ? normalizeGrade(obj["sleeve"]) : null;
-  const insertRaw = typeof obj["insert"] === "string" ? obj["insert"].toLowerCase().trim() : "";
-  const insert: InsertState = insertRaw === "sim" ? "sim" : insertRaw === "nao" ? "nao" : null;
-  if (media === null && sleeve === null && insert === null) return null;
-  return { media, sleeve, insert };
-}
-
-type ConditionAiResult = {
-  id: string;
-  media: Grade | null;
-  sleeve: Grade | null;
-  insert: InsertState;
-  model: string;
-};
-
-/**
- * Fallback de IA SÍNCRONO para um pequeno lote de itens {id, text} sem estado reconhecido
- * pelo regex. Best-effort POR ITEM (um item que falhe não derruba os demais); failover por
- * quota via `runText`. Chamado tanto por `enrichConditions` (`lot_condition`) quanto por
- * `captureFinishedSales` (`lot_sales`) — ambos com um teto de itens por rodada.
- */
-export async function conditionAiSync(
-  items: { id: string; text: string }[],
-  provider: AiProvider,
-): Promise<SyncOutcome<ConditionAiResult>> {
-  if (!items.length)
-    return { rows: [], served: null, switched: false, failed: 0, error: null, attemptErrors: {} };
-  const geminiModel = await resolveGeminiModel();
-  const rows: ConditionAiResult[] = [];
-  const tracker = new ProviderTracker();
-  let failed = 0;
-  let firstError: string | null = null;
-  let cursor = 0;
-
-  const worker = async () => {
-    for (;;) {
-      const index = cursor;
-      cursor += 1;
-      const item = items[index];
-      if (!item) return;
-      try {
-        const r = await runText(buildConditionRequest(item.text), provider, geminiModel);
-        tracker.note(r.provider, r.switched, r.attemptErrors);
-        const parsed = parseConditionAiObject(r.text);
-        if (parsed) rows.push({ id: item.id, ...parsed, model: r.model });
-      } catch (error) {
-        failed += 1;
-        if (!firstError) firstError = (error as Error)?.message || String(error);
-        console.error(`[ai-eval] falha ao extrair estado (IA) do lote ${item.id}`, error);
-      }
-    }
-  };
-
-  await Promise.all(
-    Array.from({ length: Math.min(SYNC_CONCURRENCY, items.length) }, () => worker()),
-  );
-  return {
-    rows,
-    served: tracker.served(provider),
-    switched: tracker.switched,
-    failed,
-    error: firstError,
-    attemptErrors: tracker.errors(),
-  };
-}
-
 /**
  * Provedor EFETIVO para uma chamada síncrona sob demanda: o padrão do usuário
  * (`app_state.ai_provider`) quando tem chave configurada, senão o primeiro disponível
@@ -977,7 +683,7 @@ export async function resolveAiProvider(): Promise<AiProvider> {
  * cada `runText`. Best-effort: em qualquer falha de leitura, cai pro padrão de fábrica (mais
  * barato) — nunca impede a avaliação de rodar por causa da preferência de modelo.
  */
-async function resolveGeminiModel(): Promise<string> {
+export async function resolveGeminiModel(): Promise<string> {
   try {
     const { getGeminiModel } = await import("./app-state.server");
     return await getGeminiModel();

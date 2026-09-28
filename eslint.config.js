@@ -13,7 +13,6 @@ export default tseslint.config(
       ".vinxi",
       // Arquivos gerados/externos: não seguem o estilo do app.
       "src/routeTree.gen.ts",
-      "src/integrations/supabase/types.ts",
       "tools/**",
     ],
   },

@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { db } from "@/lib/db-client.server";
 
 import type { CatalogLot } from "./leiloesbr-catalog.server";
 import { parseConditionFromText, scoreCondition } from "./grading";
@@ -45,7 +45,7 @@ const ALL_TTL_MS = 30_000;
 /** Lê todo o cache de estado (single-user). Best-effort. */
 export async function getAllLotCondition(): Promise<LotConditionRow[]> {
   if (allCache && Date.now() - allCache.at < ALL_TTL_MS) return allCache.rows;
-  const { data, error } = await supabaseAdmin.from("lot_condition").select(COND_COLUMNS);
+  const { data, error } = await db.from("lot_condition").select(COND_COLUMNS);
   if (error) throw error;
   const rows = (data as LotConditionRow[] | null) ?? [];
   allCache = { at: Date.now(), rows };
@@ -57,7 +57,7 @@ async function upsertLotCondition(rows: LotConditionRow[]): Promise<number> {
   if (!rows.length) return 0;
   const evaluatedAt = new Date().toISOString();
   const payload = rows.map((r) => ({ ...r, evaluated_at: evaluatedAt }));
-  const { error } = await supabaseAdmin.from("lot_condition").upsert(payload, { onConflict: "id" });
+  const { error } = await db.from("lot_condition").upsert(payload, { onConflict: "id" });
   if (error) {
     // Ver lot-orphan-guard.server.ts: `lot_condition` tem FK ON DELETE CASCADE pra `lots(id)`;
     // um lote podado/excluído entre a seleção do lote (`enrichConditions`) e este upsert vira
@@ -73,7 +73,7 @@ async function upsertLotCondition(rows: LotConditionRow[]): Promise<number> {
         );
       }
       if (!filtered.length) return 0;
-      const { error: retryError } = await supabaseAdmin
+      const { error: retryError } = await db
         .from("lot_condition")
         .upsert(filtered, { onConflict: "id" });
       if (retryError) {
@@ -187,7 +187,8 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
       .slice(0, AI_CONDITION_CAP)
       .map((r) => ({ id: r.id, text: textByLotId.get(r.id)! }));
     if (candidates.length) {
-      const { conditionAiSync, resolveAiProvider } = await import("./ai-eval.server");
+      const { resolveAiProvider } = await import("./ai-eval.server");
+      const { conditionAiSync } = await import("./ai-condition.server");
       const provider = await resolveAiProvider();
       const { rows: aiRows } = await conditionAiSync(candidates, provider);
       const byId = new Map(aiRows.map((r) => [r.id, r]));

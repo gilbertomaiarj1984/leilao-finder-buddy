@@ -137,7 +137,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
     descritivo com o que a IA devolver (nunca zera com vazio). É o "refazer" manual para corrigir
     um disco específico sem reprocessar a base toda. Estado de "girando" por-id no card.
   - Em ambos, conjuntos/coletâneas seguem classificados pelo título SEM gastar IA. A IA em si
-    (`identCollectionSync`, `ai-eval.server.ts`, SÓ TEXTO), além de artista/álbum/ano, gera o
+    (`identCollectionSync`, `ai-collection.server.ts`, SÓ TEXTO), além de artista/álbum/ano, gera o
     **descritivo** (`description`) do disco. **Nunca usa a capa** — a imagem do leilão engana o
     modelo (mistura artistas parecidos); o prompt (`buildCollectionIdentPrompt`) recebe título +
     artista/álbum/ano atuais como pista e instrui a usar "Vários Artistas" em coletâneas. Devolve
@@ -230,7 +230,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   - **Botão "Identificar pela IA" no diálogo de envio (v0.71.0):** antes de confirmar, chama
     `identifyPurchaseDraft` (`collection.functions.ts` → nova `identifyDraftFromTitle` em
     `collection.server.ts`) — mesmo prompt/modelo do reprocessar por card da Coleção
-    (`identCollectionSync`, `ai-eval.server.ts`, SÓ TEXTO, nunca a capa), rodando com um `id`
+    (`identCollectionSync`, `ai-collection.server.ts`, SÓ TEXTO, nunca a capa), rodando com um `id`
     avulso ("draft") já que o disco ainda não existe em `collection_items`; **não persiste
     nada**. Preenche artista/álbum/ano/descritivo/tags no formulário (tags são ACRESCENTADAS às
     já digitadas, via `mergeTagsText`, sem duplicar) para o usuário revisar/ajustar antes de

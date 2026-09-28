@@ -1,7 +1,7 @@
 // Aviso de "lance superado": dispara um toast quando um lote em que o usuário tem lance
 // muda de status para "Coberto" (alguém deu um lance maior). Roda só com o app aberto,
 // no mesmo refetch de `["vinyl-my-bids"]` já existente (staleTime 5min + refresh manual) —
-// sem cron, sem tabela nova no Supabase, sem push/e-mail.
+// sem cron, sem tabela nova no banco, sem push/e-mail.
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 

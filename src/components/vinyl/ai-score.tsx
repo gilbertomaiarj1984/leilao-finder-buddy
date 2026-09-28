@@ -5,7 +5,7 @@ import { useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNod
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
-import { reevaluateLot } from "@/lib/leiloesbr.functions";
+import { reevaluateLot } from "@/lib/ai.functions";
 
 import {
   dealLabel,
@@ -19,6 +19,7 @@ import {
   type LotAi,
   type LotMarket,
 } from "./ai-score-utils";
+import { queryKeys } from "@/lib/queries";
 
 /** Dados do lote necessários para refazer a consulta à IA (botão no painel de detalhes). */
 type ReevalLot = {
@@ -330,7 +331,7 @@ export function ScoreBadge({
 
 /**
  * Botão "refazer consulta" do painel de detalhes: reavalia o lote NA HORA (ignora o cache
- * por título) e atualiza o cache local (`["lot-ai"]`) com o resultado — a nota/raridade/
+ * por título) e atualiza o cache local (`queryKeys.lotAi`) com o resultado — a nota/raridade/
  * oportunidade do card/linha atualizam sozinhas, sem precisar recarregar a página.
  */
 function ReevaluateButton({ lot }: { lot: ReevalLot }) {
@@ -339,7 +340,7 @@ function ReevaluateButton({ lot }: { lot: ReevalLot }) {
   const mutation = useMutation({
     mutationFn: () => runReevaluate({ data: lot }),
     onSuccess: (res: { row: { id: string } }) => {
-      queryClient.setQueryData(["lot-ai"], (old: unknown) =>
+      queryClient.setQueryData(queryKeys.lotAi, (old: unknown) =>
         Array.isArray(old)
           ? old.some((r) => r && (r as { id: string }).id === res.row.id)
             ? old.map((r) => ((r as { id: string })?.id === res.row.id ? res.row : r))

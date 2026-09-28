@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { db } from "@/lib/db-client.server";
 
 /**
  * `lot_ai`/`lot_ident`/`lot_market`/`lot_condition` têm FK `ON DELETE CASCADE` pra `lots(id)`
@@ -12,7 +12,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
  */
 export async function filterExistingLotIds(ids: string[]): Promise<Set<string>> {
   if (!ids.length) return new Set();
-  const { data, error } = await supabaseAdmin.from("lots").select("id").in("id", ids);
+  const { data, error } = await db.from("lots").select("id").in("id", ids);
   if (error) throw error;
   return new Set((data ?? []).map((r) => (r as { id: string }).id));
 }

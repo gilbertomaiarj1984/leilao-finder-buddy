@@ -1,9 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuth } from "@/lib/auth-middleware";
 
 export const listWatched = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
@@ -12,7 +12,7 @@ export const listWatched = createServerFn({ method: "GET" })
   });
 
 export const toggleWatch = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: { idPeca: string; idLeilao: string; base: string; watch: boolean }) => {
     if (!input?.idPeca || !input?.idLeilao) throw new Error("Lote inválido.");
     return {

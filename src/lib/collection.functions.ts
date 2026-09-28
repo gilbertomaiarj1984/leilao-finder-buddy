@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuth } from "@/lib/auth-middleware";
 import { isAiProvider } from "./ai-provider";
 
 /** Normaliza a entrada dos campos editáveis de um disco (add/update). */
@@ -49,7 +49,7 @@ function normalizeInput(input: Record<string, unknown> | undefined) {
 
 /** Coleção de vinil do usuário (collection_items). Best-effort: [] em erro. */
 export const getCollection = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
@@ -69,7 +69,7 @@ export const getCollection = createServerFn({ method: "GET" })
  * sem identificação (uso rotineiro, barato); `false` re-normaliza TODA a coleção (mais caro).
  */
 export const identifyCollection = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator(
     (
       input:
@@ -98,7 +98,7 @@ export const identifyCollection = createServerFn({ method: "POST" })
  * SOBRESCREVE artista/álbum/ano e descritivo com o que a IA identificar (sem apagar com vazio).
  */
 export const reprocessCollectionItem = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: { id?: string; provider?: string } | undefined) => {
     if (!input?.id || typeof input.id !== "string") throw new Error("id obrigatório");
     return { id: input.id, provider: isAiProvider(input?.provider) ? input.provider : null };
@@ -118,7 +118,7 @@ export const reprocessCollectionItem = createServerFn({ method: "POST" })
  * partir do título da compra antes do usuário confirmar o envio. Não persiste nada.
  */
 export const identifyPurchaseDraft = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator(
     (
       input:
@@ -156,7 +156,7 @@ export const identifyPurchaseDraft = createServerFn({ method: "POST" })
  * `/compras` (nesse caso o payload traz `lotId`, vinculando à peça arrematada).
  */
 export const addCollectionItem = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: Record<string, unknown> | undefined) => normalizeInput(input))
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
@@ -167,7 +167,7 @@ export const addCollectionItem = createServerFn({ method: "POST" })
 
 /** Importa vários discos de uma vez a partir do texto colado (JSON gerado por IA ou linhas). */
 export const importCollectionText = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: { text?: string } | undefined) => {
     const text = typeof input?.text === "string" ? input.text : "";
     if (!text.trim()) throw new Error("Cole o texto dos discos.");
@@ -182,7 +182,7 @@ export const importCollectionText = createServerFn({ method: "POST" })
 
 /** Atualiza um disco da coleção (patch parcial). */
 export const updateCollectionItem = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: (Record<string, unknown> & { id?: string }) | undefined) => {
     if (!input?.id || typeof input.id !== "string") throw new Error("id obrigatório");
     return { id: input.id, ...normalizeInput(input) };
@@ -196,7 +196,7 @@ export const updateCollectionItem = createServerFn({ method: "POST" })
 
 /** Remove um disco da coleção. */
 export const deleteCollectionItem = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: { id?: string } | undefined) => {
     if (!input?.id || typeof input.id !== "string") throw new Error("id obrigatório");
     return { id: input.id };
@@ -210,7 +210,7 @@ export const deleteCollectionItem = createServerFn({ method: "POST" })
 
 /** Envia uma foto (data URL) ao Storage e devolve a URL pública para gravar em `image`. */
 export const uploadCollectionImage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: { dataUrl?: string } | undefined) => {
     if (!input?.dataUrl || typeof input.dataUrl !== "string") throw new Error("imagem obrigatória");
     return { dataUrl: input.dataUrl };
@@ -220,4 +220,110 @@ export const uploadCollectionImage = createServerFn({ method: "POST" })
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { uploadCollectionImage: upload } = await import("./collection.server");
     return await upload(data.dataUrl);
+  });
+
+/** Vínculos manuais lote → disco da Coleção ("já tenho"). Global. */
+export const getCollectionLinks = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getCollectionLinks } = await import("./app-state.server");
+    return await getCollectionLinks();
+  });
+
+/** Aprendizado por assinatura (feedback das decisões). Global. */
+export const getCollectionFeedback = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getCollectionFeedback } = await import("./app-state.server");
+    return await getCollectionFeedback();
+  });
+
+/** Termos negados como genéricos demais para casar a Coleção (ver `wantlist-match.ts`). */
+export const getCollectionKeywordDenylist = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getCollectionKeywordDenylist: read } = await import("./app-state.server");
+    return await read();
+  });
+
+/**
+ * Clique num termo do painel de relação → "este termo não deveria contar": nega o(s) termo(s)
+ * que causaram um casamento errado com a Coleção (nunca esquece — read-modify-write).
+ */
+export const dismissCollectionMatchTerms = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { terms?: string[] } | undefined) => {
+    const terms = Array.isArray(input?.terms)
+      ? input.terms.filter((t): t is string => typeof t === "string" && t.length > 0)
+      : [];
+    if (!terms.length) throw new Error("terms obrigatório");
+    return { terms };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { addCollectionKeywordDenylist } = await import("./app-state.server");
+    return await addCollectionKeywordDenylist(data.terms);
+  });
+
+/**
+ * Aplica UMA decisão de relação lote↔Coleção e alimenta o aprendizado numa tacada:
+ * - `value` = itemId (vincular) | false ("não tenho") | null (reativar automático);
+ * - `sig` = como o disco apareceu no lote (para o aprendizado por assinatura).
+ * Vincular → feedback `pos`; "não tenho" → feedback `neg`; reativar → remove o
+ * feedback originado deste lote.
+ */
+export const applyCollectionDecision = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator(
+    (input: {
+      lotId?: string;
+      value?: string | false | null;
+      itemId?: string | null;
+      sig?: { artist?: string[]; album?: string[]; year?: number | null };
+    }) => {
+      if (!input?.lotId || typeof input.lotId !== "string") throw new Error("lotId obrigatório");
+      const value =
+        input.value === false || input.value === null || typeof input.value === "string"
+          ? input.value
+          : null;
+      const toStr = (a: unknown): string[] =>
+        Array.isArray(a) ? a.filter((s): s is string => typeof s === "string") : [];
+      return {
+        lotId: input.lotId,
+        value: value as string | false | null,
+        itemId: typeof input.itemId === "string" ? input.itemId : null,
+        sig: {
+          artist: toStr(input.sig?.artist),
+          album: toStr(input.sig?.album),
+          year: typeof input.sig?.year === "number" ? input.sig!.year : null,
+        },
+      };
+    },
+  )
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setCollectionLink, addCollectionFeedback, removeCollectionFeedbackByLot } =
+      await import("./app-state.server");
+    const res = await setCollectionLink(data.lotId, data.value);
+    if (data.value === null) {
+      await removeCollectionFeedbackByLot(data.lotId);
+    } else if (data.itemId) {
+      await addCollectionFeedback({
+        lotId: data.lotId,
+        itemId: data.itemId,
+        verdict: data.value === false ? "neg" : "pos",
+        artist: data.sig.artist,
+        album: data.sig.album,
+        year: data.sig.year,
+      });
+    }
+    return res;
   });

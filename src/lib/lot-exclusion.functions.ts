@@ -1,10 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuth } from "@/lib/auth-middleware";
 
 /** Exclui um lote em definitivo (DELETE físico) e registra o aprendizado (keywords). */
 export const excludeLot = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: { lotId?: string; reason?: string } | undefined) => {
     if (!input?.lotId || typeof input.lotId !== "string") throw new Error("lotId obrigatório");
     return {
@@ -23,7 +23,7 @@ export const excludeLot = createServerFn({ method: "POST" })
 
 /** Lotes já excluídos (título + keywords), para o badge "possível lixo" na listagem. */
 export const getExcludedLotsForMatching = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
@@ -33,7 +33,7 @@ export const getExcludedLotsForMatching = createServerFn({ method: "GET" })
 
 /** Termos negados (clicados como "não é lixo"), para filtrar a heurística no cliente. */
 export const getTrashKeywordDenylist = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
@@ -46,7 +46,7 @@ export const getTrashKeywordDenylist = createServerFn({ method: "GET" })
  * casamento (nunca esquece — read-modify-write, ver `addTrashKeywordDenylist`).
  */
 export const dismissPossibleTrash = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: { terms?: string[] } | undefined) => {
     const terms = Array.isArray(input?.terms)
       ? input.terms.filter((t): t is string => typeof t === "string" && t.length > 0)

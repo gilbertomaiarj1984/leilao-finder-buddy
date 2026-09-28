@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -41,17 +41,11 @@ import {
   type AiProvider,
   type GeminiModel,
 } from "@/lib/ai-provider";
-import {
-  getAiProvider,
-  getGeminiModel,
-  setAiProvider,
-  setGeminiModel,
-} from "@/lib/leiloesbr.functions";
+import { setAiProvider, setGeminiModel } from "@/lib/ai.functions";
 import type { CollectionItem } from "@/lib/collection.server";
 import {
   addCollectionItem,
   deleteCollectionItem,
-  getCollection,
   identifyCollection,
   importCollectionText,
   reprocessCollectionItem,
@@ -65,6 +59,12 @@ import {
   pickCanonical,
   UNCLASSIFIED_LABEL,
 } from "@/lib/vinyl-parse";
+import {
+  useAiProviderQuery,
+  useCollectionQuery,
+  useGeminiModelQuery,
+  queryKeys,
+} from "@/lib/queries";
 
 export const Route = createFileRoute("/_authenticated/colecao")({
   head: () => ({ meta: [{ title: "Coleção — Garimpo de Vinil" }] }),
@@ -197,14 +197,11 @@ function ColecaoPage() {
   // Esconder/mostrar o topo é MANUAL — botão `MobileTopToggle`, só no mobile.
   const [barsHidden, setBarsHidden] = useState(false);
   const queryClient = useQueryClient();
-  const fetchCollection = useServerFn(getCollection);
   const addItem = useServerFn(addCollectionItem);
   const importBulk = useServerFn(importCollectionText);
   const identify = useServerFn(identifyCollection);
   const reprocess = useServerFn(reprocessCollectionItem);
-  const fetchAiProvider = useServerFn(getAiProvider);
   const runSetAiProvider = useServerFn(setAiProvider);
-  const fetchGeminiModel = useServerFn(getGeminiModel);
   const runSetGeminiModel = useServerFn(setGeminiModel);
   const updateItem = useServerFn(updateCollectionItem);
   const removeItem = useServerFn(deleteCollectionItem);
@@ -216,51 +213,36 @@ function ColecaoPage() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [identifying, setIdentifying] = useState(false);
 
-  const query = useQuery<CollectionItem[]>({
-    queryKey: ["collection"] as const,
-    queryFn: () => fetchCollection() as Promise<CollectionItem[]>,
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const query = useCollectionQuery();
 
   const items = useMemo(() => query.data ?? [], [query.data]);
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["collection"] });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.collection });
 
   // Provedor de IA PADRÃO (Claude/Gemini) + diálogo "qual IA usar?" por ação.
-  const aiProviderQuery = useQuery({
-    queryKey: ["ai-provider"] as const,
-    queryFn: () => fetchAiProvider(),
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const aiProviderQuery = useAiProviderQuery();
   const aiProvider: AiProvider = aiProviderQuery.data ?? "anthropic";
   const changeAiProvider = (provider: AiProvider) => {
     const prev = aiProviderQuery.data;
-    queryClient.setQueryData(["ai-provider"], provider);
+    queryClient.setQueryData(queryKeys.aiProvider, provider);
     void runSetAiProvider({ data: { provider } })
       .then(() => toast.success(`Provedor padrão: ${AI_PROVIDER_SHORT[provider]}`))
       .catch((e: unknown) => {
-        queryClient.setQueryData(["ai-provider"], prev);
+        queryClient.setQueryData(queryKeys.aiProvider, prev);
         toast.error((e as Error)?.message || "Não foi possível salvar o provedor de IA");
       });
   };
 
   // Modelo do Gemini (Flash-Lite/Flash/Pro). Vale mesmo com Claude escolhido: o failover
   // por falta de créditos pode acabar caindo no Gemini com esse modelo.
-  const geminiModelQuery = useQuery({
-    queryKey: ["gemini-model"] as const,
-    queryFn: () => fetchGeminiModel(),
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const geminiModelQuery = useGeminiModelQuery();
   const geminiModel: GeminiModel = geminiModelQuery.data ?? "gemini-3.1-flash-lite";
   const changeGeminiModel = (model: GeminiModel) => {
     const prev = geminiModelQuery.data;
-    queryClient.setQueryData(["gemini-model"], model);
+    queryClient.setQueryData(queryKeys.geminiModel, model);
     void runSetGeminiModel({ data: { model } })
       .then(() => toast.success(`Modelo do Gemini: ${model}`))
       .catch((e: unknown) => {
-        queryClient.setQueryData(["gemini-model"], prev);
+        queryClient.setQueryData(queryKeys.geminiModel, prev);
         toast.error((e as Error)?.message || "Não foi possível salvar o modelo do Gemini");
       });
   };
@@ -427,15 +409,15 @@ function ColecaoPage() {
   const tagsMut = useMutation({
     mutationFn: (p: { id: string; tags: string[] }) => updateItem({ data: p }),
     onMutate: async (p) => {
-      await queryClient.cancelQueries({ queryKey: ["collection"] });
-      const prev = queryClient.getQueryData<CollectionItem[]>(["collection"]);
-      queryClient.setQueryData<CollectionItem[]>(["collection"], (old) =>
+      await queryClient.cancelQueries({ queryKey: queryKeys.collection });
+      const prev = queryClient.getQueryData<CollectionItem[]>(queryKeys.collection);
+      queryClient.setQueryData<CollectionItem[]>(queryKeys.collection, (old) =>
         (old ?? []).map((i) => (i.id === p.id ? { ...i, tags: p.tags } : i)),
       );
       return { prev };
     },
     onError: (e: Error, _p, ctx) => {
-      if (ctx?.prev) queryClient.setQueryData(["collection"], ctx.prev);
+      if (ctx?.prev) queryClient.setQueryData(queryKeys.collection, ctx.prev);
       toast.error(e.message || "Não foi possível salvar as tags");
     },
     onSettled: () => void invalidate(),

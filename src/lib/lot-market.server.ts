@@ -32,19 +32,19 @@ export function marketBasis(album: string | null, title: string): string {
 }
 
 export async function getAllLotMarket(): Promise<LotMarketRow[]> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { db } = await import("@/lib/db-client.server");
   // Postgres direto (postgres.js) não tem o teto de 1000 linhas do PostgREST: 1 consulta só.
-  const { data, error } = await supabaseAdmin.from("lot_market").select(MARKET_COLS);
+  const { data, error } = await db.from("lot_market").select(MARKET_COLS);
   if (error) throw error;
   return (data ?? []) as unknown as LotMarketRow[];
 }
 
 export async function upsertLotMarket(rows: LotMarketRow[]): Promise<number> {
   if (!rows.length) return 0;
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { db } = await import("@/lib/db-client.server");
   const checkedAt = new Date().toISOString();
   const payload = rows.map((r) => ({ ...r, checked_at: checkedAt }));
-  const { error } = await supabaseAdmin.from("lot_market").upsert(payload, { onConflict: "id" });
+  const { error } = await db.from("lot_market").upsert(payload, { onConflict: "id" });
   if (error) {
     // Ver lot-orphan-guard.server.ts: `lot_market` tem FK ON DELETE CASCADE pra `lots(id)`; um
     // lote podado/excluído entre a seleção do batch e este upsert vira linha órfã que quebra o
@@ -60,7 +60,7 @@ export async function upsertLotMarket(rows: LotMarketRow[]): Promise<number> {
         );
       }
       if (!filtered.length) return 0;
-      const retry = await supabaseAdmin.from("lot_market").upsert(filtered, { onConflict: "id" });
+      const retry = await db.from("lot_market").upsert(filtered, { onConflict: "id" });
       if (retry.error) {
         console.error("[lot-market] falha ao gravar", retry.error);
         throw new Error(`Não foi possível gravar o mercado: ${retry.error.message}`);

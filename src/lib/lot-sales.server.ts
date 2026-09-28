@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { db } from "@/lib/db-client.server";
 
 import type { CatalogLot } from "./leiloesbr-catalog.server";
 import { deriveAlbum } from "./analytics";
@@ -98,7 +98,7 @@ export async function getAllLotSales(opts?: {
   }
 
   // Postgres direto (postgres.js) não tem o teto de 1000 linhas do PostgREST: 1 consulta só.
-  let query = supabaseAdmin.from("lot_sales").select(withOrig ? SALE_COLUMNS : BASE_SALE_COLUMNS);
+  let query = db.from("lot_sales").select(withOrig ? SALE_COLUMNS : BASE_SALE_COLUMNS);
   if (ids) query = query.in("lot_id", ids);
   const { data, error } = await query;
   if (error) throw error;
@@ -115,7 +115,7 @@ export async function getAllLotSales(opts?: {
  * Requer a migration `20260914000000_reident_egress_fixes.sql`.
  */
 async function getUnidentifiedLotSales(limit: number): Promise<LotSaleRow[]> {
-  const { data, error } = await supabaseAdmin.rpc("get_unidentified_lot_sales", {
+  const { data, error } = await db.rpc("get_unidentified_lot_sales", {
     p_limit: limit,
   });
   if (error) throw error;
@@ -134,7 +134,7 @@ async function upsertLotSales(
   if (!rows.length) return 0;
   const capturedAt = new Date().toISOString();
   const payload = rows.map((r) => ({ ...r, captured_at: capturedAt }));
-  const { error } = await supabaseAdmin.from("lot_sales").upsert(payload, { onConflict: "lot_id" });
+  const { error } = await db.from("lot_sales").upsert(payload, { onConflict: "lot_id" });
   if (error) {
     console.error("[lot-sales] falha ao gravar vendas", error);
     throw new Error(`Não foi possível gravar as vendas: ${error.message}`);
@@ -184,7 +184,7 @@ const SEEN_TTL_MS = 30_000;
 /** Lê os leilões conhecidos (durável; nunca podado) com o que a captura precisa. */
 async function readSeenAuctions(): Promise<SeenAuctionRow[]> {
   if (seenCache && Date.now() - seenCache.at < SEEN_TTL_MS) return seenCache.rows;
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from("seen_auctions")
     .select("id_leilao, entry_url, day_key, start_time, house, uf");
   if (error) throw error;
@@ -485,7 +485,7 @@ export async function backfillSaleThumbnails(max = 15): Promise<{
   noSource: number;
   done: boolean;
 }> {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from("lot_sales")
     .select("lot_id, source_url")
     .is("image", null)
@@ -497,7 +497,7 @@ export async function backfillSaleThumbnails(max = 15): Promise<{
   if (!rows.length) return { scanned: 0, updated: 0, noSource: 0, done: true };
   const ids = rows.map((r) => r.lot_id);
 
-  const { data: lotsData, error: lotsErr } = await supabaseAdmin
+  const { data: lotsData, error: lotsErr } = await db
     .from("lots")
     .select("id, image")
     .in("id", ids);
@@ -518,7 +518,7 @@ export async function backfillSaleThumbnails(max = 15): Promise<{
     }
     if (!src) {
       // Sem imagem em NENHUMA das duas fontes — marcador definitivo (`""`), não retenta.
-      const { error: markErr } = await supabaseAdmin
+      const { error: markErr } = await db
         .from("lot_sales")
         .update({ image: "" })
         .eq("lot_id", row.lot_id);
@@ -527,7 +527,7 @@ export async function backfillSaleThumbnails(max = 15): Promise<{
     }
     const url = await captureSaleThumbnail(row.lot_id, src);
     if (!url) continue; // falha transitória (rede/imagem) — retenta na próxima rodada
-    const { error: upErr } = await supabaseAdmin
+    const { error: upErr } = await db
       .from("lot_sales")
       .update({ image: url })
       .eq("lot_id", row.lot_id);
@@ -547,7 +547,7 @@ export async function backfillSaleThumbnails(max = 15): Promise<{
  * precisa mais desse reset.
  */
 export async function resetNoSourceThumbnails(): Promise<{ reset: number }> {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from("lot_sales")
     .update({ image: null })
     .eq("image", "")
@@ -692,7 +692,8 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
           .filter((c) => c.text.trim())
           .slice(0, budget);
         if (candidates.length) {
-          const { conditionAiSync, resolveAiProvider } = await import("./ai-eval.server");
+          const { resolveAiProvider } = await import("./ai-eval.server");
+          const { conditionAiSync } = await import("./ai-condition.server");
           const provider = await resolveAiProvider();
           const { rows: aiRows } = await conditionAiSync(
             candidates.map((c) => ({ id: c.row.lot_id, text: c.text })),

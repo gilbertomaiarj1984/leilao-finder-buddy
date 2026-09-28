@@ -1,6 +1,6 @@
 // Base de nomes de artistas/bandas conhecidos (versionada no código).
 // Gerada a partir das listas TXT enviadas pelo usuário. Serve de base para o
-// reforço de classificação; a tabela known_artists (Supabase) adiciona nomes.
+// reforço de classificação; a tabela known_artists (banco) adiciona nomes.
 export const KNOWN_ARTISTS_SEED: string[] = [
   "100ecss",
   "10cc",

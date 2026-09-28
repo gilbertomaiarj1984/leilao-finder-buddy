@@ -9,10 +9,8 @@ let cache: { at: number; index: KnownArtistIndex } | null = null;
 // principal vem do bundle versionado no código, então funciona sem o banco).
 async function loadDbNames(): Promise<string[]> {
   try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin
-      .from<{ name: string }>("known_artists")
-      .select("name");
+    const { db } = await import("@/lib/db-client.server");
+    const { data, error } = await db.from<{ name: string }>("known_artists").select("name");
     if (error) throw error;
     return (data ?? []).map((row) => row.name);
   } catch (error) {
@@ -21,7 +19,7 @@ async function loadDbNames(): Promise<string[]> {
   }
 }
 
-/** Índice de nomes conhecidos: bundle do código + tabela do Supabase, cacheado. */
+/** Índice de nomes conhecidos: bundle do código + tabela `known_artists`, cacheado. */
 async function getKnownArtistIndex(): Promise<KnownArtistIndex> {
   if (cache && Date.now() - cache.at < TTL_MS) return cache.index;
   const index = buildKnownArtistIndex([...KNOWN_ARTISTS_SEED, ...(await loadDbNames())]);

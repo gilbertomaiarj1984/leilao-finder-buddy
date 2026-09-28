@@ -1,10 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { isAiProvider, isGeminiModel, type AiProvider, type GeminiModel } from "./ai-provider";
+import { requireAuth } from "@/lib/auth-middleware";
 
 export const getAccessStatus = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { configuredEmail } = await import("./access.server");
     const email = String(context.claims?.["email"] ?? "")
@@ -19,7 +18,7 @@ export const getAccessStatus = createServerFn({ method: "GET" })
   });
 
 export const getVinylLots = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((data: { force?: boolean; day?: string } | undefined) => data ?? {})
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
@@ -32,7 +31,7 @@ export const getVinylLots = createServerFn({ method: "GET" })
   });
 
 export const scrapeVinylChunk = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: { fromPage?: number | null; size?: number } | undefined) => ({
     fromPage: input?.fromPage ?? null,
     size: Math.min(Math.max(Number(input?.size) || 15, 1), 40),
@@ -45,7 +44,7 @@ export const scrapeVinylChunk = createServerFn({ method: "POST" })
   });
 
 export const getLiveAuctions = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
@@ -55,7 +54,7 @@ export const getLiveAuctions = createServerFn({ method: "GET" })
 
 /** Leilões de vinil do DIA com o link do pregão presencial de cada casa e o status. */
 export const getTodayAuctions = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
@@ -70,7 +69,7 @@ export const getTodayAuctions = createServerFn({ method: "GET" })
  * autorizado consegue emitir.
  */
 export const openLiveAuction = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: { url?: string } | undefined) => {
     const url = typeof input?.url === "string" ? input.url.trim() : "";
     if (!url) throw new Error("URL do pregão obrigatória.");
@@ -88,7 +87,7 @@ export const openLiveAuction = createServerFn({ method: "POST" })
  * lado de "Ao vivo agora". Best-effort: `null` quando não há pregão ou a casa não respondeu.
  */
 export const getPresencialNow = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: { url?: string } | undefined) => {
     const url = typeof input?.url === "string" ? input.url.trim() : "";
     if (!url) throw new Error("URL do pregão obrigatória.");
@@ -104,7 +103,7 @@ export const getPresencialNow = createServerFn({ method: "GET" })
 // Preenche o nº do lote (via catálogo da casa) em blocos de leilões, para caber no
 // tempo do servidor. O cliente chama em laço até `remaining` chegar a 0.
 export const enrichLotes = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: { max?: number; offset?: number } | undefined) => ({
     max: Math.min(Math.max(Number(input?.max) || 6, 1), 20),
     offset: Math.max(0, Number(input?.offset) || 0),
@@ -121,7 +120,7 @@ export const enrichLotes = createServerFn({ method: "POST" })
 // `enrichLotes` (cursor `offset` no servidor), reaproveitado pelo cron (`step=galleryscan`)
 // e pelo botão manual "Atualizar tudo" (v0.84.0).
 export const runGalleryscan = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: { offset?: number; count?: number } | undefined) => ({
     offset: Math.max(0, Number(input?.offset) || 0),
     count: Math.min(Math.max(Number(input?.count) || 3, 1), 10),
@@ -136,7 +135,7 @@ export const runGalleryscan = createServerFn({ method: "POST" })
 // Estado (Disco/Capa) dos lotes pré-leilão, lido do catálogo da casa (`lot_condition`).
 // Chunked como `enrichLotes`; reaproveitado pelo botão manual "Atualizar tudo" (v0.84.0).
 export const runCondition = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: { max?: number } | undefined) => ({
     max: Math.min(Math.max(Number(input?.max) || 8, 1), 20),
   }))
@@ -147,23 +146,9 @@ export const runCondition = createServerFn({ method: "POST" })
     return await enrichConditions(data.max);
   });
 
-// Identificação simplificada por IA (artista/álbum, `lot_ident`). UMA chamada só SUBMETE
-// (Claude batch) ou GRAVA na hora (Gemini síncrono) — nunca espera o batch terminar, então
-// o chamador (aqui, o botão manual "Atualizar tudo") só informa "enviado, completa sozinho"
-// e segue. Mesma lógica de `cron.server.ts`/`step=aiident`, extraída em v0.84.0 pra
-// `ai-ident-step.server.ts` e reaproveitada aqui.
-export const runAiident = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { runAiIdentStep } = await import("./ai-ident-step.server");
-    return await runAiIdentStep();
-  });
-
 /** Lances dados pelo usuário (conta_site.asp?l=4). Best-effort: [] em erro. */
 export const listMyBids = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
@@ -184,7 +169,7 @@ export const listMyBids = createServerFn({ method: "GET" })
  * `leiloesbr-lot-details.server.ts`). Best-effort: {} em erro.
  */
 export const getLotDetails = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator(
     (input: { targets?: { id: string; idPeca: string; url: string }[] } | undefined) => ({
       targets: Array.isArray(input?.targets)
@@ -216,7 +201,7 @@ export const getLotDetails = createServerFn({ method: "POST" })
 
 /** Casas marcadas como verificadas (durável no servidor; global). */
 export const getVerifiedHouses = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
@@ -226,7 +211,7 @@ export const getVerifiedHouses = createServerFn({ method: "GET" })
 
 /** Grava a lista completa de casas verificadas (sobrescreve). */
 export const setVerifiedHouses = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: { keys?: string[] } | undefined) => ({
     keys: Array.isArray(input?.keys) ? input!.keys.filter((k) => typeof k === "string") : [],
   }))
@@ -237,540 +222,9 @@ export const setVerifiedHouses = createServerFn({ method: "POST" })
     return await setVerifiedHouses(data.keys);
   });
 
-/** Lista de interesses do usuário (artistas/álbuns/gêneros). Global. */
-export const getUserInterests = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { getUserInterests } = await import("./app-state.server");
-    return await getUserInterests();
-  });
-
-/** Grava a lista completa de interesses (sobrescreve). */
-export const setUserInterests = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { items?: string[] } | undefined) => ({
-    items: Array.isArray(input?.items) ? input!.items.filter((s) => typeof s === "string") : [],
-  }))
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { setUserInterests } = await import("./app-state.server");
-    return await setUserInterests(data.items);
-  });
-
-/** Vínculos manuais lote → disco da Coleção ("já tenho"). Global. */
-export const getCollectionLinks = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { getCollectionLinks } = await import("./app-state.server");
-    return await getCollectionLinks();
-  });
-
-/** Aprendizado por assinatura (feedback das decisões). Global. */
-export const getCollectionFeedback = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { getCollectionFeedback } = await import("./app-state.server");
-    return await getCollectionFeedback();
-  });
-
-/** Termos negados como genéricos demais para casar a Coleção (ver `wantlist-match.ts`). */
-export const getCollectionKeywordDenylist = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { getCollectionKeywordDenylist: read } = await import("./app-state.server");
-    return await read();
-  });
-
-/**
- * Clique num termo do painel de relação → "este termo não deveria contar": nega o(s) termo(s)
- * que causaram um casamento errado com a Coleção (nunca esquece — read-modify-write).
- */
-export const dismissCollectionMatchTerms = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { terms?: string[] } | undefined) => {
-    const terms = Array.isArray(input?.terms)
-      ? input.terms.filter((t): t is string => typeof t === "string" && t.length > 0)
-      : [];
-    if (!terms.length) throw new Error("terms obrigatório");
-    return { terms };
-  })
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { addCollectionKeywordDenylist } = await import("./app-state.server");
-    return await addCollectionKeywordDenylist(data.terms);
-  });
-
-/**
- * Aplica UMA decisão de relação lote↔Coleção e alimenta o aprendizado numa tacada:
- * - `value` = itemId (vincular) | false ("não tenho") | null (reativar automático);
- * - `sig` = como o disco apareceu no lote (para o aprendizado por assinatura).
- * Vincular → feedback `pos`; "não tenho" → feedback `neg`; reativar → remove o
- * feedback originado deste lote.
- */
-export const applyCollectionDecision = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator(
-    (input: {
-      lotId?: string;
-      value?: string | false | null;
-      itemId?: string | null;
-      sig?: { artist?: string[]; album?: string[]; year?: number | null };
-    }) => {
-      if (!input?.lotId || typeof input.lotId !== "string") throw new Error("lotId obrigatório");
-      const value =
-        input.value === false || input.value === null || typeof input.value === "string"
-          ? input.value
-          : null;
-      const toStr = (a: unknown): string[] =>
-        Array.isArray(a) ? a.filter((s): s is string => typeof s === "string") : [];
-      return {
-        lotId: input.lotId,
-        value: value as string | false | null,
-        itemId: typeof input.itemId === "string" ? input.itemId : null,
-        sig: {
-          artist: toStr(input.sig?.artist),
-          album: toStr(input.sig?.album),
-          year: typeof input.sig?.year === "number" ? input.sig!.year : null,
-        },
-      };
-    },
-  )
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { setCollectionLink, addCollectionFeedback, removeCollectionFeedbackByLot } =
-      await import("./app-state.server");
-    const res = await setCollectionLink(data.lotId, data.value);
-    if (data.value === null) {
-      await removeCollectionFeedbackByLot(data.lotId);
-    } else if (data.itemId) {
-      await addCollectionFeedback({
-        lotId: data.lotId,
-        itemId: data.itemId,
-        verdict: data.value === false ? "neg" : "pos",
-        artist: data.sig.artist,
-        album: data.sig.album,
-        year: data.sig.year,
-      });
-    }
-    return res;
-  });
-
-/** Sondagem: rascunho de obras que o usuário caça (wantlist_items). Best-effort: [] em erro. */
-export const getWantlist = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    try {
-      const { getAllWantlist } = await import("./wantlist.server");
-      return await getAllWantlist();
-    } catch (error) {
-      console.error("[wantlist] não foi possível ler a sondagem", error);
-      return [];
-    }
-  });
-
-/** Importa (acrescenta) obras coladas em texto. Não apaga o que já existe. */
-export const importWantlist = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { text?: string } | undefined) => ({
-    text: typeof input?.text === "string" ? input.text : "",
-  }))
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { importWantlistText } = await import("./wantlist.server");
-    return await importWantlistText(data.text);
-  });
-
-/** Adiciona uma obra manualmente à sondagem. */
-export const addWantlistItem = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { work?: string; year?: number | null; note?: string } | undefined) => ({
-    work: typeof input?.work === "string" ? input.work : "",
-    year: input?.year === null || input?.year === undefined ? null : Number(input.year) || null,
-    note: typeof input?.note === "string" ? input.note : "",
-  }))
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { addWantlistItem: add } = await import("./wantlist.server");
-    return await add(data);
-  });
-
-/** Atualiza uma obra da sondagem (obra/ano/nota/adquirida). */
-export const updateWantlistItem = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator(
-    (
-      input:
-        | { id?: string; work?: string; year?: number | null; note?: string; acquired?: boolean }
-        | undefined,
-    ) => {
-      if (!input?.id || typeof input.id !== "string") throw new Error("id obrigatório");
-      const patch: {
-        id: string;
-        work?: string;
-        year?: number | null;
-        note?: string;
-        acquired?: boolean;
-      } = { id: input.id };
-      if (typeof input.work === "string") patch.work = input.work;
-      if (input.year !== undefined)
-        patch.year = input.year === null ? null : Number(input.year) || null;
-      if (typeof input.note === "string") patch.note = input.note;
-      if (typeof input.acquired === "boolean") patch.acquired = input.acquired;
-      return patch;
-    },
-  )
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { updateWantlistItem: update } = await import("./wantlist.server");
-    return await update(data);
-  });
-
-/** Remove uma obra da sondagem. */
-export const deleteWantlistItem = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { id?: string } | undefined) => {
-    if (!input?.id || typeof input.id !== "string") throw new Error("id obrigatório");
-    return { id: input.id };
-  })
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { deleteWantlistItem: remove } = await import("./wantlist.server");
-    return await remove(data.id);
-  });
-
-/** Avaliações da IA por lote (score/raridade/oportunidade/motivo/tags). Best-effort: [] em erro. */
-export const getLotAi = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    try {
-      const { getAllLotAi } = await import("./lot-ai.server");
-      return await getAllLotAi();
-    } catch (error) {
-      console.error("[lot-ai] não foi possível ler as avaliações", error);
-      return [];
-    }
-  });
-
-/** Identificação simplificada da IA por lote (artista/álbum/ano). Best-effort: [] em erro. */
-export const getLotIdent = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    try {
-      const { getAllLotIdent } = await import("./lot-ident.server");
-      return await getAllLotIdent();
-    } catch (error) {
-      console.error("[lot-ident] não foi possível ler as identificações", error);
-      return [];
-    }
-  });
-
-/** Edita manualmente as tags de um lote (add/remove pela UI). Devolve as tags gravadas. */
-export const setLotTags = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { id?: string; tags?: unknown } | undefined) => {
-    if (!input?.id || typeof input.id !== "string") throw new Error("Lote inválido.");
-    const tags = Array.isArray(input.tags)
-      ? input.tags.filter((t): t is string => typeof t === "string")
-      : [];
-    return { id: input.id, tags };
-  })
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { updateLotTags } = await import("./lot-ai.server");
-    return { id: data.id, tags: await updateLotTags(data.id, data.tags) };
-  });
-
-/**
- * Refaz a avaliação da IA de UM lote sob demanda (botão no painel de detalhes da nota).
- * Ignora o cache por título (sempre consulta de novo, mesmo sem mudança no título) — é
- * justamente para atualizar com base em informações novas do lote (imagem, texto). Usa o
- * provedor de IA PADRÃO do usuário. Devolve a linha gravada para o cliente atualizar o
- * cache local sem precisar reler tudo.
- */
-export const reevaluateLot = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator(
-    (
-      input:
-        | { id?: string; title?: string; price?: string; house?: string; image?: string | null }
-        | undefined,
-    ) => {
-      if (!input?.id || typeof input.id !== "string") throw new Error("Lote inválido.");
-      if (!input.title || typeof input.title !== "string") throw new Error("Lote inválido.");
-      return {
-        id: input.id,
-        title: input.title,
-        price: typeof input.price === "string" ? input.price : "",
-        house: typeof input.house === "string" ? input.house : "",
-        image: typeof input.image === "string" ? input.image : null,
-      };
-    },
-  )
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { aiConfigured, evalLotsSync } = await import("./ai-eval.server");
-    if (!aiConfigured()) {
-      throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
-    }
-    const { getAiProvider } = await import("./app-state.server");
-    const provider = await getAiProvider();
-    const { upsertLotAi } = await import("./lot-ai.server");
-    const { rows, error } = await evalLotsSync([data], provider);
-    const row = rows[0];
-    if (!row) throw new Error(error || "A IA não conseguiu reavaliar este lote.");
-    await upsertLotAi([row]);
-    return { row };
-  });
-
-/**
- * Reavalia a nota da IA de vigiados/lances cujo preço ATUAL (ao vivo, do `peca.asp`) subiu o
- * bastante desde a avaliação (`priceRoseSinceEval`, ver `ai-reprice.ts`) — a nota mistura
- * raridade + oportunidade, então fica otimista demais quando os lances sobem. Disparado pelo
- * cliente quando o valor ao vivo chega (a varredura do cron defasa e perde o lote quando o
- * pregão entra ao vivo). O servidor RECONFERE a subida contra `lot_ai.eval_price` (não confia
- * só no cliente), só reavalia lotes que JÁ têm avaliação (não gasta com lote nunca avaliado —
- * isso continua com o cron/"Analisar") e respeita o modo "off". Teto de 10 por chamada.
- */
-export const repriceLotAi = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator(
-    (
-      input:
-        | {
-            lots?: {
-              id?: string;
-              title?: string;
-              price?: string;
-              house?: string;
-              image?: string | null;
-            }[];
-          }
-        | undefined,
-    ) => ({
-      lots: (Array.isArray(input?.lots) ? input!.lots : [])
-        .filter(
-          (l) =>
-            l &&
-            typeof l.id === "string" &&
-            l.id &&
-            typeof l.title === "string" &&
-            l.title &&
-            typeof l.price === "string",
-        )
-        .slice(0, 10)
-        .map((l) => ({
-          id: l.id as string,
-          title: l.title as string,
-          price: l.price as string,
-          house: typeof l.house === "string" ? l.house : "",
-          image: typeof l.image === "string" ? l.image : null,
-        })),
-    }),
-  )
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const empty = { rows: [] as import("./lot-ai.server").LotAiRow[] };
-    if (!data.lots.length) return empty;
-    const { aiConfigured, evalLotsSync } = await import("./ai-eval.server");
-    if (!aiConfigured()) return empty;
-    const { getAiMode, getAiProvider } = await import("./app-state.server");
-    if ((await getAiMode()) === "off") return empty;
-    const { getAllLotAi, upsertLotAi } = await import("./lot-ai.server");
-    const { priceRoseSinceEval } = await import("./ai-reprice");
-    const { parsePrice } = await import("./vinyl-parse");
-    const byId = new Map((await getAllLotAi()).map((r) => [r.id, r]));
-    const toEval = data.lots.filter((l) => {
-      const row = byId.get(l.id);
-      return row ? priceRoseSinceEval(row.eval_price, parsePrice(l.price)) : false;
-    });
-    if (!toEval.length) return empty;
-    try {
-      const { rows } = await evalLotsSync(toEval, await getAiProvider());
-      await upsertLotAi(rows);
-      return { rows };
-    } catch (error) {
-      console.error("[lot-ai] falha ao reavaliar lotes por subida de preço", error);
-      return empty;
-    }
-  });
-
-/** Modo da avaliação por IA da rodada automática: "off" | "all" | "watched". Global. */
-export const getAiMode = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { getAiMode } = await import("./app-state.server");
-    return await getAiMode();
-  });
-
-/** Grava o modo da IA (valida contra os valores permitidos). */
-export const setAiMode = createServerFn({ method: "POST" })
-  .inputValidator((input: { mode?: string } | undefined) => {
-    const allowed = ["off", "all", "watched"] as const;
-    const mode = input?.mode;
-    if (typeof mode !== "string" || !(allowed as readonly string[]).includes(mode)) {
-      throw new Error("Modo da IA inválido.");
-    }
-    return { mode: mode as (typeof allowed)[number] };
-  })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { setAiMode } = await import("./app-state.server");
-    return await setAiMode(data.mode);
-  });
-
-/** Provedor de IA PADRÃO: "anthropic" (Claude) | "gemini" (Google). Global. */
-export const getAiProvider = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<AiProvider> => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { getAiProvider } = await import("./app-state.server");
-    return await getAiProvider();
-  });
-
-/** Grava o provedor de IA padrão (valida contra os provedores conhecidos). */
-export const setAiProvider = createServerFn({ method: "POST" })
-  .inputValidator((input: { provider?: string } | undefined) => {
-    if (!isAiProvider(input?.provider)) throw new Error("Provedor de IA inválido.");
-    return { provider: input.provider };
-  })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { setAiProvider } = await import("./app-state.server");
-    return await setAiProvider(data.provider);
-  });
-
-/** Modelo do Gemini escolhido (Flash-Lite/Flash/Pro, do mais barato ao mais caro). Global. */
-export const getGeminiModel = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<GeminiModel> => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { getGeminiModel } = await import("./app-state.server");
-    return await getGeminiModel();
-  });
-
-/** Grava o modelo do Gemini escolhido (valida contra os modelos conhecidos). */
-export const setGeminiModel = createServerFn({ method: "POST" })
-  .inputValidator((input: { model?: string } | undefined) => {
-    if (!isGeminiModel(input?.model)) throw new Error("Modelo de Gemini inválido.");
-    return { model: input.model };
-  })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { setGeminiModel } = await import("./app-state.server");
-    return await setGeminiModel(data.model);
-  });
-
-/**
- * Análise SOB DEMANDA de um dia (e opcionalmente de UMA casa desse dia): avalia NA HORA,
- * de forma síncrona, só os lotes AINDA NÃO avaliados (reaproveita o cache por título).
- * Roda mesmo com a IA automática desligada. Processa até `max` lotes por chamada e devolve
- * `remaining` (não avaliados que ficaram de fora) para o cliente repetir em laço.
- */
-export const analyzeOnDemand = createServerFn({ method: "POST" })
-  .inputValidator(
-    (input: { day?: string; house?: string; max?: number; provider?: string } | undefined) => {
-      const day = typeof input?.day === "string" ? input.day.trim() : "";
-      if (!day) throw new Error("Dia obrigatório.");
-      return {
-        day,
-        house: typeof input?.house === "string" && input.house.trim() ? input.house.trim() : null,
-        max: Math.min(Math.max(Number(input?.max) || 25, 1), 50),
-        // Provedor escolhido na hora (opcional): senão usa o padrão do `app_state`.
-        provider: isAiProvider(input?.provider) ? input.provider : null,
-      };
-    },
-  )
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { aiConfigured, selectLotsToEvaluate, evalLotsSync } = await import("./ai-eval.server");
-    if (!aiConfigured()) {
-      throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
-    }
-    const { getAiProvider } = await import("./app-state.server");
-    const provider = data.provider ?? (await getAiProvider());
-    const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
-    const { getAllLotAi, upsertLotAi } = await import("./lot-ai.server");
-    const [snapshot, aiRows] = await Promise.all([scrapeVinylLots(false), getAllLotAi()]);
-
-    // Recorta o dia (e a casa, quando informada) e seleciona só o que falta avaliar.
-    const scope = snapshot.lots.filter(
-      (lot) => lot.dayKey === data.day && (!data.house || lot.house === data.house),
-    );
-    const pending = selectLotsToEvaluate(scope, aiRows, Number.MAX_SAFE_INTEGER);
-    const toEval = pending.slice(0, data.max);
-    if (!toEval.length) {
-      return {
-        evaluated: 0,
-        remaining: 0,
-        scope: scope.length,
-        served: null,
-        switched: false,
-        failed: 0,
-        error: null,
-        attemptErrors: {},
-      };
-    }
-
-    const { rows, served, switched, failed, error, attemptErrors } = await evalLotsSync(
-      toEval,
-      provider,
-    );
-    const evaluated = await upsertLotAi(rows);
-    return {
-      evaluated,
-      remaining: Math.max(0, pending.length - toEval.length),
-      scope: scope.length,
-      // Qual provedor de fato atendeu (para a UI) e se houve failover por falta de créditos.
-      served,
-      switched,
-      // Quantos lotes a IA NÃO conseguiu avaliar (erro/vazio) e o motivo — a UI distingue
-      // "a IA falhou" de "nada pendente" (evita o falso "já avaliado").
-      failed,
-      error,
-      // Motivo de cada provedor pulado/que falhou até o que atendeu (ver `runText`).
-      attemptErrors,
-    };
-  });
-
 /** Estado de conservação (Disco/Capa) por lote p/ os cards (`lot_condition`). Best-effort: [] em erro. */
 export const getLotCondition = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
@@ -784,32 +238,13 @@ export const getLotCondition = createServerFn({ method: "GET" })
   });
 
 /**
- * Histórico de vendas (`lot_sales`, base do Vinil Analytics). Best-effort: [] em erro.
- * Não pede `orig_text` (a coluna mais pesada por linha) — o navegador não precisa do descritivo
- * bruto do catálogo, só de `bundle` (já calculado na captura) para o mesmo filtro de lote/kit.
- */
-export const getVinylSales = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    try {
-      const { getAllLotSales } = await import("./lot-sales.server");
-      return await getAllLotSales({ withOrig: false });
-    } catch (error) {
-      console.error("[lot-sales] não foi possível ler o histórico de vendas", error);
-      return [];
-    }
-  });
-
-/**
  * Status de VENDIDO para um conjunto pontual de lotes (vigiados + lances), casado por
  * `lot_id` com o histórico já capturado em `lot_sales` (mesma tabela do Vinil Analytics,
  * preenchida pelo cron `step=sales` após cada leilão terminar). Escopado por `ids` — nunca lê a
  * tabela inteira — para servir a tarja "Vendido" nos cards sem custo de egress. Best-effort: [].
  */
 export const getSoldLots = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: { ids?: string[] } | undefined) => ({
     ids: Array.isArray(input?.ids)
       ? input!.ids
@@ -831,197 +266,9 @@ export const getSoldLots = createServerFn({ method: "POST" })
     }
   });
 
-/**
- * Reidentificação por IA das vendas (mesma rotina do cron `step=reident`): ajusta artista/álbum
- * (texto original/título → IA) e padroniza a grafia dos nomes. Usa o provedor de IA PADRÃO (o
- * selecionado no topo do site).
- * - Sem `lotIds`: roda em TODO o histórico; o cliente chama em laço até `done`.
- * - Com `lotIds` (por ARTISTA ou por ÁLBUM): roda só nessas vendas, RETENTANDO as ainda não
- *   identificadas (chamada única — cap maior para cobrir o grupo).
- */
-export const reidentifySales = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { max?: number; lotIds?: unknown } | undefined) => {
-    const lotIds = Array.isArray(input?.lotIds)
-      ? input.lotIds.filter((k): k is string => typeof k === "string" && !!k).slice(0, 500)
-      : [];
-    // Por grupo: cap maior (cobre o grupo numa chamada). Global: 25–50 por rodada (laço).
-    const cap = lotIds.length ? 100 : 50;
-    return { max: Math.min(Math.max(Number(input?.max) || 25, 1), cap), lotIds };
-  })
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { reidentifyAllSales } = await import("./lot-sales.server");
-    return await reidentifyAllSales(
-      data.max,
-      data.lotIds.length ? { lotIds: data.lotIds } : undefined,
-    );
-  });
-
-/**
- * Apelidos do Vinil Analytics (curadoria manual do agrupamento artista → álbum, com
- * "aprendizado" durável). Ver `app-state.server.ts` / `buildAnalytics`.
- */
-export const getAnalyticsAliases = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    try {
-      const { getAnalyticsAliases: read } = await import("./app-state.server");
-      return await read();
-    } catch (error) {
-      console.error("[analytics] não foi possível ler os apelidos", error);
-      return { artists: {}, albums: {}, sales: {}, excludedSales: {}, excludedArtists: {} };
-    }
-  });
-
-/** Renomear/fundir ARTISTA: cada chave normalizada em `sourceKeys` passa a apontar para `name`. */
-export const setAnalyticsArtistAlias = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { sourceKeys?: unknown; name?: unknown }) => ({
-    sourceKeys: Array.isArray(input?.sourceKeys)
-      ? input.sourceKeys.filter((k): k is string => typeof k === "string" && !!k)
-      : [],
-    name: typeof input?.name === "string" ? input.name.trim() : "",
-  }))
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { setAnalyticsArtistAlias: save } = await import("./app-state.server");
-    return await save(data.sourceKeys, data.name);
-  });
-
-/** Renomear/fundir ÁLBUM: cada chave `"${artistKey}|${albumKey}"` em `keys` aponta para `name`. */
-export const setAnalyticsAlbumAlias = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { keys?: unknown; name?: unknown }) => ({
-    keys: Array.isArray(input?.keys)
-      ? input.keys.filter((k): k is string => typeof k === "string" && !!k)
-      : [],
-    name: typeof input?.name === "string" ? input.name.trim() : "",
-  }))
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { setAnalyticsAlbumAlias: save } = await import("./app-state.server");
-    return await save(data.keys, data.name);
-  });
-
-/** Desfaz um apelido (remove a chave do mapa de artista ou de álbum). */
-export const clearAnalyticsAlias = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { kind?: unknown; key?: unknown }) => ({
-    kind: input?.kind === "album" ? ("album" as const) : ("artist" as const),
-    key: typeof input?.key === "string" ? input.key : "",
-  }))
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { clearAnalyticsAlias: clear } = await import("./app-state.server");
-    return await clear(data.kind, data.key);
-  });
-
-/**
- * Correção POR VENDA (aprendizado por `lot_id`): define artista/álbum de UMA venda específica —
- * usada para separar os "(álbum não identificado)". `clear` (ou artista+álbum vazios) remove a
- * correção (volta ao automático).
- */
-export const setAnalyticsSaleOverride = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator(
-    (input: { lotId?: unknown; artist?: unknown; album?: unknown; clear?: unknown }) => ({
-      lotId: typeof input?.lotId === "string" ? input.lotId : "",
-      artist: typeof input?.artist === "string" ? input.artist.trim() : "",
-      album: typeof input?.album === "string" ? input.album.trim() : "",
-      clear: input?.clear === true,
-    }),
-  )
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { setAnalyticsSaleOverride: save } = await import("./app-state.server");
-    const value = data.clear ? null : { artist: data.artist, album: data.album };
-    return await save(data.lotId, value);
-  });
-
-/** Excluir/reincluir uma VENDA do Analytics (oculta por `lot_id`, sem deletar do banco). */
-export const setAnalyticsExcludedSale = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { lotId?: unknown; excluded?: unknown; label?: unknown }) => ({
-    lotId: typeof input?.lotId === "string" ? input.lotId : "",
-    excluded: input?.excluded !== false,
-    label: typeof input?.label === "string" ? input.label : "",
-  }))
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { setAnalyticsExcludedSale: save } = await import("./app-state.server");
-    return await save(data.lotId, data.excluded, data.label);
-  });
-
-/** Excluir/reincluir um ARTISTA inteiro do Analytics (oculta por chave, sem deletar do banco). */
-export const setAnalyticsExcludedArtist = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { keys?: unknown; excluded?: unknown; label?: unknown }) => ({
-    keys: Array.isArray(input?.keys)
-      ? input.keys.filter((k): k is string => typeof k === "string" && !!k)
-      : [],
-    excluded: input?.excluded !== false,
-    label: typeof input?.label === "string" ? input.label : "",
-  }))
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { setAnalyticsExcludedArtist: save } = await import("./app-state.server");
-    return await save(data.keys, data.excluded, data.label);
-  });
-
-/** Token de HOJE do link público (somente leitura) do Vinil Analytics — ver `access.server.ts`.
- *  Só o token derivado é exposto ao cliente; o `PUBLIC_ANALYTICS_SECRET` nunca sai do servidor. */
-export const getTodayPublicAnalyticsToken = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { todayPublicAnalyticsToken } = await import("./access.server");
-    return { token: await todayPublicAnalyticsToken() };
-  });
-
-/**
- * Variante PÚBLICA (sem login) do Vinil Analytics: mesmos dados de `getVinylSales` +
- * `getAnalyticsAliases`, gated SÓ pelo token diário (`?token=` — ver `access.server.ts`), sem
- * `requireSupabaseAuth` nem `assertAllowed`. Propositalmente sem nenhuma escrita/mutação — só
- * leitura, para a página `/vinil-analytics-publico`.
- */
-export const getPublicVinylAnalytics = createServerFn({ method: "GET" })
-  .inputValidator((input: { token?: string } | undefined) => ({
-    token: typeof input?.token === "string" ? input.token : undefined,
-  }))
-  .handler(async ({ data }) => {
-    const { assertPublicAnalyticsToken } = await import("./access.server");
-    await assertPublicAnalyticsToken(data.token);
-    try {
-      const { getAllLotSales } = await import("./lot-sales.server");
-      const { getAnalyticsAliases: readAliases } = await import("./app-state.server");
-      const [sales, aliases] = await Promise.all([
-        getAllLotSales({ withOrig: false }),
-        readAliases(),
-      ]);
-      return { sales, aliases };
-    } catch (error) {
-      console.error("[analytics] não foi possível ler o Analytics público", error);
-      return {
-        sales: [],
-        aliases: { artists: {}, albums: {}, sales: {}, excludedSales: {}, excludedArtists: {} },
-      };
-    }
-  });
-
 /** Âncora de mercado do Discogs por lote (preço/demanda). Best-effort: [] em erro. */
 export const getLotMarket = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);

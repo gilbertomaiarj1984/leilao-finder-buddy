@@ -408,7 +408,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     // que página/dia) ou se nem aparece — distingue "categorização da LeilõesBR" de "bug
     // no nosso parser/filtro". Não persiste nada.
     if (step === "findlot") {
-      const { findLotDebug } = await import("./leiloesbr-scrape.server");
+      const { findLotDebug } = await import("./leiloesbr-debug.server");
       const q = url.searchParams.get("q")?.trim();
       if (!q) return json({ error: "informe ?q=<idLeilao ou parte do nome da casa/URL>" }, 400);
       return json(await findLotDebug(q));
@@ -419,7 +419,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     // categoria (`lockToVinyl=0`) — acha o mesmo idLeilao em QUALQUER categoria da
     // LeilõesBR, pra confirmar se está categorizado fora de "Disco de Vinil".
     if (step === "findlot2") {
-      const { findLotSearch } = await import("./leiloesbr-scrape.server");
+      const { findLotSearch } = await import("./leiloesbr-debug.server");
       const idLeilao = url.searchParams.get("idLeilao")?.trim();
       const pesquisa = url.searchParams.get("pesquisa")?.trim() ?? "";
       const lockToVinyl = url.searchParams.get("lockToVinyl") !== "0";
@@ -431,7 +431,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     // pra inspecionar onde/como a categoria de cada item aparece na listagem geral
     // (VinylLot/parseCard não capturam nenhum campo de categoria hoje).
     if (step === "findlotraw") {
-      const { findLotRawCard } = await import("./leiloesbr-scrape.server");
+      const { findLotRawCard } = await import("./leiloesbr-debug.server");
       const idLeilao = url.searchParams.get("idLeilao")?.trim();
       const pesquisa = url.searchParams.get("pesquisa")?.trim() ?? "";
       const lockToVinyl = url.searchParams.get("lockToVinyl") !== "0";
@@ -443,7 +443,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     // `|129|` que o catálogo da CASA usa pra "Disco de vinil") direto na busca geral
     // da LeilõesBR — vê se esse código também filtra por lá.
     if (step === "findlotcat") {
-      const { findLotByCategory } = await import("./leiloesbr-scrape.server");
+      const { findLotByCategory } = await import("./leiloesbr-debug.server");
       const idLeilao = url.searchParams.get("idLeilao")?.trim();
       const pesquisa = url.searchParams.get("pesquisa")?.trim() ?? "";
       const tp = url.searchParams.get("tp")?.trim();
@@ -482,7 +482,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
     // ?tp=none tira a categoria; ?cookie=1 reaproveita a sessão ASP da 1ª página;
     // ?delayMs=<n> pausa entre páginas. Devolve status/URL final/cards/dias/casas por página.
     if (step === "pagedebug") {
-      const { debugListingPages } = await import("./leiloesbr-scrape.server");
+      const { debugListingPages } = await import("./leiloesbr-debug.server");
       const tpParam = url.searchParams.get("tp");
       return json(
         await debugListingPages({
