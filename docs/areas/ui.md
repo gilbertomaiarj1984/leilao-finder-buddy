@@ -607,6 +607,15 @@ telas), com `isFinished` derivado.
   sinal preciso sozinho quase nunca chega a `isFinished=true`. `PresencialOrUnsoldLink` ganhou
   a prop `statusEnded` (= `auctionInfo.status === "ended"`, a mesma heurística de 3h do badge
   "Encerrado") como FALLBACK: `isFinished = presencialFinished || statusEnded`.
+  ⚠️ **Fix (v0.89.2) — lista em texto puro, sem o total de lotes**: achado do usuário — a lista
+  era uma sequência de links em texto (sem o visual de card do resto do app) e não mostrava
+  quantos lotes o leilão teve ao todo. `getUnsoldLotsForAuction` passa a devolver
+  `{ lots, total }` (`total` = `catalog.size`, todos os lotes do catálogo, vendidos + sem
+  lance); o botão mostra "lotes sem lance (N de total)" — já buscado assim que `isFinished`
+  fica `true` (não só ao expandir, `enabled: isFinished`), pro total aparecer sem precisar
+  clicar. A lista expandida virou grade de `UnsoldLotCard` (mesmo componente local, espírito
+  visual do `LotCard` — imagem, badge do nº do lote, artista/título — sem os controles de
+  vigiar/lance, que não fazem sentido com o pregão já encerrado).
 - **Servidor — `getUnsoldLotsForAuction`** (`src/lib/unsold-lots.server.ts`, exposta como
   `getUnsoldLots` em `leiloesbr.functions.ts`): busca o catálogo da casa sob demanda
   (`fetchCatalogData`, mesma fonte de `captureFinishedSales`) e devolve o INVERSO do filtro de

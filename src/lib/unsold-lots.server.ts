@@ -21,9 +21,14 @@ type UnsoldLot = {
   url: string;
 };
 
+type UnsoldLotsResult = {
+  lots: UnsoldLot[];
+  total: number; // nº total de lotes do catálogo (vendidos + sem lance) — pro "N de M" na UI
+};
+
 // ≤ metade do intervalo de refetch do cliente, mesmo espírito de leiloesbr-presencial.server.ts.
 const CACHE_TTL_MS = 5 * 60 * 1000;
-const cache = new Map<string, { at: number; value: UnsoldLot[] }>();
+const cache = new Map<string, { at: number; value: UnsoldLotsResult }>();
 
 /** Valida e devolve o domínio (origin) da casa a partir da URL do pregão presencial. */
 function domainFromPresencialUrl(raw: string): string {
@@ -39,13 +44,13 @@ function domainFromPresencialUrl(raw: string): string {
 export async function getUnsoldLotsForAuction(
   idLeilao: string,
   presencialUrl: string,
-): Promise<UnsoldLot[]> {
+): Promise<UnsoldLotsResult> {
   const domain = domainFromPresencialUrl(presencialUrl);
   const key = `${domain}#${idLeilao}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
 
-  let value: UnsoldLot[] = [];
+  let value: UnsoldLotsResult = { lots: [], total: 0 };
   try {
     const { looksVinyl, bestCatalogTitle } = await import("./lot-sales.server");
     const { fetchCatalogData } = await import("./leiloesbr-catalog.server");
@@ -87,7 +92,7 @@ export async function getUnsoldLotsForAuction(
         url: `${domain}/peca.asp?ID=${idPeca}`,
       });
     }
-    value = rows;
+    value = { lots: rows, total: catalog.size };
   } catch (error) {
     console.error("[unsold-lots] falha ao buscar lotes sem lance", key, error);
   }
