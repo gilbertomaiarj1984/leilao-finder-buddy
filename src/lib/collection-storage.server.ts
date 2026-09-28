@@ -1,5 +1,5 @@
 /**
- * Fase 3 da migração para VPS (docs/economia-fase-2-vps-unico.md): as fotos da
+ * Fase 3 da migração para VPS (docs/arquivo/economia-fase-2-vps-unico.md): as fotos da
  * Coleção saem do bucket `collection` do Supabase Storage e passam a ser
  * arquivos num volume em disco (`COLLECTION_DIR`). Até a Fase 4 (Docker/Caddy)
  * entrar, `handleCollectionAssets` serve esses arquivos direto — mesmo padrão

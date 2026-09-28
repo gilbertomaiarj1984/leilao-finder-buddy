@@ -1,4 +1,4 @@
-# Fase 4 da migração para VPS (docs/economia-fase-2-vps-unico.md): build multi-stage.
+# Fase 4 da migração para VPS (docs/arquivo/economia-fase-2-vps-unico.md): build multi-stage.
 # SERVER_PRESET=node-server (vite.config.ts:9 já honra a env, sem tocar em código) faz o
 # Nitro gerar `.output/server` já com um `node_modules` próprio, rastreado por dependência
 # (inclui o binário nativo do `sharp` para a plataforma do build) — não precisa reinstalar

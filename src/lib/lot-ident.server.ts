@@ -18,7 +18,7 @@ export type LotIdentRow = {
 // Cache curto em memória: `getAllLotIdent` é chamada a cada iteração dos laços do cron
 // (`aiident`/`market`) — sempre a tabela INTEIRA. Invalidado a cada escrita
 // (`upsertLotIdent`). Reduz consultas ao Postgres (ver
-// docs/economia-fase-1-egress-e-cpu.md).
+// docs/arquivo/economia-fase-1-egress-e-cpu.md).
 let allCache: { at: number; rows: LotIdentRow[] } | null = null;
 const ALL_TTL_MS = 30_000;
 

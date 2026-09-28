@@ -42,7 +42,7 @@ Lista completa e comentada em `.env.example`.
 Arquitetura: `Caddy` (TLS automático + reverse proxy + `/collection/*` do volume) →
 `app` (imagem Node, build multi-stage no `Dockerfile`) → `postgres:17`. Detalhes,
 riscos e o roteiro completo das 6 fases da migração (Supabase/Vercel → VPS único) em
-`docs/economia-fase-2-vps-unico.md`.
+`docs/arquivo/economia-fase-2-vps-unico.md`.
 
 1. No VPS: `docker network create proxy` (rede externa compartilhada, permite outros
    apps no mesmo host) e uma pasta com `docker-compose.yml` + `Caddyfile` (copiados
@@ -77,7 +77,7 @@ um VPS com mais de um app, ele enxerga e controla todos, não só o Garimpo. Def
 senha do admin **imediatamente** no primeiro acesso (o Portainer expira o cadastro
 inicial em alguns minutos) e considerar restringir o acesso ao subdomínio (Cloudflare
 Access, allowlist de IP, ou VPN) — ver o checklist manual em
-`docs/economia-fase-2-vps-unico.md`.
+`docs/arquivo/economia-fase-2-vps-unico.md`.
 
 ## Banco de dados
 

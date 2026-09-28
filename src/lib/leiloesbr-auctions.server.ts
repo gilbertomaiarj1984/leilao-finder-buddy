@@ -130,7 +130,7 @@ export async function listLiveAuctions(windowHours = 3): Promise<PresencialAucti
   }
 }
 
-// Fase 5 da migração para VPS (docs/economia-fase-2-vps-unico.md): `seen_auctions` nunca
+// Fase 5 da migração para VPS (docs/arquivo/economia-fase-2-vps-unico.md): `seen_auctions` nunca
 // era podada, só cresce. Só removemos leilões cujas vendas JÁ foram capturadas
 // (`app_state.sales_captured` — ver `getSalesCaptured` e `captureFinishedSales` em
 // `lot-sales.server.ts`), então nunca perdemos o backlog de um leilão ainda pendente; a

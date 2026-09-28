@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fase 5 da migração para VPS (docs/economia-fase-2-vps-unico.md): dump noturno do
+# Fase 5 da migração para VPS (docs/arquivo/economia-fase-2-vps-unico.md): dump noturno do
 # Postgres -> Cloudflare R2 (S3-compatible). Retenção de 14 dias é uma REGRA DE LIFECYCLE
 # no bucket do R2 (configurada uma vez no painel/API da Cloudflare) — este script só
 # manda o dump; não apaga nada, então nunca corre o risco de podar backup por engano.

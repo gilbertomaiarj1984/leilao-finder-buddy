@@ -1,4 +1,4 @@
--- Fase 5 da migração para VPS (docs/economia-fase-2-vps-unico.md): o schema nunca teve FK
+-- Fase 5 da migração para VPS (docs/arquivo/economia-fase-2-vps-unico.md): o schema nunca teve FK
 -- nem CASCADE. `pruneOutOfWindow` (leiloesbr-scrape.server.ts) apaga de `lots` os lotes fora
 -- da janela de dias, e `lot_ai`/`lot_ident`/`lot_market`/`lot_condition` (todos com `id` =
 -- `lots.id`) acumulam órfãos desde então — linha lida à toa pelos anti-joins do cron.
