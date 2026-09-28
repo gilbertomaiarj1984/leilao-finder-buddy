@@ -9,19 +9,26 @@ import { usePresencialNow } from "./use-presencial-now";
 
 /**
  * Link "pregão presencial" da linha da casa (dia principal / vigiados) — perde sentido assim
- * que os lotes acabam (peça atual = total, sinal preciso de `usePresencialNow`), então vira o
- * acesso à lista de lotes sem lance daquele pregão (`getUnsoldLots`, sob demanda ao expandir).
- * Sem dado de presencial (casa sem pregão presencial funcionando), continua mostrando o link
- * normal — mesmo comportamento de hoje.
+ * que os lotes acabam, então vira o acesso à lista de lotes sem lance daquele pregão
+ * (`getUnsoldLots`, sob demanda ao expandir).
+ *
+ * Fim do pregão: sinal PRECISO de `usePresencialNow` (peça atual = total) OU, quando esse
+ * dado não vem (`isFinished` nunca fica `true`), a heurística de 3h já usada pelo badge
+ * "Encerrado" (`statusEnded`, de `houseAuctionInfo`) — descoberto na prática: quando o pregão
+ * termina de verdade, o polling do presencial costuma parar de responder em vez de ficar
+ * parado em "peça = total", então o sinal preciso sozinho nunca dispara pra maioria das casas.
  */
 export function PresencialOrUnsoldLink({
   presencialUrl,
   idLeilao,
+  statusEnded,
 }: {
   presencialUrl: string;
   idLeilao: string;
+  statusEnded: boolean;
 }) {
-  const { isFinished } = usePresencialNow(presencialUrl);
+  const { isFinished: presencialFinished } = usePresencialNow(presencialUrl);
+  const isFinished = presencialFinished || statusEnded;
   const [open, setOpen] = useState(false);
   const fetchUnsold = useServerFn(getUnsoldLots);
   const query = useQuery({

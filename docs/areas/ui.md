@@ -600,6 +600,13 @@ telas), com `isFinished` derivado.
   expande (sob clique, `enabled: open && isFinished`) a lista vinda de `getUnsoldLots`.
   `HouseAuctionInfo`/`houseAuctionInfo` (`grouping.ts`) ganham o campo `idLeilao` (já disponível
   no lote) para a nova server function.
+  ⚠️ **Fix (mesma versão) — sinal preciso sozinho não disparava na prática**: achado do
+  usuário (casa com badge "Encerrado" mas o link continuava "pregão presencial") — quando o
+  pregão termina de verdade, o polling do presencial (`getPresencialNow`) costuma **parar de
+  responder** (`now` vira `null` de novo) em vez de ficar parado em "peça = total", então o
+  sinal preciso sozinho quase nunca chega a `isFinished=true`. `PresencialOrUnsoldLink` ganhou
+  a prop `statusEnded` (= `auctionInfo.status === "ended"`, a mesma heurística de 3h do badge
+  "Encerrado") como FALLBACK: `isFinished = presencialFinished || statusEnded`.
 - **Servidor — `getUnsoldLotsForAuction`** (`src/lib/unsold-lots.server.ts`, exposta como
   `getUnsoldLots` em `leiloesbr.functions.ts`): busca o catálogo da casa sob demanda
   (`fetchCatalogData`, mesma fonte de `captureFinishedSales`) e devolve o INVERSO do filtro de
@@ -612,12 +619,13 @@ telas), com `isFinished` derivado.
   catálogo repetidamente se o usuário abrir/fechar a lista.
 - **"Acontecendo agora" some a casa ao terminar:** `LiveAuctions` (`live-auctions.tsx`) consulta
   `getPresencialNow` de TODAS as casas listadas (`useQueries`, mesma `queryKey`/config de
-  `usePresencialNow` — dedup com as outras telas) e filtra da grade qualquer casa com
-  `isFinished`, incluindo no contador do cabeçalho. A casa continua disponível o dia inteiro na
-  aba principal por dia e em `/ao-vivo` (que listam por `day_key`, não pela janela de 3h de
-  `listLiveAuctions`) — só o card "Acontecendo agora" (que é temporário) esconde.
-- **Sem dado de presencial** (casa cujo pregão presencial não responde): `isFinished` fica
-  `false` em todos os pontos acima — comportamento idêntico ao de antes desta versão.
+  `usePresencialNow` — dedup com as outras telas) e filtra da grade qualquer casa com sinal
+  preciso de fim OU `auction.status === "ended"` (mesmo fallback de 3h acima), incluindo no
+  contador do cabeçalho. A casa continua disponível o dia inteiro na aba principal por dia e em
+  `/ao-vivo` (que listam por `day_key`, não pela janela de 3h de `listLiveAuctions`) — só o
+  card "Acontecendo agora" (que é temporário) esconde.
+- **Sem NENHUM sinal de fim** (nem presencial nem heurística de 3h — leilão de fato ainda em
+  andamento, ou casa fora do padrão): comportamento idêntico ao de antes desta versão.
 
 ## Painel de mudanças — DESCONTINUADO (v0.25.0)
 

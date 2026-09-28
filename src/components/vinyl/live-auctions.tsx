@@ -94,9 +94,13 @@ export function LiveAuctions() {
     })),
   });
 
+  // Fallback: quando o presencial nunca sinaliza fim (na prática o polling costuma parar de
+  // responder assim que o pregão acaba de verdade, em vez de ficar parado em "peça = total"),
+  // a heurística de 3h já usada pelo badge "Encerrado" (`auction.status`) garante que a casa
+  // não fique presa na seção indefinidamente.
   const auctions = allAuctions
     .map((auction, i) => ({ auction, now: presencialQueries[i]?.data ?? null }))
-    .filter(({ now }) => !isPresencialFinished(now));
+    .filter(({ auction, now }) => !isPresencialFinished(now) && auction.status !== "ended");
 
   if (!auctions.length) return null;
 

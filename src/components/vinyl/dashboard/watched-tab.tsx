@@ -171,6 +171,7 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                                     <PresencialOrUnsoldLink
                                       presencialUrl={auctionInfo.presencialUrl}
                                       idLeilao={auctionInfo.idLeilao}
+                                      statusEnded={auctionInfo.status === "ended"}
                                     />
                                   ) : null}
                                   <a
