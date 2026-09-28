@@ -15,8 +15,6 @@ export type LotIdentRow = {
   model: string | null;
 };
 
-const PAGE = 1000;
-
 // Cache curto em memória: `getAllLotIdent` é chamada a cada iteração dos laços do cron
 // (`aiident`/`market`) — sempre a tabela INTEIRA. Invalidado a cada escrita
 // (`upsertLotIdent`). Reduz consultas ao Postgres (ver
@@ -28,25 +26,21 @@ const ALL_TTL_MS = 30_000;
 export async function getAllLotIdent(): Promise<LotIdentRow[]> {
   if (allCache && Date.now() - allCache.at < ALL_TTL_MS) return allCache.rows;
   const rows: LotIdentRow[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabaseAdmin
-      .from<LotIdentRow>("lot_ident")
-      .select("id, title_hash, album, year, confidence, source, model")
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    const batch = data ?? [];
-    for (const r of batch) {
-      rows.push({
-        id: r.id,
-        title_hash: r.title_hash,
-        album: r.album,
-        year: r.year,
-        confidence: r.confidence,
-        source: r.source,
-        model: r.model,
-      });
-    }
-    if (batch.length < PAGE) break;
+  const { data, error } = await supabaseAdmin
+    .from<LotIdentRow>("lot_ident")
+    .select("id, title_hash, album, year, confidence, source, model");
+  if (error) throw error;
+  const batch = data ?? [];
+  for (const r of batch) {
+    rows.push({
+      id: r.id,
+      title_hash: r.title_hash,
+      album: r.album,
+      year: r.year,
+      confidence: r.confidence,
+      source: r.source,
+      model: r.model,
+    });
   }
   allCache = { at: Date.now(), rows };
   return rows;

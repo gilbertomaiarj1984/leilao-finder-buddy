@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
+import type { CatalogLot } from "./leiloesbr-catalog.server";
 import { deriveAlbum } from "./analytics";
 import { type Condition, parseConditionFromText, scoreCondition } from "./grading";
 import type { LotIdentRow } from "./lot-ident.server";
@@ -25,7 +26,7 @@ import {
  * (título/descrição curta); quando não há sigla, fica indefinido. A **data da venda é a data
  * do LEILÃO** (âncora temporal do histórico), não a data da captura.
  */
-export type LotSaleRow = {
+type LotSaleRow = {
   lot_id: string; // "${idLeilao}-${idPeca}"
   id_leilao: string;
   id_peca: string;
@@ -55,19 +56,15 @@ export type LotSaleRow = {
   // catálogo. null = ainda não tentado; "" = tentado sem imagem-fonte disponível.
 };
 
-const PAGE = 1000;
-// Colunas base (sempre presentes, incl. `bundle`/`image`) e a coluna `orig_text` — a mais pesada
-// por linha —, pedida à parte (`withOrig`). A leitura/escrita toleram a ausência de `orig_text`
-// (banco sem a migração da coluna ainda) — ver `isMissingColumn`.
+// Colunas base (incl. `bundle`/`image`) e a coluna `orig_text` — a mais pesada por linha —,
+// pedida à parte (`withOrig`).
 const BASE_SALE_COLUMNS =
   "lot_id, id_leilao, id_peca, artist, title, sold_price, sold_price_raw, sold_date, house, uf, media, sleeve, score, faixa, insert_state, source_url, views, bids, fee_pct, initial_price, bundle, image";
 const SALE_COLUMNS = `${BASE_SALE_COLUMNS}, orig_text`;
 
-/** Erro do Postgres/PostgREST de coluna inexistente (antes de aplicar a migração `orig_text`). */
-function isMissingColumn(error: { code?: string; message?: string } | null): boolean {
-  if (!error) return false;
-  if (error.code === "42703" || error.code === "PGRST204") return true;
-  return (error.message ?? "").includes("orig_text");
+function toSaleRows(data: unknown): LotSaleRow[] {
+  const batch = (data ?? []) as unknown as Record<string, unknown>[];
+  return batch.map((r) => ({ orig_text: "", bundle: false, ...r }) as unknown as LotSaleRow);
 }
 
 // Cache curto do caso `{ withOrig: false }` SEM `ids` — a leitura da tabela INTEIRA (sem a
@@ -80,11 +77,9 @@ let noOrigCache: { at: number; rows: LotSaleRow[] } | null = null;
 const NO_ORIG_TTL_MS = 30_000;
 
 /**
- * Lê vendas de `lot_sales` (single-user; paginado). Best-effort. Tolera `orig_text` ausente
- * (banco sem a migração da coluna).
+ * Lê vendas de `lot_sales` (single-user). Best-effort.
  *
- * - `ids`: busca só esse conjunto (já limitado pelo chamador, ex. até 500) — 1 requisição, sem
- *   paginação. Sem `ids`, lê a TABELA INTEIRA (usar com cuidado — é o padrão caro que o Fase 1
+ * - `ids`: busca só esse conjunto (já limitado pelo chamador, ex. até 500). Sem `ids`, lê a TABELA INTEIRA (usar com cuidado — é o padrão caro que o Fase 1
  *   corrigiu em `reidentifyAllSales`; prefira `ids` ou a RPC `getUnidentifiedLotSales` quando der).
  * - `withOrig` (padrão `true`): quando `false`, NÃO pede `orig_text` — a coluna mais pesada por
  *   linha — para quem só precisa de artista/título/preço (ex. padronização de grafia).
@@ -95,51 +90,19 @@ export async function getAllLotSales(opts?: {
 }): Promise<LotSaleRow[]> {
   const ids = opts?.ids;
   if (ids && !ids.length) return [];
-  let withOrig = opts?.withOrig ?? true;
+  const withOrig = opts?.withOrig ?? true;
   const wantedNoOrig = !ids && !withOrig;
-  const rows: LotSaleRow[] = [];
 
   if (wantedNoOrig && noOrigCache && Date.now() - noOrigCache.at < NO_ORIG_TTL_MS) {
     return noOrigCache.rows;
   }
 
-  if (ids) {
-    for (;;) {
-      const cols = withOrig ? SALE_COLUMNS : BASE_SALE_COLUMNS;
-      const { data, error } = await supabaseAdmin.from("lot_sales").select(cols).in("lot_id", ids);
-      if (error) {
-        if (withOrig && isMissingColumn(error)) {
-          withOrig = false;
-          continue;
-        }
-        throw error;
-      }
-      const batch = (data ?? []) as unknown as Record<string, unknown>[];
-      for (const r of batch)
-        rows.push({ orig_text: "", bundle: false, ...r } as unknown as LotSaleRow);
-      return rows;
-    }
-  }
-
-  for (let from = 0; ; from += PAGE) {
-    const cols = withOrig ? SALE_COLUMNS : BASE_SALE_COLUMNS;
-    const { data, error } = await supabaseAdmin
-      .from("lot_sales")
-      .select(cols)
-      .range(from, from + PAGE - 1);
-    if (error) {
-      if (withOrig && isMissingColumn(error)) {
-        withOrig = false;
-        from -= PAGE; // repete esta página sem `orig_text`
-        continue;
-      }
-      throw error;
-    }
-    const batch = (data ?? []) as unknown as Record<string, unknown>[];
-    for (const r of batch)
-      rows.push({ orig_text: "", bundle: false, ...r } as unknown as LotSaleRow);
-    if (batch.length < PAGE) break;
-  }
+  // Postgres direto (postgres.js) não tem o teto de 1000 linhas do PostgREST: 1 consulta só.
+  let query = supabaseAdmin.from("lot_sales").select(withOrig ? SALE_COLUMNS : BASE_SALE_COLUMNS);
+  if (ids) query = query.in("lot_id", ids);
+  const { data, error } = await query;
+  if (error) throw error;
+  const rows = toSaleRows(data);
   if (wantedNoOrig) noOrigCache = { at: Date.now(), rows };
   return rows;
 }
@@ -151,13 +114,12 @@ export async function getAllLotSales(opts?: {
  * identificar — a causa raiz do egress do Supabase (ver docs/economia-fase-1-egress-e-cpu.md).
  * Requer a migration `20260914000000_reident_egress_fixes.sql`.
  */
-export async function getUnidentifiedLotSales(limit: number): Promise<LotSaleRow[]> {
+async function getUnidentifiedLotSales(limit: number): Promise<LotSaleRow[]> {
   const { data, error } = await supabaseAdmin.rpc("get_unidentified_lot_sales", {
     p_limit: limit,
   });
   if (error) throw error;
-  const batch = (data ?? []) as unknown as Record<string, unknown>[];
-  return batch.map((r) => ({ orig_text: "", bundle: false, ...r }) as unknown as LotSaleRow);
+  return toSaleRows(data);
 }
 
 /**
@@ -166,7 +128,7 @@ export async function getUnidentifiedLotSales(limit: number): Promise<LotSaleRow
  * sem essa coluna), a chave nem entra no payload do upsert — PostgREST só sobrescreve as colunas
  * presentes no corpo, então o valor já gravado no banco fica intacto (não é apagado por "").
  */
-export async function upsertLotSales(
+async function upsertLotSales(
   rows: (Omit<LotSaleRow, "orig_text"> & { orig_text?: string })[],
 ): Promise<number> {
   if (!rows.length) return 0;
@@ -174,17 +136,6 @@ export async function upsertLotSales(
   const payload = rows.map((r) => ({ ...r, captured_at: capturedAt }));
   const { error } = await supabaseAdmin.from("lot_sales").upsert(payload, { onConflict: "lot_id" });
   if (error) {
-    // Banco ainda sem a coluna `orig_text` (migração não aplicada): grava sem ela em vez de 500.
-    if (isMissingColumn(error)) {
-      const slim = payload.map(({ orig_text, ...base }) => base);
-      const retry = await supabaseAdmin.from("lot_sales").upsert(slim, { onConflict: "lot_id" });
-      if (retry.error) {
-        console.error("[lot-sales] falha ao gravar vendas (sem orig_text)", retry.error);
-        throw new Error(`Não foi possível gravar as vendas: ${retry.error.message}`);
-      }
-      noOrigCache = null;
-      return payload.length;
-    }
     console.error("[lot-sales] falha ao gravar vendas", error);
     throw new Error(`Não foi possível gravar as vendas: ${error.message}`);
   }
@@ -233,30 +184,24 @@ const SEEN_TTL_MS = 30_000;
 /** Lê os leilões conhecidos (durável; nunca podado) com o que a captura precisa. */
 async function readSeenAuctions(): Promise<SeenAuctionRow[]> {
   if (seenCache && Date.now() - seenCache.at < SEEN_TTL_MS) return seenCache.rows;
-  const out: SeenAuctionRow[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabaseAdmin
-      .from("seen_auctions")
-      .select("id_leilao, entry_url, day_key, start_time, house, uf")
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    const batch = (data as SeenAuctionRow[] | null) ?? [];
-    out.push(...batch);
-    if (batch.length < PAGE) break;
-  }
+  const { data, error } = await supabaseAdmin
+    .from("seen_auctions")
+    .select("id_leilao, entry_url, day_key, start_time, house, uf");
+  if (error) throw error;
+  const out = (data as SeenAuctionRow[] | null) ?? [];
   seenCache = { at: Date.now(), rows: out };
   return out;
 }
 
 /** Identidade dos nossos lotes de VINIL (por id), para filtrar o catálogo e nomear a venda. */
-export type VinylInfo = { title: string; artist: string };
+type VinylInfo = { title: string; artist: string };
 
 // Sinal POSITIVO de vinil no texto do card (formato). NÃO usa "disco" solto (fraco: casa
 // "Catavento Discos", "disco voador"…). Grau de Disco/Capa também conta como vinil.
 const VINYL_FORMAT =
   /\b(?:lps?|vinil|vinyl|compacto|bolach[aã]o|long\s*play|33\s*rpm)\b|disco\s+de\s+vinil/i;
 
-export function looksVinyl(text: string, cond: Condition): boolean {
+function looksVinyl(text: string, cond: Condition): boolean {
   return Boolean(cond.media || cond.sleeve) || VINYL_FORMAT.test(text);
 }
 
@@ -273,7 +218,7 @@ const PECA_STATE_SUFFIX =
  * santavelharia: "Disco de vinil: Título. Gravadora…") → usa o campo **PECA** (título curado,
  * ex.: "Disco Rock In ELMA CHIPS - Novo"), limpo de prefixo de formato e sufixo de estado.
  */
-export function bestCatalogTitle(data: import("./leiloesbr-catalog.server").CatalogLot): string {
+function bestCatalogTitle(data: CatalogLot): string {
   const desc = catalogTitle(data.text);
   // Formato ESTRUTURADO (Discos Esquecidos): o DESCRICAO traz grau "CAPA/DISCO <sigla>" e vem
   // como "Artista - Álbum - CAPA …" — o descritivo (cortado no grau) é a melhor identidade.
@@ -296,7 +241,7 @@ export function bestCatalogTitle(data: import("./leiloesbr-catalog.server").Cata
 }
 
 /** Título conciso a partir do descritivo do catálogo (corta estado/venda/visitas e nº inicial). */
-export function catalogTitle(text: string): string {
+function catalogTitle(text: string): string {
   return text
     .split(
       /\s(?:-\s*)?(?:capa|disco|m[íi]dia|vinil)\s+(?:M-|VG\+\+|VG\+|VG-|G\+|G-|F\/P|NM|EX|VG|G|M)\b/i,
@@ -318,7 +263,7 @@ export function catalogTitle(text: string): string {
  */
 function salesRowsFromCatalog(
   auction: { idLeilao: string; domain: string; dayKey: string; house: string; uf: string },
-  catalog: Map<string, import("./leiloesbr-catalog.server").CatalogLot>,
+  catalog: Map<string, CatalogLot>,
   vinylById: Map<string, VinylInfo>,
 ): LotSaleRow[] {
   const rows: LotSaleRow[] = [];
@@ -452,7 +397,7 @@ const SALE_THUMB_WEBP_QUALITY = 70;
  * chamada para o mesmo lote apenas sobrescreve, sem sobra de arquivo órfão). Best-effort: `null`
  * em qualquer falha (rede, imagem inválida) — o chamador decide se retenta depois.
  */
-export async function captureSaleThumbnail(lotId: string, srcUrl: string): Promise<string | null> {
+async function captureSaleThumbnail(lotId: string, srcUrl: string): Promise<string | null> {
   if (!srcUrl) return null;
   try {
     const res = await fetch(srcUrl);

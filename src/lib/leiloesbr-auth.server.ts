@@ -116,7 +116,7 @@ async function performLogin(origin: string): Promise<string> {
 }
 
 /** Cookie logado da origem informada (login preguiçoso, compartilhado). */
-export async function getSessionCookieFor(origin: string, force = false): Promise<string> {
+async function getSessionCookieFor(origin: string, force = false): Promise<string> {
   if (force) {
     jars.delete(origin);
     logins.delete(origin);
@@ -134,7 +134,7 @@ export async function getSessionCookieFor(origin: string, force = false): Promis
 }
 
 /** Compat.: sessão logada do domínio principal (leiloesbr.com.br). */
-export async function getSessionCookie(force = false): Promise<string> {
+async function getSessionCookie(force = false): Promise<string> {
   return await getSessionCookieFor(BASE_URL, force);
 }
 
@@ -171,7 +171,7 @@ export function absorbSetCookie(url: string, response: Response): void {
   if (merged) jars.set(origin, merged);
 }
 
-export type AuthFetchInit = {
+type AuthFetchInit = {
   method?: "GET" | "POST";
   body?: string;
   referer?: string;
@@ -244,7 +244,7 @@ export async function publicFetch(url: string, init: AuthFetchInit = {}): Promis
   return await fetchWithRetry(url, init);
 }
 
-export type RawFetchResult = {
+type RawFetchResult = {
   status: number | "ERR";
   error?: string;
   finalUrl: string;

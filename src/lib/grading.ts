@@ -21,7 +21,7 @@ export const GRADE_ORDER = ["M", "NM", "EX", "VG+", "VG", "VG-", "G+", "G", "G-"
 export type Grade = (typeof GRADE_ORDER)[number];
 
 /** Score-base de cada grau (usado no cálculo de Score Final — ver `scoreCondition`). */
-export const GRADE_SCORES: Record<Grade, number> = {
+const GRADE_SCORES: Record<Grade, number> = {
   M: 100,
   NM: 90,
   EX: 80,
@@ -194,11 +194,14 @@ const COMBINED_LABELS = `CAPA\\s*(?:E|/|,)?\\s*DISCO|DISCO\\s*(?:E|/|,)?\\s*CAPA
  * ("não bom", "sem excelente"); negação mais distante ("não está em bom estado") é uma
  * limitação conhecida do regex — fica para o fallback de IA.
  */
+// `(?<![A-Z0-9])…(?![A-Z0-9])`: o grau é uma palavra INTEIRA — sem isso, depois de um rótulo
+// ("Disco de Vinil …") qualquer sigla embutida em outra palavra virava nota ("Krig-ha" → G-,
+// "Alex"/"Next" → EX, "Novos Baianos" → NOVO → M).
 function gradeAfterLabel(foldedText: string, labels: string, stopLabels = ""): Grade | null {
   const stop = stopLabels ? `(?!${stopLabels})` : "";
   const filler = `(?:${stop}[^.;!?]){0,40}?`;
   const re = new RegExp(
-    `(?:${labels})${filler}[:\\-–=]?\\s*\\(?\\s*(?<!NAO\\s)(?<!SEM\\s)(${GRADE_TOKEN})`,
+    `(?:${labels})${filler}[:\\-–=]?\\s*\\(?\\s*(?<!NAO\\s)(?<!SEM\\s)(?<![A-Z0-9])(${GRADE_TOKEN})(?![A-Z0-9])`,
     "i",
   );
   const m = foldedText.match(re);
@@ -211,7 +214,7 @@ function gradeAfterLabel(foldedText: string, labels: string, stopLabels = ""): G
  * "Se o LP possuir encarte estará nas imagens" — NÃO conta (retorna null), para não
  * marcar "tem encarte" onde a loja só diz que, se houver, aparece nas fotos.
  */
-export function detectInsert(text: string): InsertState {
+function detectInsert(text: string): InsertState {
   const t = foldUpper(text);
   if (/\bSEM\s+ENCARTE\b|\bN[AÃ]O\s+(?:POSSUI|TEM|ACOMPANHA|INCLUI)\s+ENCARTE\b/.test(t)) {
     return "nao";

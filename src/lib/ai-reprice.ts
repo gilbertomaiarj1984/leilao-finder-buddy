@@ -10,8 +10,8 @@
  * Margem dupla (relativa E absoluta) para não reavaliar a cada incremento mínimo de lance:
  * precisa subir pelo menos `REPRICE_MIN_RATIO` (20%) E `REPRICE_MIN_DELTA` (R$ 10).
  */
-export const REPRICE_MIN_RATIO = 1.2;
-export const REPRICE_MIN_DELTA = 10;
+const REPRICE_MIN_RATIO = 1.2;
+const REPRICE_MIN_DELTA = 10;
 
 /**
  * `true` quando o preço atual subiu o bastante desde a avaliação para justificar refazê-la.

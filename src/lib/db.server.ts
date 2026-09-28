@@ -4,7 +4,7 @@
 // quando DATABASE_URL está definida (client.server.ts decide qual camada usar).
 import postgres from "postgres";
 
-export type Sql = ReturnType<typeof postgres>;
+type Sql = ReturnType<typeof postgres>;
 
 // OIDs de date/timestamp/timestamptz. O postgres.js por padrão converte essas
 // colunas em objetos Date do JS; o PostgREST (Supabase) sempre devolvia string

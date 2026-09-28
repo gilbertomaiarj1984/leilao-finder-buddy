@@ -46,7 +46,7 @@ export type HouseGroup = {
  * Nº do lote como número para ordenar. Lote vazio ("", comum na listagem geral) vai para
  * o FIM: Number("") é 0, então guardamos o caso vazio antes de cair no fallback +Infinity.
  */
-export function loteNum(value: string): number {
+function loteNum(value: string): number {
   const n = value.trim() === "" ? NaN : Number(value);
   return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
 }
@@ -56,7 +56,7 @@ export function loteNum(value: string): number {
  * (ou ilegível) vai para o FIM (+Infinity), igual ao `loteNum` — usado para ordenar casas
  * por horário do leilão antes do desempate alfabético.
  */
-export function timeMinutes(value: string): number {
+function timeMinutes(value: string): number {
   const match = value.match(/(\d{1,2})[:h.]?(\d{2})?/);
   if (!match) return Number.POSITIVE_INFINITY;
   const hh = Number(match[1]);
@@ -155,9 +155,9 @@ export function computeHouseStats(
  * `bidIsWinning` (vinyl-parse.ts), que colore o card/linha; se mudar os tokens
  * aqui, ajuste lá também.
  */
-export type BidState = "winning" | "won" | "covered" | "lost";
+type BidState = "winning" | "won" | "covered" | "lost";
 
-export function classifyBid(status: string): BidState {
+function classifyBid(status: string): BidState {
   const s = (status ?? "").toLowerCase();
   if (/arremat|vencedor|arrebat/.test(s)) return "won";
   if (/venc/.test(s)) return "winning";

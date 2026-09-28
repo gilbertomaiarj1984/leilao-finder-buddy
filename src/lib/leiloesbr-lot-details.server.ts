@@ -28,7 +28,7 @@ import { auctionHouseDomain } from "./vinyl-parse";
  * nunca para a listagem inteira.
  */
 
-export type LotDetails = { currentValue?: string; nextBid?: string; sold?: string };
+type LotDetails = { currentValue?: string; nextBid?: string; sold?: string };
 
 /** Monta a URL do `peca.asp` no domínio da casa a partir da URL do lote + idPeca. */
 function pecaUrl(lotUrl: string, idPeca: string): string | null {
@@ -43,7 +43,7 @@ function pecaUrl(lotUrl: string, idPeca: string): string | null {
  * sozinho em grupos de exatamente 3 dígitos — "1.050" — é milhar). Antes só `\d+([.,]\d+)?` casava,
  * e um lote acima de R$ 999 com milhar formatado ficava sem "Atual"/"Próximo".
  */
-export function parseLoadDataNumber(raw: string | undefined): number | null {
+function parseLoadDataNumber(raw: string | undefined): number | null {
   const v = (raw ?? "").trim();
   if (!/^\d[\d.,]*$/.test(v)) return null;
   const lastDot = v.lastIndexOf(".");

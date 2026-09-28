@@ -1,7 +1,7 @@
 import { authFetch, BASE_URL, loginEmail } from "./leiloesbr-auth.server";
 import { extractArtist } from "./vinyl-parse";
 
-export type WatchTarget = { idPeca: string; idLeilao: string; base: string };
+type WatchTarget = { idPeca: string; idLeilao: string; base: string };
 
 /** Toggles the watch flag on the LeilõesBR account. Returns the resulting state. */
 export async function toggleWatchOnSite(target: WatchTarget, desired: boolean): Promise<boolean> {

@@ -832,23 +832,6 @@ export const getSoldLots = createServerFn({ method: "POST" })
   });
 
 /**
- * Captura de vendas pós-leilão sob demanda (mesma rotina do cron `step=sales`): varre o
- * catálogo de até `max` leilões terminados ainda não capturados e grava em `lot_sales`.
- * O cliente pode chamar em laço até `done` (igual ao preenchimento de nº de lote).
- */
-export const captureSales = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { max?: number } | undefined) => ({
-    max: Math.min(Math.max(Number(input?.max) || 8, 1), 20),
-  }))
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { captureFinishedSales } = await import("./lot-sales.server");
-    return await captureFinishedSales(data.max);
-  });
-
-/**
  * Reidentificação por IA das vendas (mesma rotina do cron `step=reident`): ajusta artista/álbum
  * (texto original/título → IA) e padroniza a grafia dos nomes. Usa o provedor de IA PADRÃO (o
  * selecionado no topo do site).

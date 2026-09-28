@@ -91,7 +91,6 @@ class QueryBuilder<T = Row, M extends Mode = "list"> {
   private mode: "select" | "insert" | "update" | "delete" | "upsert" = "select";
   private selectCols = "*";
   private returningCols: string | null = null;
-  private countExact = false;
   private headOnly = false;
   private filters: Filter[] = [];
   private orExpr: { col: string; op: SimpleOp; val: string }[] | null = null;
@@ -111,7 +110,6 @@ class QueryBuilder<T = Row, M extends Mode = "list"> {
   select(cols?: string, opts?: { count?: "exact"; head?: boolean }): this {
     if (this.mode === "select") {
       this.selectCols = cols ?? "*";
-      if (opts?.count === "exact") this.countExact = true;
       if (opts?.head) this.headOnly = true;
     } else {
       this.returningCols = cols ?? "*";

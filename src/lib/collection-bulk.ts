@@ -6,7 +6,7 @@ import { normalizeForMatch } from "@/lib/vinyl-parse";
  * editáveis de `collection_items` (camelCase). `wonDate` já em ISO (yyyy-mm-dd) ou null.
  * Client-safe: o preview da UI e o servidor de importação usam o MESMO parser.
  */
-export type ParsedCollectionDraft = {
+type ParsedCollectionDraft = {
   artist: string;
   album: string;
   title: string;
@@ -22,7 +22,7 @@ export type ParsedCollectionDraft = {
 };
 
 /** Resultado do parser: os discos reconhecidos e uma mensagem de erro (quando nada casou). */
-export type ParsedCollectionBulk = {
+type ParsedCollectionBulk = {
   items: ParsedCollectionDraft[];
   error: string | null;
 };

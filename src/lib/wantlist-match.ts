@@ -15,7 +15,7 @@ import {
  * `scoreWant` devolve uma probabilidade 0..1; a UI trata como casamento quando passa de
  * `WANT_MATCH_THRESHOLD` (80%).
  */
-export const WANT_MATCH_THRESHOLD = 0.8;
+const WANT_MATCH_THRESHOLD = 0.8;
 
 const YEAR_RE = /\b(?:19|20)\d{2}\b/g;
 
@@ -207,7 +207,7 @@ function tokenPresent(token: string, id: LotIdentity, fuzzyMinLen = 5): boolean 
 }
 
 /** Probabilidade 0..1 de a obra `cand` corresponder ao lote `id`. */
-export function scoreWant(cand: WantCandidate, id: LotIdentity): number {
+function scoreWant(cand: WantCandidate, id: LotIdentity): number {
   if (!cand.tokens.length) return 0;
 
   let hit = 0;
@@ -276,7 +276,7 @@ export function bestWantForLot(
  * A UI aplica dois limiares: `>= OWNED_CONFIDENT_MIN` (80%) = confiante; entre
  * `OWNED_MATCH_MIN` (60%) e 80% = incerto ("?"); abaixo não marca.
  */
-export const OWNED_MATCH_MIN = 0.6;
+const OWNED_MATCH_MIN = 0.6;
 export const OWNED_CONFIDENT_MIN = 0.8;
 /** Teto do score quando o artista NÃO foi confirmado por um campo estruturado do lote ("?"). */
 const OWNED_UNCONFIRMED_ARTIST_MAX = 0.7;
@@ -609,7 +609,7 @@ function wordsOf(id: LotIdentity): string[] {
  *  - `numbers` — números do nome (volume/parte), que precisam bater exatamente;
  *  - `selfTitled` — disco homônimo (o nome do disco é o nome do artista).
  */
-export type OwnedCandidate = {
+type OwnedCandidate = {
   id: string;
   label: string; // "Artista Álbum" para o tooltip
   artistTokens: string[];
@@ -896,7 +896,7 @@ export function ownedMatchForLot(
 // ---------------------------------------------------------------------------
 
 /** Como um disco apareceu num lote (gravado no feedback para SUGERIR em outros lotes). */
-export type OwnedSignature = { artist: string[]; album: string[]; year: number | null };
+type OwnedSignature = { artist: string[]; album: string[]; year: number | null };
 
 /** Extrai a assinatura de um lote: tokens de artista + tokens do nome do disco + ano. */
 export function ownedSignatureFromLot(parts: {

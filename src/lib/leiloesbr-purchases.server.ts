@@ -142,7 +142,7 @@ async function readTab(
  * Cara (até ~100 requisições, um por página × 2 abas × teto 50). Usar só para o backfill
  * inicial (coleção vazia) — para varreduras de rotina ver `listPurchasesForAuctions`.
  */
-export async function listPurchasesFromSite(): Promise<WonLot[]> {
+async function listPurchasesFromSite(): Promise<WonLot[]> {
   const seen = new Set<string>();
   const out: WonLot[] = [];
   await readTab(1, seen, out);
@@ -191,7 +191,7 @@ async function readAuctionTab(
  * (`id=0`, até 50 páginas × 2 abas). Bem mais barata — usar quando já sabemos quais leilões o
  * usuário pode ter vencido (ver `wonAuctionIdsFromBids` em `leiloesbr-bids.server.ts`).
  */
-export async function listPurchasesForAuctions(auctionIds: string[]): Promise<WonLot[]> {
+async function listPurchasesForAuctions(auctionIds: string[]): Promise<WonLot[]> {
   const ids = [...new Set(auctionIds.filter(Boolean))];
   const seen = new Set<string>();
   const out: WonLot[] = [];
@@ -206,33 +206,4 @@ export async function listPurchasesForAuctions(auctionIds: string[]): Promise<Wo
 export async function listVinylPurchasesForAuctions(auctionIds: string[]): Promise<WonLot[]> {
   const all = await listPurchasesForAuctions(auctionIds);
   return all.filter((w) => !looksNonVinyl(w.title));
-}
-
-/**
- * Diagnóstico da varredura (não persiste). Retorna, por aba, quantas páginas com card,
- * se viu página logada, e o total de lotes lidos + uma amostra de títulos — para saber, sem
- * acesso ao site daqui, se o problema é login, aba (`t`) ou parsing.
- */
-export async function debugPurchases(): Promise<{
-  loggedIn: boolean;
-  tabs: { t: number; pagesWithCards: number; loggedIn: boolean }[];
-  total: number;
-  vinyl: number;
-  sampleTitles: string[];
-}> {
-  const tabs: { t: number; pagesWithCards: number; loggedIn: boolean }[] = [];
-  const seen = new Set<string>();
-  const out: WonLot[] = [];
-  for (const t of [1, 0] as const) {
-    const r = await readTab(t, seen, out);
-    tabs.push({ t, ...r });
-  }
-  const vinyl = out.filter((w) => !looksNonVinyl(w.title));
-  return {
-    loggedIn: tabs.some((x) => x.loggedIn),
-    tabs,
-    total: out.length,
-    vinyl: vinyl.length,
-    sampleTitles: out.slice(0, 8).map((w) => w.title || "(título vazio)"),
-  };
 }

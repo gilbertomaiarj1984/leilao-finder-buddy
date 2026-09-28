@@ -31,7 +31,7 @@ export type AiRequest = {
 };
 
 /** Resultado de `runText`: texto + qual provedor/modelo atendeu + se houve troca (failover). */
-export type RunTextResult = {
+type RunTextResult = {
   text: string;
   provider: AiProvider;
   model: string;
@@ -88,7 +88,7 @@ export function providerConfigured(provider: AiProvider): boolean {
 }
 
 /** Lista de provedores com chave (na ordem canônica). */
-export function configuredProviders(): AiProvider[] {
+function configuredProviders(): AiProvider[] {
   return (["anthropic", "gemini"] as AiProvider[]).filter(providerConfigured);
 }
 
@@ -138,7 +138,7 @@ export function isQuotaError(error: unknown): boolean {
  * - mensagens "unavailable", "overloaded", "high demand", "try again", "timeout".
  * Ex. real do Gemini: `503 UNAVAILABLE "This model is currently experiencing high demand"`.
  */
-export function isTransientError(error: unknown): boolean {
+function isTransientError(error: unknown): boolean {
   const e = error as { status?: number; code?: number; message?: string } | null;
   const status = Number(e?.status ?? e?.code);
   if (status === 500 || status === 502 || status === 503 || status === 504) return true;

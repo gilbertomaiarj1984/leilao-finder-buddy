@@ -235,7 +235,7 @@ async function scrapePages(keep: (lot: VinylLot) => boolean): Promise<VinylLot[]
   return [...byId.values()];
 }
 
-export type FindLotMatch = {
+type FindLotMatch = {
   page: number;
   idLeilao: string;
   house: string;
@@ -583,7 +583,7 @@ export async function debugListingPages(opts: {
   };
 }
 
-export type GalleryEntry = { code: string; name: string; count: number | null };
+type GalleryEntry = { code: string; name: string; count: number | null };
 
 /**
  * Diagnóstico (Fase 1 da investigação de descoberta por "galeria" — ver
@@ -655,7 +655,7 @@ export async function listGalleries(
  * Usamos `isVinylTitle` (exige palavra de vinil no título) em vez disso — mais restritivo,
  * mas correto pra uma fonte sem confirmação de categoria da plataforma.
  */
-export type GalleryScanStats = {
+type GalleryScanStats = {
   code: string;
   name: string;
   pages: number;
@@ -667,7 +667,7 @@ export type GalleryScanStats = {
   emptyPages: number[];
 };
 
-export async function listGalleryAuctions(
+async function listGalleryAuctions(
   galleryCode: string,
   deadline = Number.POSITIVE_INFINITY,
 ): Promise<{ lots: VinylLot[]; stats: Omit<GalleryScanStats, "code" | "name"> }> {
@@ -920,21 +920,15 @@ async function latestUpdatedAt(windowStart: string, windowEnd: string): Promise<
 
 async function readLots(windowStart: string, windowEnd: string): Promise<VinylLot[]> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const out: VinylLot[] = [];
-  const PAGE = 1000;
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabaseAdmin
-      .from("lots")
-      .select(LOT_COLUMNS)
-      .gte("day_key", windowStart)
-      .lte("day_key", windowEnd)
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    const batch = (data as LotRow[] | null) ?? [];
-    for (const row of batch) out.push(rowToLot(row));
-    if (batch.length < PAGE) break;
-  }
-  return sortLots(out);
+  // Postgres direto (postgres.js) não tem o teto de 1000 linhas do PostgREST: 1 consulta só
+  // (a paginação por OFFSET sem ORDER BY podia pular/duplicar lotes entre páginas).
+  const { data, error } = await supabaseAdmin
+    .from("lots")
+    .select(LOT_COLUMNS)
+    .gte("day_key", windowStart)
+    .lte("day_key", windowEnd);
+  if (error) throw error;
+  return sortLots(((data as LotRow[] | null) ?? []).map(rowToLot));
 }
 
 /**

@@ -26,10 +26,11 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
 ## Restrições do ambiente
 
 - **Não dá para testar scraping/lance daqui** (sem rede aos sites de leilão) — validar por
-  análise estática + `bun -e` de funções puras; o **usuário** testa na prévia/produção.
-- **`bun install` funciona** (`bunfig.toml` → npm público), então `bun run build`,
-  `bunx tsc --noEmit` e `bun run lint` rodam localmente. Lint verde salvo 2 warnings
-  pré-existentes de shadcn (`ui/badge`, `ui/button`).
+  análise estática + testes de funções puras; o **usuário** testa na prévia/produção.
+- **`bun install` funciona** (`bunfig.toml` → npm público). **`bun run check`** roda tudo o que
+  dá pra validar localmente: `lint` + `typecheck` (app e `tests/`, com `noUnusedLocals`) +
+  `bun test` (testes de funções puras em `tests/*.test.ts` — acrescente um caso ao mexer em
+  parsing/grading/matching) + `knip` (código/export/dependência sem uso). `bun run build` à parte.
 - **Schema consolidado em `supabase/setup.sql`, re-executável (tudo `IF NOT EXISTS`).** Não é
   mais Supabase hospedado (esse trecho do documento é anterior ao cutover pra VPS, ver "Infra"
   abaixo) — em **produção**, `deploy.yml` reaplica `setup.sql` sozinho a cada push pra
@@ -1857,6 +1858,7 @@ seções acima; esta tabela é só "o que mudou e quando" para navegação/`grep
 | v0.87.0      | "Possível lixo" reescrito (usuário: um LP sem DVD no texto era marcado por parecer um DVD excluído): em vez de 2 palavras quaisquer em comum, compara o MOTIVO de o excluído ser lixo — (1) motivo digitado ao excluir vira expressão aprendida ("máquina de costura"), (2) indicador de tipo de objeto/formato (DVD/CD/livro/boneco…) só casa lote com o mesmo indicador, (3) senão 2+ termos raros, nunca contra lote claramente vinil. Artista/álbum do próprio lote, palavras de conteúdo e termos comuns na listagem não contam. Ver "Exclusão de lotes" |
 | v0.87.1      | Fix (usuário: "muitos casos onde o nome do álbum ficou no lugar do artista"): casas que exportam título-ficha "Álbum: Saúde \| Código: 403.6243 \| Artista(s): [`Rita Lee & Roberto`] \| Ano: 1981 \| ..." agrupavam pelo 1º campo ("Saúde \| Código"). `extractArtist` (`vinyl-parse.ts`) agora lê primeiro o campo rotulado `Artista(s)`/`Artista`/`Intérprete` (após início, "\|" ou ":"), pega o 1º nome da lista (crases/aspas/texto puro) e devolve "" para "Various"/vazio. `rowToLot` (`leiloesbr-scrape.server.ts`) rederiva do título na leitura quando o artista gravado é genérico (`isGenericArtist`, que já pega "\|"), sem esperar a próxima varredura |
 | v0.88.0      | Pedido do usuário: (1) "Próximo lance" ausente em vários vigiados/lances — o `getLotDetails` tem teto de 100 alvos e os vigiados acumulados (~180, incluindo dias passados) + lances passavam disso, cortando lotes arbitrários; agora o cliente prioriza (hoje/próximos primeiro) e busca em blocos de 50 (`useQueries`), e o parse de `NOVO_VALOR`/`VALOR_VALUE` aceita milhar formatado e número sem aspas. (2) Nota da IA acompanha o preço: nova coluna `lot_ai.eval_price` (preço da avaliação); vigiados/lances cujo preço subiu ≥20% e ≥R$ 10 são reavaliados (cron `aieval` + server fn `repriceLotAi` disparada pelo cliente com o valor ao vivo) — ver IA, "Nota acompanha o preço" |
+| v0.88.1      | Limpeza/otimização (PR A do plano de limpeza): leitores de tabela inteira (`lots`/`readLots`, `lot_sales`, `seen_auctions`, `lot_ai`, `lot_ident`, `lot_market`, `lot_condition`, `known_artists`, coleção, sondagem, compras) viram **1 consulta** em vez de paginar por `.range()` de 1000 (resquício do PostgREST; 8 deles paginavam **sem `ORDER BY`** — podiam pular/duplicar linhas); removidos os fallbacks `isMissingColumn` de `lot_sales`/`lot_market` (`setup.sql` é reaplicado a cada deploy); código morto removido (`captureSales`, `debugPurchases`, `ScoreChips`, `computeMarketDeal`, …) e ~120 `export`s só-internos; `tsconfig` com `noUnusedLocals`/`noUnusedParameters`; `knip.json` + scripts `typecheck`/`test`/`knip`/`check`; **testes** `bun test` em `tests/` (grading, vinyl-parse, parsers). Bugs achados pelos testes: grau de conservação casava sigla **dentro de palavra** depois de "Disco…" ("Krig-ha" → G-, "Alex"/"Next" → EX, "Novos Baianos" → M — agora exige palavra inteira) e **ano antes de "Disco"** virava quantidade de lote ("Construção 1971 Disco" → lote/artista "Lote"). |
 
 ## Pendências
 

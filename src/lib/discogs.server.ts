@@ -3,13 +3,13 @@
  * `fetch` direto. API gratuita, mas com **rate limit** (60 req/min com token); por isso
  * roda em background no cron, com **throttle** e cache por lote (tabela `lot_market`).
  *
- * As funções puras (buildQuery, pickBestRelease, computeMarketDeal, parsers) são testáveis
+ * As funções puras (buildQuery, pickBestRelease, parsers) são testáveis
  * com `bun -e` sem token. O parsing é DEFENSIVO: os formatos do Discogs variam e campos
  * podem faltar; nunca lançamos por causa de um campo ausente — é tudo best-effort.
  */
 import { parse } from "node-html-parser";
 
-import { normalizeForMatch, parsePrice } from "./vinyl-parse";
+import { normalizeForMatch } from "./vinyl-parse";
 
 const BASE = "https://api.discogs.com";
 const SITE = "https://www.discogs.com";
@@ -20,7 +20,7 @@ const CURRENCY = "BRL";
 // Intervalo mínimo entre chamadas (60/min = 1/s; usamos folga de ~1.1s).
 const MIN_INTERVAL_MS = 1100;
 
-export type MarketData = {
+type MarketData = {
   matched: boolean;
   releaseId: number | null;
   releaseTitle: string | null;
@@ -68,7 +68,7 @@ const MIXED_HINTS = [
  * título do lote. Limpa prefixos de "lote". Retorna null quando o texto é claramente
  * coletânea/misto ou curto demais para casar.
  */
-export function buildQuery(album: string | null, title: string): string | null {
+function buildQuery(album: string | null, title: string): string | null {
   const source = (album && album.trim()) || title || "";
   let q = source.replace(/\s+/g, " ").trim();
   let changed = true;
@@ -98,10 +98,10 @@ type SearchHit = {
 };
 
 /** O que a IA identificou, quebrado em artista/álbum/ano para casar melhor no Discogs. */
-export type ReleaseTarget = { artist: string | null; title: string | null; year: number | null };
+type ReleaseTarget = { artist: string | null; title: string | null; year: number | null };
 
 /** Extrai o 1º ano (19xx/20xx) de um texto. */
-export function extractYear(text: string): number | null {
+function extractYear(text: string): number | null {
   const m = (text ?? "").match(/\b(19|20)\d{2}\b/);
   return m ? Number(m[0]) : null;
 }
@@ -111,7 +111,7 @@ export function extractYear(text: string): number | null {
  * separa no primeiro travessão/hífen/barra (o modelo às vezes devolve "Artista / Álbum"
  * no lugar do " - " pedido); sem separador, tudo vira título. Remove o "(ano)".
  */
-export function parseAlbum(album: string): ReleaseTarget {
+function parseAlbum(album: string): ReleaseTarget {
   const year = extractYear(album);
   let s = (album ?? "")
     .replace(/\((?:\s*\d{4}\s*)\)/g, " ")
@@ -162,7 +162,7 @@ function coverage(targetTokens: string[], resultTokens: Set<string>): number {
  * coletâneas**. Rejeita (null) quando a cobertura mínima do álbum/artista não é atingida —
  * melhor não casar do que casar com o disco errado (ex.: "Let It Be" vs "1967-1970").
  */
-export function pickBestRelease(target: ReleaseTarget, results: SearchHit[]): SearchHit | null {
+function pickBestRelease(target: ReleaseTarget, results: SearchHit[]): SearchHit | null {
   if (!results?.length) return null;
   const titleToks = target.title ? normalizeForMatch(target.title).split(" ").filter(Boolean) : [];
   const artistToks = target.artist
@@ -205,23 +205,6 @@ export function pickBestRelease(target: ReleaseTarget, results: SearchHit[]): Se
   return best;
 }
 
-/**
- * Classifica o preço do lote vs. o mercado. Usa o menor preço à venda como âncora
- * principal (mais concreto); cai no sugerido quando não há oferta. "indefinido" sem base.
- */
-export function computeMarketDeal(
-  lotPriceBRL: number | null,
-  lowest: number | null,
-  suggested: number | null,
-): "barato" | "justo" | "caro" | "indefinido" {
-  if (lotPriceBRL === null) return "indefinido";
-  const ref = lowest ?? suggested;
-  if (ref === null || ref <= 0) return "indefinido";
-  if (lotPriceBRL <= ref * 0.7) return "barato";
-  if (lotPriceBRL >= ref * 1.15) return "caro";
-  return "justo";
-}
-
 // Condição de referência para o "preço sugerido" (ordem de preferência).
 const PREF_CONDITIONS = [
   "Very Good Plus (VG+)",
@@ -233,7 +216,7 @@ const PREF_CONDITIONS = [
 ];
 
 /** Extrai {price, condition} das sugestões por condição (objeto keyed por condição). */
-export function pickSuggested(
+function pickSuggested(
   suggestions: Record<string, { value?: number; currency?: string } | undefined> | null,
 ): { price: number | null; condition: string | null; currency: string | null } {
   if (!suggestions || typeof suggestions !== "object")
@@ -255,7 +238,7 @@ export function pickSuggested(
  * Extrai um valor monetário BRL de um texto do Discogs (ex.: "R$ 1.234,56", "R$45,00").
  * Formato pt-BR: ponto = milhar, vírgula = decimal. Retorna null se não achar número.
  */
-export function parseBrMoney(text: string): number | null {
+function parseBrMoney(text: string): number | null {
   const m = (text ?? "").match(/(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:,\d{1,2})?)/);
   if (!m) return null;
   const n = Number(m[1].replace(/\./g, "").replace(",", "."));
@@ -278,7 +261,7 @@ function readMoney(el: {
   return parseBrMoney(el.text);
 }
 
-export type SellListing = { price: number; shipping: number; total: number };
+type SellListing = { price: number; shipping: number; total: number };
 
 /**
  * Faz o parsing da página de venda do Discogs (`/sell/release/<id>`), já filtrada por
@@ -286,7 +269,7 @@ export type SellListing = { price: number; shipping: number; total: number };
  * frete pode não ter valor fixo → conta como 0). Estrutura-resiliente: varre as células
  * `.item_price` e busca `.price`/`.item_shipping` dentro delas.
  */
-export function parseSellPage(html: string): SellListing[] {
+function parseSellPage(html: string): SellListing[] {
   const root = parse(html);
   const cells = root.querySelectorAll(".item_price");
   const out: SellListing[] = [];
@@ -303,7 +286,7 @@ export function parseSellPage(html: string): SellListing[] {
 }
 
 /** Menor/maior total (preço + frete) e a contagem de anúncios. */
-export function summarizeListings(listings: SellListing[]): {
+function summarizeListings(listings: SellListing[]): {
   low: number | null;
   high: number | null;
   count: number;
@@ -355,7 +338,7 @@ async function discogsGet(path: string): Promise<unknown | null> {
  * por preço. Considera o TOTAL (preço + frete) de cada anúncio. Sem token (página pública);
  * best-effort — devolve tudo nulo se a página não vier/parsear.
  */
-export async function fetchBrListings(
+async function fetchBrListings(
   releaseId: number,
 ): Promise<{ low: number | null; high: number | null; count: number }> {
   await throttle();
@@ -474,9 +457,4 @@ export async function fetchMarket(album: string | null, title: string): Promise<
   if ((base.priceLowBr ?? base.priceHighBr) !== null) base.currency = CURRENCY;
 
   return base;
-}
-
-/** Conveniência: normaliza o preço BRL do lote para comparação. */
-export function lotPriceBRL(price: string): number | null {
-  return parsePrice(price);
 }

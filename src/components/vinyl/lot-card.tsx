@@ -10,7 +10,7 @@ import type { ExclusionSignal } from "@/lib/lot-exclusion";
 import { auctionStarted, bidIsSold, bidIsWinning, decodeHtmlEntities } from "@/lib/vinyl-parse";
 import { OWNED_CONFIDENT_MIN, type OwnedHit } from "@/lib/wantlist-match";
 
-export type CardLot = {
+type CardLot = {
   // Opcional só por cautela de tipagem; todo lote real tem id (chave da tabela `lots`) — sem
   // ele, o botão "refazer consulta" da IA no painel de detalhes simplesmente não aparece.
   id?: string;

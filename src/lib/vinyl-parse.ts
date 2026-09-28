@@ -82,7 +82,7 @@ export function decodeHtmlEntities(s: string): string {
   return prev.replace(/\s+/g, " ").trim();
 }
 
-export function normalize(value: string): string {
+function normalize(value: string): string {
   return value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -110,7 +110,7 @@ const RECORD_PHRASE_RE =
   /\b(?:lp\b|long\s*play|discos?\s+(?:de|em)\s+vinil|vinil\s+lp\b|compactos?\b(?!\s+disc)|(?:33|45|78)\s*rpm|album\s*:|discos?\s+lacrados?)/;
 
 /** true quando o título descreve um OBJETO que não é disco (ver `NON_RECORD_OBJECT_RE`). */
-export function isNonRecordObject(title: string): boolean {
+function isNonRecordObject(title: string): boolean {
   const t = ` ${normalize(title)} `;
   return NON_RECORD_OBJECT_RE.test(t) && !RECORD_PHRASE_RE.test(t);
 }
@@ -404,7 +404,9 @@ export function isDiscBundle(title: string): boolean {
   if (qty) {
     const rawQty = qty[1]!;
     const n = /^\d+$/.test(rawQty) ? Number(rawQty) : NUM_WORDS[rawQty];
-    if (n != null && n >= 3) return true;
+    // Um ANO colado no formato ("Construção 1971 Disco VG+") não é quantidade.
+    const isYear = n != null && n >= 1900 && n <= 2099;
+    if (n != null && n >= 3 && !isYear) return true;
   }
   if (/\b(diversos|varios|varias)\b/.test(t) && DISC_WORD.test(t)) return true;
   // "lote" sobrando em qualquer lugar (fora do rótulo já removido) + palavra de disco: cobre
@@ -661,7 +663,7 @@ export function parseInfoLine(line: string): { dayKey: string; time: string } | 
   return { dayKey, time: time!.replace(/\.$/, "") };
 }
 
-export function toDayKey(date: Date): string {
+function toDayKey(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
