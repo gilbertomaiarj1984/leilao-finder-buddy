@@ -7,10 +7,59 @@ import { getUnsoldLots } from "@/lib/leiloesbr.functions";
 
 import { usePresencialNow } from "./use-presencial-now";
 
+type UnsoldLotItem = {
+  idPeca: string;
+  lote: string | null;
+  title: string;
+  artist: string;
+  image: string | null;
+  url: string;
+};
+
+/** Card compacto de um lote sem lance — mesmo espírito visual do `LotCard` (imagem + badge do
+ * nº do lote + título), sem os controles de vigiar/lance (o pregão já terminou). */
+function UnsoldLotCard({ lot }: { lot: UnsoldLotItem }) {
+  return (
+    <a
+      href={lot.url}
+      target="_blank"
+      rel="noreferrer"
+      className="group relative flex flex-col overflow-hidden rounded-md border border-border bg-card transition hover:border-primary"
+    >
+      {lot.lote ? (
+        <span className="absolute left-2 top-2 z-10 max-w-[5rem] truncate rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-foreground shadow">
+          Lote {lot.lote}
+        </span>
+      ) : null}
+      <div className="relative h-28 w-full overflow-hidden bg-secondary">
+        {lot.image ? (
+          <img
+            src={lot.image}
+            alt=""
+            loading="lazy"
+            className="absolute inset-0 h-full w-full object-contain p-2"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
+            sem imagem
+          </div>
+        )}
+      </div>
+      <div className="flex flex-1 flex-col gap-0.5 p-2">
+        {lot.artist ? (
+          <p className="truncate text-xs font-medium text-foreground">{lot.artist}</p>
+        ) : null}
+        <p className="line-clamp-2 text-xs leading-snug text-muted-foreground">{lot.title}</p>
+      </div>
+    </a>
+  );
+}
+
 /**
  * Link "pregão presencial" da linha da casa (dia principal / vigiados) — perde sentido assim
  * que os lotes acabam, então vira o acesso à lista de lotes sem lance daquele pregão
- * (`getUnsoldLots`, sob demanda ao expandir).
+ * (`getUnsoldLots`). Busca assim que detecta o fim (não só ao expandir) para já mostrar o
+ * total de lotes do catálogo ao lado do botão; a lista em cards só renderiza ao expandir.
  *
  * Fim do pregão: sinal PRECISO de `usePresencialNow` (peça atual = total) OU, quando esse
  * dado não vem (`isFinished` nunca fica `true`), a heurística de 3h já usada pelo badge
@@ -34,7 +83,7 @@ export function PresencialOrUnsoldLink({
   const query = useQuery({
     queryKey: ["unsold-lots", idLeilao] as const,
     queryFn: () => fetchUnsold({ data: { idLeilao, presencialUrl } }),
-    enabled: open && isFinished,
+    enabled: isFinished,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -52,7 +101,14 @@ export function PresencialOrUnsoldLink({
     );
   }
 
-  const lots = query.data ?? [];
+  const lots = query.data?.lots ?? [];
+  const total = query.data?.total ?? null;
+  const countLabel = query.isLoading
+    ? "lotes sem lance…"
+    : total !== null
+      ? `lotes sem lance (${lots.length} de ${total})`
+      : `lotes sem lance (${lots.length})`;
+
   return (
     <>
       <button
@@ -63,7 +119,7 @@ export function PresencialOrUnsoldLink({
         title="Pregão encerrado — ver lotes sem lance"
       >
         <ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
-        lotes sem lance
+        {countLabel}
       </button>
       {open ? (
         <div className="basis-full">
@@ -72,22 +128,11 @@ export function PresencialOrUnsoldLink({
           ) : lots.length === 0 ? (
             <p className="text-xs text-muted-foreground">Nenhum lote sem lance encontrado.</p>
           ) : (
-            <ul className="mt-1 flex flex-col gap-0.5 text-xs">
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {lots.map((lot) => (
-                <li key={lot.idPeca}>
-                  <a
-                    href={lot.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-muted-foreground hover:text-primary hover:underline"
-                  >
-                    {lot.lote ? `Lote ${lot.lote} — ` : ""}
-                    {lot.artist ? `${lot.artist} — ` : ""}
-                    {lot.title}
-                  </a>
-                </li>
+                <UnsoldLotCard key={lot.idPeca} lot={lot} />
               ))}
-            </ul>
+            </div>
           )}
         </div>
       ) : null}
