@@ -61,7 +61,10 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
      Esquecidos** — outras casas podem exigir ajuste). Só usar quando o JSON não vier (`JSON.parse`
      falha → casa não usa o template novo).
   - **1 requisição por LEILÃO** (paginada) — nunca por lote. Usado por: `fetchLoteMap` (nº do
-    lote), `lot-sales.server.ts` (histórico de vendas/Vinil Analytics).
+    lote), `lot-sales.server.ts` (histórico de vendas/Vinil Analytics), `unsold-lots.server.ts`
+    (v0.89.0 — lotes SEM lance, o inverso do filtro de vendas: mesma fonte, sob DEMANDA do
+    usuário quando o pregão termina, não pelo cron; cache em memória de 5 min evita bater o
+    catálogo de novo ao abrir/fechar a lista na mesma sessão — ver `docs/areas/ui.md`).
 - **Peça individual** (`leiloesbr-lot-details.server.ts`, `fetchLotDetails`/`fetchOne`):
   `<domínio>/peca.asp?id=<idPeca>` (ou `?ID=`, mesma página) — HTML com um JSON `loadData`
   embutido que traz os **MESMOS campos do catálogo, só que para ESSE lote**: `NOVO_VALOR`

@@ -7,7 +7,6 @@ import {
   ExternalLink,
   Gavel,
   Loader2,
-  Radio,
   RefreshCw,
   Sparkles,
 } from "lucide-react";
@@ -37,6 +36,7 @@ import {
   type HouseGroup,
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
+import { PresencialOrUnsoldLink } from "@/components/vinyl/presencial-or-unsold-link";
 import { auctionFinished, UNCLASSIFIED_LABEL } from "@/lib/vinyl-parse";
 
 import type { DashboardData } from "./use-dashboard-data";
@@ -350,15 +350,10 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     <AuctionStatusInline info={auctionInfo} />
                     <div className="ml-auto flex flex-wrap items-center gap-3">
                       {auctionInfo?.presencialUrl ? (
-                        <a
-                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                          href={auctionInfo.presencialUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          title="Acompanhar o pregão presencial desta casa"
-                        >
-                          <Radio className="h-3 w-3" /> pregão presencial
-                        </a>
+                        <PresencialOrUnsoldLink
+                          presencialUrl={auctionInfo.presencialUrl}
+                          idLeilao={auctionInfo.idLeilao}
+                        />
                       ) : null}
                       <a
                         className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
@@ -590,15 +585,10 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     <AuctionStatusInline info={auctionInfo} />
                     <div className="ml-auto flex flex-wrap items-center gap-3">
                       {auctionInfo?.presencialUrl ? (
-                        <a
-                          className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                          href={auctionInfo.presencialUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          title="Acompanhar o pregão presencial desta casa"
-                        >
-                          <Radio className="h-3 w-3" /> pregão presencial
-                        </a>
+                        <PresencialOrUnsoldLink
+                          presencialUrl={auctionInfo.presencialUrl}
+                          idLeilao={auctionInfo.idLeilao}
+                        />
                       ) : null}
                       <a
                         className="inline-flex items-center gap-1 text-xs text-primary hover:underline"

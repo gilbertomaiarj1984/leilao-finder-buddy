@@ -584,6 +584,41 @@ Selo `LiveLotNow` (`src/components/vinyl/live-lot-now.tsx`): "🔨 Lote 457" + m
   deduplicada com a lista principal/`/ao-vivo` quando a mesma casa aparece nos dois — nenhuma
   requisição extra.
 
+## Lotes sem lance ao fim do pregão + saída de "Acontecendo agora" (v0.89.0)
+
+Reaproveita o mesmo dado de `getPresencialNow` (`peça atual`/`total`) como sinal PRECISO de que
+os lotes de uma casa acabaram (`peca >= total`) — bem mais confiável que a janela de 3h
+(`auctionFinished`), que continua intacta e só serve `captureFinishedSales`/badge "Encerrado".
+Hook compartilhado `usePresencialNow(url)` (`src/components/vinyl/use-presencial-now.ts`),
+mesmo `useQuery`/`queryKey ["presencial-now", url]` de `LiveLotNow`/`HouseInfoLine` (dedup entre
+telas), com `isFinished` derivado.
+
+- **Link "pregão presencial" → "lotes sem lance":** nas linhas de casa que hoje mostram o link
+  (dia principal e Vigiados do dia em `day-tab.tsx`, aba Vigiados global em `watched-tab.tsx`),
+  o link vira `PresencialOrUnsoldLink` (`src/components/vinyl/presencial-or-unsold-link.tsx`):
+  sem sinal de fim, mostra o link de sempre; com `isFinished`, mostra "lotes sem lance", que
+  expande (sob clique, `enabled: open && isFinished`) a lista vinda de `getUnsoldLots`.
+  `HouseAuctionInfo`/`houseAuctionInfo` (`grouping.ts`) ganham o campo `idLeilao` (já disponível
+  no lote) para a nova server function.
+- **Servidor — `getUnsoldLotsForAuction`** (`src/lib/unsold-lots.server.ts`, exposta como
+  `getUnsoldLots` em `leiloesbr.functions.ts`): busca o catálogo da casa sob demanda
+  (`fetchCatalogData`, mesma fonte de `captureFinishedSales`) e devolve o INVERSO do filtro de
+  vendas — lotes sem `sold`, com os mesmos filtros de identidade que `salesRowsFromCatalog` já
+  usa (`looksNonVinylSale` de `vinyl-parse.ts`; `looksVinyl`/`bestCatalogTitle`, agora
+  `export`ados de `lot-sales.server.ts` para reaproveitar sem duplicar). Cruza `idPeca` com a
+  tabela `lots` (por `id_leilao`) para título/artista/foto conhecidos; sem correspondência, cai
+  no mesmo fallback de `bestCatalogTitle`/`extractArtist`. Sem persistência — cache em memória
+  com TTL de 5 min (mesmo espírito de `leiloesbr-presencial.server.ts`) só para não bater o
+  catálogo repetidamente se o usuário abrir/fechar a lista.
+- **"Acontecendo agora" some a casa ao terminar:** `LiveAuctions` (`live-auctions.tsx`) consulta
+  `getPresencialNow` de TODAS as casas listadas (`useQueries`, mesma `queryKey`/config de
+  `usePresencialNow` — dedup com as outras telas) e filtra da grade qualquer casa com
+  `isFinished`, incluindo no contador do cabeçalho. A casa continua disponível o dia inteiro na
+  aba principal por dia e em `/ao-vivo` (que listam por `day_key`, não pela janela de 3h de
+  `listLiveAuctions`) — só o card "Acontecendo agora" (que é temporário) esconde.
+- **Sem dado de presencial** (casa cujo pregão presencial não responde): `isFinished` fica
+  `false` em todos os pontos acima — comportamento idêntico ao de antes desta versão.
+
 ## Painel de mudanças — DESCONTINUADO (v0.25.0)
 
 A página **`/dashboard`** foi removida (home/Análise/Ao vivo cobrem o uso). Chave órfã
