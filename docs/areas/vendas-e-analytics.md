@@ -37,7 +37,7 @@ ver "Estrutura do card do catálogo" abaixo; outras casas podem exigir ajuste de
 - **`sold_date` = data do LEILÃO** (`seen_auctions.day_key`), não a da captura — âncora
   temporal do histórico. `artist`/`title` = do nosso lote de vinil (`lots`). Agendamento: cron
   `step=sales` (`cron.server.ts` + `refresh.yml`; reset com `?step=sales&reset=1`). Server fns
-  `getVinylSales` (ler) e `captureSales` (disparar sob demanda) em `leiloesbr.functions.ts`.
+  `getVinylSales` (ler) em `analytics.functions.ts` (a captura roda pelo cron `step=sales`).
 
 ### Estrutura do card do catálogo (descobertas — Discos Esquecidos, leilões br)
 
@@ -93,7 +93,7 @@ Visão de mercado por obra, independente da casa de leilão, sobre o histórico 
   Coleção): **`analytics_artist_aliases`** (`Record<artistKey, nome>`) e
   **`analytics_album_aliases`** (`Record<"${artistKeyFinal}|${albumKey}", nome>`). Server
   (`app-state.server.ts`): `getAnalyticsAliases`/`setAnalyticsArtistAlias`/
-  `setAnalyticsAlbumAlias`/`clearAnalyticsAlias`; server fns homônimas em `leiloesbr.functions.ts`.
+  `setAnalyticsAlbumAlias`/`clearAnalyticsAlias`; server fns homônimas em `analytics.functions.ts`.
   Aplicado dentro de **`buildAnalytics(rows, aliases)`** ANTES de agregar (re-chaveia o grupo pelo
   nome canônico; `override` vence `pickCanonical`). `ArtistAgg`/`AlbumAgg` expõem `key` (chave
   final) e `sourceKeys` (chaves originais) para os diálogos persistirem as fusões — assim as
@@ -197,7 +197,7 @@ Curadoria de **exclusão** (ocultar, NÃO deletar do banco) — reversível, apl
   "Ocultos" exibir e reincluir — o agrupamento usa apenas as CHAVES. Server em `app-state.server.ts`
   (`setAnalyticsExcludedSale`/`setAnalyticsExcludedArtist`, lidos junto em `getAnalyticsAliases`,
   que agora devolve `excludedSales`/`excludedArtists`) + server fns homônimas em
-  `leiloesbr.functions.ts`.
+  `analytics.functions.ts`.
 - **`buildAnalytics`** pula a venda cujo `lot_id` está em `excludedSales` (logo no topo do loop) e o
   grupo cujo artista casa `excludedArtists` — pela **chave final** (grupo exibido) OU pela **chave
   original** (robusto a fusão/apelido). Ao excluir um artista, gravamos a `key` final + as

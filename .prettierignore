@@ -8,5 +8,4 @@ bun.lock
 routeTree.gen.ts
 
 # Arquivos gerados/externos
-src/integrations/supabase/types.ts
 tools

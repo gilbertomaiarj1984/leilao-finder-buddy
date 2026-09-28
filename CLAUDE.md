@@ -61,13 +61,15 @@ versão obrigatório em todo PR, atualizar a documentação (página da área + 
   `src/lib/auth.server.ts` (rotas `/api/auth/google/*` tratadas em `src/server.ts`, fora das
   server functions) — cookie de sessão HttpOnly assinado por HMAC. Acesso restrito a um único
   e-mail (`LEILOESBR_EMAIL`, checado em `src/lib/access.server.ts`).
-- **Dados**: Postgres próprio, acessado no servidor via `src/lib/db.server.ts` (`postgres.js`) +
-  o shim `src/lib/db-query.server.ts` (builder encadeável que reproduz a fatia usada do
-  PostgrestQueryBuilder — mantém os call sites `supabaseAdmin.from(...)` de antes da migração).
+- **Dados**: Postgres próprio, acessado no servidor via `db` (`src/lib/db-client.server.ts`) —
+  builder encadeável `db.from(...).select/eq/upsert/...` (`db-query.server.ts`, estilo
+  PostgREST, herdado da época do Supabase) sobre `postgres.js` (`db.server.ts`). Server
+  functions usam o middleware `requireAuth` (`src/lib/auth-middleware.ts`).
   Módulos `*.server.ts` em `src/lib/` só rodam no servidor (convenção de sufixo, reforçada pelo
   `no-restricted-imports` do ESLint em vez do pacote `server-only` do Next.js); os
-  `*.functions.ts` expõem essa lógica como server functions do TanStack Start para o cliente
-  chamar via React Query.
+  `*.functions.ts` expõem essa lógica como server functions do TanStack Start, um arquivo por
+  domínio (`leiloesbr` = lotes/lances/pregão, `ai`, `analytics`, `collection`, `wantlist`,
+  `purchases`, `lot-exclusion`, `leiloesbr-watch`, `auth`).
 - **Endpoint de cron fora das server functions**: `/api/cron` é tratado direto em
   `src/server.ts` (sem CSRF), protegido por `CRON_TOKEN` (header, comparação em tempo
   constante). Disparado 3×/dia por `.github/workflows/refresh.yml`, com vários `step`s
@@ -79,7 +81,8 @@ versão obrigatório em todo PR, atualizar a documentação (página da área + 
   origem (cada casa/domínio tem seu próprio cookie). Dados são persistidos por **merge/upsert**
   na tabela `lots` (nunca apagam o que não veio na varredura atual).
 - **IA**: camada multi-provedor plugável (Claude via `@anthropic-ai/sdk`, Gemini via REST) em
-  `src/lib/ai-provider.server.ts`, ponto único `runText(req, provider)`. Totalmente opcional —
+  `src/lib/ai-provider.server.ts`, ponto único `runText(req, provider)`; prompts/parsing em
+  `ai-eval.server.ts` (lotes), `ai-collection.server.ts` e `ai-condition.server.ts`. Totalmente opcional —
   sem chaves configuradas, vira no-op e o app segue funcionando. Provedor padrão selecionável
   na UI, persistido em `app_state`.
 - **Estado global sem tabelas dedicadas**: a tabela `app_state` (chave/valor) guarda
@@ -90,8 +93,10 @@ versão obrigatório em todo PR, atualizar a documentação (página da área + 
   fora de `*.server.ts` para ser reutilizável no cliente e testável isoladamente — por exemplo
   `src/lib/grading.ts` (conservação disco/capa), `src/lib/vinyl-parse.ts`,
   `src/lib/wantlist-match.ts`, `src/lib/analytics.ts`, `src/components/vinyl/grouping.ts`.
-- **State management**: Redux Toolkit (`src/store/`) para estado de UI local + TanStack Query
-  para dados do servidor (cache, invalidação, escrita otimista).
+- **State management**: estado de UI local em `useState` + TanStack Query para dados do
+  servidor. Queries compartilhadas entre telas ficam em `src/lib/queries.ts` (hooks
+  `useXQuery()` + `queryKeys` para invalidar/`setQueryData`) — não redefinir `useQuery` de uma
+  chave que já existe lá.
 - **UI**: componentes shadcn-style em `src/components/ui/` (gerados, não seguem
   necessariamente o lint estrito) + componentes de domínio em `src/components/vinyl/`.
   Tailwind v4 via `@tailwindcss/vite`.

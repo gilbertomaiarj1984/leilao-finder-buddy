@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { db } from "@/lib/db-client.server";
 
 /**
  * Identificação SIMPLIFICADA da IA de UM lote, como fica no banco (`lot_ident`) e como a
@@ -26,7 +26,7 @@ const ALL_TTL_MS = 30_000;
 export async function getAllLotIdent(): Promise<LotIdentRow[]> {
   if (allCache && Date.now() - allCache.at < ALL_TTL_MS) return allCache.rows;
   const rows: LotIdentRow[] = [];
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from<LotIdentRow>("lot_ident")
     .select("id, title_hash, album, year, confidence, source, model");
   if (error) throw error;
@@ -60,7 +60,7 @@ export async function upsertLotIdent(rows: LotIdentRow[]): Promise<number> {
     model: r.model,
     evaluated_at: evaluatedAt,
   }));
-  const { error } = await supabaseAdmin.from("lot_ident").upsert(payload, { onConflict: "id" });
+  const { error } = await db.from("lot_ident").upsert(payload, { onConflict: "id" });
   if (error) {
     // Ver lot-orphan-guard.server.ts: `lot_ident` tem FK ON DELETE CASCADE pra `lots(id)`, mas
     // quem chama aqui (ex. `reidentifyAllSales`) trabalha em cima de `lot_sales` — histórico
@@ -79,7 +79,7 @@ export async function upsertLotIdent(rows: LotIdentRow[]): Promise<number> {
         );
       }
       if (!filtered.length) return 0;
-      const { error: retryError } = await supabaseAdmin
+      const { error: retryError } = await db
         .from("lot_ident")
         .upsert(filtered, { onConflict: "id" });
       if (retryError) {

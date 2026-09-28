@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { db } from "@/lib/db-client.server";
 
 /**
  * Avaliação da IA de UM lote, como fica no banco (`lot_ai`) e como a UI consome.
@@ -42,7 +42,7 @@ const ALL_TTL_MS = 30_000;
 export async function getAllLotAi(): Promise<LotAiRow[]> {
   if (allCache && Date.now() - allCache.at < ALL_TTL_MS) return allCache.rows;
   const rows: LotAiRow[] = [];
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from<LotAiRow>("lot_ai")
     .select("id, title_hash, score, rarity, deal, album, reason, tags, model, eval_price");
   if (error) throw error;
@@ -83,7 +83,7 @@ export async function updateLotTags(id: string, tags: string[]): Promise<string[
     clean.push(v);
     if (clean.length >= 20) break;
   }
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from("lot_ai")
     .update({ tags: clean })
     .eq("id", id)
@@ -118,7 +118,7 @@ export async function upsertLotAi(rows: LotAiRow[]): Promise<number> {
     eval_price: r.eval_price,
     evaluated_at: evaluatedAt,
   }));
-  const { error } = await supabaseAdmin.from("lot_ai").upsert(payload, { onConflict: "id" });
+  const { error } = await db.from("lot_ai").upsert(payload, { onConflict: "id" });
   if (error) {
     // Ver lot-orphan-guard.server.ts: `lot_ai` tem FK ON DELETE CASCADE pra `lots(id)`; um lote
     // podado/excluído entre a seleção do batch e este upsert vira linha órfã que quebra o
@@ -134,9 +134,7 @@ export async function upsertLotAi(rows: LotAiRow[]): Promise<number> {
         );
       }
       if (!filtered.length) return 0;
-      const { error: retryError } = await supabaseAdmin
-        .from("lot_ai")
-        .upsert(filtered, { onConflict: "id" });
+      const { error: retryError } = await db.from("lot_ai").upsert(filtered, { onConflict: "id" });
       if (retryError) {
         console.error("[lot-ai] falha ao gravar avaliações", retryError);
         throw new Error(`Não foi possível gravar as avaliações: ${retryError.message}`);

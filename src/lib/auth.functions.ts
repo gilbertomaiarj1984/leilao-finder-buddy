@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 /**
  * Só checa se existe uma sessão válida (qualquer conta Google) — usado pelo gate
  * em `_authenticated/route.tsx`. A checagem fina de "é o e-mail autorizado?" fica
- * em `getAccessStatus` (leiloesbr.functions.ts), atrás de `requireSupabaseAuth`.
+ * em `getAccessStatus` (leiloesbr.functions.ts), atrás de `requireAuth`.
  * Sem middleware de auth aqui de propósito: precisa responder `{ email: null }`
  * em vez de lançar quando não há sessão.
  */

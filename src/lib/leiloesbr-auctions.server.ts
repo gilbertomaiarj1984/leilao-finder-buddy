@@ -95,8 +95,8 @@ export async function recordAuctions(lots: VinylLot[]): Promise<void> {
   });
 
   try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin.from("seen_auctions").upsert(rows, { onConflict: "id_leilao" });
+    const { db } = await import("@/lib/db-client.server");
+    await db.from("seen_auctions").upsert(rows, { onConflict: "id_leilao" });
   } catch (error) {
     console.error("[leiloesbr] falha ao registrar leilões vistos", error);
   }
@@ -110,10 +110,10 @@ export async function recordAuctions(lots: VinylLot[]): Promise<void> {
  */
 export async function listLiveAuctions(windowHours = 3): Promise<PresencialAuction[]> {
   try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { db } = await import("@/lib/db-client.server");
     const now = Date.now();
     const from = new Date(now - windowHours * 60 * 60 * 1000).toISOString();
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("seen_auctions")
       .select(
         "id_leilao, house, house_url, entry_url, day_key, start_time, starts_at, lot_count, sample_titles, uf",
@@ -145,7 +145,7 @@ const SEEN_AUCTIONS_RETENTION_DAYS = 14;
 export async function pruneSeenAuctions(): Promise<{ pruned: number }> {
   try {
     const { getSalesCaptured } = await import("./app-state.server");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { db } = await import("@/lib/db-client.server");
     const captured = await getSalesCaptured();
     if (!captured.size) return { pruned: 0 };
 
@@ -155,7 +155,7 @@ export async function pruneSeenAuctions(): Promise<{ pruned: number }> {
     const cutoff = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
       cutoffDate,
     );
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("seen_auctions")
       .select("id_leilao")
       .in("id_leilao", [...captured])
@@ -164,10 +164,7 @@ export async function pruneSeenAuctions(): Promise<{ pruned: number }> {
     const ids = (data as { id_leilao: string }[] | null)?.map((r) => r.id_leilao) ?? [];
     if (!ids.length) return { pruned: 0 };
 
-    const { error: delError } = await supabaseAdmin
-      .from("seen_auctions")
-      .delete()
-      .in("id_leilao", ids);
+    const { error: delError } = await db.from("seen_auctions").delete().in("id_leilao", ids);
     if (delError) throw delError;
     return { pruned: ids.length };
   } catch (error) {
@@ -188,9 +185,9 @@ function todayDayKey(): string {
  */
 export async function listTodayAuctions(): Promise<PresencialAuction[]> {
   try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { db } = await import("@/lib/db-client.server");
     const today = todayDayKey();
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("seen_auctions")
       .select(
         "id_leilao, house, house_url, entry_url, day_key, start_time, starts_at, lot_count, sample_titles, uf",

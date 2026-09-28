@@ -19,29 +19,31 @@ import {
   type ArtistAgg,
   type SaleRow,
 } from "@/lib/analytics";
+import { setAiProvider, setGeminiModel } from "@/lib/ai.functions";
 import {
   clearAnalyticsAlias,
-  getAiProvider,
-  getAnalyticsAliases,
-  getGeminiModel,
   getTodayPublicAnalyticsToken,
   getVinylSales,
   reidentifySales,
-  setAiProvider,
   setAnalyticsAlbumAlias,
   setAnalyticsArtistAlias,
   setAnalyticsExcludedArtist,
   setAnalyticsExcludedSale,
   setAnalyticsSaleOverride,
-  setGeminiModel,
-} from "@/lib/leiloesbr.functions";
+} from "@/lib/analytics.functions";
+import {
+  useAiProviderQuery,
+  useAnalyticsAliasesQuery,
+  useGeminiModelQuery,
+  queryKeys,
+} from "@/lib/queries";
 
 export const Route = createFileRoute("/_authenticated/vinil-analytics")({
   head: () => ({ meta: [{ title: "Vinil Analytics — Garimpo de Vinil" }] }),
   component: VinilAnalyticsPage,
 });
 
-// Página autenticada: busca os dados via server functions protegidas (`requireSupabaseAuth` +
+// Página autenticada: busca os dados via server functions protegidas (`requireAuth` +
 // `assertAllowed`), monta os handlers de MUTAÇÃO (curadoria, IA, exclusões) e delega TODA a
 // apresentação para `AnalyticsView` (compartilhada com a página pública somente-leitura,
 // `/vinil-analytics-publico` — ver `src/components/vinyl/analytics-view.tsx`). Único cuidado
@@ -51,11 +53,8 @@ function VinilAnalyticsPage() {
   const queryClient = useQueryClient();
   const fetchSales = useServerFn(getVinylSales);
   const runReident = useServerFn(reidentifySales);
-  const fetchAiProvider = useServerFn(getAiProvider);
   const runSetAiProvider = useServerFn(setAiProvider);
-  const fetchGeminiModel = useServerFn(getGeminiModel);
   const runSetGeminiModel = useServerFn(setGeminiModel);
-  const fetchAliases = useServerFn(getAnalyticsAliases);
   const runSetArtistAlias = useServerFn(setAnalyticsArtistAlias);
   const runSetAlbumAlias = useServerFn(setAnalyticsAlbumAlias);
   const runClearAlias = useServerFn(clearAnalyticsAlias);
@@ -73,48 +72,33 @@ function VinilAnalyticsPage() {
 
   // Apelidos (curadoria manual do agrupamento — renomear/fundir artistas e álbuns). Fonte da
   // verdade no servidor (`app_state`); aplicados em `buildAnalytics`. Escrita otimista.
-  const aliasesQuery = useQuery({
-    queryKey: ["analytics-aliases"] as const,
-    queryFn: () => fetchAliases(),
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const aliasesQuery = useAnalyticsAliasesQuery();
 
   // Provedor de IA PADRÃO (o mesmo do topo da home/Coleção) — fonte da verdade no servidor.
-  const aiProviderQuery = useQuery({
-    queryKey: ["ai-provider"] as const,
-    queryFn: () => fetchAiProvider(),
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const aiProviderQuery = useAiProviderQuery();
   const aiProvider: AiProvider = aiProviderQuery.data ?? "anthropic";
   const changeAiProvider = (provider: AiProvider) => {
     const prev = aiProviderQuery.data;
-    queryClient.setQueryData(["ai-provider"], provider); // otimista
+    queryClient.setQueryData(queryKeys.aiProvider, provider); // otimista
     void runSetAiProvider({ data: { provider } })
       .then(() => toast.success(`Provedor padrão: ${AI_PROVIDER_SHORT[provider]}`))
       .catch((error: unknown) => {
-        queryClient.setQueryData(["ai-provider"], prev);
+        queryClient.setQueryData(queryKeys.aiProvider, prev);
         toast.error((error as Error)?.message || "Não foi possível salvar o provedor de IA");
       });
   };
 
   // Modelo do Gemini (Flash-Lite/Flash/Pro) — vale mesmo com Claude escolhido: o failover
   // por falta de créditos pode acabar caindo no Gemini com esse modelo.
-  const geminiModelQuery = useQuery({
-    queryKey: ["gemini-model"] as const,
-    queryFn: () => fetchGeminiModel(),
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const geminiModelQuery = useGeminiModelQuery();
   const geminiModel: GeminiModel = geminiModelQuery.data ?? "gemini-3.1-flash-lite";
   const changeGeminiModel = (model: GeminiModel) => {
     const prev = geminiModelQuery.data;
-    queryClient.setQueryData(["gemini-model"], model); // otimista
+    queryClient.setQueryData(queryKeys.geminiModel, model); // otimista
     void runSetGeminiModel({ data: { model } })
       .then(() => toast.success(`Modelo do Gemini: ${model}`))
       .catch((error: unknown) => {
-        queryClient.setQueryData(["gemini-model"], prev);
+        queryClient.setQueryData(queryKeys.geminiModel, prev);
         toast.error((error as Error)?.message || "Não foi possível salvar o modelo do Gemini");
       });
   };
@@ -131,7 +115,7 @@ function VinilAnalyticsPage() {
     };
   };
   const revertAliases = (prev: AnalyticsAliases | undefined) =>
-    queryClient.setQueryData(["analytics-aliases"], prev);
+    queryClient.setQueryData(queryKeys.analyticsAliases, prev);
 
   // Grava um apelido de ARTISTA (renomear/fundir). Update otimista no cache dos apelidos → o
   // `AnalyticsView` recomputa na hora; em erro, reverte.
@@ -139,7 +123,7 @@ function VinilAnalyticsPage() {
     const prev = aliasesQuery.data;
     const next = cloneAliases();
     for (const k of sourceKeys) next.artists![k] = name;
-    queryClient.setQueryData(["analytics-aliases"], next);
+    queryClient.setQueryData(queryKeys.analyticsAliases, next);
     void runSetArtistAlias({ data: { sourceKeys, name } })
       .then(() => toast.success(`Artista atualizado: ${name}`))
       .catch((error: unknown) => {
@@ -153,7 +137,7 @@ function VinilAnalyticsPage() {
     const prev = aliasesQuery.data;
     const next = cloneAliases();
     for (const k of keys) next.albums![k] = name;
-    queryClient.setQueryData(["analytics-aliases"], next);
+    queryClient.setQueryData(queryKeys.analyticsAliases, next);
     void runSetAlbumAlias({ data: { keys, name } })
       .then(() => toast.success(`Álbum atualizado: ${name}`))
       .catch((error: unknown) => {
@@ -167,7 +151,7 @@ function VinilAnalyticsPage() {
     const prev = aliasesQuery.data;
     const next = cloneAliases();
     for (const k of artist.sourceKeys) delete next.artists![k];
-    queryClient.setQueryData(["analytics-aliases"], next);
+    queryClient.setQueryData(queryKeys.analyticsAliases, next);
     void Promise.all(
       artist.sourceKeys.map((key) => runClearAlias({ data: { kind: "artist", key } })),
     )
@@ -190,7 +174,7 @@ function VinilAnalyticsPage() {
       if (value.album.trim()) entry.album = value.album.trim();
       next.sales![lotId] = entry;
     }
-    queryClient.setQueryData(["analytics-aliases"], next);
+    queryClient.setQueryData(queryKeys.analyticsAliases, next);
     void runSetSaleOverride({
       data: {
         lotId,
@@ -212,7 +196,7 @@ function VinilAnalyticsPage() {
     const next = cloneAliases();
     if (excluded) next.excludedSales![lotId] = label.trim() || lotId;
     else delete next.excludedSales![lotId];
-    queryClient.setQueryData(["analytics-aliases"], next);
+    queryClient.setQueryData(queryKeys.analyticsAliases, next);
     void runExcludeSale({ data: { lotId, excluded, label } })
       .then(() => toast.success(excluded ? "Venda ocultada do Analytics" : "Venda reincluída"))
       .catch((error: unknown) => {
@@ -231,7 +215,7 @@ function VinilAnalyticsPage() {
       if (excluded) next.excludedArtists![k] = artist.artist;
       else delete next.excludedArtists![k];
     }
-    queryClient.setQueryData(["analytics-aliases"], next);
+    queryClient.setQueryData(queryKeys.analyticsAliases, next);
     void runExcludeArtist({ data: { keys, excluded, label: artist.artist } })
       .then(() =>
         toast.success(excluded ? `Artista ocultado: ${artist.artist}` : "Artista reincluído"),

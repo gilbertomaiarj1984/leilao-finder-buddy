@@ -1,6 +1,5 @@
 import { parseAiAlbum } from "@/components/vinyl/ai-score-utils";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
+import { db } from "@/lib/db-client.server";
 import {
   collectionPathFromUrl,
   getCollectionPublicUrl,
@@ -47,6 +46,33 @@ export type CollectionItem = {
   sourceUrl: string;
   position: number;
 };
+
+/** Colunas graváveis de `collection_items` (espelha `supabase/setup.sql`; todas opcionais). */
+type CollectionItemWrite = Partial<{
+  album: string;
+  artist: string;
+  condition_media: string;
+  condition_sleeve: string;
+  created_at: string;
+  description: string;
+  house: string;
+  id: string;
+  image: string | null;
+  lot_id: string | null;
+  market_high: string | null;
+  market_low: string | null;
+  notes: string;
+  position: number;
+  source: string;
+  source_url: string;
+  tags: string[];
+  title: string;
+  uf: string;
+  updated_at: string;
+  won_date: string | null;
+  won_price: string;
+  year: number | null;
+}>;
 
 const COLS =
   "id, lot_id, source, artist, album, title, year, image, house, uf, won_price, won_date, condition_media, condition_sleeve, notes, description, tags, market_low, market_high, source_url, position";
@@ -103,7 +129,7 @@ function toItem(r: DbRow): CollectionItem {
 
 /** Lê a coleção inteira, ordenada por artista e depois posição (single-user). */
 export async function getAllCollection(): Promise<CollectionItem[]> {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from("collection_items")
     .select(COLS)
     .order("artist", { ascending: true })
@@ -200,7 +226,8 @@ export async function reidentifyCollection(
   max = 12,
   onlyUnidentified = true,
 ): Promise<ReidentifyResult> {
-  const { aiConfigured, identCollectionSync } = await import("./ai-eval.server");
+  const { aiConfigured } = await import("./ai-eval.server");
+  const { identCollectionSync } = await import("./ai-collection.server");
   if (!aiConfigured()) {
     throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
   }
@@ -237,7 +264,7 @@ export async function reidentifyCollection(
 
   // Classificação GRÁTIS pelo título: conjuntos → "Lote". O resto (inclusive coletâneas, que
   // ainda podem ganhar álbum/ano da IA) vai à passada por texto.
-  const patches = new Map<string, TablesUpdate<"collection_items">>();
+  const patches = new Map<string, CollectionItemWrite>();
   const aiNeeded: CollectionItem[] = [];
   for (const item of batch) {
     if (isDiscBundle(item.title)) {
@@ -275,7 +302,7 @@ export async function reidentifyCollection(
     const year = r?.year ?? null;
 
     artist = canonicalArtist(artist, item.title);
-    const patch: TablesUpdate<"collection_items"> = {};
+    const patch: CollectionItemWrite = {};
     // Descritivo: só preenche quando está vazio (não sobrescreve edição do usuário).
     if (r?.description && !item.description.trim()) patch.description = r.description;
     // Tags: acrescenta as da IA sem remover as do usuário.
@@ -292,7 +319,7 @@ export async function reidentifyCollection(
 
   let identified = 0;
   for (const [id, patch] of patches) {
-    const { error } = await supabaseAdmin.from("collection_items").update(patch).eq("id", id);
+    const { error } = await db.from("collection_items").update(patch).eq("id", id);
     if (error) {
       console.error("[collection] falha ao gravar re-identificação", error);
       continue;
@@ -332,7 +359,8 @@ export async function reidentifyCollectionItem(
   error: string | null;
   attemptErrors: Partial<Record<AiProvider, string>>;
 }> {
-  const { aiConfigured, identCollectionSync } = await import("./ai-eval.server");
+  const { aiConfigured } = await import("./ai-eval.server");
+  const { identCollectionSync } = await import("./ai-collection.server");
   if (!aiConfigured()) {
     throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
   }
@@ -343,10 +371,7 @@ export async function reidentifyCollectionItem(
   if (isDiscBundle(item.title)) {
     if (item.artist === LOTE_LABEL)
       return { updated: false, served: null, switched: false, error: null, attemptErrors: {} };
-    const { error } = await supabaseAdmin
-      .from("collection_items")
-      .update({ artist: LOTE_LABEL })
-      .eq("id", id);
+    const { error } = await db.from("collection_items").update({ artist: LOTE_LABEL }).eq("id", id);
     if (error) throw new Error(`Não foi possível gravar: ${error.message}`);
     return { updated: true, served: null, switched: false, error: null, attemptErrors: {} };
   }
@@ -375,7 +400,7 @@ export async function reidentifyCollectionItem(
   const year = r?.year ?? null;
 
   // SOBRESCREVE cada campo que a IA devolveu; nunca zera com vazio.
-  const patch: TablesUpdate<"collection_items"> = {};
+  const patch: CollectionItemWrite = {};
   if (artist && artist !== item.artist) patch.artist = artist;
   if (album && album !== item.album) patch.album = album;
   if (year != null && year !== item.year) patch.year = year;
@@ -386,7 +411,7 @@ export async function reidentifyCollectionItem(
 
   if (!Object.keys(patch).length)
     return { updated: false, served, switched, error: aiError, attemptErrors };
-  const { error } = await supabaseAdmin.from("collection_items").update(patch).eq("id", id);
+  const { error } = await db.from("collection_items").update(patch).eq("id", id);
   if (error) throw new Error(`Não foi possível gravar: ${error.message}`);
   return { updated: true, served, switched, error: null, attemptErrors };
 }
@@ -411,7 +436,8 @@ export async function identifyDraftFromTitle(
   error: string | null;
   attemptErrors: Partial<Record<AiProvider, string>>;
 }> {
-  const { aiConfigured, identCollectionSync } = await import("./ai-eval.server");
+  const { aiConfigured } = await import("./ai-eval.server");
+  const { identCollectionSync } = await import("./ai-collection.server");
   if (!aiConfigured()) {
     throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
   }
@@ -486,7 +512,7 @@ export async function addCollectionItem(input: CollectionInput): Promise<Collect
     throw new Error("Esta compra já está na coleção.");
   }
   const position = existing.reduce((max, i) => Math.max(max, i.position), 0) + 1;
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from("collection_items")
     .insert({
       lot_id: input.lotId ?? null,
@@ -539,7 +565,7 @@ export async function importCollectionText(
   }
   let pos = existing.reduce((max, i) => Math.max(max, i.position), 0);
 
-  const payload: TablesInsert<"collection_items">[] = [];
+  const payload: CollectionItemWrite[] = [];
   let skipped = 0;
   for (const d of items) {
     const artist = canonicalArtist(d.artist ? titleCase(d.artist) : "", d.title);
@@ -572,7 +598,7 @@ export async function importCollectionText(
   }
 
   if (payload.length) {
-    const { error: insertError } = await supabaseAdmin.from("collection_items").insert(payload);
+    const { error: insertError } = await db.from("collection_items").insert(payload);
     if (insertError) {
       console.error("[collection] falha ao importar em massa", insertError);
       throw new Error(`Não foi possível importar os discos: ${insertError.message}`);
@@ -585,7 +611,7 @@ export async function importCollectionText(
 export async function updateCollectionItem(
   input: CollectionInput & { id: string },
 ): Promise<CollectionItem> {
-  const patch: TablesUpdate<"collection_items"> = {};
+  const patch: CollectionItemWrite = {};
   if (typeof input.artist === "string") patch.artist = input.artist.trim();
   if (typeof input.album === "string") patch.album = input.album.trim();
   if (typeof input.title === "string") patch.title = input.title.trim();
@@ -602,7 +628,7 @@ export async function updateCollectionItem(
   if (typeof input.description === "string") patch.description = input.description.trim();
   if (Array.isArray(input.tags)) patch.tags = input.tags;
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from("collection_items")
     .update(patch)
     .eq("id", input.id)
@@ -617,7 +643,7 @@ export async function updateCollectionItem(
 
 /** Remove um disco da coleção. */
 export async function deleteCollectionItem(id: string): Promise<{ ok: true }> {
-  const { error } = await supabaseAdmin.from("collection_items").delete().eq("id", id);
+  const { error } = await db.from("collection_items").delete().eq("id", id);
   if (error) {
     console.error("[collection] falha ao remover", error);
     throw new Error(`Não foi possível remover o disco: ${error.message}`);
@@ -703,7 +729,7 @@ export async function listUncompressedCollectionImages(
   limit: number,
 ): Promise<{ id: string; image: string }[]> {
   const prefix = getCollectionPublicUrl("");
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from<{ id: string; image: string | null }>("collection_items")
     .select("id, image")
     .not("image", "is", null)
@@ -730,7 +756,7 @@ export async function backfillCompressCollectionImage(row: {
   const newPath = `${crypto.randomUUID()}.${compressed.ext}`;
   const { publicUrl: newPublicUrl } = await uploadCollectionFile(newPath, compressed.bytes);
 
-  const { error: dbErr } = await supabaseAdmin
+  const { error: dbErr } = await db
     .from("collection_items")
     .update({ image: newPublicUrl })
     .eq("id", row.id);

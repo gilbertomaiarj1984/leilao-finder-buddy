@@ -56,8 +56,8 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
   depois do `up -d`), então uma tabela/coluna nova já existe no próximo deploy sem passo manual.
   Localmente, aplicar com `psql -f supabase/setup.sql` contra o Postgres do `docker compose` de
   dev (ou recriar o volume). Migrações incrementais em `supabase/migrations/` continuam só como
-  **histórico/changelog** do schema. Ao criar tabela/coluna, editar `setup.sql` **e**
-  `src/integrations/supabase/types.ts` à mão. Tabelas: `lots`, `known_artists`, `app_state`,
+  **histórico/changelog** do schema. Ao criar tabela/coluna, editar `setup.sql` e o tipo
+  da linha no módulo `*.server.ts` da tabela (não há tipos gerados do banco). Tabelas: `lots`, `known_artists`, `app_state`,
   `seen_auctions`, `lot_ai`, `lot_ident`, `lot_market`, `lot_condition`, `lot_sales`,
   `wantlist_items`, `collection_items`, `purchases`, `excluded_lots`.
 - **Git push HTTPS costuma funcionar**; quando não, usar os tools `mcp__github__*`.

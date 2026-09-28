@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { Disc3 } from "lucide-react";
 
 import { AnalyticsView } from "@/components/vinyl/analytics-view";
-import { getPublicVinylAnalytics } from "@/lib/leiloesbr.functions";
+import { getPublicVinylAnalytics } from "@/lib/analytics.functions";
 
 // Rota TOP-LEVEL (fora de `_authenticated/`) — de propósito: link somente-leitura para
 // compartilhar com alguém sem login Google, gated só pelo token diário na URL (`?token=`, ver

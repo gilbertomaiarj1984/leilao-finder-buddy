@@ -414,7 +414,7 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
     (`Record<lotId, itemId|false>`, override por lote) e **`collection_feedback`**
     (`OwnedFeedback[]`, aprendizado por assinatura). Server `app-state.server.ts`
     (`getCollectionLinks`/`setCollectionLink`, `getCollectionFeedback`/`addCollectionFeedback`/
-    `removeCollectionFeedbackByLot`) + `leiloesbr.functions.ts` (`getCollectionLinks`/
+    `removeCollectionFeedbackByLot`) + `collection.functions.ts` (`getCollectionLinks`/
     `getCollectionFeedback`/`applyCollectionDecision`). Cliente: queries `["collection-links"]`/
     `["collection-feedback"]`, gravação otimista.
   - **Aprendizado (modo "sugere, você confirma"):** `resolveOwned(lotId, links, autoHit,

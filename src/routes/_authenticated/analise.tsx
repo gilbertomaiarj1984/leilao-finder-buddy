@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -60,24 +60,14 @@ import {
   houseAnchor,
   type SimpleHouseGroup,
 } from "@/components/vinyl/grouping";
+import { setLotTags, setUserInterests } from "@/lib/ai.functions";
 import {
   addWantlistItem,
   deleteWantlistItem,
-  getLotAi,
-  getLotIdent,
-  getLotMarket,
-  getUserInterests,
-  getVinylLots,
-  getWantlist,
   importWantlist,
-  listMyBids,
-  setLotTags,
-  setUserInterests,
   updateWantlistItem,
-} from "@/lib/leiloesbr.functions";
-import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
-import type { WatchedLot } from "@/lib/leiloesbr-watch.server";
-import type { MyBid } from "@/lib/leiloesbr-bids.server";
+} from "@/lib/wantlist.functions";
+import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
 import {
   bidIsWinning,
@@ -86,13 +76,7 @@ import {
   normalizeForMatch,
   type VinylLot,
 } from "@/lib/vinyl-parse";
-import {
-  BIDS_ACCUM_STORAGE_KEY,
-  loadAccum,
-  mergeWatchedAccum,
-  saveAccum,
-  WATCHED_ACCUM_STORAGE_KEY,
-} from "@/lib/watched-accum";
+import { saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
 import {
   bestWantForLot,
   lotIdentity,
@@ -100,6 +84,18 @@ import {
   type WantCandidate,
 } from "@/lib/wantlist-match";
 import { parseWantlistText } from "@/lib/wantlist-parse";
+import {
+  useInterestsQuery,
+  useLotAiQuery,
+  useLotIdentQuery,
+  useLotMarketQuery,
+  useLotsQuery,
+  useWantlistQuery,
+  useBidsQuery,
+  useWatchedQuery,
+  queryKeys,
+  type WantItem,
+} from "@/lib/queries";
 
 export const Route = createFileRoute("/_authenticated/analise")({
   head: () => ({ meta: [{ title: "Análise de Lotes — Garimpo de Vinil" }] }),
@@ -107,18 +103,6 @@ export const Route = createFileRoute("/_authenticated/analise")({
 });
 
 const TOP_N = 100;
-
-/** Item da sondagem como a UI consome (espelha `wantlist_items`). */
-type WantItem = {
-  id: string;
-  raw: string;
-  work: string;
-  year: number | null;
-  note: string;
-  norm: string;
-  acquired: boolean;
-  position: number;
-};
 
 type HouseGroup = SimpleHouseGroup;
 
@@ -632,19 +616,11 @@ function AnalisePage() {
   const stickyBelowHeader = { top: barsHidden ? 0 : headerHeight };
 
   const queryClient = useQueryClient();
-  const fetchLots = useServerFn(getVinylLots);
-  const fetchLotAi = useServerFn(getLotAi);
-  const fetchLotIdent = useServerFn(getLotIdent);
-  const fetchLotMarket = useServerFn(getLotMarket);
-  const fetchInterests = useServerFn(getUserInterests);
   const saveInterests = useServerFn(setUserInterests);
-  const fetchWantlist = useServerFn(getWantlist);
   const importWant = useServerFn(importWantlist);
   const addWant = useServerFn(addWantlistItem);
   const updateWant = useServerFn(updateWantlistItem);
   const deleteWant = useServerFn(deleteWantlistItem);
-  const fetchWatched = useServerFn(listWatched);
-  const fetchBids = useServerFn(listMyBids);
   const runToggle = useServerFn(toggleWatch);
   const saveTags = useServerFn(setLotTags);
 
@@ -671,73 +647,21 @@ function AnalisePage() {
   const [activeDay, setActiveDay] = useState("");
   const [pending, setPending] = useState<string | null>(null);
 
-  const lots = useQuery({
-    queryKey: ["vinyl-lots"] as const,
-    queryFn: () => fetchLots(),
-    staleTime: 2 * 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-  const lotAiQuery = useQuery({
-    queryKey: ["lot-ai"] as const,
-    queryFn: () => fetchLotAi(),
-    staleTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-  const lotIdentQuery = useQuery({
-    queryKey: ["lot-ident"] as const,
-    queryFn: () => fetchLotIdent(),
-    staleTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-  const interestsQuery = useQuery({
-    queryKey: ["user-interests"] as const,
-    queryFn: () => fetchInterests(),
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-  const lotMarketQuery = useQuery({
-    queryKey: ["lot-market"] as const,
-    queryFn: () => fetchLotMarket(),
-    staleTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-  const wantlistQuery = useQuery<WantItem[]>({
-    queryKey: ["wantlist"] as const,
-    queryFn: () => fetchWantlist() as Promise<WantItem[]>,
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const lots = useLotsQuery();
+  const lotAiQuery = useLotAiQuery();
+  const lotIdentQuery = useLotIdentQuery();
+  const interestsQuery = useInterestsQuery();
+  const lotMarketQuery = useLotMarketQuery();
+  const wantlistQuery = useWantlistQuery();
   // Vigiados + meus lances: alimentam os filtros "Vigiando"/"Com lance", a borda colorida
   // das linhas, o status do lance e o botão de vigiar (mesma mecânica da página principal).
   // MESMO acumulador local de `index.tsx` (`@/lib/watched-accum`, MESMA chave de `localStorage`
-  // e de query, `["vinyl-watched"]`/`["vinyl-my-bids"]`) — essas duas rotas compartilham o
+  // e de query, `queryKeys.watched`/`queryKeys.bids`) — essas duas rotas compartilham o
   // `QueryClient` do app inteiro, então um `queryFn` aqui que apenas SUBSTITUÍSSE (sem mesclar)
   // sobrescreveria o acumulado da outra rota ao navegar entre elas, fazendo os vigiados
   // "sumirem depois de um tempo" mesmo sem o usuário ter desvigiado nada.
-  const watchedAccumRef = useRef<Map<string, WatchedLot> | null>(null);
-  if (watchedAccumRef.current === null)
-    watchedAccumRef.current = loadAccum<WatchedLot>(WATCHED_ACCUM_STORAGE_KEY);
-  const bidsAccumRef = useRef<Map<string, MyBid> | null>(null);
-  if (bidsAccumRef.current === null)
-    bidsAccumRef.current = loadAccum<MyBid>(BIDS_ACCUM_STORAGE_KEY);
-  const watchedQuery = useQuery({
-    queryKey: ["vinyl-watched"] as const,
-    queryFn: async () => {
-      const fresh = await fetchWatched();
-      return mergeWatchedAccum(watchedAccumRef.current!, fresh, WATCHED_ACCUM_STORAGE_KEY);
-    },
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-  const bidsQuery = useQuery({
-    queryKey: ["vinyl-my-bids"] as const,
-    queryFn: async () => {
-      const fresh = await fetchBids();
-      return mergeWatchedAccum(bidsAccumRef.current!, fresh, BIDS_ACCUM_STORAGE_KEY);
-    },
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const { query: watchedQuery, accumRef: watchedAccumRef } = useWatchedQuery();
+  const { query: bidsQuery } = useBidsQuery();
   // Aviso (toast) quando um lote com lance vira "Coberto" — só com o app aberto, ver
   // `@/lib/bid-alerts`.
   useBidCoveredAlerts(bidsQuery.data);
@@ -745,13 +669,13 @@ function AnalisePage() {
   const saveInterestsMut = useMutation({
     mutationFn: (items: string[]) => saveInterests({ data: { items } }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["user-interests"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.interests });
       toast.success("Interesses salvos");
     },
     onError: (e: Error) => toast.error(e.message || "Não foi possível salvar"),
   });
 
-  const invalidateWant = () => queryClient.invalidateQueries({ queryKey: ["wantlist"] });
+  const invalidateWant = () => queryClient.invalidateQueries({ queryKey: queryKeys.wantlist });
   const importWantMut = useMutation({
     mutationFn: (text: string) => importWant({ data: { text } }),
     onSuccess: (r: { added: number }) => {
@@ -805,18 +729,18 @@ function AnalisePage() {
       if (!result.watched) {
         watchedAccumRef.current!.delete(`${lot.idLeilao}-${lot.idPeca}`);
         saveAccum(WATCHED_ACCUM_STORAGE_KEY, watchedAccumRef.current!);
-        queryClient.setQueryData(["vinyl-watched"], [...watchedAccumRef.current!.values()]);
+        queryClient.setQueryData(queryKeys.watched, [...watchedAccumRef.current!.values()]);
       }
-      void queryClient.invalidateQueries({ queryKey: ["vinyl-watched"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.watched });
       toast.success(result.watched ? "Lote vigiado no LeilõesBR" : "Vigia removida no LeilõesBR");
     },
     onError: (e: Error) => toast.error(e.message || "Não foi possível sincronizar a vigia"),
     onSettled: () => setPending(null),
   });
 
-  // Edição manual de tags: atualiza o cache ["lot-ai"] de forma otimista e persiste.
+  // Edição manual de tags: atualiza o cache queryKeys.lotAi de forma otimista e persiste.
   const patchTags = (id: string, tags: string[]) =>
-    queryClient.setQueryData(["lot-ai"], (old: unknown) =>
+    queryClient.setQueryData(queryKeys.lotAi, (old: unknown) =>
       Array.isArray(old)
         ? old.map((r) => (r && (r as { id: string }).id === id ? { ...r, tags } : r))
         : old,
@@ -830,7 +754,7 @@ function AnalisePage() {
     },
     onError: (e: Error) => {
       toast.error(e.message || "Não foi possível salvar as tags");
-      void queryClient.invalidateQueries({ queryKey: ["lot-ai"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lotAi });
     },
   });
 

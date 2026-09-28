@@ -27,7 +27,8 @@
   (medida): página 1 = dia mais distante, última página = hoje. `galleryscan` para uma galeria
   depois de 2 páginas seguidas inteiras além da janela.
 - Diagnóstico por página: `step=pagedebug&pages=1,2,last[&ga=][&tp=none][&cookie=1][&delayMs=]`
-  (status HTTP, tamanho, cards, dias, casas, trecho do corpo), via `debug-cron.yml`.
+  (status HTTP, tamanho, cards, dias, casas, trecho do corpo), via `debug-cron.yml`. Ferramentas de diagnóstico (`findLot*`, `debugListingPages`) ficam em
+  `leiloesbr-debug.server.ts`.
 - **`fetchWithRetry`** (`leiloesbr-auth.server.ts`) falha de imediato em 404/403 (via
   `LeiloesBrHttpError`) e faz backoff só para 5xx/rede/timeout.
 - **Sessão logada é POR ORIGEM** (`getSessionCookieFor(origin)`): `leiloesbr.com.br` para

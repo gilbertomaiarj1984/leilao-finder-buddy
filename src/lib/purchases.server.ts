@@ -1,5 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { TablesInsert } from "@/integrations/supabase/types";
+import { db } from "@/lib/db-client.server";
 
 import type { WonLot } from "./leiloesbr-purchases.server";
 
@@ -84,7 +83,24 @@ function brDateToIso(value: string): string | null {
   return iso;
 }
 
-function toRow(w: WonLot): TablesInsert<"purchases"> {
+/** Linha gravável de `purchases` (espelha `supabase/setup.sql`). */
+type PurchaseInsert = {
+  base?: string;
+  domain?: string | null;
+  house?: string;
+  id_leilao: string;
+  id_peca: string;
+  image?: string | null;
+  lot_id: string;
+  lote?: string;
+  title?: string;
+  uf?: string;
+  url?: string;
+  won_date?: string | null;
+  won_price?: string;
+};
+
+function toRow(w: WonLot): PurchaseInsert {
   return {
     lot_id: w.id,
     id_peca: w.idPeca,
@@ -104,7 +120,7 @@ function toRow(w: WonLot): TablesInsert<"purchases"> {
 
 /** Lê todas as compras gravadas, mais recente primeiro. */
 export async function getAllPurchases(): Promise<Purchase[]> {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from("purchases")
     .select(COLS)
     .order("won_date", { ascending: false, nullsFirst: false })
@@ -115,16 +131,14 @@ export async function getAllPurchases(): Promise<Purchase[]> {
 
 async function upsertWonLots(won: WonLot[]): Promise<{ added: number; scanned: number }> {
   if (!won.length) return { added: 0, scanned: 0 };
-  const { data: existing, error: readError } = await supabaseAdmin
+  const { data: existing, error: readError } = await db
     .from<{ lot_id: string }>("purchases")
     .select("lot_id");
   if (readError) throw readError;
   const have = new Set((existing ?? []).map((r) => r.lot_id));
   const payload = won.filter((w) => !have.has(w.id)).map(toRow);
   if (payload.length) {
-    const { error } = await supabaseAdmin
-      .from("purchases")
-      .upsert(payload, { onConflict: "lot_id" });
+    const { error } = await db.from("purchases").upsert(payload, { onConflict: "lot_id" });
     if (error) {
       console.error("[purchases] falha ao gravar", error);
       throw new Error(`Não foi possível gravar as compras: ${error.message}`);

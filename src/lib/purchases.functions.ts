@@ -1,10 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuth } from "@/lib/auth-middleware";
 
 /** Compras (vinil) gravadas em `purchases`, mais recente primeiro. Best-effort: [] em erro. */
 export const getPurchases = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
@@ -19,7 +19,7 @@ export const getPurchases = createServerFn({ method: "GET" })
 
 /** Botão "Atualizar": dispara a mesma sync incremental do cron (leilões vencidos via `l=4`). */
 export const scanPurchases = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
@@ -29,7 +29,7 @@ export const scanPurchases = createServerFn({ method: "POST" })
 
 /** Escape hatch: varredura completa manual de "Minhas compras" — cara, usar com moderação. */
 export const scanPurchasesFull = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);

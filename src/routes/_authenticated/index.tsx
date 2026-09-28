@@ -69,36 +69,30 @@ import {
 } from "@/components/vinyl/ai-score-utils";
 import {
   analyzeOnDemand,
-  applyCollectionDecision,
-  dismissCollectionMatchTerms,
-  enrichLotes,
-  getAccessStatus,
   getAiMode,
-  getAiProvider,
-  getAnalyticsAliases,
-  getCollectionFeedback,
-  getCollectionKeywordDenylist,
-  getCollectionLinks,
-  getGeminiModel,
-  getLotAi,
-  getLotCondition,
-  getLotIdent,
-  getLotMarket,
-  getLotDetails,
   repriceLotAi,
-  getSoldLots,
-  getUserInterests,
-  getVerifiedHouses,
-  getVinylLots,
-  listMyBids,
   runAiident,
-  runCondition,
-  runGalleryscan,
-  scrapeVinylChunk,
   setAiMode,
   setAiProvider,
   setGeminiModel,
   setLotTags,
+} from "@/lib/ai.functions";
+import {
+  applyCollectionDecision,
+  dismissCollectionMatchTerms,
+  getCollectionKeywordDenylist,
+} from "@/lib/collection.functions";
+import {
+  enrichLotes,
+  getAccessStatus,
+  getLotCondition,
+  getLotDetails,
+  getSoldLots,
+  getVerifiedHouses,
+  getVinylLots,
+  runCondition,
+  runGalleryscan,
+  scrapeVinylChunk,
   setVerifiedHouses,
 } from "@/lib/leiloesbr.functions";
 import { AiProviderSelect, GeminiModelSelect } from "@/components/vinyl/ai-provider-controls";
@@ -108,11 +102,8 @@ import {
   type AiProvider,
   type GeminiModel,
 } from "@/lib/ai-provider";
-import { listWatched, toggleWatch } from "@/lib/leiloesbr-watch.functions";
-import type { WatchedLot } from "@/lib/leiloesbr-watch.server";
-import type { MyBid } from "@/lib/leiloesbr-bids.server";
+import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
-import { getCollection } from "@/lib/collection.functions";
 import type { CollectionItem } from "@/lib/collection.server";
 import {
   dismissPossibleTrash,
@@ -122,13 +113,7 @@ import {
 } from "@/lib/lot-exclusion.functions";
 import { buildTrashModel, matchPossibleTrash, trashProfile } from "@/lib/lot-exclusion";
 import { ExcludeLotDialog } from "@/components/vinyl/exclude-lot-dialog";
-import {
-  BIDS_ACCUM_STORAGE_KEY,
-  loadAccum,
-  mergeWatchedAccum,
-  saveAccum,
-  WATCHED_ACCUM_STORAGE_KEY,
-} from "@/lib/watched-accum";
+import { saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
 import {
   auctionFinished,
   COMPILATION_LABEL,
@@ -156,6 +141,22 @@ import {
   type OwnedHit,
   type OwnedResolution,
 } from "@/lib/wantlist-match";
+import {
+  useAiProviderQuery,
+  useAnalyticsAliasesQuery,
+  useCollectionFeedbackQuery,
+  useCollectionLinksQuery,
+  useCollectionQuery,
+  useGeminiModelQuery,
+  useInterestsQuery,
+  useLotAiQuery,
+  useLotIdentQuery,
+  useLotMarketQuery,
+  useLotsQuery,
+  useBidsQuery,
+  useWatchedQuery,
+  queryKeys,
+} from "@/lib/queries";
 
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({
@@ -178,10 +179,6 @@ export const Route = createFileRoute("/_authenticated/")({
   }),
   component: HomePage,
 });
-
-const lotsQuery = { queryKey: ["vinyl-lots"] as const };
-const watchedQuery = { queryKey: ["vinyl-watched"] as const };
-const bidsQuery = { queryKey: ["vinyl-my-bids"] as const };
 
 function HomePage() {
   const queryClientForAuth = useQueryClient();
@@ -461,8 +458,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     setHousePrice((prev) => ({ ...prev, [key]: value }));
   const queryClient = useQueryClient();
   const fetchLots = useServerFn(getVinylLots);
-  const fetchWatched = useServerFn(listWatched);
-  const fetchBids = useServerFn(listMyBids);
   const runToggle = useServerFn(toggleWatch);
   const runChunk = useServerFn(scrapeVinylChunk);
   const runGalleryscanFn = useServerFn(runGalleryscan);
@@ -474,40 +469,22 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   const fetchLotDetails = useServerFn(getLotDetails);
   const runRepriceLotAi = useServerFn(repriceLotAi);
   const fetchSoldLots = useServerFn(getSoldLots);
-  const fetchLotAi = useServerFn(getLotAi);
-  const fetchLotIdent = useServerFn(getLotIdent);
   const runSaveTags = useServerFn(setLotTags);
-  const fetchLotMarket = useServerFn(getLotMarket);
   const fetchLotCondition = useServerFn(getLotCondition);
-  const fetchInterests = useServerFn(getUserInterests);
   const fetchAiMode = useServerFn(getAiMode);
   const runSetAiMode = useServerFn(setAiMode);
-  const fetchAiProvider = useServerFn(getAiProvider);
   const runSetAiProvider = useServerFn(setAiProvider);
-  const fetchGeminiModel = useServerFn(getGeminiModel);
   const runSetGeminiModel = useServerFn(setGeminiModel);
   const runAnalyze = useServerFn(analyzeOnDemand);
-  const fetchCollection = useServerFn(getCollection);
-  const fetchCollectionLinks = useServerFn(getCollectionLinks);
-  const fetchCollectionFeedback = useServerFn(getCollectionFeedback);
   const runApplyDecision = useServerFn(applyCollectionDecision);
   const fetchCollectionKeywordDenylist = useServerFn(getCollectionKeywordDenylist);
   const runDismissCollectionMatch = useServerFn(dismissCollectionMatchTerms);
-  const fetchAnalyticsAliases = useServerFn(getAnalyticsAliases);
   const runExcludeLot = useServerFn(excludeLot);
   const fetchExcludedLots = useServerFn(getExcludedLotsForMatching);
   const fetchTrashDenylist = useServerFn(getTrashKeywordDenylist);
   const runDismissTrash = useServerFn(dismissPossibleTrash);
 
-  const lots = useQuery({
-    ...lotsQuery,
-    queryFn: () => fetchLots(),
-    // Carrega uma vez ao abrir; não recarrega ao navegar/trocar de aba/focar a janela.
-    staleTime: 2 * 60 * 60 * 1000,
-    gcTime: 4 * 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
+  const lots = useLotsQuery();
   // Vigiados/lances "vistos" na janela de dias: a conta do LeilõesBR (l=8/l=4) pode parar de
   // trazer um lote assim que o leilão termina — igual à listagem pública, que já "some" um
   // leilão que ficou ao vivo. Sem isso, o card do vigiado/lance (e a tarja "Vendido" que ele
@@ -521,58 +498,21 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   // `useRef` puro some ao recarregar a
   // página/fechar a aba, o que fazia os vigiados "sumirem depois de um tempo" mesmo sem o
   // usuário ter desvigiado nada. ⚠️ A rota `/analise` lê a MESMA chave de query
-  // (`["vinyl-watched"]`/`["vinyl-my-bids"]`, compartilhada no `QueryClient` do app inteiro) —
+  // (`queryKeys.watched`/`queryKeys.bids`, compartilhada no `QueryClient` do app inteiro) —
   // ela usa esta MESMA função, senão a versão dela (sem mesclar) sobrescreve o acumulado
   // desta rota ao navegar entre as duas.
-  const watchedAccumRef = useRef<Map<string, WatchedLot> | null>(null);
-  if (watchedAccumRef.current === null)
-    watchedAccumRef.current = loadAccum<WatchedLot>(WATCHED_ACCUM_STORAGE_KEY);
-  const bidsAccumRef = useRef<Map<string, MyBid> | null>(null);
-  if (bidsAccumRef.current === null)
-    bidsAccumRef.current = loadAccum<MyBid>(BIDS_ACCUM_STORAGE_KEY);
-  const watched = useQuery({
-    ...watchedQuery,
-    queryFn: async () => {
-      const fresh = await fetchWatched();
-      return mergeWatchedAccum(watchedAccumRef.current!, fresh, WATCHED_ACCUM_STORAGE_KEY);
-    },
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-  const bids = useQuery({
-    ...bidsQuery,
-    queryFn: async () => {
-      const fresh = await fetchBids();
-      return mergeWatchedAccum(bidsAccumRef.current!, fresh, BIDS_ACCUM_STORAGE_KEY);
-    },
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const { query: watched, accumRef: watchedAccumRef } = useWatchedQuery();
+  const { query: bids } = useBidsQuery();
   // Aviso (toast) quando um lote com lance vira "Coberto" — só com o app aberto, ver
   // `@/lib/bid-alerts`.
   useBidCoveredAlerts(bids.data);
   // Avaliações da IA (score/raridade/oportunidade) e interesses do usuário: alimentam o
   // badge de nota no canto do card. Best-effort — sem avaliação, o card fica como hoje.
-  const lotAiQuery = useQuery({
-    queryKey: ["lot-ai"] as const,
-    queryFn: () => fetchLotAi(),
-    staleTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const lotAiQuery = useLotAiQuery();
   // Identificação simplificada (artista/álbum/ano) — roda para TODOS os lotes, barata.
   // Alimenta a exibição, a busca e o filtro por artista, priorizada sobre o título.
-  const lotIdentQuery = useQuery({
-    queryKey: ["lot-ident"] as const,
-    queryFn: () => fetchLotIdent(),
-    staleTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-  const interestsQuery = useQuery({
-    queryKey: ["user-interests"] as const,
-    queryFn: () => fetchInterests(),
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const lotIdentQuery = useLotIdentQuery();
+  const interestsQuery = useInterestsQuery();
   // Modo da IA automática (controla o gasto de créditos). Fonte da verdade é o servidor.
   const aiModeQuery = useQuery({
     queryKey: ["ai-mode"] as const,
@@ -601,46 +541,36 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   };
 
   // Provedor de IA PADRÃO (Claude/Gemini). Fonte da verdade é o servidor (`app_state`).
-  const aiProviderQuery = useQuery({
-    queryKey: ["ai-provider"] as const,
-    queryFn: () => fetchAiProvider(),
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const aiProviderQuery = useAiProviderQuery();
   const aiProvider: AiProvider = aiProviderQuery.data ?? "anthropic";
   const changeAiProvider = (provider: AiProvider) => {
     const prev = aiProviderQuery.data;
-    queryClient.setQueryData(["ai-provider"], provider); // otimista
+    queryClient.setQueryData(queryKeys.aiProvider, provider); // otimista
     void runSetAiProvider({ data: { provider } })
       .then(() => toast.success(`Provedor padrão: ${AI_PROVIDER_SHORT[provider]}`))
       .catch((error: unknown) => {
-        queryClient.setQueryData(["ai-provider"], prev);
+        queryClient.setQueryData(queryKeys.aiProvider, prev);
         toast.error((error as Error)?.message || "Não foi possível salvar o provedor de IA");
       });
   };
 
   // Modelo do Gemini (Flash-Lite/Flash/Pro). Vale mesmo com Claude escolhido: o failover
   // por falta de créditos pode acabar caindo no Gemini com esse modelo.
-  const geminiModelQuery = useQuery({
-    queryKey: ["gemini-model"] as const,
-    queryFn: () => fetchGeminiModel(),
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const geminiModelQuery = useGeminiModelQuery();
   const geminiModel: GeminiModel = geminiModelQuery.data ?? "gemini-3.1-flash-lite";
   const changeGeminiModel = (model: GeminiModel) => {
     const prev = geminiModelQuery.data;
-    queryClient.setQueryData(["gemini-model"], model); // otimista
+    queryClient.setQueryData(queryKeys.geminiModel, model); // otimista
     void runSetGeminiModel({ data: { model } })
       .then(() => toast.success(`Modelo do Gemini: ${model}`))
       .catch((error: unknown) => {
-        queryClient.setQueryData(["gemini-model"], prev);
+        queryClient.setQueryData(queryKeys.geminiModel, prev);
         toast.error((error as Error)?.message || "Não foi possível salvar o modelo do Gemini");
       });
   };
   // Análise SOB DEMANDA (botões por dia/casa). `analyzing` guarda a chave em execução:
   // o dia (`day`) ou a casa (`${day}|${casa}`). Roda em laço até esgotar os não avaliados
-  // (ou parar de progredir), depois revalida o cache ["lot-ai"] para as notas aparecerem.
+  // (ou parar de progredir), depois revalida o cache queryKeys.lotAi para as notas aparecerem.
   const [analyzing, setAnalyzing] = useState<string | null>(null);
   const analyzeScope = (opts: { day: string; house?: string }) => {
     if (analyzing) return; // uma análise por vez (evita disparar vários batches síncronos)
@@ -668,7 +598,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           // falham sempre voltariam ao "pendente" e causariam laço infinito).
           if (res.remaining === 0 || res.evaluated === 0) break;
         }
-        await queryClient.invalidateQueries({ queryKey: ["lot-ai"] });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.lotAi });
         // Avisa se houve failover: mostra o motivo de CADA provedor pulado (ex.: "Claude: sem
         // chave de API configurada · Gemini: sem créditos/quota") em vez de um "trocou" genérico.
         const trail = formatFailoverTrail(attemptErrors);
@@ -734,12 +664,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     () => buildInterestMatcher(interestsQuery.data ?? []),
     [interestsQuery.data],
   );
-  const lotMarketQuery = useQuery({
-    queryKey: ["lot-market"] as const,
-    queryFn: () => fetchLotMarket(),
-    staleTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const lotMarketQuery = useLotMarketQuery();
   const marketById = useMemo(() => {
     const map = new Map<string, LotMarket>();
     for (const r of lotMarketQuery.data ?? []) map.set(r.id, toLotMarket(r));
@@ -850,41 +775,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   // Coleção do usuário: discos que ele JÁ possui (`collection_items`). Usada só para marcar
   // no card, com um ícone roxo, os lotes que ele já tem — evitando arrematar duplicado. Mesma
   // query key da página Coleção → compartilha o cache (1 GET leve, base pequena, single-user).
-  const collectionQuery = useQuery<CollectionItem[]>({
-    queryKey: ["collection"] as const,
-    queryFn: () => fetchCollection() as Promise<CollectionItem[]>,
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const collectionQuery = useCollectionQuery();
   // Relações manuais (override por lote) e aprendizado (feedback por assinatura). Mesmas
   // chaves de app_state; compartilham cache entre telas.
   // Best-effort: um erro aqui NUNCA pode derrubar a home (a relação/aprendizado é acessório).
-  const collectionLinksQuery = useQuery<CollectionLinks>({
-    queryKey: ["collection-links"] as const,
-    queryFn: async () => {
-      try {
-        return ((await fetchCollectionLinks()) as CollectionLinks) ?? {};
-      } catch {
-        return {};
-      }
-    },
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    retry: false,
-  });
-  const collectionFeedbackQuery = useQuery<OwnedFeedback[]>({
-    queryKey: ["collection-feedback"] as const,
-    queryFn: async () => {
-      try {
-        return ((await fetchCollectionFeedback()) as OwnedFeedback[]) ?? [];
-      } catch {
-        return [];
-      }
-    },
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    retry: false,
-  });
+  const collectionLinksQuery = useCollectionLinksQuery();
+  const collectionFeedbackQuery = useCollectionFeedbackQuery();
   // Termos negados como genéricos demais para casar a Coleção (clique no painel de relação
   // quando o casamento foi falso positivo por causa de uma palavra específica — ver
   // `matchedAlbumTerms`/`ownedScore` em `wantlist-match.ts`). Mesmo padrão do
@@ -907,14 +803,9 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     [collectionKeywordDenylistQuery.data],
   );
   // Apelidos de artista curados no Analytics (fusão manual de grafias) — mesma chave/cache da
-  // tela de Analytics (`["analytics-aliases"]`). Reusados aqui pra uma correção de grafia feita
+  // tela de Analytics (`queryKeys.analyticsAliases`). Reusados aqui pra uma correção de grafia feita
   // lá também valer no casamento da Coleção, sem precisar corrigir duas vezes.
-  const analyticsAliasesQuery = useQuery({
-    queryKey: ["analytics-aliases"] as const,
-    queryFn: () => fetchAnalyticsAliases(),
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const analyticsAliasesQuery = useAnalyticsAliasesQuery();
   const artistAliases = useMemo(
     () => analyticsAliasesQuery.data?.artists ?? {},
     [analyticsAliasesQuery.data],
@@ -1066,13 +957,13 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     const prevLinks = collectionLinksQuery.data ?? {};
     const prevFeedback = collectionFeedbackQuery.data ?? [];
     // Otimista: reflete na hora nas duas caches.
-    queryClient.setQueryData<CollectionLinks>(["collection-links"], (old) => {
+    queryClient.setQueryData<CollectionLinks>(queryKeys.collectionLinks, (old) => {
       const next = { ...(old ?? {}) };
       if (value === null) delete next[lot.id];
       else next[lot.id] = value;
       return next;
     });
-    queryClient.setQueryData<OwnedFeedback[]>(["collection-feedback"], (old) => {
+    queryClient.setQueryData<OwnedFeedback[]>(queryKeys.collectionFeedback, (old) => {
       const kept = (old ?? []).filter((e) => e.lotId !== lot.id);
       if (value === null || !itemId) return kept;
       return [
@@ -1089,13 +980,13 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     });
     void runApplyDecision({ data: { lotId: lot.id, value, itemId, sig } })
       .catch((error: unknown) => {
-        queryClient.setQueryData(["collection-links"], prevLinks);
-        queryClient.setQueryData(["collection-feedback"], prevFeedback);
+        queryClient.setQueryData(queryKeys.collectionLinks, prevLinks);
+        queryClient.setQueryData(queryKeys.collectionFeedback, prevFeedback);
         toast.error((error as Error)?.message || "Não foi possível salvar a relação");
       })
       .finally(() => {
-        void queryClient.invalidateQueries({ queryKey: ["collection-links"] });
-        void queryClient.invalidateQueries({ queryKey: ["collection-feedback"] });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.collectionLinks });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.collectionFeedback });
       });
   };
 
@@ -1126,7 +1017,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         toast.error("Este lote já não estava mais na listagem");
         return;
       }
-      queryClient.setQueryData(lotsQuery.queryKey, (old: typeof lots.data) =>
+      queryClient.setQueryData(queryKeys.lots, (old: typeof lots.data) =>
         old ? { ...old, lots: old.lots.filter((item) => item.id !== input.lotId) } : old,
       );
       void queryClient.invalidateQueries({ queryKey: ["excluded-lots"] });
@@ -1226,13 +1117,13 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       setRefreshingDay(day);
       try {
         const fresh = await fetchLots({ data: { force: true, day } });
-        queryClient.setQueryData(lotsQuery.queryKey, fresh);
+        queryClient.setQueryData(queryKeys.lots, fresh);
         toast.success("Dia atualizado");
       } catch (error) {
         toast.error((error as Error)?.message || "Não foi possível atualizar este dia agora");
       } finally {
         setRefreshingDay(null);
-        void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.watched });
       }
     })();
   };
@@ -1343,7 +1234,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         }
 
         const fresh = await fetchLots({ data: {} });
-        queryClient.setQueryData(lotsQuery.queryKey, fresh);
+        queryClient.setQueryData(queryKeys.lots, fresh);
         toast.success("Lista atualizada");
 
         // Identificação por IA (artista/álbum): UMA chamada só, nunca espera o batch
@@ -1372,7 +1263,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         setRefreshingAll(false);
         setRefreshPct(null);
         setRefreshPhase(null);
-        void queryClient.invalidateQueries({ queryKey: watchedQuery.queryKey });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.watched });
       }
     })();
   };
@@ -1382,7 +1273,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       await runToggle({ data: lot }),
     onMutate: (lot) => setPending(lot.idPeca),
     onSuccess: (result, lot) => {
-      queryClient.setQueryData(lotsQuery.queryKey, (old: typeof lots.data) =>
+      queryClient.setQueryData(queryKeys.lots, (old: typeof lots.data) =>
         old
           ? {
               ...old,
@@ -1430,7 +1321,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
         }
       }
       saveAccum(WATCHED_ACCUM_STORAGE_KEY, watchedAccumRef.current!);
-      // NÃO invalida ["vinyl-watched"] aqui: a conta do LeilõesBR pode demorar a refletir o
+      // NÃO invalida queryKeys.watched aqui: a conta do LeilõesBR pode demorar a refletir o
       // toggle que acabou de ser confirmado (ver `toggleWatchOnSite`), e um refetch imediato
       // trazia a lista "atrasada" (sem o lote recém-vigiado, ou ainda com o recém-desvigiado) —
       // o `mergeWatchedAccum` então desfazia a atualização otimista acima (apagava o vigiado
@@ -1439,17 +1330,17 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       // confirmado. O estado que acabamos de gravar já é autoritativo (veio da resposta do
       // próprio endpoint de toggle); o próximo refetch natural (`staleTime`, refresh manual etc.)
       // reconcilia quando a conta do LeilõesBR já tiver atualizado.
-      queryClient.setQueryData(watchedQuery.queryKey, [...watchedAccumRef.current!.values()]);
+      queryClient.setQueryData(queryKeys.watched, [...watchedAccumRef.current!.values()]);
       toast.success(result.watched ? "Lote vigiado no LeilõesBR" : "Vigia removida no LeilõesBR");
     },
     onError: (error: Error) => toast.error(error.message || "Não foi possível sincronizar a vigia"),
     onSettled: () => setPending(null),
   });
 
-  // Edição manual de tags da IA (add/remove ao passar o mouse): atualiza o cache ["lot-ai"]
+  // Edição manual de tags da IA (add/remove ao passar o mouse): atualiza o cache queryKeys.lotAi
   // otimisticamente e persiste no banco.
   const patchTags = (id: string, tags: string[]) =>
-    queryClient.setQueryData(["lot-ai"], (old: unknown) =>
+    queryClient.setQueryData(queryKeys.lotAi, (old: unknown) =>
       Array.isArray(old)
         ? old.map((r) => (r && (r as { id: string }).id === id ? { ...r, tags } : r))
         : old,
@@ -1463,7 +1354,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     },
     onError: (error: Error) => {
       toast.error(error.message || "Não foi possível salvar as tags");
-      void queryClient.invalidateQueries({ queryKey: ["lot-ai"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lotAi });
     },
   });
   const editTags = (id: string) => (tags: string[]) => saveTagsMut.mutate({ id, tags });
@@ -1629,7 +1520,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   // e é dada com o preço do momento da avaliação (`lot_ai.eval_price`). Quando o valor atual
   // (ao vivo quando houver, senão varredura/vigia) sobe o bastante (`priceRoseSinceEval`,
   // `ai-reprice.ts`), pede a reavaliação desses lotes ao servidor (que reconfere a subida) e
-  // grava as linhas novas direto no cache `["lot-ai"]`. Cada `id|preço` só é tentado 1× por
+  // grava as linhas novas direto no cache `queryKeys.lotAi`. Cada `id|preço` só é tentado 1× por
   // sessão (sem laço se a IA falhar). Nada acontece com a IA no modo "off".
   const repriceAttemptedRef = useRef<Set<string>>(new Set());
   const repriceRunningRef = useRef(false);
@@ -1688,7 +1579,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           const { rows } = await runRepriceLotAi({ data: { lots } });
           if (!rows.length) continue;
           const byId = new Map(rows.map((r) => [r.id, r]));
-          queryClient.setQueryData(["lot-ai"], (old: unknown) =>
+          queryClient.setQueryData(queryKeys.lotAi, (old: unknown) =>
             Array.isArray(old)
               ? [
                   ...old.map((r) => byId.get((r as { id: string })?.id) ?? r),

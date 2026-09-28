@@ -2,7 +2,7 @@
 // usada pelo código de negócio (ver "Surface real" em
 // docs/arquivo/economia-fase-2-vps-unico.md, Fase 1) — from/select/eq/upsert/
 // maybeSingle/range/order/update/insert/delete/single/not/is/gte/lte/rpc/or/
-// limit/like/in, e .storage passa direto (fica no Supabase até a Fase 3).
+// limit/like/in.
 // Contrato: resolve sempre para { data, error } (mesmo formato que o código
 // já trata), nunca lança — erros do Postgres viram { error: { message, code } }.
 import { getSql } from "./db.server";

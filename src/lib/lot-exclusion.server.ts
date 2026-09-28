@@ -9,8 +9,8 @@ type ExcludedLotRow = { id: string; title: string; keywords: string[]; reason: s
 /** Ids já excluídos, para o filtro do cron (`persistLots`). Best-effort: nunca lança. */
 export async function getExcludedLotIds(): Promise<Set<string>> {
   try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin.from("excluded_lots").select("id");
+    const { db } = await import("@/lib/db-client.server");
+    const { data, error } = await db.from("excluded_lots").select("id");
     if (error) throw error;
     return new Set((data ?? []).map((r) => (r as { id: string }).id));
   } catch (error) {
@@ -21,10 +21,8 @@ export async function getExcludedLotIds(): Promise<Set<string>> {
 
 /** Todos os lotes excluídos (título + keywords), para o cálculo de "possível lixo". */
 export async function getAllExcludedLots(): Promise<ExcludedLotRow[]> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin
-    .from("excluded_lots")
-    .select("id, title, keywords, reason");
+  const { db } = await import("@/lib/db-client.server");
+  const { data, error } = await db.from("excluded_lots").select("id, title, keywords, reason");
   if (error) throw error;
   return (data ?? []) as ExcludedLotRow[];
 }
@@ -39,8 +37,8 @@ export async function excludeLot(
   lotId: string,
   opts: { reason?: string; excludedBy?: string } = {},
 ): Promise<{ ok: boolean }> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data: lot, error: fetchError } = await supabaseAdmin
+  const { db } = await import("@/lib/db-client.server");
+  const { data: lot, error: fetchError } = await db
     .from("lots")
     .select("id, title, house, artist")
     .eq("id", lotId)
@@ -51,7 +49,7 @@ export async function excludeLot(
   const l = lot as { id: string; title: string; house: string; artist: string };
   const keywords = extractKeywords(l.title, l.artist);
 
-  const { error: insertError } = await supabaseAdmin.from("excluded_lots").upsert(
+  const { error: insertError } = await db.from("excluded_lots").upsert(
     [
       {
         id: l.id,
@@ -67,7 +65,7 @@ export async function excludeLot(
   );
   if (insertError) throw insertError;
 
-  const { error: deleteError } = await supabaseAdmin.from("lots").delete().eq("id", lotId);
+  const { error: deleteError } = await db.from("lots").delete().eq("id", lotId);
   if (deleteError) throw deleteError;
   return { ok: true };
 }

@@ -34,15 +34,9 @@ import { PurchaseCard } from "@/components/vinyl/purchase-card";
 import { AI_PROVIDER_SHORT, formatFailoverTrail, type AiProvider } from "@/lib/ai-provider";
 import {
   addCollectionItem,
-  getCollection,
+  applyCollectionDecision,
   identifyPurchaseDraft,
 } from "@/lib/collection.functions";
-import type { CollectionItem } from "@/lib/collection.server";
-import {
-  applyCollectionDecision,
-  getCollectionFeedback,
-  getCollectionLinks,
-} from "@/lib/leiloesbr.functions";
 import type { Purchase } from "@/lib/purchases.server";
 import { getPurchases, scanPurchases, scanPurchasesFull } from "@/lib/purchases.functions";
 import { extractArtist, titleCase } from "@/lib/vinyl-parse";
@@ -55,6 +49,12 @@ import {
   type OwnedHit,
   type OwnedResolution,
 } from "@/lib/wantlist-match";
+import {
+  useCollectionFeedbackQuery,
+  useCollectionLinksQuery,
+  useCollectionQuery,
+  queryKeys,
+} from "@/lib/queries";
 
 export const Route = createFileRoute("/_authenticated/compras")({
   head: () => ({ meta: [{ title: "Compras — Garimpo de Vinil" }] }),
@@ -156,30 +156,12 @@ function ComprasPage() {
 
   // Coleção + relação manual ("já tenho") — mesma infraestrutura da home (`collection_links`/
   // `collection_feedback`), reaproveitada aqui pelo `lotId` da compra (peça exata arrematada).
-  const fetchCollection = useServerFn(getCollection);
-  const fetchCollectionLinks = useServerFn(getCollectionLinks);
-  const fetchCollectionFeedback = useServerFn(getCollectionFeedback);
   const runApplyDecision = useServerFn(applyCollectionDecision);
   const sendToCollection = useServerFn(addCollectionItem);
 
-  const collectionQuery = useQuery<CollectionItem[]>({
-    queryKey: ["collection"] as const,
-    queryFn: () => fetchCollection() as Promise<CollectionItem[]>,
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-  const collectionLinksQuery = useQuery({
-    queryKey: ["collection-links"] as const,
-    queryFn: () => fetchCollectionLinks(),
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-  const collectionFeedbackQuery = useQuery({
-    queryKey: ["collection-feedback"] as const,
-    queryFn: () => fetchCollectionFeedback(),
-    staleTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const collectionQuery = useCollectionQuery();
+  const collectionLinksQuery = useCollectionLinksQuery();
+  const collectionFeedbackQuery = useCollectionFeedbackQuery();
 
   const collById = useMemo(
     () => new Map((collectionQuery.data ?? []).map((i) => [i.id, i])),
@@ -227,13 +209,13 @@ function ComprasPage() {
     const sig = sigForPurchase(p);
     const prevLinks = collectionLinksQuery.data ?? {};
     const prevFeedback = collectionFeedbackQuery.data ?? [];
-    queryClient.setQueryData<CollectionLinks>(["collection-links"], (old) => {
+    queryClient.setQueryData<CollectionLinks>(queryKeys.collectionLinks, (old) => {
       const next = { ...(old ?? {}) };
       if (value === null) delete next[p.lotId];
       else next[p.lotId] = value;
       return next;
     });
-    queryClient.setQueryData<OwnedFeedback[]>(["collection-feedback"], (old) => {
+    queryClient.setQueryData<OwnedFeedback[]>(queryKeys.collectionFeedback, (old) => {
       const kept = (old ?? []).filter((e) => e.lotId !== p.lotId);
       if (value === null || !itemId) return kept;
       return [
@@ -250,13 +232,13 @@ function ComprasPage() {
     });
     void runApplyDecision({ data: { lotId: p.lotId, value, itemId, sig } })
       .catch((error: unknown) => {
-        queryClient.setQueryData(["collection-links"], prevLinks);
-        queryClient.setQueryData(["collection-feedback"], prevFeedback);
+        queryClient.setQueryData(queryKeys.collectionLinks, prevLinks);
+        queryClient.setQueryData(queryKeys.collectionFeedback, prevFeedback);
         toast.error((error as Error)?.message || "Não foi possível salvar a relação");
       })
       .finally(() => {
-        void queryClient.invalidateQueries({ queryKey: ["collection-links"] });
-        void queryClient.invalidateQueries({ queryKey: ["collection-feedback"] });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.collectionLinks });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.collectionFeedback });
       });
   };
 
@@ -286,7 +268,7 @@ function ComprasPage() {
         },
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["collection"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.collection });
       setSendDraft(null);
       toast.success("Disco enviado para a coleção.");
     },

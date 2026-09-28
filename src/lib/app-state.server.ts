@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { db } from "@/lib/db-client.server";
 
 // Definido localmente (mesma forma do `OwnedFeedback` de `wantlist-match`) para o módulo do
 // SERVIDOR não depender de um módulo client-safe — evita surpresas de bundling no servidor.
@@ -33,11 +33,11 @@ const COLLECTION_KEYWORD_DENYLIST_KEY = "collection_keyword_denylist";
  * Casas de leilão marcadas como "verificadas" (chaves `${dia}|${casa}`). Global, um
  * único registro em `app_state` (mesmo modelo do baseline). ANTES ficava só no
  * localStorage do navegador — trocar de dispositivo/navegador ou usar a URL de
- * preview (outra origem) perdia a marcação. Agora é durável no Supabase.
+ * preview (outra origem) perdia a marcação. Agora é durável no banco (`app_state`).
  */
 export async function getVerifiedHouses(): Promise<string[]> {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("app_state")
       .select("value")
       .eq("key", VERIFIED_HOUSES_KEY)
@@ -56,7 +56,7 @@ export async function getVerifiedHouses(): Promise<string[]> {
 export async function setVerifiedHouses(keys: string[]): Promise<{ savedAt: string }> {
   const savedAt = new Date().toISOString();
   const unique = [...new Set(keys.filter((k) => typeof k === "string" && k))];
-  const { error } = await supabaseAdmin
+  const { error } = await db
     .from("app_state")
     .upsert(
       { key: VERIFIED_HOUSES_KEY, value: unique, updated_at: savedAt },
@@ -78,7 +78,7 @@ export async function setVerifiedHouses(keys: string[]): Promise<{ savedAt: stri
  */
 export async function getTrashKeywordDenylist(): Promise<string[]> {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("app_state")
       .select("value")
       .eq("key", TRASH_KEYWORD_DENYLIST_KEY)
@@ -104,7 +104,7 @@ export async function addTrashKeywordDenylist(terms: string[]): Promise<{ savedA
   const current = await getTrashKeywordDenylist();
   const unique = [...new Set([...current, ...clean])];
   const savedAt = new Date().toISOString();
-  const { error } = await supabaseAdmin
+  const { error } = await db
     .from("app_state")
     .upsert(
       { key: TRASH_KEYWORD_DENYLIST_KEY, value: unique, updated_at: savedAt },
@@ -129,7 +129,7 @@ export async function addTrashKeywordDenylist(terms: string[]): Promise<{ savedA
  */
 export async function getCollectionKeywordDenylist(): Promise<string[]> {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("app_state")
       .select("value")
       .eq("key", COLLECTION_KEYWORD_DENYLIST_KEY)
@@ -155,7 +155,7 @@ export async function addCollectionKeywordDenylist(terms: string[]): Promise<{ s
   const current = await getCollectionKeywordDenylist();
   const unique = [...new Set([...current, ...clean])];
   const savedAt = new Date().toISOString();
-  const { error } = await supabaseAdmin
+  const { error } = await db
     .from("app_state")
     .upsert(
       { key: COLLECTION_KEYWORD_DENYLIST_KEY, value: unique, updated_at: savedAt },
@@ -175,7 +175,7 @@ export async function addCollectionKeywordDenylist(terms: string[]): Promise<{ s
  */
 export async function getUserInterests(): Promise<string[]> {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("app_state")
       .select("value")
       .eq("key", USER_INTERESTS_KEY)
@@ -197,7 +197,7 @@ export async function setUserInterests(items: string[]): Promise<{ savedAt: stri
   const clean = [
     ...new Set(items.map((s) => (typeof s === "string" ? s.trim() : "")).filter(Boolean)),
   ];
-  const { error } = await supabaseAdmin
+  const { error } = await db
     .from("app_state")
     .upsert({ key: USER_INTERESTS_KEY, value: clean, updated_at: savedAt }, { onConflict: "key" });
   if (error) {
@@ -218,7 +218,7 @@ type CollectionLinks = Record<string, string | false>;
 
 export async function getCollectionLinks(): Promise<CollectionLinks> {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("app_state")
       .select("value")
       .eq("key", COLLECTION_LINKS_KEY)
@@ -239,7 +239,7 @@ export async function getCollectionLinks(): Promise<CollectionLinks> {
 
 async function saveCollectionLinks(links: CollectionLinks): Promise<{ savedAt: string }> {
   const savedAt = new Date().toISOString();
-  const { error } = await supabaseAdmin
+  const { error } = await db
     .from("app_state")
     .upsert(
       { key: COLLECTION_LINKS_KEY, value: links, updated_at: savedAt },
@@ -272,7 +272,7 @@ export async function setCollectionLink(
  */
 export async function getCollectionFeedback(): Promise<OwnedFeedback[]> {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("app_state")
       .select("value")
       .eq("key", COLLECTION_FEEDBACK_KEY)
@@ -298,7 +298,7 @@ export async function getCollectionFeedback(): Promise<OwnedFeedback[]> {
 
 async function saveCollectionFeedback(entries: OwnedFeedback[]): Promise<void> {
   const savedAt = new Date().toISOString();
-  const { error } = await supabaseAdmin
+  const { error } = await db
     .from("app_state")
     .upsert(
       { key: COLLECTION_FEEDBACK_KEY, value: entries, updated_at: savedAt },
@@ -334,7 +334,7 @@ export async function removeCollectionFeedbackByLot(lotId: string): Promise<void
  */
 export async function getSalesCaptured(): Promise<Set<string>> {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("app_state")
       .select("value")
       .eq("key", SALES_CAPTURED_KEY)
@@ -354,7 +354,7 @@ export async function getSalesCaptured(): Promise<Set<string>> {
 
 /** Limpa o checkpoint de vendas capturadas (para re-capturar tudo, ex.: após ajustar o parser). */
 export async function clearSalesCaptured(): Promise<void> {
-  const { error } = await supabaseAdmin.from("app_state").delete().eq("key", SALES_CAPTURED_KEY);
+  const { error } = await db.from("app_state").delete().eq("key", SALES_CAPTURED_KEY);
   if (error) console.error("[app-state] não foi possível limpar o checkpoint de vendas", error);
 }
 
@@ -364,7 +364,7 @@ export async function markSalesCaptured(idLeiloes: string[]): Promise<void> {
   if (!clean.length) return;
   const current = await getSalesCaptured();
   for (const id of clean) current.add(id);
-  const { error } = await supabaseAdmin
+  const { error } = await db
     .from("app_state")
     .upsert(
       { key: SALES_CAPTURED_KEY, value: [...current], updated_at: new Date().toISOString() },
@@ -412,18 +412,14 @@ function toStringMap(value: unknown): Record<string, string> {
 }
 
 async function readStringMap(key: string): Promise<Record<string, string>> {
-  const { data, error } = await supabaseAdmin
-    .from("app_state")
-    .select("value")
-    .eq("key", key)
-    .maybeSingle();
+  const { data, error } = await db.from("app_state").select("value").eq("key", key).maybeSingle();
   if (error) throw error;
   return toStringMap(data?.value);
 }
 
 /** Lê o mapa de correções POR VENDA (`Record<lotId, {artist?, album?}>`). */
 async function readSaleOverrides(): Promise<Record<string, SaleOverride>> {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from("app_state")
     .select("value")
     .eq("key", ANALYTICS_SALE_OVERRIDES_KEY)
@@ -520,7 +516,7 @@ export async function setAnalyticsSaleOverride(
   if (!entry.artist && !entry.album) delete map[id];
   else map[id] = entry;
   const savedAt = new Date().toISOString();
-  const { error } = await supabaseAdmin.from("app_state").upsert(
+  const { error } = await db.from("app_state").upsert(
     { key: ANALYTICS_SALE_OVERRIDES_KEY, value: map, updated_at: savedAt },
     {
       onConflict: "key",
@@ -538,7 +534,7 @@ async function saveStringMap(
   map: Record<string, string>,
 ): Promise<{ savedAt: string }> {
   const savedAt = new Date().toISOString();
-  const { error } = await supabaseAdmin
+  const { error } = await db
     .from("app_state")
     .upsert({ key, value: map, updated_at: savedAt }, { onConflict: "key" });
   if (error) {
@@ -613,7 +609,7 @@ const DEFAULT_AI_MODE: AiMode = "watched";
 
 export async function getAiMode(): Promise<AiMode> {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("app_state")
       .select("value")
       .eq("key", AI_MODE_KEY)
@@ -634,7 +630,7 @@ export async function setAiMode(mode: AiMode): Promise<{ savedAt: string }> {
     throw new Error(`Modo da IA inválido: ${mode}`);
   }
   const savedAt = new Date().toISOString();
-  const { error } = await supabaseAdmin
+  const { error } = await db
     .from("app_state")
     .upsert({ key: AI_MODE_KEY, value: mode, updated_at: savedAt }, { onConflict: "key" });
   if (error) {
@@ -663,7 +659,7 @@ function envDefaultProvider(): AiProvider {
 
 export async function getAiProvider(): Promise<AiProvider> {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("app_state")
       .select("value")
       .eq("key", AI_PROVIDER_KEY)
@@ -685,7 +681,7 @@ export async function setAiProvider(provider: AiProvider): Promise<{ savedAt: st
     throw new Error(`Provedor de IA inválido: ${provider}`);
   }
   const savedAt = new Date().toISOString();
-  const { error } = await supabaseAdmin
+  const { error } = await db
     .from("app_state")
     .upsert({ key: AI_PROVIDER_KEY, value: provider, updated_at: savedAt }, { onConflict: "key" });
   if (error) {
@@ -724,7 +720,7 @@ function envDefaultGeminiModel(): GeminiModel {
 
 export async function getGeminiModel(): Promise<GeminiModel> {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("app_state")
       .select("value")
       .eq("key", GEMINI_MODEL_KEY)
@@ -746,7 +742,7 @@ export async function setGeminiModel(model: GeminiModel): Promise<{ savedAt: str
     throw new Error(`Modelo de Gemini inválido: ${model}`);
   }
   const savedAt = new Date().toISOString();
-  const { error } = await supabaseAdmin
+  const { error } = await db
     .from("app_state")
     .upsert({ key: GEMINI_MODEL_KEY, value: model, updated_at: savedAt }, { onConflict: "key" });
   if (error) {
@@ -770,7 +766,7 @@ type PendingAiBatch = {
 /** Batch de avaliação da IA em andamento (para o cron coletar). null quando não há. */
 export async function getPendingAiBatch(): Promise<PendingAiBatch | null> {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("app_state")
       .select("value")
       .eq("key", AI_BATCH_KEY)
@@ -811,11 +807,11 @@ export async function getPendingAiBatch(): Promise<PendingAiBatch | null> {
 
 export async function setPendingAiBatch(batch: PendingAiBatch | null): Promise<void> {
   if (batch === null) {
-    const { error } = await supabaseAdmin.from("app_state").delete().eq("key", AI_BATCH_KEY);
+    const { error } = await db.from("app_state").delete().eq("key", AI_BATCH_KEY);
     if (error) console.error("[app-state] não foi possível limpar o batch pendente", error);
     return;
   }
-  const { error } = await supabaseAdmin
+  const { error } = await db
     .from("app_state")
     .upsert(
       { key: AI_BATCH_KEY, value: batch, updated_at: new Date().toISOString() },
@@ -840,7 +836,7 @@ type PendingAiIdentBatch = {
 /** Batch de identificação em andamento (para o cron coletar). null quando não há. */
 export async function getPendingAiIdentBatch(): Promise<PendingAiIdentBatch | null> {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("app_state")
       .select("value")
       .eq("key", AI_IDENT_BATCH_KEY)
@@ -875,11 +871,11 @@ export async function getPendingAiIdentBatch(): Promise<PendingAiIdentBatch | nu
 
 export async function setPendingAiIdentBatch(batch: PendingAiIdentBatch | null): Promise<void> {
   if (batch === null) {
-    const { error } = await supabaseAdmin.from("app_state").delete().eq("key", AI_IDENT_BATCH_KEY);
+    const { error } = await db.from("app_state").delete().eq("key", AI_IDENT_BATCH_KEY);
     if (error) console.error("[app-state] não foi possível limpar o batch de identificação", error);
     return;
   }
-  const { error } = await supabaseAdmin
+  const { error } = await db
     .from("app_state")
     .upsert(
       { key: AI_IDENT_BATCH_KEY, value: batch, updated_at: new Date().toISOString() },
