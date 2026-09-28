@@ -596,8 +596,8 @@ telas), com `isFinished` derivado.
 - **Link "pregão presencial" → "lotes sem lance":** nas linhas de casa que hoje mostram o link
   (dia principal e Vigiados do dia em `day-tab.tsx`, aba Vigiados global em `watched-tab.tsx`),
   o link vira `PresencialOrUnsoldLink` (`src/components/vinyl/presencial-or-unsold-link.tsx`):
-  sem sinal de fim, mostra o link de sempre; com `isFinished`, mostra "lotes sem lance", que
-  expande (sob clique, `enabled: open && isFinished`) a lista vinda de `getUnsoldLots`.
+  sem sinal de fim, mostra o link de sempre; com `isFinished`, mostra "lotes sem lance", cuja
+  contagem/lista vem de `getUnsoldLots` (buscada assim que `isFinished`, ver fix abaixo).
   `HouseAuctionInfo`/`houseAuctionInfo` (`grouping.ts`) ganham o campo `idLeilao` (já disponível
   no lote) para a nova server function.
   ⚠️ **Fix (mesma versão) — sinal preciso sozinho não disparava na prática**: achado do
@@ -619,13 +619,22 @@ telas), com `isFinished` derivado.
 - **Servidor — `getUnsoldLotsForAuction`** (`src/lib/unsold-lots.server.ts`, exposta como
   `getUnsoldLots` em `leiloesbr.functions.ts`): busca o catálogo da casa sob demanda
   (`fetchCatalogData`, mesma fonte de `captureFinishedSales`) e devolve o INVERSO do filtro de
-  vendas — lotes sem `sold`, com os mesmos filtros de identidade que `salesRowsFromCatalog` já
-  usa (`looksNonVinylSale` de `vinyl-parse.ts`; `looksVinyl`/`bestCatalogTitle`, agora
-  `export`ados de `lot-sales.server.ts` para reaproveitar sem duplicar). Cruza `idPeca` com a
-  tabela `lots` (por `id_leilao`) para título/artista/foto conhecidos; sem correspondência, cai
-  no mesmo fallback de `bestCatalogTitle`/`extractArtist`. Sem persistência — cache em memória
-  com TTL de 5 min (mesmo espírito de `leiloesbr-presencial.server.ts`) só para não bater o
-  catálogo repetidamente se o usuário abrir/fechar a lista.
+  vendas — lotes sem `sold`. Sem persistência — cache em memória com TTL de 5 min (mesmo
+  espírito de `leiloesbr-presencial.server.ts`) só para não bater o catálogo repetidamente se o
+  usuário abrir/fechar a lista.
+  ⚠️ **Fix (v0.89.3) — trazia lotes de OUTRO dia**: achado do usuário — em casas cujo "leilão"
+  se estende por mais de um dia (mesmo `idLeilao`, dias diferentes), o catálogo
+  (`catalogo.asp?Num=<idLeilao>`) traz TODOS os lotes do leilão inteiro, não só os do dia da
+  linha que o usuário está vendo; o catálogo não traz a data de cada lote. Único jeito
+  confiável de restringir ao dia certo: cruzar com a tabela `lots` (que grava `day_key` por
+  lote, da varredura geral) filtrando por `id_leilao` E `day_key` — `getUnsoldLotsForAuction`
+  ganha o parâmetro `dayKey` (de `HouseAuctionInfo.dayKey`, novo campo, já era o parâmetro de
+  entrada de `houseAuctionInfo`) e só inclui lotes do catálogo com correspondência CONHECIDA
+  pro dia pedido; sem correspondência (lote nunca varrido, fora da janela) fica de fora tanto
+  do total quanto da lista — troca completude por certeza de estar no dia certo. Como
+  consequência, os filtros de identidade "desconhecido mas parece vinil" (`looksVinyl`,
+  `looksNonVinylSale`) saíram — todo lote incluído já vem de um lote CONHECIDO (só a `lots`
+  guarda vinil identificado), então o filtro extra virou redundante.
 - **"Acontecendo agora" some a casa ao terminar:** `LiveAuctions` (`live-auctions.tsx`) consulta
   `getPresencialNow` de TODAS as casas listadas (`useQueries`, mesma `queryKey`/config de
   `usePresencialNow` — dedup com as outras telas) e filtra da grade qualquer casa com sinal

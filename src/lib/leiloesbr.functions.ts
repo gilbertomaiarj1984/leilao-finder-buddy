@@ -103,18 +103,23 @@ export const getPresencialNow = createServerFn({ method: "GET" })
 /** Lotes sem lance de um leilão já terminado — sob demanda, quando o card mostra que acabou. */
 export const getUnsoldLots = createServerFn({ method: "GET" })
   .middleware([requireAuth])
-  .inputValidator((input: { idLeilao?: string; presencialUrl?: string } | undefined) => {
-    const idLeilao = typeof input?.idLeilao === "string" ? input.idLeilao.trim() : "";
-    const presencialUrl =
-      typeof input?.presencialUrl === "string" ? input.presencialUrl.trim() : "";
-    if (!idLeilao || !presencialUrl) throw new Error("idLeilao e presencialUrl obrigatórios.");
-    return { idLeilao, presencialUrl };
-  })
+  .inputValidator(
+    (input: { idLeilao?: string; presencialUrl?: string; dayKey?: string } | undefined) => {
+      const idLeilao = typeof input?.idLeilao === "string" ? input.idLeilao.trim() : "";
+      const presencialUrl =
+        typeof input?.presencialUrl === "string" ? input.presencialUrl.trim() : "";
+      const dayKey = typeof input?.dayKey === "string" ? input.dayKey.trim() : "";
+      if (!idLeilao || !presencialUrl || !dayKey) {
+        throw new Error("idLeilao, presencialUrl e dayKey obrigatórios.");
+      }
+      return { idLeilao, presencialUrl, dayKey };
+    },
+  )
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { getUnsoldLotsForAuction } = await import("./unsold-lots.server");
-    return await getUnsoldLotsForAuction(data.idLeilao, data.presencialUrl);
+    return await getUnsoldLotsForAuction(data.idLeilao, data.presencialUrl, data.dayKey);
   });
 
 // Preenche o nº do lote (via catálogo da casa) em blocos de leilões, para caber no
