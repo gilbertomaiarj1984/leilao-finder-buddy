@@ -1,5 +1,5 @@
 /**
- * Fase 2 da migração para VPS (docs/economia-fase-2-vps-unico.md): OAuth do
+ * Fase 2 da migração para VPS (docs/arquivo/economia-fase-2-vps-unico.md): OAuth do
  * Google implementado à mão (authorization code + PKCE), substituindo o
  * Supabase Auth. Sessão via cookie HttpOnly assinado (HMAC) — mesmo padrão de
  * src/lib/leiloesbr-live.server.ts (cookie lp_auth), aqui para a sessão do

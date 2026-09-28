@@ -1,6 +1,6 @@
 // Shim que reproduz a fatia do PostgrestQueryBuilder do supabase-js realmente
 // usada pelo código de negócio (ver "Surface real" em
-// docs/economia-fase-2-vps-unico.md, Fase 1) — from/select/eq/upsert/
+// docs/arquivo/economia-fase-2-vps-unico.md, Fase 1) — from/select/eq/upsert/
 // maybeSingle/range/order/update/insert/delete/single/not/is/gte/lte/rpc/or/
 // limit/like/in, e .storage passa direto (fica no Supabase até a Fase 3).
 // Contrato: resolve sempre para { data, error } (mesmo formato que o código

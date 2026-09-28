@@ -1,5 +1,5 @@
-// Endpoint de health check (mitigação pro bug intermitente do cron — ver "Pendências" em
-// docs/notas-desenvolvimento.md). Fora do fluxo de server functions, como handleCron/
+// Endpoint de health check (mitigação pro bug intermitente do cron — ver
+// docs/arquivo/pendencias-resolvidas.md). Fora do fluxo de server functions, como handleCron/
 // handleLiveProxy — o Caddy chama isso via `health_uri` no reverse_proxy pro `app`, pra
 // nunca rotear tráfego pra uma instância num estado ruim (env ausente, banco fora do ar).
 // Não exige CRON_TOKEN: não expõe nada além de booleans, e o Caddy precisa alcançar isso

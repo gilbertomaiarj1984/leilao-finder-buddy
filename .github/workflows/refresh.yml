@@ -20,7 +20,7 @@ jobs:
         env:
           APP_URL: ${{ secrets.APP_URL }}
           CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
-          # Fase 5 da migração para VPS (docs/economia-fase-2-vps-unico.md). OPCIONAL: sem
+          # Fase 5 da migração para VPS (docs/arquivo/economia-fase-2-vps-unico.md). OPCIONAL: sem
           # este secret, os pings viram no-op (curl nem roda) — nada quebra. Crie um check
           # em https://healthchecks.io (free), tipo "Cron", período ~13h de folga sobre as
           # 12h entre execuções, e cole a "Ping URL" aqui.
@@ -79,7 +79,7 @@ jobs:
           done
 
           echo "== Descoberta por galeria (categorização da casa não bate com tp= da LeilõesBR) =="
-          # Fecha o gap achado v0.69.31-37 (notas-desenvolvimento.md, Pendências): a categoria
+          # Fecha o gap achado v0.69.31-37 (docs/arquivo/pendencias-resolvidas.md): a categoria
           # "Disco de Vinil" que `chunk` acima usa (`tp=`) não bate com a marcação de TODAS as
           # casas — algumas ficam de fora da varredura geral por completo, mesmo com itens
           # saudáveis na LeilõesBR. `step=galleryscan` varre cada "galeria" (casa) listada por

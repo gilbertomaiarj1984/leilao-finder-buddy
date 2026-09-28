@@ -1,5 +1,5 @@
 // Módulo puro/client-safe: extração de palavras-chave e heurística de "possível lixo"
-// (sem IA — ver docs/notas-desenvolvimento.md, seção de exclusão de lotes).
+// (sem IA — ver docs/areas/exclusao-de-lotes.md).
 import { hasStrongVinylSignal, normalizeForMatch } from "@/lib/vinyl-parse";
 
 // Stopwords em PT + termos genéricos de catálogo de disco que aparecem em quase todo

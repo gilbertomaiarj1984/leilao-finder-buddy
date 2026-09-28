@@ -1,4 +1,4 @@
--- Fase 1 (economia de egress/CPU) — ver docs/economia-fase-1-egress-e-cpu.md.
+-- Fase 1 (economia de egress/CPU) — ver docs/arquivo/economia-fase-1-egress-e-cpu.md.
 --
 -- 1) RPC de anti-join: devolve só as vendas de `lot_sales` que AINDA não têm linha em
 --    `lot_ident`, limitado a `p_limit`. Substitui o padrão antigo de `reidentifyAllSales`

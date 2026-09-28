@@ -38,7 +38,7 @@ function titleHash(title: string): string {
 // Cache curto em memória: `getAllLotCondition` é chamada a cada iteração do laço `condition`
 // do cron (até 40x/execução) — sempre a tabela INTEIRA. Invalidado a cada escrita
 // (`upsertLotCondition`). Mesmo padrão de `lot-ai.server.ts`/`lot-ident.server.ts` (ver
-// docs/economia-fase-1-egress-e-cpu.md).
+// docs/arquivo/economia-fase-1-egress-e-cpu.md).
 let allCache: { at: number; rows: LotConditionRow[] } | null = null;
 const ALL_TTL_MS = 30_000;
 

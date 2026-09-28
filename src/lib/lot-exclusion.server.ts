@@ -1,5 +1,5 @@
 // Exclusão manual e definitiva de lotes (`excluded_lots`) — ver
-// docs/notas-desenvolvimento.md. DELETE físico em `lots` (cascade limpa
+// docs/areas/exclusao-de-lotes.md. DELETE físico em `lots` (cascade limpa
 // lot_ai/lot_ident/lot_market/lot_condition) + registro que impede o cron de
 // reinserir o mesmo id e alimenta a heurística de "possível lixo" na listagem.
 import { extractKeywords } from "./lot-exclusion";

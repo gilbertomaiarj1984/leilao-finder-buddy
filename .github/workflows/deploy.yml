@@ -1,6 +1,6 @@
 name: Deploy (VPS)
 
-# Fases 4/5 da migração para VPS (docs/economia-fase-2-vps-unico.md). Builda as imagens
+# Fases 4/5 da migração para VPS (docs/arquivo/economia-fase-2-vps-unico.md). Builda as imagens
 # (app + backup) no Actions (não no VPS — 2 vCPU/4 GB aguentaria, mas builda fora deixa o
 # deploy rápido e reproduzível), publica no GHCR e faz o VPS puxar. Dispara em push pra
 # `vps` OU `main` — pós-cutover da Fase 6 (`main` sincronizado com `vps`), qualquer PR

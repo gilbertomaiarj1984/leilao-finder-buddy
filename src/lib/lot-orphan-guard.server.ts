@@ -8,7 +8,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
  * intervalo, o `id` do payload pode não existir mais em `lots` e o upsert quebra com violação de
  * FK (`23503`). Devolve só os `id`s do array de entrada que AINDA existem em `lots`, para os
  * writers descartarem as linhas órfãs em vez de propagar a exceção (achado v0.76.2/v0.76.3 —
- * ver docs/notas-desenvolvimento.md).
+ * ver CHANGELOG.md).
  */
 export async function filterExistingLotIds(ids: string[]): Promise<Set<string>> {
   if (!ids.length) return new Set();

@@ -111,7 +111,7 @@ export async function getAllLotSales(opts?: {
  * Anti-join no banco (RPC `get_unidentified_lot_sales`): só as vendas de `lot_sales` que AINDA
  * não têm linha em `lot_ident`, até `limit`. Substitui, em `reidentifyAllSales`, o padrão antigo
  * de baixar as duas tabelas INTEIRAS (com `orig_text`) a cada chamada só para achar o que falta
- * identificar — a causa raiz do egress do Supabase (ver docs/economia-fase-1-egress-e-cpu.md).
+ * identificar — a causa raiz do egress do Supabase (ver docs/arquivo/economia-fase-1-egress-e-cpu.md).
  * Requer a migration `20260914000000_reident_egress_fixes.sql`.
  */
 async function getUnidentifiedLotSales(limit: number): Promise<LotSaleRow[]> {
@@ -177,7 +177,7 @@ type SeenAuctionRow = {
 // módulo separado); tolerável, porque um leilão novo/atualizado aparecer com até
 // `SEEN_TTL_MS` de atraso na captura de vendas não muda o resultado (a próxima chamada do
 // laço, ou a próxima execução do cron, pega). Mesmo padrão de `lot-ai.server.ts` (ver
-// docs/economia-fase-1-egress-e-cpu.md).
+// docs/arquivo/economia-fase-1-egress-e-cpu.md).
 let seenCache: { at: number; rows: SeenAuctionRow[] } | null = null;
 const SEEN_TTL_MS = 30_000;
 
@@ -436,7 +436,7 @@ const LOT_IMG_EXT_RE = /\.(?:jpe?g|png|webp)(?:\?|$)/i;
  * PRÁTICA (não só por leitura da doc) que a foto sobrevive ao lote fechado/vendido, em duas
  * gerações de template — mesma dualidade que `fetchCatalogData` já trata pro catálogo:
  * - **Template NOVO** (JSON `loadData` embutido, ex.: dasantigasleiloes): campo `VPASTA` — não é
- *   exclusivo do lote "aberto" como a doc antiga sugeria (`docs/notas-desenvolvimento.md`,
+ *   exclusivo do lote "aberto" como a doc antiga sugeria (`docs/areas/ui.md`,
  *   seção "Referência: JSON loadData do peca.asp" — atualizar depois de confirmado).
  * - **Template ANTIGO** (HTML server-side puro, sem JSON, ex.: Padicaio): primeiro `<img>` que
  *   pareça foto (extensão de imagem) e não pareça logo/banner do site.
@@ -769,7 +769,7 @@ const REIDENT_CAP = 25;
  * **Egress (Fase 1)**: no modo GLOBAL, o alvo da IA vem de uma RPC de anti-join no banco
  * (`getUnidentifiedLotSales`) em vez de baixar `lot_sales`+`lot_ident` inteiras a cada chamada —
  * essa era a causa raiz do consumo excessivo de rede/CPU nos free tiers usados antes da
- * migração pra VPS (ver docs/economia-fase-1-egress-e-cpu.md). A padronização (2) ainda lê o
+ * migração pra VPS (ver docs/arquivo/economia-fase-1-egress-e-cpu.md). A padronização (2) ainda lê o
  * histórico inteiro (precisa
  * comparar grafias de TODAS as vendas), mas sem `orig_text` — a coluna mais pesada por linha, que
  * essa etapa não usa.

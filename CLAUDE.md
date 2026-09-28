@@ -2,13 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Leia primeiro, nesta ordem:** `AGENTS.md` (convenções de trabalho, resumo) e
-> `docs/notas-desenvolvimento.md` (documento de continuidade entre sessões — arquitetura
-> detalhada, mecânica de scraping por feature, decisões, histórico de versões e pendências).
-> Este arquivo é só o essencial para começar; para qualquer detalhe de mecânica (parsing,
-> scraping, IA, Discogs, etc.) o `notas-desenvolvimento.md` é a fonte, não o código sozinho —
-> o código é refatorado com frequência, então prefira `grep` por nome de função a confiar em
-> caminhos/linhas exatos.
+> **Leia primeiro, nesta ordem:** `AGENTS.md` (convenções de trabalho) e
+> `docs/notas-desenvolvimento.md` (índice curto: restrições, arquitetura de dados, mapa da
+> documentação). Depois, **só a página de `docs/areas/` da área que vai mexer** (scraping, UI,
+> IA, coleção…) — é a fonte da mecânica fina, mais confiável que o código sozinho. Não leia
+> `CHANGELOG.md` nem `docs/arquivo/` inteiros: use `grep` quando precisar do histórico. O código
+> é refatorado com frequência — prefira `grep` por nome de função a caminhos/linhas exatos.
 
 ## O que é o app
 
@@ -18,7 +17,7 @@ leilão → artista, com vigia e lances sincronizados com a conta do usuário, a
 (via `postgres.js`) + **Google OAuth** direto, deploy em **VPS** (Docker Compose + Caddy, build
 via Vite + Nitro preset `node-server`), atualização periódica via **GitHub Actions**.
 Migração do free tier anterior para VPS único (cutover concluído) documentada em
-`docs/economia-fase-2-vps-unico.md`.
+`docs/arquivo/economia-fase-2-vps-unico.md`.
 
 ## Comandos
 
@@ -48,7 +47,7 @@ produção.
 ## Convenções de trabalho
 
 Ver `AGENTS.md` (fonte única — responder em PT, branch a partir de `origin/main`, bump de
-versão obrigatório em todo PR, atualizar `docs/notas-desenvolvimento.md` antes de mesclar,
+versão obrigatório em todo PR, atualizar a documentação (página da área + `CHANGELOG.md`) antes de mesclar,
 `supabase/setup.sql` reaplicado automaticamente em produção a cada deploy — ver
 `docs/notas-desenvolvimento.md`, "Restrições do ambiente").
 
@@ -116,5 +115,5 @@ versão obrigatório em todo PR, atualizar `docs/notas-desenvolvimento.md` antes
   `seen_auctions` podada pelo `step=prune` do cron.
 
 Para a mecânica fina de cada área (parsing de catálogo, matching de coleção, grading, Discogs,
-Analytics, etc.) consultar as seções correspondentes em `docs/notas-desenvolvimento.md` — é
-mantido atualizado a cada PR e é mais confiável que inferir do código isoladamente.
+Analytics, etc.) consultar a página correspondente em `docs/areas/` (mapa no índice
+`docs/notas-desenvolvimento.md`) — é mantida atualizada a cada PR.

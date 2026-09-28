@@ -587,7 +587,7 @@ type GalleryEntry = { code: string; name: string; count: number | null };
 
 /**
  * Diagnóstico (Fase 1 da investigação de descoberta por "galeria" — ver
- * docs/notas-desenvolvimento.md, Pendências): busca a página 1 de `busca_andamento.asp`
+ * docs/arquivo/pendencias-resolvidas.md): busca a página 1 de `busca_andamento.asp`
  * (categoria `tp` opcional, `null` = sem filtro) e tenta extrair a seção "GALERIAS" — lista
  * de casas com um código `ga=<n>` que filtra `busca_andamento.asp?ga=<n>[&tp=...]` só pra
  * aquela casa (achado pelo usuário navegando manualmente). A estrutura EXATA do HTML nunca
@@ -795,7 +795,7 @@ export async function scanGalleries(
 // `{ data: null, error }` normalmente. Sem checar `error` e relançar, essa falha
 // desaparecia em silêncio — a call resolvia como se tivesse gravado, `scrapeVinylChunk`/
 // `enrichMissingLotes` reportavam sucesso (`persisted: true`) e o site foi perdendo lotes
-// sem log nenhum (achado v0.69.28, ver "Pendências" em notas-desenvolvimento.md). Deixamos
+// sem log nenhum (achado v0.69.28, ver docs/arquivo/pendencias-resolvidas.md). Deixamos
 // propagar para os `try/catch` dos chamadores (que já existem e alimentam `persisted`).
 async function persistLots(fresh: VinylLot[]): Promise<void> {
   if (!fresh.length) return;

@@ -452,8 +452,8 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await findLotByCategory(idLeilao, pesquisa, tp));
     }
 
-    // Diagnóstico (Fase 1 da investigação por "galeria" — ver notas-desenvolvimento.md,
-    // Pendências): tenta extrair a seção "GALERIAS" (casas + código `ga=`) da página 1 de
+    // Diagnóstico (Fase 1 da investigação por "galeria" — ver docs/arquivo/pendencias-resolvidas.md):
+    // tenta extrair a seção "GALERIAS" (casas + código `ga=`) da página 1 de
     // busca_andamento.asp. ?tp=none → sem filtro de categoria; ?tp=<...> → categoria custom;
     // sem `tp` → categoria vinil padrão.
     if (step === "galleries") {
@@ -463,7 +463,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await listGalleries(tpParam ?? undefined));
     }
 
-    // Fase 2 da descoberta por galeria (ver notas-desenvolvimento.md, Pendências): varre em
+    // Fase 2 da descoberta por galeria (ver docs/arquivo/pendencias-resolvidas.md): varre em
     // blocos as galerias devolvidas por listGalleries, achando leilões que a categoria "Disco
     // de Vinil" da LeilõesBR não pega (gap que motivou toda a investigação). Chunked como
     // step=chunk/enrich — offset é o cursor, count quantas galerias por chamada.
@@ -527,7 +527,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
       });
     }
 
-    // Fase 5 da migração para VPS (docs/economia-fase-2-vps-unico.md): poda
+    // Fase 5 da migração para VPS (docs/arquivo/economia-fase-2-vps-unico.md): poda
     // `seen_auctions` (leilões com vendas já capturadas e fora da janela de retenção).
     // Barato — 1 SELECT + 1 DELETE por rodada; roda 1x por execução do cron.
     if (step === "prune") {
