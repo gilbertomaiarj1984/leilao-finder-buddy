@@ -24,6 +24,13 @@ ver "Estrutura do card do catálogo" abaixo; outras casas podem exigir ajuste de
   os **antigos** devolvem página genérica sem lotes (`pecaMatches:0`). Por isso a ordem é **mais
   recente primeiro** e a captura acontece na prática no dia em que o leilão termina (cron 4×/dia).
   Backfill histórico profundo é limitado por isso.
+- ⚠️ **Leilão de vários dias (v0.91.1):** o mesmo `idLeilao` pode ter lotes em dias diferentes,
+  mas `seen_auctions` tem UMA linha por leilão (dia do 1º lote visto). "Terminado" é julgado pelo
+  ÚLTIMO dia/hora entre essa linha e os lotes atuais (`laterAuctionSlot`, `effectiveSlot`); o
+  `sold_date` usa o dia do próprio lote quando ele ainda está em `lots` (dias já podados da janela
+  caem no dia do leilão). Leilão já marcado em `sales_captured` antes do fix NÃO é recapturado
+  sozinho — remover o id do array em `app_state` (ou `reset=1`, que sobrescreve títulos já
+  reidentificados) para refazer.
 - ⚠️ **Só VINIL, identidade nossa:** o catálogo lista TODAS as categorias (livros, DVDs, medalhas,
   miudezas…). Gravamos venda **só** dos lotes cujo id está no nosso vinil (`scrapeVinylLots`), e o
   **artista/título vêm do NOSSO lote já parseado** — não do texto ruidoso do catálogo (que só serve

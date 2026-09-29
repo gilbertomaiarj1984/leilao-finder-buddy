@@ -711,6 +711,23 @@ function auctionStartMs(dayKey: string, time: string): number | null {
   return Number.isFinite(start) ? start : null;
 }
 
+/**
+ * O "slot" (dia + hora) mais tardio entre dois — usado para leilões de VÁRIOS dias (mesmo
+ * `idLeilao`, lotes em dias diferentes): o leilão só termina no último dia. `null` (sem hora
+ * legível) perde para qualquer slot válido.
+ */
+export function laterAuctionSlot<T extends { dayKey: string; time: string }>(
+  a: T | null,
+  b: T | null,
+): T | null {
+  if (!a || !b) return a ?? b;
+  const ma = auctionStartMs(a.dayKey, a.time);
+  const mb = auctionStartMs(b.dayKey, b.time);
+  if (ma === null) return mb === null ? a : b;
+  if (mb === null) return a;
+  return mb > ma ? b : a;
+}
+
 /** true se o horário de início do leilão já passou. */
 export function auctionStarted(dayKey: string, time: string, now: number = Date.now()): boolean {
   const start = auctionStartMs(dayKey, time);
