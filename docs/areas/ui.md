@@ -638,12 +638,36 @@ telas), com `isFinished` derivado.
 - **"Acontecendo agora" some a casa ao terminar:** `LiveAuctions` (`live-auctions.tsx`) consulta
   `getPresencialNow` de TODAS as casas listadas (`useQueries`, mesma `queryKey`/config de
   `usePresencialNow` — dedup com as outras telas) e filtra da grade qualquer casa com sinal
-  preciso de fim OU `auction.status === "ended"` (mesmo fallback de 3h acima), incluindo no
-  contador do cabeçalho. A casa continua disponível o dia inteiro na aba principal por dia e em
-  `/ao-vivo` (que listam por `day_key`, não pela janela de 3h de `listLiveAuctions`) — só o
-  card "Acontecendo agora" (que é temporário) esconde.
-- **Sem NENHUM sinal de fim** (nem presencial nem heurística de 3h — leilão de fato ainda em
-  andamento, ou casa fora do padrão): comportamento idêntico ao de antes desta versão.
+  preciso de fim OU `auction.status === "ended"` (mesmo fallback de 3h acima) OU override
+  manual (abaixo), incluindo no contador do cabeçalho. A casa continua disponível o dia inteiro
+  na aba principal por dia e em `/ao-vivo` (que listam por `day_key`, não pela janela de 3h de
+  `listLiveAuctions`) — só o card "Acontecendo agora" (que é temporário) esconde.
+- **Sem NENHUM sinal automático de fim** (nem presencial nem heurística de 3h): comportamento
+  idêntico ao de antes desta versão — MAS ver override manual abaixo (v0.89.4).
+
+### Override manual — "marcar pregão como encerrado" (v0.89.4)
+
+Achado do usuário: uma casa com **131 lotes** terminou o pregão bem antes das 3h (comum — um
+pregão roda ~40s/lote), e ficou sem NENHUM sinal de fim: o preciso (`peça = total`) não
+disparou (mesma suspeita de sempre — o polling provavelmente já não respondia mais, mas sem
+como confirmar nesta rede) e a heurística de 3h ainda não tinha passado. Sem rede real para as
+casas de leilão neste ambiente (ver `CLAUDE.md`), não dá pra melhorar o sinal preciso por
+análise estática — então, em vez de mais uma heurística de horário, o usuário ganha um botão
+pra confirmar o que só ELE pode saber com certeza nesse intervalo.
+
+- **`src/lib/manually-finished-auctions.ts`** (puro/client-safe, só `localStorage`):
+  `isManuallyFinished(idLeilao)`/`markManuallyFinished(idLeilao)` — guarda `{idLeilao: timestamp}`,
+  podado a cada leitura (`MAX_AGE_MS` = 24h) pra não crescer sem limite. Sem servidor, sem
+  sincronizar entre dispositivos — é uma confirmação pontual do que o usuário está vendo na tela
+  dele agora.
+- **`src/components/vinyl/use-manually-finished.ts`**: `useManuallyFinished(idLeilao)` — versão
+  reativa (`useState` hidratado do storage) pra re-renderizar a UI na hora do clique, sem
+  esperar reload.
+- **UI**: `PresencialOrUnsoldLink` ganha um botãozinho (ícone `Flag`) ao lado do link "pregão
+  presencial", visível só enquanto `!isFinished` — `isFinished = presencialFinished ||
+  statusEnded || manuallyFinished`. Mesmo override consultado (função pura, sem hook — não dá
+  pra chamar hook dentro de `.map`) no filtro de `LiveAuctions` (`live-auctions.tsx`), pra
+  também sumir de "Acontecendo agora" assim que marcado.
 
 ## Painel de mudanças — DESCONTINUADO (v0.25.0)
 

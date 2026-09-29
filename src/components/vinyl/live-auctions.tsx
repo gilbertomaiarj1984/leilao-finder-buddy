@@ -4,6 +4,7 @@ import { ChevronDown, ExternalLink, Gavel, Radio } from "lucide-react";
 import { useState } from "react";
 
 import { getLiveAuctions, getPresencialNow } from "@/lib/leiloesbr.functions";
+import { isManuallyFinished } from "@/lib/manually-finished-auctions";
 import type { PresencialNow } from "@/lib/presencial-now";
 
 /**
@@ -97,10 +98,16 @@ export function LiveAuctions() {
   // Fallback: quando o presencial nunca sinaliza fim (na prática o polling costuma parar de
   // responder assim que o pregão acaba de verdade, em vez de ficar parado em "peça = total"),
   // a heurística de 3h já usada pelo badge "Encerrado" (`auction.status`) garante que a casa
-  // não fique presa na seção indefinidamente.
+  // não fique presa na seção indefinidamente — e o override manual (leilões mais rápidos que
+  // 3h, sem nenhum sinal automático ainda) some na hora, ver `presencial-or-unsold-link.tsx`.
   const auctions = allAuctions
     .map((auction, i) => ({ auction, now: presencialQueries[i]?.data ?? null }))
-    .filter(({ auction, now }) => !isPresencialFinished(now) && auction.status !== "ended");
+    .filter(
+      ({ auction, now }) =>
+        !isPresencialFinished(now) &&
+        auction.status !== "ended" &&
+        !isManuallyFinished(auction.idLeilao),
+    );
 
   if (!auctions.length) return null;
 
