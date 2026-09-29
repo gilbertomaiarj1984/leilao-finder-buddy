@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ChevronDown, Radio } from "lucide-react";
+import { ChevronDown, Flag, Radio } from "lucide-react";
 import { useState } from "react";
 
 import { getUnsoldLots } from "@/lib/leiloesbr.functions";
 
+import { useManuallyFinished } from "./use-manually-finished";
 import { usePresencialNow } from "./use-presencial-now";
 
 type UnsoldLotItem = {
@@ -63,11 +64,14 @@ function UnsoldLotCard({ lot }: { lot: UnsoldLotItem }) {
  * restringe ao dia desta linha — o catálogo do site é por LEILÃO, não por dia, e leilões que
  * se estendem por mais de um dia (mesmo `idLeilao`) trariam lotes de outros dias junto.
  *
- * Fim do pregão: sinal PRECISO de `usePresencialNow` (peça atual = total) OU, quando esse
- * dado não vem (`isFinished` nunca fica `true`), a heurística de 3h já usada pelo badge
- * "Encerrado" (`statusEnded`, de `houseAuctionInfo`) — descoberto na prática: quando o pregão
- * termina de verdade, o polling do presencial costuma parar de responder em vez de ficar
- * parado em "peça = total", então o sinal preciso sozinho nunca dispara pra maioria das casas.
+ * Fim do pregão, em ordem de confiança: (1) sinal PRECISO de `usePresencialNow` (peça atual =
+ * total); (2) heurística de 3h já usada pelo badge "Encerrado" (`statusEnded`, de
+ * `houseAuctionInfo`) — descoberto na prática: quando o pregão termina de verdade, o polling
+ * do presencial costuma parar de responder em vez de ficar parado em "peça = total", então o
+ * sinal preciso sozinho nunca dispara pra maioria das casas; (3) override MANUAL do usuário
+ * (`useManuallyFinished`, `src/lib/manually-finished-auctions.ts`, só no navegador) — leilões
+ * mais rápidos que 3h (comum) ficam sem sinal 1 e 2 até completar as 3h, então o usuário pode
+ * marcar "encerrado" à mão quando souber que acabou (botão bandeira ao lado do link).
  */
 export function PresencialOrUnsoldLink({
   presencialUrl,
@@ -81,7 +85,8 @@ export function PresencialOrUnsoldLink({
   statusEnded: boolean;
 }) {
   const { isFinished: presencialFinished } = usePresencialNow(presencialUrl);
-  const isFinished = presencialFinished || statusEnded;
+  const { finished: manuallyFinished, markFinished } = useManuallyFinished(idLeilao);
+  const isFinished = presencialFinished || statusEnded || manuallyFinished;
   const [open, setOpen] = useState(false);
   const fetchUnsold = useServerFn(getUnsoldLots);
   const query = useQuery({
@@ -93,15 +98,25 @@ export function PresencialOrUnsoldLink({
 
   if (!isFinished) {
     return (
-      <a
-        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-        href={presencialUrl}
-        target="_blank"
-        rel="noreferrer"
-        title="Acompanhar o pregão presencial desta casa"
-      >
-        <Radio className="h-3 w-3" /> pregão presencial
-      </a>
+      <>
+        <a
+          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          href={presencialUrl}
+          target="_blank"
+          rel="noreferrer"
+          title="Acompanhar o pregão presencial desta casa"
+        >
+          <Radio className="h-3 w-3" /> pregão presencial
+        </a>
+        <button
+          type="button"
+          onClick={markFinished}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
+          title="O sistema ainda não detectou o fim do pregão — marcar como encerrado manualmente (mostra os lotes sem lance)"
+        >
+          <Flag className="h-3 w-3" />
+        </button>
+      </>
     );
   }
 
