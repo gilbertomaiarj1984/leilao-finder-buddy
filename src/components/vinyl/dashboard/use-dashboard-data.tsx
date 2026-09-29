@@ -93,10 +93,13 @@ import {
   useLotIdentQuery,
   useLotMarketQuery,
   useLotsQuery,
+  useLotsRangeQueries,
+  patchLotsCaches,
   useBidsQuery,
   useWatchedQuery,
   queryKeys,
 } from "@/lib/queries";
+import { BAR_PAGES, buildBarDays, DAY_PAGE, TODAY_INDEX, TODAY_PAGE } from "@/lib/day-bar";
 
 /** Tamanho de cada bloco da busca de detalhes (peca.asp) — o servidor aceita até 100. */
 const LOT_DETAILS_CHUNK = 50;
@@ -171,7 +174,15 @@ export function useDashboardData() {
   const [tabsBarRef, tabsBarHeight] = useMeasuredHeight();
   const stickyBelowHeader = { top: tabsBarHeight + (barsHidden ? 0 : headerHeight) };
 
-  const [tab, setTab] = useState<string>("day-0");
+  const [tab, setTab] = useState<string>(`day-${TODAY_INDEX}`);
+  // Página (de 5 dias) da barra de dias em exibição e as já visitadas: as páginas de histórico
+  // e futuro só são buscadas (`useLotsRangeQueries`) depois de abertas pela primeira vez.
+  const [dayPage, setDayPageState] = useState<number>(TODAY_PAGE);
+  const [visitedPages, setVisitedPages] = useState<number[]>([TODAY_PAGE]);
+  const setDayPage = (page: number) => {
+    setDayPageState(page);
+    setVisitedPages((cur) => (cur.includes(page) ? cur : [...cur, page]));
+  };
   // Alvo (via portal) para a barra de controles do dia (Vigiados/Lances/Analisar/casas),
   // renderizada dentro do header — acima da lista de dias — em vez de sticky abaixo dele.
   const [dayBarHost, setDayBarHost] = useState<HTMLDivElement | null>(null);
@@ -271,7 +282,30 @@ export function useDashboardData() {
   const fetchTrashDenylist = useServerFn(getTrashKeywordDenylist);
   const runDismissTrash = useServerFn(dismissPossibleTrash);
 
-  const lots = useLotsQuery();
+  const baseLots = useLotsQuery();
+  // `days` do servidor = hoje..+4 (janela padrão); hoje é o primeiro.
+  const todayKey = baseLots.data?.days[0] ?? null;
+  const barDays = useMemo(() => (todayKey ? buildBarDays(todayKey) : []), [todayKey]);
+  const rangeQueries = useLotsRangeQueries(
+    Array.from({ length: BAR_PAGES }, (_, page) =>
+      page === TODAY_PAGE || !barDays.length || !visitedPages.includes(page)
+        ? null
+        : { from: barDays[page * DAY_PAGE]!, to: barDays[page * DAY_PAGE + DAY_PAGE - 1]! },
+    ),
+  );
+  const rangeStamp = rangeQueries.map((q) => q.dataUpdatedAt).join(",");
+  // Mescla a janela padrão com as páginas de histórico/futuro carregadas — o resto da tela lê
+  // `lots.data.lots` sem saber de onde cada lote veio.
+  const mergedLots = useMemo(() => {
+    if (!baseLots.data) return baseLots.data;
+    const byId = new Map<string, VinylLot>();
+    for (const q of rangeQueries) for (const lot of q.data?.lots ?? []) byId.set(lot.id, lot);
+    for (const lot of baseLots.data.lots) byId.set(lot.id, lot);
+    return { ...baseLots.data, lots: [...byId.values()] };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `rangeStamp` representa `rangeQueries`
+  }, [baseLots.data, rangeStamp]);
+  const lots = { ...baseLots, data: mergedLots };
+  const pageLoading = rangeQueries.some((q) => q.isLoading);
   // Vigiados/lances "vistos" na janela de dias: a conta do LeilõesBR (l=8/l=4) pode parar de
   // trazer um lote assim que o leilão termina — igual à listagem pública, que já "some" um
   // leilão que ficou ao vivo. Sem isso, o card do vigiado/lance (e a tarja "Vendido" que ele
@@ -804,9 +838,7 @@ export function useDashboardData() {
         toast.error("Este lote já não estava mais na listagem");
         return;
       }
-      queryClient.setQueryData(queryKeys.lots, (old: typeof lots.data) =>
-        old ? { ...old, lots: old.lots.filter((item) => item.id !== input.lotId) } : old,
-      );
+      patchLotsCaches(queryClient, (list) => list.filter((item) => item.id !== input.lotId));
       void queryClient.invalidateQueries({ queryKey: ["excluded-lots"] });
       toast.success("Lote excluído — não volta a aparecer");
       setExcludeTarget(null);
@@ -1060,15 +1092,10 @@ export function useDashboardData() {
       await runToggle({ data: lot }),
     onMutate: (lot) => setPending(lot.idPeca),
     onSuccess: (result, lot) => {
-      queryClient.setQueryData(queryKeys.lots, (old: typeof lots.data) =>
-        old
-          ? {
-              ...old,
-              lots: old.lots.map((item) =>
-                item.idPeca === lot.idPeca ? { ...item, watched: result.watched } : item,
-              ),
-            }
-          : old,
+      patchLotsCaches(queryClient, (list) =>
+        list.map((item) =>
+          item.idPeca === lot.idPeca ? { ...item, watched: result.watched } : item,
+        ),
       );
       // O acumulador de "vigiados vistos" (ver comentário acima de `watched`) precisa refletir
       // as DUAS direções NA HORA, sem esperar o refetch de `listWatched` (que lê a conta do
@@ -1147,6 +1174,7 @@ export function useDashboardData() {
   const editTags = (id: string) => (tags: string[]) => saveTagsMut.mutate({ id, tags });
 
   const days = lots.data?.days ?? [];
+  // (`days` acima = janela padrão hoje..+4; `barDays` = os 25 dias da barra, com histórico.)
   const searchNorm = normalizeForMatch(search);
   // Relevância da busca: identidade (álbum da IA + artista + título) tem prioridade;
   // casa e nº do lote entram só como campos fracos, para não trazer lotes "muito
@@ -1464,6 +1492,11 @@ export function useDashboardData() {
     setDayBarHost,
     tabsBarRef,
     days,
+    barDays,
+    todayKey,
+    dayPage,
+    setDayPage,
+    pageLoading,
     matchesSearch,
     watched,
     searchNorm,

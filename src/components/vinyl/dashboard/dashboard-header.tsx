@@ -9,18 +9,16 @@ import {
   ShoppingBag,
   Sparkles,
 } from "lucide-react";
-import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { bidMatchesSearch, dayLabel, watchedMatchesSearch } from "@/components/vinyl/grouping";
+import { BAR_PAGES, DAY_PAGE, TODAY_INDEX } from "@/lib/day-bar";
 import { auctionFinished } from "@/lib/vinyl-parse";
 
 import { LotSearchBox } from "./lot-search-box";
 import type { DashboardData } from "./use-dashboard-data";
-
-const DAY_PAGE = 5;
 
 export function DashboardHeader({
   d,
@@ -39,7 +37,10 @@ export function DashboardHeader({
     lots,
     setDayBarHost,
     tabsBarRef,
-    days,
+    barDays,
+    dayPage,
+    setDayPage,
+    pageLoading,
     matchesSearch,
     watched,
     searchNorm,
@@ -47,12 +48,11 @@ export function DashboardHeader({
     bids,
     setFinishedToggleHost,
   } = d;
-  // Janela de dias visíveis (5 por vez); as setas paginam de 5 em 5.
-  const [dayOffset, setDayOffset] = useState(0);
-  const maxOffset = Math.max(0, days.length - 1);
-  const offset = Math.min(dayOffset, maxOffset);
-  const canPrev = offset > 0;
-  const canNext = offset + DAY_PAGE < days.length;
+  // Janela de dias visíveis (5 por vez, página `dayPage`); as setas paginam de 5 em 5 por
+  // 2 páginas de histórico, a de hoje e 2 de futuro (`day-bar.ts`).
+  const offset = dayPage * DAY_PAGE;
+  const canPrev = dayPage > 0;
+  const canNext = dayPage < BAR_PAGES - 1;
   return (
     <div className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
       {/* Colapsa com o botão do topo (`MobileTopToggle`) — também no desktop agora.
@@ -143,25 +143,28 @@ export function DashboardHeader({
             size="icon"
             className="h-8 w-8 shrink-0"
             disabled={!canPrev}
-            onClick={() => setDayOffset(Math.max(0, offset - DAY_PAGE))}
-            title="5 dias anteriores"
+            onClick={() => setDayPage(dayPage - 1)}
+            title="5 dias anteriores (histórico)"
             aria-label="5 dias anteriores"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <TabsList className="flex h-auto flex-nowrap justify-start gap-1 overflow-x-auto bg-secondary sm:flex-wrap sm:overflow-visible">
-            {days.map((day, index) => {
+            {barDays.map((day, index) => {
               if (index < offset || index >= offset + DAY_PAGE) return null;
               return (
                 <TabsTrigger key={day} value={`day-${index}`} className="shrink-0">
-                  {dayLabel(day, index)}
+                  {dayLabel(day, index - TODAY_INDEX)}
                   <span className="ml-2 text-xs text-muted-foreground">
-                    {lots.data?.lots.filter(
-                      (lot) =>
-                        lot.dayKey === day &&
-                        !auctionFinished(lot.dayKey, lot.time) &&
-                        matchesSearch(lot),
-                    ).length ?? 0}
+                    {pageLoading && (index < TODAY_INDEX || index >= TODAY_INDEX + DAY_PAGE)
+                      ? "…"
+                      : (lots.data?.lots.filter(
+                          (lot) =>
+                            lot.dayKey === day &&
+                            // Dias passados (histórico) contam tudo — o leilão já acabou.
+                            (index < TODAY_INDEX || !auctionFinished(lot.dayKey, lot.time)) &&
+                            matchesSearch(lot),
+                        ).length ?? 0)}
                   </span>
                 </TabsTrigger>
               );
@@ -192,7 +195,7 @@ export function DashboardHeader({
             size="icon"
             className="h-8 w-8 shrink-0"
             disabled={!canNext}
-            onClick={() => setDayOffset(offset + DAY_PAGE)}
+            onClick={() => setDayPage(dayPage + 1)}
             title="Próximos 5 dias"
             aria-label="Próximos 5 dias"
           >

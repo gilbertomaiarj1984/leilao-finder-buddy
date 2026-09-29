@@ -147,7 +147,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     setTab,
     setArtistFilter,
     lots,
-    days,
+    barDays,
     setOwnedPanelLot,
     setExcludeTarget,
     ownedPanelLot,
@@ -208,7 +208,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             </div>
           ) : (
             <>
-              {days.map((day, index) => (
+              {barDays.map((day, index) => (
                 <DayTab key={day} d={d} day={day} index={index} />
               ))}
 

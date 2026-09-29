@@ -1,0 +1,59 @@
+name: Atualização diária dos dias futuros
+
+# 1x por dia, 02:00 BRT (UTC 05:00): varre só os dias +5..+14 (a janela dos 5 primeiros dias é do
+# `refresh.yml`, 4x/dia) e preenche o nº de lote deles. Sem IA/mercado: quando o dia entra nos
+# 5 primeiros, o cron normal cuida disso. Mesmo `concurrency.group` do `refresh.yml` — as duas
+# rodam em fila (a listagem da LeilõesBR tem limite de taxa, ver `listingFetch`).
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: refresh-lotes
+  cancel-in-progress: false
+
+jobs:
+  refresh-extended:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Varrer dias futuros + nº de lote
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL:-}" ] || [ -z "${CRON_TOKEN:-}" ]; then
+            echo "Configure os secrets APP_URL e CRON_TOKEN no repositório."; exit 1
+          fi
+          base="${APP_URL%/}"
+          call() { curl -fsS --max-time 120 --retry 3 --retry-delay 5 -H "x-cron-token: $CRON_TOKEN" "$base$1"; }
+
+          echo "== Varredura em blocos (dias +5..+14) =="
+          from="null"
+          for i in $(seq 1 80); do
+            res="$(call "/api/cron?step=chunk&ext=1&fromPage=$from&size=15")"
+            echo "chunk $i: $res"
+            if [ "$(echo "$res" | jq -r '.persisted')" = "false" ]; then
+              echo "chunk $i: persisted=false — banco não gravou o bloco, abortando"; exit 1
+            fi
+            next="$(echo "$res" | jq -r '.nextPage')"
+            [ "$next" = "null" ] && break
+            from="$next"
+          done
+
+          echo "== Preenchimento de nº de lote (dias +5..+14) =="
+          off=0
+          for i in $(seq 1 60); do
+            if ! res="$(curl -fsS --max-time 150 -H "x-cron-token: $CRON_TOKEN" "$base/api/cron?step=enrich&ext=1&max=6&offset=$off" 2>&1)"; then
+              echo "enrich $i (offset $off): falhou — $res; pulando este bloco"
+              off=$((off + 6))
+              continue
+            fi
+            echo "enrich $i (offset $off): $res"
+            done="$(echo "$res" | jq -r '.done')"
+            [ "$done" = "true" ] && break
+            off="$(echo "$res" | jq -r '.nextOffset')"
+            [ "$off" = "null" ] && break
+          done
+          echo "Concluído."
