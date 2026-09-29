@@ -174,3 +174,5 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   antes do fix do `reident`). Cache TTL 30s em `getAllLotCondition` (invalidado por
   `upsertLotCondition`) e em `readSeenAuctions` (sem invalidação por escrita — quem grava
   `seen_auctions` é outro módulo, `recordAuctions`; tolerável, best-effort).
+
+- **Retenção de `lots` (v0.92.0):** a poda não apaga mais dias passados até 10 dias atrás, nem futuros até +14; `step=chunk|enrich&ext=1` cobre +5..+14 (cron 02:00 BRT).

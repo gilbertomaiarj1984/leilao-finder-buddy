@@ -1,5 +1,6 @@
 import { parse, type HTMLElement } from "node-html-parser";
 
+import { BAR_FORWARD_DAYS, BAR_HISTORY_DAYS } from "./day-bar";
 import { publicFetch, BASE_URL } from "./leiloesbr-auth.server";
 import {
   decodeHtmlEntities,
@@ -8,6 +9,7 @@ import {
   isVinylTitle,
   looksNonVinyl,
   parseInfoLine,
+  recentDayKeys,
   upcomingDayKeys,
   type VinylLot,
 } from "./vinyl-parse";
@@ -17,6 +19,18 @@ export const VINYL_CATEGORY = "|446973636F2064652076696E696C|";
 const PER_PAGE = 126;
 
 export const WINDOW_DAYS = 5; // quantos dias de leilões trazer (hoje + próximos)
+
+// Retenção de `lots`: `HISTORY_DAYS` dias para trás (histórico já capturado, nunca re-varrido) e
+// até `FORWARD_DAYS` dias à frente (hoje + 14). Os 5 primeiros dias (`WINDOW_DAYS`) são varridos
+// 4×/dia; os dias `WINDOW_DAYS`..`FORWARD_DAYS - 1` só 1×/dia (`refresh-extended.yml`).
+const HISTORY_DAYS = BAR_HISTORY_DAYS;
+const FORWARD_DAYS = BAR_FORWARD_DAYS;
+
+/** Dias (offset em relação a hoje, em horário de São Paulo) → dayKey `YYYY-MM-DD`. */
+function dayKeyAt(offset: number): string {
+  const back = offset < 0 ? recentDayKeys(-offset + 1) : upcomingDayKeys(offset + 1);
+  return back[back.length - 1]!;
+}
 
 export const MAX_PAGES = 150; // teto de páginas por varredura (janela maior = mais páginas)
 
@@ -529,14 +543,32 @@ async function persistLots(fresh: VinylLot[]): Promise<void> {
   }
 }
 
-/** Remove do banco os lotes fora da janela atual de dias. */
-async function pruneOutOfWindow(windowStart: string, windowEnd: string): Promise<void> {
+/**
+ * Remove do banco os lotes fora da janela de retenção (`HISTORY_DAYS` para trás,
+ * `FORWARD_DAYS` à frente) — os dias passados são mantidos como histórico.
+ */
+async function pruneOutOfWindow(): Promise<void> {
   try {
     const { db } = await import("@/lib/db-client.server");
-    await db.from("lots").delete().or(`day_key.lt.${windowStart},day_key.gt.${windowEnd}`);
+    const keepFrom = dayKeyAt(-HISTORY_DAYS);
+    const keepTo = dayKeyAt(FORWARD_DAYS - 1);
+    await db.from("lots").delete().or(`day_key.lt.${keepFrom},day_key.gt.${keepTo}`);
   } catch (error) {
     console.error("[leiloesbr] não foi possível limpar lotes fora da janela", error);
   }
+}
+
+/**
+ * Lotes já gravados de um intervalo de dias (só banco, sem varrer o site) — alimenta as
+ * páginas de histórico/futuro da barra de dias. Limitado à janela de retenção.
+ */
+export async function readLotsRange(from: string, to: string): Promise<VinylLot[]> {
+  const keepFrom = dayKeyAt(-HISTORY_DAYS);
+  const keepTo = dayKeyAt(FORWARD_DAYS - 1);
+  const start = from < keepFrom ? keepFrom : from;
+  const end = to > keepTo ? keepTo : to;
+  if (start > end) return [];
+  return await readLots(start, end);
 }
 
 type LotRow = {
@@ -787,6 +819,7 @@ const ENRICH_AUCTION_MS = 25_000;
 export async function enrichMissingLotes(
   maxAuctions = 6,
   offset = 0,
+  extended = false,
 ): Promise<{
   updated: number;
   total: number;
@@ -794,9 +827,8 @@ export async function enrichMissingLotes(
   done: boolean;
   persisted: boolean;
 }> {
-  const days = upcomingDayKeys(WINDOW_DAYS);
-  const windowStart = days[0]!;
-  const windowEnd = days[days.length - 1]!;
+  const windowStart = dayKeyAt(extended ? WINDOW_DAYS : 0);
+  const windowEnd = dayKeyAt(extended ? FORWARD_DAYS - 1 : WINDOW_DAYS - 1);
 
   let lots: VinylLot[];
   try {
@@ -942,7 +974,7 @@ export async function scrapeVinylLots(
   if (fresh.length) {
     try {
       await persistLots(fresh);
-      await pruneOutOfWindow(windowStart, windowEnd);
+      await pruneOutOfWindow();
     } catch (error) {
       console.error("[leiloesbr] não foi possível persistir os lotes", error);
     }
@@ -993,6 +1025,7 @@ export async function refreshVinylDay(
 export async function scrapeVinylChunk(
   fromPage: number | null,
   size: number,
+  extended = false,
 ): Promise<{
   total: number;
   nextPage: number | null;
@@ -1001,9 +1034,9 @@ export async function scrapeVinylChunk(
   failedPages: string[];
   emptyPages: number[];
 }> {
-  const days = upcomingDayKeys(WINDOW_DAYS);
-  const windowStart = days[0]!;
-  const windowEnd = days[days.length - 1]!;
+  // `extended`: dias `WINDOW_DAYS`..`FORWARD_DAYS - 1` (cron das 02:00); senão os `WINDOW_DAYS` de hoje.
+  const windowStart = dayKeyAt(extended ? WINDOW_DAYS : 0);
+  const windowEnd = dayKeyAt(extended ? FORWARD_DAYS - 1 : WINDOW_DAYS - 1);
 
   let start = fromPage ?? 0;
   let total = fromPage ?? 0;
@@ -1071,9 +1104,9 @@ export async function scrapeVinylChunk(
   }
 
   const nextPage = lastDone <= 1 ? null : lastDone - 1;
-  if (nextPage == null) {
+  if (nextPage == null && !extended) {
     try {
-      await pruneOutOfWindow(windowStart, windowEnd);
+      await pruneOutOfWindow();
     } catch (error) {
       console.error("[leiloesbr] não foi possível limpar lotes fora da janela", error);
     }
