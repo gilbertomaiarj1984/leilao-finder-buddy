@@ -689,3 +689,5 @@ segue existindo, usado pela home ("Atualizar tudo" — desde v0.84.0 também rod
 - **Barra de dias (home):** exibe 5 dias por vez; setas ‹ › nas pontas paginam de 5 em 5 (estado local `dayOffset` em `dashboard-header.tsx`). Vigiados/Lances ficam sempre visíveis.
 
 - **Histórico e dias futuros (v0.92.0):** `lots` retém hoje-10..hoje+14 (`pruneOutOfWindow`, constantes em `src/lib/day-bar.ts`). Hoje..+4 seguem varridos 4×/dia (`refresh.yml`); +5..+14 só 1×/dia às 02:00 BRT (`refresh-extended.yml`: `step=chunk&ext=1` e `step=enrich&ext=1`, mesmo `concurrency.group`). Histórico é só o que já estava gravado (nunca re-varrido; começa a acumular a partir do deploy). A barra de dias tem 25 dias em 5 páginas de 5 (`dayPage`, abre em hoje); páginas fora de hoje..+4 vêm sob demanda de `getVinylLotsRange` (`useLotsRangeQueries`) e são mescladas em `lots.data`. Dia passado abre mostrando finalizados e sem o botão de atualizar.
+
+- **Cores e "Hoje" (v0.93.0):** abas de dias passados em amarelo, futuros em azul (`dashboard-header.tsx`); botão "Hoje" ao lado da seta direita volta para a página de hoje e seleciona a aba de hoje.

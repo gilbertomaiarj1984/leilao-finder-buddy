@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { bidMatchesSearch, dayLabel, watchedMatchesSearch } from "@/components/vinyl/grouping";
-import { BAR_PAGES, DAY_PAGE, TODAY_INDEX } from "@/lib/day-bar";
+import { BAR_PAGES, DAY_PAGE, TODAY_INDEX, TODAY_PAGE } from "@/lib/day-bar";
 import { auctionFinished } from "@/lib/vinyl-parse";
 
 import { LotSearchBox } from "./lot-search-box";
@@ -40,6 +40,7 @@ export function DashboardHeader({
     barDays,
     dayPage,
     setDayPage,
+    setTab,
     pageLoading,
     matchesSearch,
     watched,
@@ -153,7 +154,17 @@ export function DashboardHeader({
             {barDays.map((day, index) => {
               if (index < offset || index >= offset + DAY_PAGE) return null;
               return (
-                <TabsTrigger key={day} value={`day-${index}`} className="shrink-0">
+                <TabsTrigger
+                  key={day}
+                  value={`day-${index}`}
+                  className={
+                    index < TODAY_INDEX
+                      ? "shrink-0 bg-amber-500/10 text-amber-700 data-[state=active]:bg-amber-500/25 data-[state=active]:text-amber-800 dark:text-amber-300 dark:data-[state=active]:text-amber-200"
+                      : index > TODAY_INDEX
+                        ? "shrink-0 bg-sky-500/10 text-sky-700 data-[state=active]:bg-sky-500/25 data-[state=active]:text-sky-800 dark:text-sky-300 dark:data-[state=active]:text-sky-200"
+                        : "shrink-0"
+                  }
+                >
                   {dayLabel(day, index - TODAY_INDEX)}
                   <span className="ml-2 text-xs text-muted-foreground">
                     {pageLoading && (index < TODAY_INDEX || index >= TODAY_INDEX + DAY_PAGE)
@@ -200,6 +211,19 @@ export function DashboardHeader({
             aria-label="Próximos 5 dias"
           >
             <ChevronRight className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0"
+            onClick={() => {
+              setDayPage(TODAY_PAGE);
+              setTab(`day-${TODAY_INDEX}`);
+            }}
+            title="Voltar para hoje"
+            aria-label="Voltar para hoje"
+          >
+            Hoje
           </Button>
           {/* Alvo do portal do botão "Incluir/Ocultar finalizados" — ao final da faixa de
           dias, depois de "Lances" (ver finishedToggleHost). */}
