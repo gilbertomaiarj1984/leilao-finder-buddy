@@ -1,11 +1,12 @@
 name: Atualização periódica dos lotes
 
-# Roda 3x por dia, de 8 em 8h (UTC 03:10/11:10/19:10 = BRT 00:10/08:10/16:10). Também
+# Roda 4x por dia, de 6 em 6h (UTC 03:05/09:05/15:05/21:05 = BRT 00:05/06:05/12:05/18:05).
+# Se a run falhar, `refresh-retry.yml` reexecuta os jobs que falharam (1x). Também
 # pode ser disparado manualmente na aba Actions ("Run workflow"). O "Atualizar tudo" no
 # app continua existindo para forçar na hora.
 on:
   schedule:
-    - cron: "10 3,11,19 * * *"
+    - cron: "5 3,9,15,21 * * *"
   workflow_dispatch: {}
 
 concurrency:
@@ -22,8 +23,8 @@ jobs:
           CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
           # Fase 5 da migração para VPS (docs/arquivo/economia-fase-2-vps-unico.md). OPCIONAL: sem
           # este secret, os pings viram no-op (curl nem roda) — nada quebra. Crie um check
-          # em https://healthchecks.io (free), tipo "Cron", período ~13h de folga sobre as
-          # 12h entre execuções, e cole a "Ping URL" aqui.
+          # em https://healthchecks.io (free), tipo "Cron", período ~7h de folga sobre as
+          # 6h entre execuções, e cole a "Ping URL" aqui.
           HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
         run: |
           set -euo pipefail
@@ -107,7 +108,16 @@ jobs:
           echo "== Preenchimento de nº de lote (catálogos) =="
           off=0
           for i in $(seq 1 60); do
-            res="$(call "/api/cron?step=enrich&max=6&offset=$off")"
+            # Sem retry do curl: repetir o mesmo offset após um timeout só gasta tempo. Falha
+            # de um bloco é não crítica — pula pro próximo offset (o número de lote é
+            # preenchido nas execuções seguintes) e marca a run como falha no final.
+            if ! res="$(curl -fsS --max-time 120 -H "x-cron-token: $CRON_TOKEN" "$base/api/cron?step=enrich&max=6&offset=$off" 2>&1)"; then
+              echo "enrich $i (offset $off): falhou — $res"
+              echo "enrich: não crítico, pulando este bloco; run marcada como falha no final"
+              soft_failed=1
+              off=$((off + 6))
+              continue
+            fi
             echo "enrich $i (offset $off): $res"
             if [ "$(echo "$res" | jq -r '.persisted')" = "false" ]; then
               echo "enrich $i: persisted=false — banco não gravou os nº de lote, abortando"
@@ -229,7 +239,7 @@ jobs:
 
           echo "Concluído."
           if [ "$soft_failed" = "1" ]; then
-            echo "Uma ou mais etapas de IA (aieval/aiident) falharam nesta run — ver mensagens acima; o resto do cron rodou normalmente."
+            echo "Uma ou mais etapas não críticas (enrich/aieval/aiident) falharam nesta run — ver mensagens acima; o resto do cron rodou normalmente."
             ping_healthcheck fail
             exit 1
           fi
