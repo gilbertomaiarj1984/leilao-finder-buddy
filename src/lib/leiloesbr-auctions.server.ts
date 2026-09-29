@@ -96,7 +96,10 @@ export async function recordAuctions(lots: VinylLot[]): Promise<void> {
 
   try {
     const { db } = await import("@/lib/db-client.server");
-    await db.from("seen_auctions").upsert(rows, { onConflict: "id_leilao" });
+    // `db` nunca lança (resolve `{ error }`): sem checar, uma falha no lote inteiro de leilões
+    // (ex.: uma linha inválida) sumia sem log e o leilão nunca chegava à captura de vendas.
+    const { error } = await db.from("seen_auctions").upsert(rows, { onConflict: "id_leilao" });
+    if (error) throw new Error(error.message);
   } catch (error) {
     console.error("[leiloesbr] falha ao registrar leilões vistos", error);
   }
