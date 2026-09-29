@@ -685,3 +685,5 @@ A página **`/dashboard`** foi removida (home/Análise/Ao vivo cobrem o uso). Ch
 `dashboard_baseline` em `app_state` pode ser apagada à mão. O `enrichLotes` (nº de lote)
 segue existindo, usado pela home ("Atualizar tudo" — desde v0.84.0 também roda `galleryscan`/
 `condition`/`aiident`, ver histórico de versões).
+
+- **Barra de dias (home):** exibe 5 dias por vez; setas ‹ › nas pontas paginam de 5 em 5 (estado local `dayOffset` em `dashboard-header.tsx`). Vigiados/Lances ficam sempre visíveis.

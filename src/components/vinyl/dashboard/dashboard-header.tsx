@@ -1,5 +1,15 @@
 import { Link } from "@tanstack/react-router";
-import { BarChart3, Library, LogOut, Radio, ShoppingBag, Sparkles } from "lucide-react";
+import {
+  BarChart3,
+  ChevronLeft,
+  ChevronRight,
+  Library,
+  LogOut,
+  Radio,
+  ShoppingBag,
+  Sparkles,
+} from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -9,6 +19,8 @@ import { auctionFinished } from "@/lib/vinyl-parse";
 
 import { LotSearchBox } from "./lot-search-box";
 import type { DashboardData } from "./use-dashboard-data";
+
+const DAY_PAGE = 5;
 
 export function DashboardHeader({
   d,
@@ -35,6 +47,12 @@ export function DashboardHeader({
     bids,
     setFinishedToggleHost,
   } = d;
+  // Janela de dias visíveis (5 por vez); as setas paginam de 5 em 5.
+  const [dayOffset, setDayOffset] = useState(0);
+  const maxOffset = Math.max(0, days.length - 1);
+  const offset = Math.min(dayOffset, maxOffset);
+  const canPrev = offset > 0;
+  const canNext = offset + DAY_PAGE < days.length;
   return (
     <div className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
       {/* Colapsa com o botão do topo (`MobileTopToggle`) — também no desktop agora.
@@ -120,20 +138,34 @@ export function DashboardHeader({
           header sticky cresça por causa da quebra de linha; no desktop volta a
           quebrar em linhas (flex-wrap). Fica sempre visível (fora do HideableBar acima) —
           nunca esconde, mesmo com o resto do topo recolhido. */}
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            disabled={!canPrev}
+            onClick={() => setDayOffset(Math.max(0, offset - DAY_PAGE))}
+            title="5 dias anteriores"
+            aria-label="5 dias anteriores"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
           <TabsList className="flex h-auto flex-nowrap justify-start gap-1 overflow-x-auto bg-secondary sm:flex-wrap sm:overflow-visible">
-            {days.map((day, index) => (
-              <TabsTrigger key={day} value={`day-${index}`} className="shrink-0">
-                {dayLabel(day, index)}
-                <span className="ml-2 text-xs text-muted-foreground">
-                  {lots.data?.lots.filter(
-                    (lot) =>
-                      lot.dayKey === day &&
-                      !auctionFinished(lot.dayKey, lot.time) &&
-                      matchesSearch(lot),
-                  ).length ?? 0}
-                </span>
-              </TabsTrigger>
-            ))}
+            {days.map((day, index) => {
+              if (index < offset || index >= offset + DAY_PAGE) return null;
+              return (
+                <TabsTrigger key={day} value={`day-${index}`} className="shrink-0">
+                  {dayLabel(day, index)}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {lots.data?.lots.filter(
+                      (lot) =>
+                        lot.dayKey === day &&
+                        !auctionFinished(lot.dayKey, lot.time) &&
+                        matchesSearch(lot),
+                    ).length ?? 0}
+                  </span>
+                </TabsTrigger>
+              );
+            })}
             <TabsTrigger value="watched" className="shrink-0">
               Vigiados
               <span className="ml-2 text-xs text-muted-foreground">
@@ -155,6 +187,17 @@ export function DashboardHeader({
               </span>
             </TabsTrigger>
           </TabsList>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            disabled={!canNext}
+            onClick={() => setDayOffset(offset + DAY_PAGE)}
+            title="Próximos 5 dias"
+            aria-label="Próximos 5 dias"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
           {/* Alvo do portal do botão "Incluir/Ocultar finalizados" — ao final da faixa de
           dias, depois de "Lances" (ver finishedToggleHost). */}
           <div ref={setFinishedToggleHost} className="shrink-0" />
