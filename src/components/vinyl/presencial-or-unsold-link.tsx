@@ -72,21 +72,29 @@ function UnsoldLotCard({ lot }: { lot: UnsoldLotItem }) {
  * (`useManuallyFinished`, `src/lib/manually-finished-auctions.ts`, só no navegador) — leilões
  * mais rápidos que 3h (comum) ficam sem sinal 1 e 2 até completar as 3h, então o usuário pode
  * marcar "encerrado" à mão quando souber que acabou (botão bandeira ao lado do link).
+ *
+ * ⚠️ **Nenhum sinal vale pra um dia "Em breve"** (`status === "upcoming"`): achado do usuário
+ * — casa cujo catálogo se estende por mais de um dia (mesmo `idLeilao`) tinha "lotes sem
+ * lance" habilitado também na linha de um dia FUTURO que nem começou, porque o sinal preciso
+ * (mesma URL de presencial, sem dia embutido) e o override manual (antes só por `idLeilao`,
+ * agora por `idLeilao:dayKey`) valiam pra QUALQUER dia daquela casa. `isFinished` agora exige
+ * `status !== "upcoming"` antes de considerar qualquer um dos três sinais.
  */
 export function PresencialOrUnsoldLink({
   presencialUrl,
   idLeilao,
   dayKey,
-  statusEnded,
+  status,
 }: {
   presencialUrl: string;
   idLeilao: string;
   dayKey: string;
-  statusEnded: boolean;
+  status: "upcoming" | "live" | "ended" | null;
 }) {
   const { isFinished: presencialFinished } = usePresencialNow(presencialUrl);
-  const { finished: manuallyFinished, markFinished } = useManuallyFinished(idLeilao);
-  const isFinished = presencialFinished || statusEnded || manuallyFinished;
+  const { finished: manuallyFinished, markFinished } = useManuallyFinished(idLeilao, dayKey);
+  const isFinished =
+    status !== "upcoming" && (presencialFinished || status === "ended" || manuallyFinished);
   const [open, setOpen] = useState(false);
   const fetchUnsold = useServerFn(getUnsoldLots);
   const query = useQuery({

@@ -656,18 +656,28 @@ análise estática — então, em vez de mais uma heurística de horário, o usu
 pra confirmar o que só ELE pode saber com certeza nesse intervalo.
 
 - **`src/lib/manually-finished-auctions.ts`** (puro/client-safe, só `localStorage`):
-  `isManuallyFinished(idLeilao)`/`markManuallyFinished(idLeilao)` — guarda `{idLeilao: timestamp}`,
-  podado a cada leitura (`MAX_AGE_MS` = 24h) pra não crescer sem limite. Sem servidor, sem
-  sincronizar entre dispositivos — é uma confirmação pontual do que o usuário está vendo na tela
-  dele agora.
-- **`src/components/vinyl/use-manually-finished.ts`**: `useManuallyFinished(idLeilao)` — versão
-  reativa (`useState` hidratado do storage) pra re-renderizar a UI na hora do clique, sem
-  esperar reload.
+  `isManuallyFinished(idLeilao, dayKey)`/`markManuallyFinished(idLeilao, dayKey)` — guarda
+  `{"idLeilao:dayKey": timestamp}`, podado a cada leitura (`MAX_AGE_MS` = 24h) pra não crescer
+  sem limite. Sem servidor, sem sincronizar entre dispositivos — é uma confirmação pontual do
+  que o usuário está vendo na tela dele agora.
+- **`src/components/vinyl/use-manually-finished.ts`**: `useManuallyFinished(idLeilao, dayKey)`
+  — versão reativa (`useState` hidratado do storage) pra re-renderizar a UI na hora do clique,
+  sem esperar reload.
 - **UI**: `PresencialOrUnsoldLink` ganha um botãozinho (ícone `Flag`) ao lado do link "pregão
-  presencial", visível só enquanto `!isFinished` — `isFinished = presencialFinished ||
-  statusEnded || manuallyFinished`. Mesmo override consultado (função pura, sem hook — não dá
-  pra chamar hook dentro de `.map`) no filtro de `LiveAuctions` (`live-auctions.tsx`), pra
-  também sumir de "Acontecendo agora" assim que marcado.
+  presencial", visível só enquanto `!isFinished`. Mesmo override consultado (função pura, sem
+  hook — não dá pra chamar hook dentro de `.map`) no filtro de `LiveAuctions`
+  (`live-auctions.tsx`), pra também sumir de "Acontecendo agora" assim que marcado.
+  ⚠️ **Fix (v0.90.1) — vazava pra dias futuros da mesma casa**: achado do usuário — casa cujo
+  catálogo se estende por mais de um dia (mesmo `idLeilao`) tinha "lotes sem lance" habilitado
+  também na linha de um dia **futuro que nem começou** ("Em breve"). Duas causas, a mesma raiz
+  de sempre (o `idLeilao` não distingue dias): (1) a chave do override manual era só `idLeilao`
+  — corrigida pra `idLeilao:dayKey` acima; (2) o sinal preciso (`usePresencialNow`) usa a MESMA
+  `presencialUrl` (sem dia embutido) pra todos os dias da casa, então um "peça = total" de HOJE
+  também valia pro dia de amanhã. Fix definitivo: `PresencialOrUnsoldLink` passa a receber
+  `status` (`HouseAuctionInfo.status`, era só `statusEnded`) e `isFinished` agora exige
+  `status !== "upcoming"` ANTES de considerar qualquer um dos três sinais — um dia que ainda
+  não começou nunca é tratado como terminado, não importa o que os sinais compartilhados
+  digam.
 
 ## Painel de mudanças — DESCONTINUADO (v0.25.0)
 
