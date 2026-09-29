@@ -2,7 +2,7 @@
 // staleTime). Antes cada rota repetia o `useQuery` — e a mesma chave chegou a ter `queryFn`
 // diferentes (ex.: `["collection-links"]` best-effort na home e sem tratamento em /compras),
 // valendo a de quem montasse primeiro. Use `queryKeys` para invalidar/`setQueryData`.
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, type QueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef } from "react";
 
@@ -23,7 +23,12 @@ import {
   getUserInterests,
 } from "@/lib/ai.functions";
 import { getAnalyticsAliases } from "@/lib/analytics.functions";
-import { getLotMarket, getVinylLots, listMyBids } from "@/lib/leiloesbr.functions";
+import {
+  getLotMarket,
+  getVinylLots,
+  getVinylLotsRange,
+  listMyBids,
+} from "@/lib/leiloesbr.functions";
 import { getWantlist } from "@/lib/wantlist.functions";
 import {
   BIDS_ACCUM_STORAGE_KEY,
@@ -35,6 +40,7 @@ import type { CollectionLinks, OwnedFeedback } from "@/lib/wantlist-match";
 
 export const queryKeys = {
   lots: ["vinyl-lots"],
+  lotsRange: ["vinyl-lots-range"],
   watched: ["vinyl-watched"],
   bids: ["vinyl-my-bids"],
   lotAi: ["lot-ai"],
@@ -76,6 +82,42 @@ export function useLotsQuery() {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+}
+
+/**
+ * Lotes já gravados de páginas de dias fora da janela padrão (histórico e futuro), buscados só
+ * quando a página é aberta na barra de dias (`pages`: intervalo `[from, to]` por página, ou null).
+ */
+export function useLotsRangeQueries(pages: ({ from: string; to: string } | null)[]) {
+  const fetchRange = useServerFn(getVinylLotsRange);
+  return useQueries({
+    queries: pages.map((range) => ({
+      queryKey: [...queryKeys.lotsRange, range?.from ?? "", range?.to ?? ""],
+      queryFn: () => fetchRange({ data: range! }),
+      enabled: range !== null,
+      staleTime: 2 * HOUR,
+      gcTime: 4 * HOUR,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+    })),
+  });
+}
+
+type LotsPayload = Awaited<ReturnType<typeof getVinylLots>>;
+
+/** Aplica `fn` à lista de lotes da janela padrão E das páginas de histórico/futuro em cache. */
+export function patchLotsCaches(
+  queryClient: QueryClient,
+  fn: (lots: LotsPayload["lots"]) => LotsPayload["lots"],
+) {
+  queryClient.setQueryData(queryKeys.lots, (old: LotsPayload | undefined) =>
+    old ? { ...old, lots: fn(old.lots) } : old,
+  );
+  queryClient.setQueriesData(
+    { queryKey: queryKeys.lotsRange },
+    (old: { lots: LotsPayload["lots"] } | undefined) =>
+      old ? { ...old, lots: fn(old.lots) } : old,
+  );
 }
 
 // Vigiados/lances "vistos" na janela de dias: a conta do LeilõesBR (l=8/l=4) pode parar de

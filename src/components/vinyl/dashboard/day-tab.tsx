@@ -37,6 +37,7 @@ import {
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
 import { PresencialOrUnsoldLink } from "@/components/vinyl/presencial-or-unsold-link";
+import { DAY_PAGE, TODAY_INDEX } from "@/lib/day-bar";
 import { auctionFinished, UNCLASSIFIED_LABEL } from "@/lib/vinyl-parse";
 
 import type { DashboardData } from "./use-dashboard-data";
@@ -128,7 +129,9 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
   const finishedCount = rawDay.filter(
     (lot) => auctionFinished(lot.dayKey, lot.time) && !isTracked(lot),
   ).length;
-  const showFinished = showFinishedDays.has(day);
+  // Dia passado (histórico) já abre mostrando tudo; o botão inverte (esconde os finalizados).
+  const isPastDay = index < TODAY_INDEX;
+  const showFinished = isPastDay ? !showFinishedDays.has(day) : showFinishedDays.has(day);
   // Por padrão esconde os finalizados (3h após o início); o usuário pode incluí-los.
   // A busca geral (searchNorm) filtra por título/artista/casa/nº do lote.
   const dayLots = (
@@ -164,21 +167,25 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
         createPortal(
           <div className="space-y-3 border-t border-border px-4 py-2 sm:py-3">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="text-sm font-semibold text-foreground">{dayLabel(day, index)}</span>
-              <button
-                type="button"
-                onClick={() => refreshDay(day)}
-                disabled={refreshingDay === day}
-                title="Forçar atualização deste dia"
-                aria-label={`Forçar atualização de ${dayLabel(day, index)}`}
-                className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
-              >
-                {refreshingDay === day ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
-              </button>
+              <span className="text-sm font-semibold text-foreground">
+                {dayLabel(day, index - TODAY_INDEX)}
+              </span>
+              {index >= TODAY_INDEX && index < TODAY_INDEX + DAY_PAGE ? (
+                <button
+                  type="button"
+                  onClick={() => refreshDay(day)}
+                  disabled={refreshingDay === day}
+                  title="Forçar atualização deste dia"
+                  aria-label={`Forçar atualização de ${dayLabel(day, index - TODAY_INDEX)}`}
+                  className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                >
+                  {refreshingDay === day ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {
@@ -186,7 +193,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                   setWatchedViewDay((cur) => (cur === day ? null : day));
                 }}
                 title="Ver vigiados deste dia"
-                aria-label={`Ver vigiados de ${dayLabel(day, index)}`}
+                aria-label={`Ver vigiados de ${dayLabel(day, index - TODAY_INDEX)}`}
                 aria-pressed={isWatchedView}
                 className={
                   isWatchedView
@@ -221,7 +228,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                   setBidsViewDay((cur) => (cur === day ? null : day));
                 }}
                 title="Ver lances deste dia"
-                aria-label={`Ver lances de ${dayLabel(day, index)}`}
+                aria-label={`Ver lances de ${dayLabel(day, index - TODAY_INDEX)}`}
                 aria-pressed={isBidsView}
                 className={
                   isBidsView
@@ -254,7 +261,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                 onClick={() => analyzeScope({ day })}
                 disabled={analyzing !== null}
                 title="Analisar com IA os lotes ainda não avaliados deste dia (sob demanda)"
-                aria-label={`Analisar com IA ${dayLabel(day, index)}`}
+                aria-label={`Analisar com IA ${dayLabel(day, index - TODAY_INDEX)}`}
                 className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
               >
                 {analyzing === day ? (

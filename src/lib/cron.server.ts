@@ -55,13 +55,17 @@ export async function handleCron(request: Request): Promise<Response | null> {
       const raw = url.searchParams.get("fromPage");
       const fromPage = raw == null || raw === "" || raw === "null" ? null : Number(raw);
       const size = Math.min(Math.max(Number(url.searchParams.get("size")) || 15, 1), 40);
-      return json(await scrapeVinylChunk(Number.isNaN(fromPage as number) ? null : fromPage, size));
+      const extended = url.searchParams.get("ext") === "1";
+      return json(
+        await scrapeVinylChunk(Number.isNaN(fromPage as number) ? null : fromPage, size, extended),
+      );
     }
 
     if (step === "enrich") {
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 6, 1), 20);
       const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
-      return json(await enrichMissingLotes(max, offset));
+      const extended = url.searchParams.get("ext") === "1";
+      return json(await enrichMissingLotes(max, offset, extended));
     }
 
     // Avaliação da IA. O PROVEDOR é o padrão em `app_state` (Claude/Gemini):
