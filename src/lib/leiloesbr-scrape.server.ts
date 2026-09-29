@@ -779,6 +779,9 @@ export async function listMissingAuctions(
   return [...auctions.values()].slice(0, limit);
 }
 
+/** Tempo máximo (ms) que `enrichMissingLotes` gasta buscando catálogos por chamada. */
+const ENRICH_BUDGET_MS = 90_000;
+
 export async function enrichMissingLotes(
   maxAuctions = 6,
   offset = 0,
@@ -823,12 +826,16 @@ export async function enrichMissingLotes(
   const total = all.length;
   const start = Math.max(0, offset);
   const batch = all.slice(start, start + maxAuctions);
-  const nextStart = start + maxAuctions;
-  const done = nextStart >= total;
-  const nextOffset = done ? null : nextStart;
 
+  // Orçamento de tempo: o cron (curl --max-time 120) derrubava a run inteira quando um bloco
+  // de leilões lentos passava disso. Ao estourar o orçamento, para de buscar catálogos e
+  // devolve `nextOffset` no ponto onde parou — o cursor continua de lá na chamada seguinte.
+  const deadline = Date.now() + ENRICH_BUDGET_MS;
+  let processed = 0;
   const loteByPeca = new Map<string, string>();
   for (const auction of batch) {
+    if (processed > 0 && Date.now() > deadline) break;
+    processed++;
     if (auction.missing.size === 0) continue; // leilão já completo — pula
     try {
       const map = await fetchLoteMap(auction.domain, auction.idLeilao);
@@ -840,6 +847,9 @@ export async function enrichMissingLotes(
       console.error("[leiloesbr] falha ao ler catálogo da casa", error);
     }
   }
+  const stoppedAt = start + processed;
+  const done = stoppedAt >= total;
+  const nextOffset = done ? null : stoppedAt;
   if (!loteByPeca.size) return { updated: 0, total, nextOffset, done, persisted: true };
 
   // Aplica no cache em memória e coleta os lotes alterados para persistir.
