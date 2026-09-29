@@ -111,7 +111,7 @@ jobs:
             # Sem retry do curl: repetir o mesmo offset após um timeout só gasta tempo. Falha
             # de um bloco é não crítica — pula pro próximo offset (o número de lote é
             # preenchido nas execuções seguintes) e marca a run como falha no final.
-            if ! res="$(curl -fsS --max-time 120 -H "x-cron-token: $CRON_TOKEN" "$base/api/cron?step=enrich&max=6&offset=$off" 2>&1)"; then
+            if ! res="$(curl -fsS --max-time 150 -H "x-cron-token: $CRON_TOKEN" "$base/api/cron?step=enrich&max=6&offset=$off" 2>&1)"; then
               echo "enrich $i (offset $off): falhou — $res"
               echo "enrich: não crítico, pulando este bloco; run marcada como falha no final"
               soft_failed=1

@@ -227,10 +227,12 @@ async function fetchCatalogJson(
   domain: string,
   idLeilao: string,
   tipo = "",
+  deadline = Infinity,
 ): Promise<Map<string, CatalogLot>> {
   const map = new Map<string, CatalogLot>();
   const LIMIT = 30;
   for (let pag = 1; pag <= 80; pag++) {
+    if (Date.now() > deadline) break; // prazo estourou: devolve o que já leu
     const url =
       `${domain}/templates/catalogo/asp/catalogocontentload.asp` +
       `?leilao=${idLeilao}&pesquisa=&irpara=&Dia=&Tipo=${tipo}&artista=&Srt=0&Temtotal=1` +
@@ -284,9 +286,11 @@ async function fetchCatalogJson(
 async function fetchCatalogHtml(
   domain: string,
   idLeilao: string,
+  deadline = Infinity,
 ): Promise<Map<string, CatalogLot>> {
   const map = new Map<string, CatalogLot>();
   for (let page = 1; page <= 20; page++) {
+    if (Date.now() > deadline) break;
     const pageUrl =
       page === 1
         ? `${domain}/catalogo.asp?Num=${idLeilao}`
@@ -318,21 +322,27 @@ async function fetchCatalogHtml(
 export async function fetchCatalogData(
   domain: string,
   idLeilao: string,
+  /** Instante (ms) após o qual para de paginar e devolve o parcial; sem prazo por padrão. */
+  deadline = Infinity,
 ): Promise<Map<string, CatalogLot>> {
   // 1) Só vinil (Tipo=129): casas gerais devolvem apenas discos, cortando itens aleatórios na
   //    origem. 2) Se vier vazio (casa não etiqueta esse Tipo), catálogo completo por JSON.
   //    3) Fallback final: HTML server-side (template antigo).
-  const vinyl = await fetchCatalogJson(domain, idLeilao, VINYL_TIPO);
+  const vinyl = await fetchCatalogJson(domain, idLeilao, VINYL_TIPO, deadline);
   if (vinyl.size) return vinyl;
-  const json = await fetchCatalogJson(domain, idLeilao);
+  const json = await fetchCatalogJson(domain, idLeilao, "", deadline);
   if (json.size) return json;
-  return fetchCatalogHtml(domain, idLeilao);
+  return fetchCatalogHtml(domain, idLeilao, deadline);
 }
 
 /** Compat: `idPeca -> nº do lote` (só onde há número). Derivado de `fetchCatalogData`. */
-export async function fetchLoteMap(domain: string, idLeilao: string): Promise<Map<string, string>> {
+export async function fetchLoteMap(
+  domain: string,
+  idLeilao: string,
+  deadline = Infinity,
+): Promise<Map<string, string>> {
   const map = new Map<string, string>();
-  for (const [id, data] of await fetchCatalogData(domain, idLeilao)) {
+  for (const [id, data] of await fetchCatalogData(domain, idLeilao, deadline)) {
     if (data.lote) map.set(id, data.lote);
   }
   return map;
