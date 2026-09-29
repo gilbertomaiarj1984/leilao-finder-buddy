@@ -106,7 +106,7 @@ export function LiveAuctions() {
       ({ auction, now }) =>
         !isPresencialFinished(now) &&
         auction.status !== "ended" &&
-        !isManuallyFinished(auction.idLeilao),
+        !isManuallyFinished(auction.idLeilao, auction.dayKey),
     );
 
   if (!auctions.length) return null;

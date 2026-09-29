@@ -172,7 +172,7 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                                       presencialUrl={auctionInfo.presencialUrl}
                                       idLeilao={auctionInfo.idLeilao}
                                       dayKey={auctionInfo.dayKey}
-                                      statusEnded={auctionInfo.status === "ended"}
+                                      status={auctionInfo.status}
                                     />
                                   ) : null}
                                   <a

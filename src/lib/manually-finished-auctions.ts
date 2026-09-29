@@ -8,13 +8,23 @@
  * terminado (site já não mostra mais lotes ao vivo) continuava sem o acesso aos lotes sem
  * lance por bastante tempo.
  *
- * Guardado por `idLeilao` com timestamp, podado após `MAX_AGE_MS` pra não crescer sem limite
- * (mesmo espírito de outras listas client-side deste app — ver `docs/areas/ui.md`).
+ * ⚠️ **Chave inclui o dia** (`idLeilao:dayKey`, não só `idLeilao`): achado do usuário — em
+ * casas cujo catálogo se estende por mais de um dia (mesmo `idLeilao`, dias diferentes,
+ * mesmo problema de `unsold-lots.server.ts`), marcar "encerrado" no dia de hoje fazia o link
+ * "lotes sem lance" aparecer também nas linhas de dias FUTUROS da mesma casa (ainda "Em
+ * breve"), porque a chave era só o `idLeilao` — compartilhado entre todos os dias do catálogo.
+ *
+ * Guardado com timestamp, podado após `MAX_AGE_MS` pra não crescer sem limite (mesmo espírito
+ * de outras listas client-side deste app — ver `docs/areas/ui.md`).
  */
 const STORAGE_KEY = "manually-finished-auctions";
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 type Store = Record<string, number>;
+
+function storeKey(idLeilao: string, dayKey: string): string {
+  return `${idLeilao}:${dayKey}`;
+}
 
 function readStore(): Store {
   try {
@@ -40,12 +50,12 @@ function writeStore(store: Store): void {
   }
 }
 
-export function isManuallyFinished(idLeilao: string): boolean {
-  return Boolean(readStore()[idLeilao]);
+export function isManuallyFinished(idLeilao: string, dayKey: string): boolean {
+  return Boolean(readStore()[storeKey(idLeilao, dayKey)]);
 }
 
-export function markManuallyFinished(idLeilao: string): void {
+export function markManuallyFinished(idLeilao: string, dayKey: string): void {
   const store = readStore();
-  store[idLeilao] = Date.now();
+  store[storeKey(idLeilao, dayKey)] = Date.now();
   writeStore(store);
 }

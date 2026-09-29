@@ -354,7 +354,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                           presencialUrl={auctionInfo.presencialUrl}
                           idLeilao={auctionInfo.idLeilao}
                           dayKey={auctionInfo.dayKey}
-                          statusEnded={auctionInfo.status === "ended"}
+                          status={auctionInfo.status}
                         />
                       ) : null}
                       <a
@@ -591,7 +591,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                           presencialUrl={auctionInfo.presencialUrl}
                           idLeilao={auctionInfo.idLeilao}
                           dayKey={auctionInfo.dayKey}
-                          statusEnded={auctionInfo.status === "ended"}
+                          status={auctionInfo.status}
                         />
                       ) : null}
                       <a
