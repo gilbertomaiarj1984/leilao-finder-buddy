@@ -136,7 +136,7 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
 - **Endpoint** `/api/cron` (tratado direto em `src/server.ts`, FORA das server functions → sem
   Supabase/CSRF), protegido pelo segredo **`CRON_TOKEN`** (header `x-cron-token`; o fallback
   `?token=` foi removido — vazava em logs; comparação em tempo constante, `tokensMatch`).
-- **Agenda:** 4×/dia (BRT 00:05/06:05/12:05/18:05); falha → `refresh-retry.yml` reexecuta `--failed` 1×. `enrich` tem orçamento de 90s/chamada (devolve `nextOffset` parcial) e, no workflow, bloco com falha é pulado (soft).
+- **Agenda:** 4×/dia (BRT 00:05/06:05/12:05/18:05); falha → `refresh-retry.yml` reexecuta `--failed` 1×. `enrich` tem orçamento de 60s/chamada e 25s/leilão (`deadline` em `fetchCatalogData` → catálogo parcial; devolve `nextOffset` parcial) e, no workflow, bloco com falha é pulado (soft).
 - **Steps:** `chunk` (varre bloco), `enrich` (nº de lote por `offset`), `aiident`
   (identificação IA), `aieval` (avaliação IA), `market` (Discogs), `condition` (estado
   pré-leilão), `sales` (captura de vendas), `reident` (reidentifica/padroniza o histórico de

@@ -780,7 +780,9 @@ export async function listMissingAuctions(
 }
 
 /** Tempo máximo (ms) que `enrichMissingLotes` gasta buscando catálogos por chamada. */
-const ENRICH_BUDGET_MS = 90_000;
+const ENRICH_BUDGET_MS = 60_000;
+/** Tempo máximo (ms) por leilão dentro do `enrich` — um catálogo lento não trava o bloco. */
+const ENRICH_AUCTION_MS = 25_000;
 
 export async function enrichMissingLotes(
   maxAuctions = 6,
@@ -838,7 +840,17 @@ export async function enrichMissingLotes(
     processed++;
     if (auction.missing.size === 0) continue; // leilão já completo — pula
     try {
-      const map = await fetchLoteMap(auction.domain, auction.idLeilao);
+      const auctionStart = Date.now();
+      const map = await fetchLoteMap(
+        auction.domain,
+        auction.idLeilao,
+        Math.min(deadline, auctionStart + ENRICH_AUCTION_MS),
+      );
+      if (Date.now() - auctionStart > ENRICH_AUCTION_MS) {
+        console.warn(
+          `[leiloesbr] enrich: catálogo lento, lido parcialmente (${auction.domain} leilão ${auction.idLeilao}, ${map.size} lotes com nº)`,
+        );
+      }
       for (const id of auction.missing) {
         const lote = map.get(id);
         if (lote) loteByPeca.set(id, lote);
