@@ -6,6 +6,7 @@ import { type Condition, parseConditionFromText, scoreCondition } from "./gradin
 import type { LotIdentRow } from "./lot-ident.server";
 import {
   auctionFinished,
+  laterAuctionSlot,
   decodeHtmlEntities,
   extractAlbumPart,
   extractArtist,
@@ -194,7 +195,7 @@ async function readSeenAuctions(): Promise<SeenAuctionRow[]> {
 }
 
 /** Identidade dos nossos lotes de VINIL (por id), para filtrar o catálogo e nomear a venda. */
-type VinylInfo = { title: string; artist: string };
+type VinylInfo = { title: string; artist: string; dayKey?: string };
 
 // Sinal POSITIVO de vinil no texto do card (formato). NÃO usa "disco" solto (fraco: casa
 // "Catavento Discos", "disco voador"…). Grau de Disco/Capa também conta como vinil.
@@ -289,7 +290,8 @@ function salesRowsFromCatalog(
       title,
       sold_price: parsePrice(data.soldPrice),
       sold_price_raw: data.soldPrice,
-      sold_date: auction.dayKey || null,
+      // Dia do PRÓPRIO lote quando conhecido (leilão de vários dias); senão, o do leilão.
+      sold_date: known?.dayKey || auction.dayKey || null,
       house: auction.house,
       uf: auction.uf,
       media: cond.media ?? "",
@@ -558,6 +560,18 @@ export async function resetNoSourceThumbnails(): Promise<{ reset: number }> {
   return { reset };
 }
 
+/** Dia/hora de fim efetivo do leilão: o mais tardio entre `seen_auctions` e os lotes conhecidos. */
+function effectiveSlot(
+  a: SeenAuctionRow,
+  lastSlotByAuction: Map<string, { dayKey: string; time: string }>,
+): { day_key: string; start_time: string } {
+  const slot = laterAuctionSlot(
+    { dayKey: a.day_key, time: a.start_time },
+    lastSlotByAuction.get(a.id_leilao) ?? null,
+  )!;
+  return { day_key: slot.dayKey, start_time: slot.time };
+}
+
 /**
  * Varredura pós-leilão: para os leilões JÁ CONHECIDOS (`seen_auctions`) que terminaram e
  * ainda não foram capturados, busca o catálogo UMA vez por leilão e grava as vendas em
@@ -604,7 +618,21 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   for (const r of identRows) {
     if (r.album) vinylById.set(r.id, { title: r.album, artist: extractArtist(r.album) });
   }
-  for (const lot of snapshot.lots) vinylById.set(lot.id, { title: lot.title, artist: lot.artist });
+  // Último dia/hora de cada leilão segundo os NOSSOS lotes: um leilão de vários dias (mesmo
+  // `idLeilao`, lotes em dias diferentes) só termina no último — `seen_auctions` guarda uma linha
+  // por leilão com o dia do primeiro lote visto, o que o marcava como "terminado" no 1º dia e
+  // capturava o catálogo antes das vendas dos outros dias (e nunca revisitava).
+  const lastSlotByAuction = new Map<string, { dayKey: string; time: string }>();
+  for (const lot of snapshot.lots) {
+    vinylById.set(lot.id, { title: lot.title, artist: lot.artist, dayKey: lot.dayKey });
+    if (lot.idLeilao) {
+      const slot = { dayKey: lot.dayKey, time: lot.time };
+      lastSlotByAuction.set(
+        lot.idLeilao,
+        laterAuctionSlot(lastSlotByAuction.get(lot.idLeilao) ?? null, slot)!,
+      );
+    }
+  }
 
   // Leilões terminados, com link de catálogo válido, ainda não capturados. Mais RECENTES
   // primeiro: o catálogo da casa só fica de pé por um tempo após o leilão (os antigos já
@@ -612,6 +640,7 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   // catálogo vivo. Os antigos ainda são processados (e marcados) nas rodadas seguintes.
   const pending = seen
     .filter((a) => !captured.has(a.id_leilao))
+    .map((a) => ({ ...a, ...effectiveSlot(a, lastSlotByAuction) }))
     .filter((a) => auctionFinished(a.day_key, a.start_time, now))
     .map((a) => ({ row: a, ref: parseAuctionRef(a.entry_url ?? "") }))
     .filter(

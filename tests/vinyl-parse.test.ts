@@ -5,6 +5,7 @@ import {
   extractArtist,
   isDiscBundle,
   isVinylTitle,
+  laterAuctionSlot,
   looksNonVinyl,
   normalizeForMatch,
   parsePrice,
@@ -80,4 +81,24 @@ test("pickCanonical prefere a grafia acentuada", () => {
 
 test("decodeHtmlEntities", () => {
   expect(decodeHtmlEntities("A &amp; B &#39;x&#39;")).toBe("A & B 'x'");
+});
+
+describe("laterAuctionSlot (leilão de vários dias)", () => {
+  test("fica com o dia mais tardio", () => {
+    const a = { dayKey: "2026-10-02", time: "19h" };
+    const b = { dayKey: "2026-10-03", time: "10h" };
+    expect(laterAuctionSlot(a, b)).toBe(b);
+    expect(laterAuctionSlot(b, a)).toBe(b);
+  });
+  test("mesmo dia: hora maior vence (9h < 19h)", () => {
+    const a = { dayKey: "2026-10-02", time: "9h" };
+    const b = { dayKey: "2026-10-02", time: "19h" };
+    expect(laterAuctionSlot(a, b)).toBe(b);
+  });
+  test("null perde; hora ilegível perde", () => {
+    const a = { dayKey: "2026-10-02", time: "19h" };
+    expect(laterAuctionSlot(null, a)).toBe(a);
+    expect(laterAuctionSlot(a, null)).toBe(a);
+    expect(laterAuctionSlot(a, { dayKey: "2026-10-05", time: "" })).toBe(a);
+  });
 });

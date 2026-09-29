@@ -189,7 +189,7 @@ jobs:
           # Mostra, para os leilões terminados, quantos lotes o parser vê e reconhece como
           # vendidos, e se o HTML traz "Valor de venda"/"vendido". Ajuda a distinguir um
           # sales:0 legítimo (casa sem venda) de um parser que não casou o formato da casa.
-          call "/api/cron?step=salesdebug&limit=5" | jq . || true
+          curl -sS --max-time 60 -H "x-cron-token: $CRON_TOKEN" "$base/api/cron?step=salesdebug&limit=2" | jq . || true
 
           echo "== Captura de vendas pós-leilão (histórico lot_sales) =="
           # Varre o catálogo da casa (1 req/leilão) dos leilões terminados ainda não
