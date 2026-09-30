@@ -57,6 +57,8 @@ import {
 import { buildTrashModel, matchPossibleTrash, trashProfile } from "@/lib/lot-exclusion";
 import { saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
 import {
+  bidIsCovered,
+  bidIsWinning,
   COMPILATION_LABEL,
   isDiscBundle,
   LOTE_LABEL,
@@ -1201,6 +1203,18 @@ export function useDashboardData() {
     for (const b of bids.data ?? []) map.set(b.idPeca, b.status);
     return map;
   }, [bids.data]);
+  // Por casa: tem algum lote com lance vencendo (estrela verde) e/ou coberto (vermelha) —
+  // mostradas ao lado do nome da casa nos cards de Vigiados.
+  const houseBidFlags = useMemo(() => {
+    const map = new Map<string, { winning: boolean; covered: boolean }>();
+    for (const b of bids.data ?? []) {
+      const cur = map.get(b.house) ?? { winning: false, covered: false };
+      if (bidIsWinning(b.status)) cur.winning = true;
+      if (bidIsCovered(b.status)) cur.covered = true;
+      map.set(b.house, cur);
+    }
+    return map;
+  }, [bids.data]);
   // Nº do lote não vem na listagem geral; preenchemos com o que já lemos das
   // páginas de vigias (l=8) e meus lances (l=4), casando por idPeca.
   const loteById = useMemo(() => {
@@ -1511,6 +1525,7 @@ export function useDashboardData() {
     watchedIds,
     effectiveArtist,
     bidStatusById,
+    houseBidFlags,
     showFinishedDays,
     artistFilter,
     watchedViewDay,

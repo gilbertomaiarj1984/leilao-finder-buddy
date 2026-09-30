@@ -69,6 +69,7 @@ export function WatchedTab({ d }: { d: DashboardData }) {
     toggleHouseSection,
     watchedIds,
     bidStatusById,
+    houseBidFlags,
     currentPriceFor,
     myBidById,
     nextBidById,
@@ -271,6 +272,8 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                   withOrigin
                     ? {
                         house: lot.house,
+                        houseWinning: houseBidFlags.get(lot.house)?.winning,
+                        houseCovered: houseBidFlags.get(lot.house)?.covered,
                         idLeilao: lot.idLeilao,
                         days: catDays.length ? daysRangeLabel(catDays) : lot.date.slice(0, 5),
                         multiDay: catDays.length > 1,
