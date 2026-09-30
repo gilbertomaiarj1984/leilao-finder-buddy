@@ -52,6 +52,7 @@ export function LotCard({
   possibleTrash,
   onExclude,
   onDismissTrash,
+  origin,
 }: {
   lot: CardLot;
   busy: boolean;
@@ -88,6 +89,9 @@ export function LotCard({
   // Clicar no badge "possível lixo" → "isto NÃO é lixo": nega os termos que causaram o
   // casamento (aprendizado global, ver dismissPossibleTrash). Sem isso o badge é só leitura.
   onDismissTrash?: () => void;
+  // Barra superior de origem (visão "Por artista" dos Vigiados): casa, pregão e data. A cor
+  // segue o estado do card — amarelo vigiando, verde ganhando, vermelho coberto.
+  origin?: { house: string; idLeilao: string; days: string; multiDay: boolean };
 }) {
   // Imagens hotlinkadas das casas às vezes falham (403/404/expirada) — troca para o mesmo
   // placeholder "sem imagem". (O transbordo do texto do `alt` por cima do card é evitado de
@@ -149,226 +153,248 @@ export function LotCard({
           </div>
         </div>
       ) : null}
-      {ai ? (
-        <ScoreCorner
-          ai={ai}
-          market={market}
-          price={lot.price}
-          lot={
-            lot.id
-              ? {
-                  id: lot.id,
-                  title: lot.title,
-                  price: lot.price,
-                  house: lot.house,
-                  image: lot.image,
-                }
-              : undefined
-          }
-        />
-      ) : null}
-      {/* Relação com a Coleção: ícone no canto DIREITO, logo ABAIXO da nota da IA. Aparece em
-          TODO card — CINZA quando não há relação; ROXO quando confirmada; ROXO + "?" quando
-          incerta/sugerida. Clicar abre o painel para ver o disco, desfazer ou criar a relação. */}
-      {(() => {
-        const confident = owned != null && owned.score >= OWNED_CONFIDENT_MIN;
-        const tip = !owned
-          ? "Relação com a Coleção — toque para ver/definir"
-          : confident
-            ? `Já tenho na Coleção${owned.label ? `: ${owned.label}` : ""}`
-            : `Provável: já tenho na Coleção${owned.label ? `: ${owned.label}` : ""} — toque para confirmar`;
-        const tone = !owned ? "bg-zinc-500/80" : "bg-purple-600";
-        return (
-          <div className="absolute right-2 top-9 z-10">
-            <button
-              type="button"
-              onClick={onOpenOwned}
-              className={`flex items-center gap-0.5 rounded-full px-1.5 py-1 text-white shadow ${tone}`}
-              title={tip}
-              aria-label={tip}
-            >
-              <Disc3 className="h-3.5 w-3.5" />
-              {owned && !confident ? (
-                <span className="text-[10px] font-bold leading-none">?</span>
-              ) : null}
-            </button>
-          </div>
-        );
-      })()}
-      {/* Nº do lote no canto superior ESQUERDO, espelhando a nota da IA (canto direito).
-          Visão padrão de todos os cards. */}
-      {lot.lote ? (
-        <div className="absolute left-2 top-2 z-10">
-          <span
-            className="max-w-[7rem] truncate whitespace-nowrap rounded-full bg-secondary px-2 py-0.5 text-xs font-bold text-foreground shadow"
-            title={`Nº do lote: ${lot.lote}`}
-          >
-            Lote {lot.lote}
-          </span>
+      {origin ? (
+        <div
+          className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-1.5 text-xs font-medium ${
+            hasBid
+              ? winning
+                ? "bg-green-500 text-white"
+                : "bg-red-500 text-white"
+              : "bg-yellow-400 text-yellow-950"
+          }`}
+        >
+          <span className="font-bold">{origin.house}</span>
+          <span>Pregão {origin.idLeilao}</span>
+          {origin.days ? <span>{origin.days}</span> : null}
+          {origin.multiDay ? (
+            <span className="rounded bg-black/15 px-1.5 py-px text-[10px] font-bold uppercase tracking-wide">
+              multi-dia
+            </span>
+          ) : null}
         </div>
       ) : null}
-      {/* Caixa de mídia de ALTURA FIXA com overflow-hidden: enquanto a imagem carrega (ou se
+      <div className="relative flex flex-1 flex-col">
+        {ai ? (
+          <ScoreCorner
+            ai={ai}
+            market={market}
+            price={lot.price}
+            lot={
+              lot.id
+                ? {
+                    id: lot.id,
+                    title: lot.title,
+                    price: lot.price,
+                    house: lot.house,
+                    image: lot.image,
+                  }
+                : undefined
+            }
+          />
+        ) : null}
+        {/* Relação com a Coleção: ícone no canto DIREITO, logo ABAIXO da nota da IA. Aparece em
+          TODO card — CINZA quando não há relação; ROXO quando confirmada; ROXO + "?" quando
+          incerta/sugerida. Clicar abre o painel para ver o disco, desfazer ou criar a relação. */}
+        {(() => {
+          const confident = owned != null && owned.score >= OWNED_CONFIDENT_MIN;
+          const tip = !owned
+            ? "Relação com a Coleção — toque para ver/definir"
+            : confident
+              ? `Já tenho na Coleção${owned.label ? `: ${owned.label}` : ""}`
+              : `Provável: já tenho na Coleção${owned.label ? `: ${owned.label}` : ""} — toque para confirmar`;
+          const tone = !owned ? "bg-zinc-500/80" : "bg-purple-600";
+          return (
+            <div className="absolute right-2 top-9 z-10">
+              <button
+                type="button"
+                onClick={onOpenOwned}
+                className={`flex items-center gap-0.5 rounded-full px-1.5 py-1 text-white shadow ${tone}`}
+                title={tip}
+                aria-label={tip}
+              >
+                <Disc3 className="h-3.5 w-3.5" />
+                {owned && !confident ? (
+                  <span className="text-[10px] font-bold leading-none">?</span>
+                ) : null}
+              </button>
+            </div>
+          );
+        })()}
+        {/* Nº do lote no canto superior ESQUERDO, espelhando a nota da IA (canto direito).
+          Visão padrão de todos os cards. */}
+        {lot.lote ? (
+          <div className="absolute left-2 top-2 z-10">
+            <span
+              className="max-w-[7rem] truncate whitespace-nowrap rounded-full bg-secondary px-2 py-0.5 text-xs font-bold text-foreground shadow"
+              title={`Nº do lote: ${lot.lote}`}
+            >
+              Lote {lot.lote}
+            </span>
+          </div>
+        ) : null}
+        {/* Caixa de mídia de ALTURA FIXA com overflow-hidden: enquanto a imagem carrega (ou se
           falha), o navegador desenha o texto do `alt` (o título, às vezes enorme) no lugar —
           e sem o clip ele transbordava por cima do card inteiro. Aqui ele fica contido. */}
-      <a
-        href={lotOpenUrl(lot.url, lot.title, lot.lote)}
-        target="_blank"
-        rel="noreferrer"
-        className="relative block h-44 w-full overflow-hidden bg-secondary"
-      >
-        {lot.image && !imgFailed ? (
-          <img
-            ref={imgRef}
-            src={lot.image}
-            alt=""
-            loading="lazy"
-            className="absolute inset-0 h-full w-full object-contain p-2"
-            onError={() => setImgFailed(true)}
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-            sem imagem
-          </div>
-        )}
-      </a>
-      <div className="flex flex-1 flex-col gap-3 p-4">
-        {/* Artista/álbum da IA (mais acertivo) em destaque; o título original vira
+        <a
+          href={lotOpenUrl(lot.url, lot.title, lot.lote)}
+          target="_blank"
+          rel="noreferrer"
+          className="relative block h-44 w-full overflow-hidden bg-secondary"
+        >
+          {lot.image && !imgFailed ? (
+            <img
+              ref={imgRef}
+              src={lot.image}
+              alt=""
+              loading="lazy"
+              className="absolute inset-0 h-full w-full object-contain p-2"
+              onError={() => setImgFailed(true)}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+              sem imagem
+            </div>
+          )}
+        </a>
+        <div className="flex flex-1 flex-col gap-3 p-4">
+          {/* Artista/álbum da IA (mais acertivo) em destaque; o título original vira
             linha secundária. Sem identificação, mostra só o título como antes. */}
-        {aiLabel ? (
-          <div>
-            <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
-              {aiLabel}
-            </p>
-            {/* Título original: alguns leiloeiros colocam a descrição INTEIRA do lote aqui (o
+          {aiLabel ? (
+            <div>
+              <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
+                {aiLabel}
+              </p>
+              {/* Título original: alguns leiloeiros colocam a descrição INTEIRA do lote aqui (o
                 site guarda o texto completo no atributo de tooltip do card) — em vez de cortar
                 com reticências, damos 2 linhas de altura e deixamos rolar para ler o resto. */}
-            <div className="h-8 overflow-y-auto text-xs leading-snug text-muted-foreground">
-              {title}
+              <div className="h-8 overflow-y-auto text-xs leading-snug text-muted-foreground">
+                {title}
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="h-10 overflow-y-auto text-sm leading-snug text-foreground">{title}</div>
-        )}
-        {ai?.tags?.length ? <LotTags tags={ai.tags} onEdit={onEditTags} /> : null}
-        <div className="mt-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="font-semibold text-primary" title="Valor atual">
-            Atual {currentPrice || "sem valor"}
-          </span>
-          {lot.nextBid ? (
-            <span
-              className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground"
-              title="Próximo lance mínimo"
-            >
-              Próximo {lot.nextBid}
+          ) : (
+            <div className="h-10 overflow-y-auto text-sm leading-snug text-foreground">{title}</div>
+          )}
+          {ai?.tags?.length ? <LotTags tags={ai.tags} onEdit={onEditTags} /> : null}
+          <div className="mt-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span className="font-semibold text-primary" title="Valor atual">
+              Atual {currentPrice || "sem valor"}
             </span>
-          ) : null}
-          {/* Meu lance vai para a linha de baixo (quebra o flex-wrap). */}
-          {lot.myBid ? <span className="w-full" aria-hidden="true" /> : null}
-          {lot.myBid ? (
-            <span
-              className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground"
-              title="Meu lance"
-            >
-              Meu lance {lot.myBid}
-            </span>
-          ) : null}
-          {hasBid ? (
-            <span
-              className={
-                winning
-                  ? "rounded bg-green-500/15 px-1.5 py-0.5 font-medium text-green-600 dark:text-green-400"
-                  : "rounded bg-red-500/15 px-1.5 py-0.5 font-medium text-red-600 dark:text-red-400"
-              }
-            >
-              {bidStatus}
-            </span>
-          ) : null}
-          {/* "Possível lixo": parecido (por palavras-chave do título) com um lote já excluído.
+            {lot.nextBid ? (
+              <span
+                className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground"
+                title="Próximo lance mínimo"
+              >
+                Próximo {lot.nextBid}
+              </span>
+            ) : null}
+            {/* Meu lance vai para a linha de baixo (quebra o flex-wrap). */}
+            {lot.myBid ? <span className="w-full" aria-hidden="true" /> : null}
+            {lot.myBid ? (
+              <span
+                className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground"
+                title="Meu lance"
+              >
+                Meu lance {lot.myBid}
+              </span>
+            ) : null}
+            {hasBid ? (
+              <span
+                className={
+                  winning
+                    ? "rounded bg-green-500/15 px-1.5 py-0.5 font-medium text-green-600 dark:text-green-400"
+                    : "rounded bg-red-500/15 px-1.5 py-0.5 font-medium text-red-600 dark:text-red-400"
+                }
+              >
+                {bidStatus}
+              </span>
+            ) : null}
+            {/* "Possível lixo": parecido (por palavras-chave do título) com um lote já excluído.
               Nunca esconde nada sozinho — só avisa; o usuário decide se exclui também. Clicável
               quando `onDismissTrash` existe: "isto não é lixo" nega os termos que causaram o
               casamento, some o badge NA HORA (aqui) e ensina o modelo pra qualquer lote futuro. */}
-          {possibleTrash ? (
-            onDismissTrash ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDismissTrash();
-                }}
-                className="rounded bg-orange-500/15 px-1.5 py-0.5 font-medium text-orange-600 hover:bg-orange-500/25 dark:text-orange-400"
-                title={`Parecido com um lote excluído: "${possibleTrash.excludedTitle}" (termos: ${possibleTrash.matchedTerms.join(", ")}) — clique se isto NÃO for lixo`}
-              >
-                ⚠ possível lixo ✕
-              </button>
-            ) : (
+            {possibleTrash ? (
+              onDismissTrash ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDismissTrash();
+                  }}
+                  className="rounded bg-orange-500/15 px-1.5 py-0.5 font-medium text-orange-600 hover:bg-orange-500/25 dark:text-orange-400"
+                  title={`Parecido com um lote excluído: "${possibleTrash.excludedTitle}" (termos: ${possibleTrash.matchedTerms.join(", ")}) — clique se isto NÃO for lixo`}
+                >
+                  ⚠ possível lixo ✕
+                </button>
+              ) : (
+                <span
+                  className="rounded bg-orange-500/15 px-1.5 py-0.5 font-medium text-orange-600 dark:text-orange-400"
+                  title={`Parecido com um lote excluído: "${possibleTrash.excludedTitle}" (termos: ${possibleTrash.matchedTerms.join(", ")})`}
+                >
+                  ⚠ possível lixo
+                </span>
+              )
+            ) : null}
+            {showDate && lot.dayKey ? <span>{lot.dayKey}</span> : null}
+            {lot.time ? <span>{lot.time}</span> : null}
+            {lot.uf ? <span>{lot.uf}</span> : null}
+            {/* Demanda (visualizações · lances) do catálogo — sinaliza lote "quente". */}
+            {demand && (demand.views != null || demand.bids != null) ? (
               <span
-                className="rounded bg-orange-500/15 px-1.5 py-0.5 font-medium text-orange-600 dark:text-orange-400"
-                title={`Parecido com um lote excluído: "${possibleTrash.excludedTitle}" (termos: ${possibleTrash.matchedTerms.join(", ")})`}
+                className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground"
+                title="Demanda: visualizações · lances"
               >
-                ⚠ possível lixo
+                {demand.views != null ? `👁 ${demand.views}` : ""}
+                {demand.views != null && demand.bids != null ? " · " : ""}
+                {demand.bids != null ? `🔨 ${demand.bids}` : ""}
               </span>
-            )
-          ) : null}
-          {showDate && lot.dayKey ? <span>{lot.dayKey}</span> : null}
-          {lot.time ? <span>{lot.time}</span> : null}
-          {lot.uf ? <span>{lot.uf}</span> : null}
-          {/* Demanda (visualizações · lances) do catálogo — sinaliza lote "quente". */}
-          {demand && (demand.views != null || demand.bids != null) ? (
-            <span
-              className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground"
-              title="Demanda: visualizações · lances"
-            >
-              {demand.views != null ? `👁 ${demand.views}` : ""}
-              {demand.views != null && demand.bids != null ? " · " : ""}
-              {demand.bids != null ? `🔨 ${demand.bids}` : ""}
-            </span>
-          ) : null}
-          {/* Estado de conservação (Disco/Capa/Faixa/encarte) numa linha própria. */}
-          {condition && (condition.media || condition.sleeve || condition.insert !== null) ? (
-            <>
-              <span className="w-full" aria-hidden="true" />
-              <ConditionBadges condition={condition} />
-            </>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant={lot.watched ? "default" : "outline"}
-            className="flex-1"
-            onClick={onToggle}
-            disabled={busy}
-          >
-            {busy ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : lot.watched ? (
-              <EyeOff className="mr-2 h-4 w-4" />
-            ) : (
-              <Eye className="mr-2 h-4 w-4" />
-            )}
-            {lot.watched ? "Vigiando" : "Vigiar"}
-          </Button>
-          <Button size="sm" variant="ghost" asChild>
-            <a
-              href={lotOpenUrl(lot.url, lot.title, lot.lote)}
-              target="_blank"
-              rel="noreferrer"
-              aria-label="Abrir lote no leiloeiro"
-            >
-              <ExternalLink className="h-4 w-4" />
-            </a>
-          </Button>
-          {onExclude ? (
+            ) : null}
+            {/* Estado de conservação (Disco/Capa/Faixa/encarte) numa linha própria. */}
+            {condition && (condition.media || condition.sleeve || condition.insert !== null) ? (
+              <>
+                <span className="w-full" aria-hidden="true" />
+                <ConditionBadges condition={condition} />
+              </>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-2">
             <Button
               size="sm"
-              variant="ghost"
-              onClick={onExclude}
-              aria-label="Excluir lote (nunca mais aparece)"
-              title="Excluir lote — some para sempre e ajuda a sinalizar parecidos"
+              variant={lot.watched ? "default" : "outline"}
+              className="flex-1"
+              onClick={onToggle}
+              disabled={busy}
             >
-              <Trash2 className="h-4 w-4 text-muted-foreground" />
+              {busy ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : lot.watched ? (
+                <EyeOff className="mr-2 h-4 w-4" />
+              ) : (
+                <Eye className="mr-2 h-4 w-4" />
+              )}
+              {lot.watched ? "Vigiando" : "Vigiar"}
             </Button>
-          ) : null}
+            <Button size="sm" variant="ghost" asChild>
+              <a
+                href={lotOpenUrl(lot.url, lot.title, lot.lote)}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Abrir lote no leiloeiro"
+              >
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            </Button>
+            {onExclude ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onExclude}
+                aria-label="Excluir lote (nunca mais aparece)"
+                title="Excluir lote — some para sempre e ajuda a sinalizar parecidos"
+              >
+                <Trash2 className="h-4 w-4 text-muted-foreground" />
+              </Button>
+            ) : null}
+          </div>
         </div>
       </div>
     </article>

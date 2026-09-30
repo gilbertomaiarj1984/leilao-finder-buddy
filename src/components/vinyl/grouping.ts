@@ -403,6 +403,45 @@ export function groupWatchedByHouseCatalog<T extends WatchedLike>(lots: T[]): Wa
   });
 }
 
+type WatchedArtistGroup<T> = {
+  artist: string;
+  /** Casas distintas com lote vigiado deste artista. */
+  houseCount: number;
+  lots: T[];
+};
+
+/**
+ * Agrupa vigiados por artista (`lot.artist`; vazio → "não classificados"). Artistas em ordem
+ * alfabética, baldes genéricos no fim (`artistRank`). Lotes do artista por casa, dia, horário
+ * e nº do lote.
+ */
+export function groupWatchedByArtist<T extends WatchedLike & { artist: string }>(
+  lots: T[],
+): WatchedArtistGroup<T>[] {
+  const byArtist = new Map<string, T[]>();
+  for (const lot of lots) {
+    const key = lot.artist || UNCLASSIFIED_LABEL;
+    const list = byArtist.get(key) ?? [];
+    list.push(lot);
+    byArtist.set(key, list);
+  }
+  return [...byArtist.entries()]
+    .map(([artist, list]) => {
+      list.sort(
+        (a, b) =>
+          a.house.localeCompare(b.house, "pt-BR") ||
+          watchedLotDayKey(a).localeCompare(watchedLotDayKey(b)) ||
+          timeMinutes(a.time) - timeMinutes(b.time) ||
+          loteNum(a.lote) - loteNum(b.lote),
+      );
+      return { artist, houseCount: new Set(list.map((l) => l.house)).size, lots: list };
+    })
+    .sort(
+      (a, b) =>
+        artistRank(a.artist) - artistRank(b.artist) || a.artist.localeCompare(b.artist, "pt-BR"),
+    );
+}
+
 /**
  * Status/horário/links de um catálogo (mesma regra de `houseAuctionInfo`). Catálogo multi-dia:
  * "encerrado" só depois do ÚLTIMO dia (3h após o último horário), "ao vivo" desde o início do

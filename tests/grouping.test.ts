@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
+import { UNCLASSIFIED_LABEL } from "../src/lib/vinyl-parse";
 import {
   catalogAuctionInfo,
   catalogHasDay,
+  groupWatchedByArtist,
   groupWatchedByHouseCatalog,
 } from "../src/components/vinyl/grouping";
 
@@ -51,5 +53,26 @@ describe("groupWatchedByHouseCatalog", () => {
     expect(catalogAuctionInfo(multi, at("2026-10-01T12:00:00-03:00"))?.status).toBe("upcoming");
     expect(catalogAuctionInfo(multi, at("2026-10-02T12:00:00-03:00"))?.status).toBe("live");
     expect(catalogAuctionInfo(multi, at("2026-10-04T12:00:00-03:00"))?.status).toBe("ended");
+  });
+});
+
+describe("groupWatchedByArtist", () => {
+  const withArtist = (artist: string, l: ReturnType<typeof lot>) => ({ ...l, artist });
+  const groups = groupWatchedByArtist([
+    withArtist("Tim Maia", lot("b", "20", "01/10/2026", "19h", "3")),
+    withArtist("Miles Davis", lot("b", "20", "02/10/2026", "19h", "1")),
+    withArtist("Miles Davis", lot("a", "10", "03/10/2026", "14h", "9")),
+    withArtist("Miles Davis", lot("b", "20", "01/10/2026", "19h", "2")),
+    withArtist("", lot("a", "10", "01/10/2026", "14h", "1")),
+  ]);
+
+  test("artistas em ordem alfabética, sem artista por último", () => {
+    expect(groups.map((g) => g.artist)).toEqual(["Miles Davis", "Tim Maia", UNCLASSIFIED_LABEL]);
+  });
+
+  test("dentro do artista: casa, depois data; conta casas distintas", () => {
+    const miles = groups[0]!;
+    expect(miles.houseCount).toBe(2);
+    expect(miles.lots.map((l) => `${l.house}${l.date.slice(0, 2)}`)).toEqual(["a03", "b01", "b02"]);
   });
 });
