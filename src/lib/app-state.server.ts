@@ -507,14 +507,29 @@ export async function setAnalyticsSaleOverride(
   lotId: string,
   value: SaleOverride | null,
 ): Promise<{ savedAt: string }> {
-  const id = typeof lotId === "string" ? lotId.trim() : "";
-  if (!id) return { savedAt: new Date().toISOString() };
+  return setAnalyticsSaleOverrides([lotId], value);
+}
+
+/**
+ * Mesma correção por venda, para VÁRIOS lotes numa única leitura-e-gravação (mover um álbum
+ * inteiro de artista). Fazer N chamadas paralelas perderia escritas: o mapa é um único JSON.
+ */
+export async function setAnalyticsSaleOverrides(
+  lotIds: string[],
+  value: SaleOverride | null,
+): Promise<{ savedAt: string }> {
+  const ids = [
+    ...new Set(lotIds.map((x) => (typeof x === "string" ? x.trim() : "")).filter(Boolean)),
+  ];
+  if (!ids.length) return { savedAt: new Date().toISOString() };
   const map = await readSaleOverrides().catch((): Record<string, SaleOverride> => ({}));
   const entry: SaleOverride = {};
   if (value?.artist && value.artist.trim()) entry.artist = value.artist.trim();
   if (value?.album && value.album.trim()) entry.album = value.album.trim();
-  if (!entry.artist && !entry.album) delete map[id];
-  else map[id] = entry;
+  for (const id of ids) {
+    if (!entry.artist && !entry.album) delete map[id];
+    else map[id] = { ...entry };
+  }
   const savedAt = new Date().toISOString();
   const { error } = await db.from("app_state").upsert(
     { key: ANALYTICS_SALE_OVERRIDES_KEY, value: map, updated_at: savedAt },

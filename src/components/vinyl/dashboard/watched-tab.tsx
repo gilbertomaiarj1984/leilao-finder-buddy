@@ -1,7 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ChevronDown, ChevronRight, ChevronUp, ExternalLink, Pencil } from "lucide-react";
-import { useState } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  ExternalLink,
+  GripVertical,
+  Pencil,
+} from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -20,11 +27,19 @@ import {
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
 import { PresencialOrUnsoldLink } from "@/components/vinyl/presencial-or-unsold-link";
-import { clearAnalyticsAlias, setAnalyticsArtistAlias } from "@/lib/analytics.functions";
+import {
+  clearAnalyticsAlias,
+  setAnalyticsArtistAlias,
+  setAnalyticsSaleOverrides,
+} from "@/lib/analytics.functions";
 import { queryKeys, useAnalyticsAliasesQuery } from "@/lib/queries";
 
 import type { DashboardData } from "./use-dashboard-data";
-import { WatchedArtistDialog } from "./watched-artist-dialog";
+import {
+  ConfirmMoveDialog,
+  WatchedAlbumDialog,
+  WatchedArtistDialog,
+} from "./watched-artist-dialog";
 
 const chipClass = (active: boolean) =>
   `inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -80,7 +95,20 @@ export function WatchedTab({ d }: { d: DashboardData }) {
   const aliasesQuery = useAnalyticsAliasesQuery();
   const runSetArtistAlias = useServerFn(setAnalyticsArtistAlias);
   const runClearAlias = useServerFn(clearAnalyticsAlias);
-  const artistAliases = aliasesQuery.data?.artists ?? {};
+  const runSetSaleOverrides = useServerFn(setAnalyticsSaleOverrides);
+  const curation = {
+    artists: aliasesQuery.data?.artists ?? {},
+    albums: aliasesQuery.data?.albums ?? {},
+    sales: aliasesQuery.data?.sales ?? {},
+  };
+  const artistAliases = curation.artists;
+  // Edição de álbum, arrastar-e-soltar e confirmação do arrastar.
+  const [editingAlbum, setEditingAlbum] = useState<{ artist: string; album: string } | null>(null);
+  type DragItem =
+    { kind: "artist"; artist: string } | { kind: "album"; artist: string; album: string };
+  const dragRef = useRef<DragItem | null>(null);
+  const [dropOver, setDropOver] = useState<string | null>(null);
+  const [pendingDrop, setPendingDrop] = useState<{ item: DragItem; to: string } | null>(null);
   const patchArtistAliases = (fn: (map: Record<string, string>) => void) => {
     const prev = aliasesQuery.data;
     const artists = { ...(prev?.artists ?? {}) };
@@ -112,6 +140,45 @@ export function WatchedTab({ d }: { d: DashboardData }) {
     });
     void Promise.all(sourceKeys.map((key) => runClearAlias({ data: { kind: "artist", key } })))
       .then(() => toast.success("Correção desfeita"))
+      .catch((error: unknown) => {
+        queryClient.setQueryData(queryKeys.analyticsAliases, prev);
+        toast.error((error as Error)?.message || "Não foi possível desfazer a correção");
+      });
+  };
+  // Leva os lotes de um álbum para outro artista (correção por lote, em lote único no servidor).
+  const moveAlbumLots = (lotIds: string[], album: string, artistName: string) => {
+    const prev = aliasesQuery.data;
+    const sales = { ...(prev?.sales ?? {}) };
+    for (const id of lotIds) sales[id] = { artist: artistName, album };
+    queryClient.setQueryData(queryKeys.analyticsAliases, {
+      artists: {},
+      albums: {},
+      excludedSales: {},
+      excludedArtists: {},
+      ...prev,
+      sales,
+    });
+    void runSetSaleOverrides({ data: { lotIds, artist: artistName, album } })
+      .then(() => toast.success(`«${album}» movido para ${artistName}`))
+      .catch((error: unknown) => {
+        queryClient.setQueryData(queryKeys.analyticsAliases, prev);
+        toast.error((error as Error)?.message || "Não foi possível mover o álbum");
+      });
+  };
+  const undoAlbumMove = (lotIds: string[]) => {
+    const prev = aliasesQuery.data;
+    const sales = { ...(prev?.sales ?? {}) };
+    for (const id of lotIds) delete sales[id];
+    queryClient.setQueryData(queryKeys.analyticsAliases, {
+      artists: {},
+      albums: {},
+      excludedSales: {},
+      excludedArtists: {},
+      ...prev,
+      sales,
+    });
+    void runSetSaleOverrides({ data: { lotIds, clear: true } })
+      .then(() => toast.success("Correção do álbum desfeita"))
       .catch((error: unknown) => {
         queryClient.setQueryData(queryKeys.analyticsAliases, prev);
         toast.error((error as Error)?.message || "Não foi possível desfazer a correção");
@@ -178,12 +245,15 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                 activeDay === "all" ||
                 (catalogDays.get(`${lot.house}|${lot.idLeilao}`) ?? []).includes(activeDay),
             ),
-            artistAliases,
+            curation,
           );
           const artistKey = (key: string) => `watched|artista|${key}`;
           const sectionKeys =
             view === "artista"
-              ? artistGroups.map((g) => artistKey(g.key))
+              ? artistGroups.flatMap((g) => [
+                  artistKey(g.key),
+                  ...g.albums.map((a) => `${artistKey(g.key)}|${a.key}`),
+                ])
               : visible.flatMap((h) => [
                   `watched|${h.house}`,
                   ...(h.multi ? h.shown.map((c) => `watched|${h.house}|${c.idLeilao}`) : []),
@@ -315,7 +385,42 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                     const isOpen = !closedHouseSections.has(key);
                     return (
                       <section key={group.key} className="space-y-3">
-                        <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
+                        <div
+                          draggable
+                          onDragStart={(e) => {
+                            dragRef.current = { kind: "artist", artist: group.key };
+                            e.dataTransfer.setData("text/plain", group.artist);
+                            e.dataTransfer.effectAllowed = "move";
+                          }}
+                          onDragEnd={() => {
+                            dragRef.current = null;
+                            setDropOver(null);
+                          }}
+                          onDragOver={(e) => {
+                            const d = dragRef.current;
+                            if (!d || d.artist === group.key) return;
+                            e.preventDefault();
+                            setDropOver(group.key);
+                          }}
+                          onDragLeave={() => setDropOver((cur) => (cur === group.key ? null : cur))}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            const d = dragRef.current;
+                            dragRef.current = null;
+                            setDropOver(null);
+                            if (d && d.artist !== group.key)
+                              setPendingDrop({ item: d, to: group.key });
+                          }}
+                          className={`flex flex-wrap items-baseline gap-3 border-b pb-2 ${
+                            dropOver === group.key
+                              ? "rounded-md border-primary bg-primary/10"
+                              : "border-border"
+                          }`}
+                        >
+                          <GripVertical
+                            className="h-4 w-4 shrink-0 cursor-grab self-center text-muted-foreground"
+                            aria-hidden
+                          />
                           <button
                             type="button"
                             onClick={() => toggleHouseSection(key)}
@@ -334,7 +439,7 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                           <button
                             type="button"
                             onClick={() => setEditingArtist(group.key)}
-                            title="Corrigir o nome do artista ou juntar com outro"
+                            title="Corrigir o nome do artista ou levá-lo para outro"
                             aria-label={`Corrigir artista ${group.artist}`}
                             className="text-muted-foreground transition-colors hover:text-primary"
                           >
@@ -397,8 +502,69 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                                 },
                               )}
                             </div>
-                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                              {group.lots.map((lot) => renderCard(lot, true))}
+                            <div className="space-y-5">
+                              {group.albums.map((al) => {
+                                const albumSection = `${key}|${al.key}`;
+                                const isAlbumOpen = !closedHouseSections.has(albumSection);
+                                return (
+                                  <div key={al.key} className="space-y-3">
+                                    <div
+                                      draggable
+                                      onDragStart={(e) => {
+                                        dragRef.current = {
+                                          kind: "album",
+                                          artist: group.key,
+                                          album: al.key,
+                                        };
+                                        e.dataTransfer.setData("text/plain", al.album);
+                                        e.dataTransfer.effectAllowed = "move";
+                                      }}
+                                      onDragEnd={() => {
+                                        dragRef.current = null;
+                                        setDropOver(null);
+                                      }}
+                                      className="flex flex-wrap items-center gap-3"
+                                    >
+                                      <GripVertical
+                                        className="h-4 w-4 shrink-0 cursor-grab text-muted-foreground"
+                                        aria-hidden
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleHouseSection(albumSection)}
+                                        aria-expanded={isAlbumOpen}
+                                        className="flex items-center gap-2 text-left"
+                                      >
+                                        {isAlbumOpen ? (
+                                          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                        ) : (
+                                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                        )}
+                                        <span className="text-base font-semibold text-foreground">
+                                          {al.album}
+                                        </span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setEditingAlbum({ artist: group.key, album: al.key })
+                                        }
+                                        title="Mover este álbum para outro artista"
+                                        aria-label={`Mover álbum ${al.album}`}
+                                        className="text-muted-foreground transition-colors hover:text-primary"
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </button>
+                                      <Badge variant="secondary">{al.lots.length} lote(s)</Badge>
+                                    </div>
+                                    {isAlbumOpen ? (
+                                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                        {al.lots.map((lot) => renderCard(lot, true))}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </>
                         ) : null}
@@ -557,24 +723,88 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                 </div>
               )}
               {(() => {
-                const editing = artistGroups.find((g) => g.key === editingArtist);
-                if (!editing) return null;
                 const choice = (g: (typeof artistGroups)[number]) => ({
                   key: g.key,
                   artist: g.artist,
                   sourceKeys: g.sourceKeys,
                   lots: g.lots.length,
                 });
+                const all = artistGroups.map(choice);
+                const editing = artistGroups.find((g) => g.key === editingArtist);
+                const albumEdit = editingAlbum
+                  ? artistGroups
+                      .find((g) => g.key === editingAlbum.artist)
+                      ?.albums.find((a) => a.key === editingAlbum.album)
+                  : undefined;
+                const albumOwner = artistGroups.find((g) => g.key === editingAlbum?.artist);
+                const pendingText = (() => {
+                  if (!pendingDrop) return "";
+                  const to = artistGroups.find((g) => g.key === pendingDrop.to);
+                  const from = artistGroups.find((g) => g.key === pendingDrop.item.artist);
+                  if (!to || !from) return "";
+                  if (pendingDrop.item.kind === "artist") {
+                    return `Levar o artista «${from.artist}» para «${to.artist}»? Os lotes passam a usar o nome ${to.artist}.`;
+                  }
+                  const item = pendingDrop.item;
+                  const al = from.albums.find((a) => a.key === item.album);
+                  return `Mover o álbum «${al?.album ?? ""}» de ${from.artist} para ${to.artist}?`;
+                })();
                 return (
-                  <WatchedArtistDialog
-                    key={editing.key}
-                    artist={choice(editing)}
-                    all={artistGroups.map(choice)}
-                    hasAlias={editing.sourceKeys.some((k) => k in artistAliases)}
-                    onClose={() => setEditingArtist(null)}
-                    onApply={applyArtistAlias}
-                    onClear={clearArtistAlias}
-                  />
+                  <>
+                    {editing ? (
+                      <WatchedArtistDialog
+                        key={editing.key}
+                        artist={choice(editing)}
+                        all={all}
+                        hasAlias={editing.sourceKeys.some((k) => k in artistAliases)}
+                        onClose={() => setEditingArtist(null)}
+                        onApply={applyArtistAlias}
+                        onClear={clearArtistAlias}
+                      />
+                    ) : null}
+                    {albumEdit && albumOwner ? (
+                      <WatchedAlbumDialog
+                        key={`${albumOwner.key}|${albumEdit.key}`}
+                        album={albumEdit.album}
+                        fromArtist={choice(albumOwner)}
+                        all={all}
+                        moved={albumEdit.lots.some((l) => curation.sales[l.id] !== undefined)}
+                        onClose={() => setEditingAlbum(null)}
+                        onMove={(name) =>
+                          moveAlbumLots(
+                            albumEdit.lots.map((l) => l.id),
+                            albumEdit.album,
+                            name,
+                          )
+                        }
+                        onUndo={() => undoAlbumMove(albumEdit.lots.map((l) => l.id))}
+                      />
+                    ) : null}
+                    {pendingDrop && pendingText ? (
+                      <ConfirmMoveDialog
+                        message={pendingText}
+                        onCancel={() => setPendingDrop(null)}
+                        onConfirm={() => {
+                          const { item, to } = pendingDrop;
+                          setPendingDrop(null);
+                          const toGroup = artistGroups.find((g) => g.key === to);
+                          const fromGroup = artistGroups.find((g) => g.key === item.artist);
+                          if (!toGroup || !fromGroup) return;
+                          if (item.kind === "artist") {
+                            applyArtistAlias(fromGroup.sourceKeys, toGroup.artist);
+                          } else {
+                            const al = fromGroup.albums.find((a) => a.key === item.album);
+                            if (al)
+                              moveAlbumLots(
+                                al.lots.map((l) => l.id),
+                                al.album,
+                                toGroup.artist,
+                              );
+                          }
+                        }}
+                      />
+                    ) : null}
+                  </>
                 );
               })()}
             </div>
