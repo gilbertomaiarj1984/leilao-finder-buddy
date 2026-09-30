@@ -59,6 +59,7 @@
 - **`_authenticated/analise.tsx` (Análise):** **Top 100 por nota** (recolhível) + **por dia →
   casa** ordenado por nota. Nota à esquerda com `HoverDetails` (painel via `createPortal`,
   `position:fixed`, abre à esquerda/no toque, Discogs clicável); título com
+  (Ao desvigiar, o toast "Vigia removida" fica 5 s com ação "Desfazer" que revigia o lote.)
   raridade/oportunidade/motivo/tags + faixa Discogs; botão de vigiar + borda colorida por
   status. **Filtros** (valem p/ Top 100 e por dia): busca, dia, casa, faixa de nota, raridade,
   "Só sondagem", "Vigiando", "Com lance". **Tags editáveis** (×/＋ no hover, `setLotTags` →

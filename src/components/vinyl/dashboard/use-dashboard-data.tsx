@@ -1145,7 +1145,12 @@ export function useDashboardData() {
       // próprio endpoint de toggle); o próximo refetch natural (`staleTime`, refresh manual etc.)
       // reconcilia quando a conta do LeilõesBR já tiver atualizado.
       queryClient.setQueryData(queryKeys.watched, [...watchedAccumRef.current!.values()]);
-      toast.success(result.watched ? "Lote vigiado no LeilõesBR" : "Vigia removida no LeilõesBR");
+      if (result.watched) toast.success("Lote vigiado no LeilõesBR");
+      else
+        toast.success("Vigia removida no LeilõesBR", {
+          duration: 5000,
+          action: { label: "Desfazer", onClick: () => toggle.mutate({ ...lot, watch: true }) },
+        });
     },
     onError: (error: Error) => toast.error(error.message || "Não foi possível sincronizar a vigia"),
     onSettled: () => setPending(null),
