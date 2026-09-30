@@ -323,3 +323,110 @@ export function groupWatchedByHouse<
     (a, b) => timeMinutes(a.time) - timeMinutes(b.time) || a.house.localeCompare(b.house, "pt-BR"),
   );
 }
+
+/** Um catálogo (`idLeilao`) de uma casa nos vigiados; pode passar por vários dias. */
+type WatchedCatalog<T> = {
+  idLeilao: string;
+  /** Dias (yyyy-mm-dd, crescente) em que o catálogo tem lote vigiado; sem data fica de fora. */
+  dayKeys: string[];
+  /** Horário de início (lotes do primeiro dia). */
+  time: string;
+  lots: T[];
+};
+
+type WatchedHouse<T> = {
+  house: string;
+  houseUrl: string;
+  catalogs: WatchedCatalog<T>[];
+};
+
+type WatchedLike = {
+  house: string;
+  houseUrl: string;
+  lote: string;
+  idLeilao: string;
+  date: string; // dd/mm/yyyy
+  time: string;
+  url: string;
+};
+
+/** dayKey (yyyy-mm-dd) do lote vigiado; "" quando sem data. */
+function watchedLotDayKey(lot: { date: string }): string {
+  return watchedDateToKey(lot.date) || lot.date || "";
+}
+
+/** true quando o catálogo passa pelo dia (mesmo sendo multi-dia). */
+export function catalogHasDay(catalog: { dayKeys: string[] }, dayKey: string): boolean {
+  return catalog.dayKeys.includes(dayKey);
+}
+
+/**
+ * Agrupa vigiados por casa e, dentro dela, por catálogo (`idLeilao`). Um catálogo multi-dia
+ * (lotes em datas diferentes) continua UM catálogo, com todos os dias em `dayKeys`. Catálogos
+ * ordenados por primeiro dia/horário; casas pelo seu primeiro catálogo e depois pelo nome.
+ * Lotes ordenados pelo nº do lote.
+ */
+export function groupWatchedByHouseCatalog<T extends WatchedLike>(lots: T[]): WatchedHouse<T>[] {
+  const byHouse = new Map<string, { houseUrl: string; byCat: Map<string, T[]> }>();
+  for (const lot of lots) {
+    const entry = byHouse.get(lot.house) ?? { houseUrl: lot.houseUrl, byCat: new Map() };
+    const list = entry.byCat.get(lot.idLeilao) ?? [];
+    list.push(lot);
+    entry.byCat.set(lot.idLeilao, list);
+    byHouse.set(lot.house, entry);
+  }
+  const slotOf = (c: WatchedCatalog<T>) => c.dayKeys[0] ?? "￿";
+  const compareCatalogs = (a: WatchedCatalog<T>, b: WatchedCatalog<T>) =>
+    slotOf(a).localeCompare(slotOf(b)) ||
+    timeMinutes(a.time) - timeMinutes(b.time) ||
+    a.idLeilao.localeCompare(b.idLeilao);
+  const houses: WatchedHouse<T>[] = [...byHouse.entries()].map(([house, entry]) => {
+    const catalogs = [...entry.byCat.entries()].map(([idLeilao, catLots]) => {
+      catLots.sort(
+        (a, b) => loteNum(a.lote) - loteNum(b.lote) || a.lote.localeCompare(b.lote, "pt-BR"),
+      );
+      const dayKeys = [...new Set(catLots.map(watchedLotDayKey).filter(Boolean))].sort();
+      const firstDayTimes = catLots
+        .filter((l) => watchedLotDayKey(l) === dayKeys[0])
+        .map((l) => l.time)
+        .filter(Boolean)
+        .sort((a, b) => timeMinutes(a) - timeMinutes(b));
+      return { idLeilao, dayKeys, time: firstDayTimes[0] ?? catLots[0]?.time ?? "", lots: catLots };
+    });
+    catalogs.sort(compareCatalogs);
+    return { house, houseUrl: entry.houseUrl, catalogs };
+  });
+  return houses.sort((a, b) => {
+    const ca = a.catalogs[0];
+    const cb = b.catalogs[0];
+    return (ca && cb ? compareCatalogs(ca, cb) : 0) || a.house.localeCompare(b.house, "pt-BR");
+  });
+}
+
+/**
+ * Status/horário/links de um catálogo (mesma regra de `houseAuctionInfo`). Catálogo multi-dia:
+ * "encerrado" só depois do ÚLTIMO dia (3h após o último horário), "ao vivo" desde o início do
+ * primeiro dia.
+ */
+export function catalogAuctionInfo(
+  catalog: WatchedCatalog<WatchedLike>,
+  now: number = Date.now(),
+): HouseAuctionInfo | null {
+  const firstDay = catalog.dayKeys[0] ?? "";
+  const lastDay = catalog.dayKeys[catalog.dayKeys.length - 1] ?? "";
+  const sample = catalog.lots.find((l) => watchedLotDayKey(l) === firstDay) ?? catalog.lots[0];
+  const info = houseAuctionInfo(
+    firstDay,
+    sample ? { idLeilao: catalog.idLeilao, time: catalog.time, url: sample.url } : undefined,
+    now,
+  );
+  if (!info || !info.status || lastDay === firstDay) return info;
+  const lastTime =
+    catalog.lots
+      .filter((l) => watchedLotDayKey(l) === lastDay)
+      .map((l) => l.time)
+      .filter(Boolean)
+      .sort((a, b) => timeMinutes(b) - timeMinutes(a))[0] ?? "";
+  if (lastTime && auctionFinished(lastDay, lastTime, now)) return { ...info, status: "ended" };
+  return { ...info, status: auctionStarted(firstDay, catalog.time, now) ? "live" : "upcoming" };
+}

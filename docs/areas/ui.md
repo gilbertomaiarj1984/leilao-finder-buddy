@@ -128,6 +128,22 @@
     proxy**; o `Set-Cookie` da casa é absorvido no jar do servidor (`absorbSetCookie`) e a sessão
     **persiste**. Por isso não se força re-login em 401/403 (destruiria uma sessão de login manual).
     Só erro de rede na casa vira 502 (com o motivo real, escapado no HTML).
+- **Aba Vigiados por casa → catálogo, com organizador por dia (v0.94.0):** `watched-tab.tsx`
+  não agrupa mais por dia → casa. Agora é **casa → catálogo (`idLeilao`)**
+  (`groupWatchedByHouseCatalog`, `grouping.ts`). Casa com **mais de um catálogo** mostra um
+  sub-cabeçalho por catálogo ("Catálogo N", nº de lotes, dias, status/pregão presencial, "ver
+  catálogo"), cada um abrindo/fechando; casa com um catálogo só mantém o cabeçalho único de
+  antes (status, presencial, "site da casa"). Casas também abrem/fecham; "Abrir todas"/"Fechar
+  todas" agem em casas e catálogos visíveis (estado em `closedHouseSections`, chaves
+  `watched|<casa>` e `watched|<casa>|<idLeilao>`; `openAllHouseSections` é o inverso do
+  `closeAllHouseSections`). **Organizador por dia**: chips "Todos" + os dias que têm vigiados
+  (contagem de lotes); escolher um dia mostra as casas/catálogos que **passam** por ele
+  (`catalogHasDay`) — catálogo **multi-dia** (lotes vigiados em datas diferentes, mesmo
+  `idLeilao`) aparece em todos os dias que atravessa, sempre com TODOS os seus lotes vigiados
+  (badge "multi-dia" + "01/10 a 03/10"). Status do catálogo (`catalogAuctionInfo`): "ao vivo"
+  desde o início do 1º dia; "encerrado" só 3h depois do último horário do último dia. O título
+  do catálogo é só "Catálogo <idLeilao>" (o nome do leilão não é capturado). Filtro de dia é
+  estado local (volta a "Todos" ao trocar de aba). `watchedDayOpen` (abertura por dia) foi removido.
 - **Split do `index.tsx`:** lógica em `src/components/vinyl/` — `grouping.ts` (puros + tipos),
   `badges.tsx`, `filters.tsx`, `lot-card.tsx`, `bid-house-sections.tsx`, `live-auctions.tsx`,
   `ai-score.tsx` (UI) + `ai-score-utils.ts` (puros/client-safe — `parseAiAlbum`/`formatAiAlbum`,
