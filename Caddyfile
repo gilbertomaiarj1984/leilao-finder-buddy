@@ -47,6 +47,12 @@
 	reverse_proxy portainer:9000
 }
 
+# pdf_unite (repo pdf-unite-and-print): app estática em outro compose, alcançada pela rede
+# externa `proxy`. Domínio literal (sslip.io), sem variável de ambiente.
+pdf.143-95-214-240.sslip.io {
+	reverse_proxy pdf-unite:80
+}
+
 # Preview deployments (Dokploy, Fase 7) — QUALQUER subdomínio sob {$PREVIEW_DOMAIN}, um
 # por PR/branch, sem cadastrar cada um aqui (TLS "on-demand", bloco de config global no
 # topo do arquivo). Ambiente atual roda em sslip.io (sem domínio próprio ainda), então
