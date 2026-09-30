@@ -139,7 +139,8 @@
   também aparece no Analytics; "Desfazer correção" remove. **Arrastar** (HTML5 DnD; não funciona em
   touch — use o botão/lápis): artista ou card de lote sobre o cabeçalho de outro artista →
   `ConfirmMoveDialog` → mesma ação. Durante o arrastar, `useDragAutoScroll` rola a janela quando o
-  ponteiro chega a ~90px do topo/rodapé (v0.98.1). Não há subgrupo de álbum em Vigiados.
+  ponteiro chega a ~90px do topo/rodapé (v0.98.1; o mesmo hook vale para arrastar venda → álbum
+  no Analytics). Não há subgrupo de álbum em Vigiados.
 - **Vigiados — visão "Por artista" (v0.95.0):** `watched-tab.tsx` tem seletor de visão ("Por casa"
   = a de cima, padrão; "Por artista"), estado local (`view`). Por artista: `groupWatchedByArtist`
   (`grouping.ts`) — artistas alfabéticos, baldes genéricos no fim, lotes por **casa → data →

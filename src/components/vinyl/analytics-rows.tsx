@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { scoreTone } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
+import { useDragAutoScroll } from "@/components/vinyl/use-drag-autoscroll";
 import {
   type AlbumAgg,
   type AnalyticsAliases,
@@ -619,6 +620,7 @@ function SaleMarker({
   const [detail, setDetail] = useState(false);
   const [dragging, setDragging] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoScroll = useDragAutoScroll();
   const cond = useMemo(() => conditionFromSale(sale), [sale]);
   const grade =
     sale.media || sale.sleeve
@@ -647,6 +649,7 @@ function SaleMarker({
               cancelClose();
               setOpen(false);
               setDragging(true);
+              autoScroll.start();
               e.dataTransfer.effectAllowed = "move";
               const payload: SaleDragPayload = {
                 lotId: sale.lot_id,
