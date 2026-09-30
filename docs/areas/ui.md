@@ -128,6 +128,14 @@
     proxy**; o `Set-Cookie` da casa é absorvido no jar do servidor (`absorbSetCookie`) e a sessão
     **persiste**. Por isso não se força re-login em 401/403 (destruiria uma sessão de login manual).
     Só erro de rede na casa vira 502 (com o motivo real, escapado no HTML).
+- **Vigiados — visão "Por artista" (v0.95.0):** `watched-tab.tsx` tem seletor de visão ("Por casa"
+  = a de cima, padrão; "Por artista"), estado local (`view`). Por artista: `groupWatchedByArtist`
+  (`grouping.ts`) — artistas alfabéticos, baldes genéricos no fim, lotes por **casa → data →
+  horário → lote**; o filtro de dia segue `catalogHasDay` (catálogo multi-dia aparece em todos os
+  dias). Cada `LotCard` recebe `origin` (casa, pregão = `idLeilao`, dias do catálogo inteiro via
+  `daysRangeLabel`, badge multi-dia) e desenha uma **barra superior** amarela (vigiando), verde
+  (ganhando) ou vermelha (coberto), mesma regra de cor da borda. Abaixo do cabeçalho do artista, faixa "Pregões envolvidos" (uma linha por casa+`idLeilao`: pregão, dias/multi-dia, `AuctionStatusInline`, `PresencialOrUnsoldLink`, ver catálogo). Seção do artista sempre
+  recolhível; chaves de abrir/fechar: `watched|artista|<artista>`.
 - **Aba Vigiados por casa → catálogo, com organizador por dia (v0.94.0):** `watched-tab.tsx`
   não agrupa mais por dia → casa. Agora é **casa → catálogo (`idLeilao`)**
   (`groupWatchedByHouseCatalog`, `grouping.ts`). Casa com **mais de um catálogo** mostra um
@@ -240,7 +248,7 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
     sem criar falso positivo, mas também sem resolver o real). **v0.58.2** troca por um parser
     dedicado à `peca.asp` (`parseSoldOldTemplate`), calibrado no HTML real: o sinal confiável é
     a CLASSE CSS do botão de lance, que só existe nesse estado — `<li id="fazerlance"
-    class="is-CoolBtn lotevendido"><span>Lote Vendido</span></li>` (token `lotevendido`, sem
+class="is-CoolBtn lotevendido"><span>Lote Vendido</span></li>` (token `lotevendido`, sem
     espaço — não colide com o texto livre dos Termos) — e o preço sai de uma janela maior até
     o span `is-valor` (`valor de venda[\s\S]{0,300}?is-valor"[^>]*>\s*(\d+,\d{2})`), cobrindo o
     espaçamento entre label e spans. Casas do template novo continuam pelo campo JSON (mais
@@ -296,7 +304,7 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
     finalizados"; `finishedCount`/o botão contam só o resto (sem relação com o usuário).
     ⚠️ **Fix v0.58.3 — vigiar um lote confirmava no site mas o card continuava "não vigiado"**:
     a grade geral do dia (`rawDay`, `index.tsx`) sobrescreve `lot.watched` com `watchedIds.has
-    (lot.idPeca)` sempre que `watchedIds.size > 0` (tem prioridade sobre o campo vindo da
+(lot.idPeca)` sempre que `watchedIds.size > 0` (tem prioridade sobre o campo vindo da
     varredura geral) — e `watchedIds` deriva só de `watched.data` (a query `listWatched`, que lê
     a conta do LeilõesBR de novo). `toggle.onSuccess` já reescrevia `lotsQuery` na hora
     (`item.watched = result.watched`), mas só tratava o acumulador local (`watchedAccumRef`, que
@@ -305,7 +313,7 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
     LeilõesBR pode demorar um instante pra refletir o toggle que acabou de confirmar. Resultado:
     o usuário vigiava, o site confirmava, mas o card no dia continuava sem a borda/ícone de
     vigiado até o próximo refetch (nem sempre visível, dependendo do timing). Fix: `toggle.
-    onSuccess` agora trata as DUAS direções simetricamente — vigiar também escreve na hora em
+onSuccess` agora trata as DUAS direções simetricamente — vigiar também escreve na hora em
     `watchedAccumRef` (reconstruindo o `WatchedLot` a partir do lote já conhecido em
     `lots.data.lots`, já que o retorno do toggle só traz `idPeca/idLeilao/base/watch`) e
     `queryClient.setQueryData(watchedQuery.queryKey, …)`, igual ao que desvigiar já fazia.
@@ -347,39 +355,39 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
     (`WatchedLot`), preservando o comportamento de lances.
     ⚠️ **Fix v0.60.9 — lote com lance aparecia só como "Vigiando" (sem borda/status de lance)**:
     a poda por janela de dias em `mergeWatchedAccum` (`upcomingDayKeys(WATCH_WINDOW_DAYS)`, "hoje
-    + próximos 4 dias") tratava `date` sempre como a data do LEILÃO — verdade para `WatchedLot`,
-    mas não para `MyBid`: em `MyBid`, `date` (`leiloesbr-bids.server.ts#parseBidChunk`) é a data
-    em que o LANCE foi dado (tipicamente hoje ou um dia antes do pregão), não a do leilão. Assim
-    que essa data caía fora da janela "só futuro" — ou seja, em qualquer lance dado num dia que
-    não fosse hoje —, o item era removido do acumulador na própria chamada de merge (antes de
-    chegar a `bids.data`), e o `LotCard` nunca recebia `bidStatus`/`myBid`, caindo no card
-    "só vigiado". Fix: `mergeWatchedAccum` agora poda vigiados (`item.time !== undefined`) pela
-    janela de dias FUTUROS (`upcomingDayKeys`, como antes) e lances (`item.time === undefined`)
-    por uma janela de dias PASSADOS a partir da data do lance (`recentDayKeys`,
-    `BID_RETENTION_DAYS` = 14, margem generosa entre dar o lance e o leilão fechar).
-    `recentDayKeys` é o espelho de `upcomingDayKeys` em `vinyl-parse.ts`.
-    ⚠️ **Fix v0.74.2 — vigiado de leilão distante sumia da ferramenta**: a poda por janela de
-    dias futuros (`upcomingDayKeys(WATCH_WINDOW_DAYS)`, "hoje + próximos 4 dias") também
-    descartava vigiados de leilões **além** dessa janela — mesmo sendo uma vigia real, confirmada
-    direto na conta do LeilõesBR (`l=8`, `listWatchedFromSite`), sem depender de o lote já estar
-    na tabela `lots` (varredura geral limitada ao mesmo `WINDOW_DAYS` do servidor,
-    `leiloesbr-scrape.server.ts`). Fix: `mergeWatchedAccum` não poda mais vigiados pelo TETO
-    futuro — só remove quando o dia já é passado (`dayKey < hoje`) ou sem data legível; o teto
-    artificial de `WATCH_WINDOW_DAYS` (removido, não é mais usado em lugar nenhum) só existia
-    para espelhar a janela de scraping, mas o card do vigiado não depende dela (vem pronto —
-    título/preço/imagem/data — direto da conta; casamento com `lots` para preço ao vivo/nota
-    IA/Discogs é best-effort, se o lote ainda não foi varrido o card simplesmente mostra menos
-    dado, nunca some). Lances (`MyBid`) não mudam — a poda deles continua olhando pra trás
-    (`recentDayKeys`/`BID_RETENTION_DAYS`), já que `date` ali é a data do LANCE, não do leilão.
-    ⚠️ **Fix v0.83.1 — lance para leilão futuro sumia da aba "Lances"**: como `date` em `MyBid`
-    às vezes reflete a data do LANCE mas em outros casos o card mostra a data que aparece na
-    listagem (que pode ser a do próprio leilão, futura), a checagem `!validBidDays.has(dayKey)`
-    (`validBidDays` = só `recentDayKeys`, hoje + passado) removia do acumulador qualquer lance
-    cujo `dayKey` caísse no futuro — ou seja, lances para leilões que ainda vão rolar sumiam da
-    tela assim que eram mesclados. Fix: `mergeWatchedAccum` agora nunca poda lances por dia
-    FUTURO (`dayKey > hoje`, sem limite de quão longe), só remove lances cujo dia já é PASSADO e
-    caiu fora da janela de retenção — reduzida de `BID_RETENTION_DAYS` = 14 para 3 (hoje + 2 dias pra trás; lance
-    passado pode sumir da tela depois de 2 dias).
+    - próximos 4 dias") tratava `date` sempre como a data do LEILÃO — verdade para `WatchedLot`,
+      mas não para `MyBid`: em `MyBid`, `date` (`leiloesbr-bids.server.ts#parseBidChunk`) é a data
+      em que o LANCE foi dado (tipicamente hoje ou um dia antes do pregão), não a do leilão. Assim
+      que essa data caía fora da janela "só futuro" — ou seja, em qualquer lance dado num dia que
+      não fosse hoje —, o item era removido do acumulador na própria chamada de merge (antes de
+      chegar a `bids.data`), e o `LotCard` nunca recebia `bidStatus`/`myBid`, caindo no card
+      "só vigiado". Fix: `mergeWatchedAccum` agora poda vigiados (`item.time !== undefined`) pela
+      janela de dias FUTUROS (`upcomingDayKeys`, como antes) e lances (`item.time === undefined`)
+      por uma janela de dias PASSADOS a partir da data do lance (`recentDayKeys`,
+      `BID_RETENTION_DAYS` = 14, margem generosa entre dar o lance e o leilão fechar).
+      `recentDayKeys` é o espelho de `upcomingDayKeys` em `vinyl-parse.ts`.
+      ⚠️ **Fix v0.74.2 — vigiado de leilão distante sumia da ferramenta**: a poda por janela de
+      dias futuros (`upcomingDayKeys(WATCH_WINDOW_DAYS)`, "hoje + próximos 4 dias") também
+      descartava vigiados de leilões **além** dessa janela — mesmo sendo uma vigia real, confirmada
+      direto na conta do LeilõesBR (`l=8`, `listWatchedFromSite`), sem depender de o lote já estar
+      na tabela `lots` (varredura geral limitada ao mesmo `WINDOW_DAYS` do servidor,
+      `leiloesbr-scrape.server.ts`). Fix: `mergeWatchedAccum` não poda mais vigiados pelo TETO
+      futuro — só remove quando o dia já é passado (`dayKey < hoje`) ou sem data legível; o teto
+      artificial de `WATCH_WINDOW_DAYS` (removido, não é mais usado em lugar nenhum) só existia
+      para espelhar a janela de scraping, mas o card do vigiado não depende dela (vem pronto —
+      título/preço/imagem/data — direto da conta; casamento com `lots` para preço ao vivo/nota
+      IA/Discogs é best-effort, se o lote ainda não foi varrido o card simplesmente mostra menos
+      dado, nunca some). Lances (`MyBid`) não mudam — a poda deles continua olhando pra trás
+      (`recentDayKeys`/`BID_RETENTION_DAYS`), já que `date` ali é a data do LANCE, não do leilão.
+      ⚠️ **Fix v0.83.1 — lance para leilão futuro sumia da aba "Lances"**: como `date` em `MyBid`
+      às vezes reflete a data do LANCE mas em outros casos o card mostra a data que aparece na
+      listagem (que pode ser a do próprio leilão, futura), a checagem `!validBidDays.has(dayKey)`
+      (`validBidDays` = só `recentDayKeys`, hoje + passado) removia do acumulador qualquer lance
+      cujo `dayKey` caísse no futuro — ou seja, lances para leilões que ainda vão rolar sumiam da
+      tela assim que eram mesclados. Fix: `mergeWatchedAccum` agora nunca poda lances por dia
+      FUTURO (`dayKey > hoje`, sem limite de quão longe), só remove lances cujo dia já é PASSADO e
+      caiu fora da janela de retenção — reduzida de `BID_RETENTION_DAYS` = 14 para 3 (hoje + 2 dias pra trás; lance
+      passado pode sumir da tela depois de 2 dias).
 - **Ícone roxo "já tenho na Coleção"** (`LotCard`, só na **home** `index.tsx`): disco `Disc3`
   num badge roxo no canto **direito, abaixo** da nota da IA (`absolute right-2 top-9`), quando
   o lote casa com um item de `collection_items`. **NÃO** mexe na borda (lance/vigia intactos).
@@ -412,17 +420,17 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
      no máximo 2): num trecho próprio ("Artista - Álbum - LP") → 0.9; colado ao artista → 0.9
      (1 palavra: 0.75, 0.9 com ano exato); em outro ponto → 0.75/0.65 (+ano); espalhado → 0.6.
      Número logo depois da frase ("… 2", "Vol. 3") que o disco da coleção não tem invalida.
-  Tokens do álbum descontam os do **artista** ("A Arte de Jorge Ben" → distintivo só "arte") e
-  palavras **genéricas** (`GENERIC_ALBUM_TOKENS`: "ao vivo"/"sucessos"/formato/edição —
-  "remasterizado", "deluxe", "vinil"…/estado/stopwords). Disco **homônimo** ("Djavan - Djavan")
-  exige artista confirmado + álbum estruturado também homônimo (só com ano exato → "?"). Faixas:
-  `>= OWNED_CONFIDENT_MIN` (80%) = ícone confiante; `>= OWNED_MATCH_MIN` (60%) = ícone **com
-  "?"**; abaixo não marca. **Sem álbum → não marca** (só a peça exata por `lot_id`, score 1, no
-  chamador). Desempenho: pré-filtro por índice de chaves (`fuzzyKeys`: palavra + variações com 1
-  letra apagada, cache por identidade em `WeakMap`, chaves do artista pré-calculadas em
-  `OwnedCandidate.artistKeys`) descarta de cara os discos cujo artista não aparece no lote.
-  `ownedCands` ignora buckets Lote/Coletâneas/Não classificados; mapa `ownedById` memoizado;
-  prop `owned: OwnedHit` no `LotCard`.
+     Tokens do álbum descontam os do **artista** ("A Arte de Jorge Ben" → distintivo só "arte") e
+     palavras **genéricas** (`GENERIC_ALBUM_TOKENS`: "ao vivo"/"sucessos"/formato/edição —
+     "remasterizado", "deluxe", "vinil"…/estado/stopwords). Disco **homônimo** ("Djavan - Djavan")
+     exige artista confirmado + álbum estruturado também homônimo (só com ano exato → "?"). Faixas:
+     `>= OWNED_CONFIDENT_MIN` (80%) = ícone confiante; `>= OWNED_MATCH_MIN` (60%) = ícone **com
+     "?"**; abaixo não marca. **Sem álbum → não marca** (só a peça exata por `lot_id`, score 1, no
+     chamador). Desempenho: pré-filtro por índice de chaves (`fuzzyKeys`: palavra + variações com 1
+     letra apagada, cache por identidade em `WeakMap`, chaves do artista pré-calculadas em
+     `OwnedCandidate.artistKeys`) descarta de cara os discos cujo artista não aparece no lote.
+     `ownedCands` ignora buckets Lote/Coletâneas/Não classificados; mapa `ownedById` memoizado;
+     prop `owned: OwnedHit` no `LotCard`.
   - **Coletânea/ao vivo (título genérico)** casa pelo **nome + ano EXATO** (`ownedScore`
     separa tokens distintivos × genéricos; "Ao Vivo (1989)"/"Seus Sucessos (1978)"), sempre
     com o artista verificado antes (confiante só com artista estruturado).
