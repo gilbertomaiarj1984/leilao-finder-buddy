@@ -60,6 +60,7 @@
   casa** ordenado por nota. Nota à esquerda com `HoverDetails` (painel via `createPortal`,
   `position:fixed`, abre à esquerda/no toque, Discogs clicável); título com
   (Barra de origem do card em Vigiados "Por artista": ★ verde/vermelha ao lado da casa = casa com lance vencendo/coberto, de `houseBidFlags`.)
+  (Vigiados "Por casa", catálogo multi-dia: faixa grossa no topo do card com data · hora do lote — prop `dateBar` do `LotCard`.)
   (Ao desvigiar, o toast "Vigia removida" fica 5 s com ação "Desfazer" que revigia o lote.)
   raridade/oportunidade/motivo/tags + faixa Discogs; botão de vigiar + borda colorida por
   status. **Filtros** (valem p/ Top 100 e por dia): busca, dia, casa, faixa de nota, raridade,
