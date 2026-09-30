@@ -1,4 +1,4 @@
-import { Disc3, ExternalLink, Eye, EyeOff, Loader2, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Disc3, ExternalLink, Eye, EyeOff, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -91,7 +91,14 @@ export function LotCard({
   onDismissTrash?: () => void;
   // Barra superior de origem (visão "Por artista" dos Vigiados): casa, pregão e data. A cor
   // segue o estado do card — amarelo vigiando, verde ganhando, vermelho coberto.
-  origin?: { house: string; idLeilao: string; days: string; multiDay: boolean };
+  origin?: {
+    house: string;
+    idLeilao: string;
+    days: string;
+    multiDay: boolean;
+    // Mover este lote para outro artista (botão na barra).
+    onMove?: () => void;
+  };
 }) {
   // Imagens hotlinkadas das casas às vezes falham (403/404/expirada) — troca para o mesmo
   // placeholder "sem imagem". (O transbordo do texto do `alt` por cima do card é evitado de
@@ -170,6 +177,17 @@ export function LotCard({
             <span className="rounded bg-black/15 px-1.5 py-px text-[10px] font-bold uppercase tracking-wide">
               multi-dia
             </span>
+          ) : null}
+          {origin.onMove ? (
+            <button
+              type="button"
+              onClick={origin.onMove}
+              title="Mover este lote para outro artista"
+              aria-label="Mover este lote para outro artista"
+              className="ml-auto rounded bg-black/15 p-1 hover:bg-black/25"
+            >
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+            </button>
           ) : null}
         </div>
       ) : null}

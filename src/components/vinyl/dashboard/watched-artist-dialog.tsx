@@ -150,11 +150,11 @@ export function WatchedArtistDialog({
 }
 
 /**
- * Mover um álbum para outro artista. O destino vem da lista ou é digitado (artista que ainda não
+ * Mover UM lote para outro artista. O destino vem da lista ou é digitado (artista que ainda não
  * aparece nos Vigiados). Grava a correção por lote (mesmo mecanismo das vendas do Analytics).
  */
-export function WatchedAlbumDialog({
-  album,
+export function WatchedLotDialog({
+  lotLabel,
   fromArtist,
   all,
   moved,
@@ -162,10 +162,10 @@ export function WatchedAlbumDialog({
   onMove,
   onUndo,
 }: {
-  album: string;
+  lotLabel: string;
   fromArtist: ArtistChoice;
   all: ArtistChoice[];
-  /** Algum lote do álbum já tem correção manual → mostra "Desfazer". */
+  /** O lote já tem correção manual → mostra "Desfazer". */
   moved: boolean;
   onClose: () => void;
   onMove: (artistName: string) => void;
@@ -180,11 +180,11 @@ export function WatchedAlbumDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Mover álbum para outro artista</DialogTitle>
+          <DialogTitle>Mover lote para outro artista</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4">
           <p className="text-sm text-foreground">
-            «{album}» <span className="text-muted-foreground">(hoje em {fromArtist.artist})</span>
+            {lotLabel} <span className="text-muted-foreground">(hoje em {fromArtist.artist})</span>
           </p>
           <div className="flex flex-col gap-2">
             <span className="text-sm text-muted-foreground">Artista de destino</span>
