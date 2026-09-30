@@ -134,8 +134,8 @@
   horário → lote**; o filtro de dia segue `catalogHasDay` (catálogo multi-dia aparece em todos os
   dias). Cada `LotCard` recebe `origin` (casa, pregão = `idLeilao`, dias do catálogo inteiro via
   `daysRangeLabel`, badge multi-dia) e desenha uma **barra superior** amarela (vigiando), verde
-  (ganhando) ou vermelha (coberto), mesma regra de cor da borda. Chaves de abrir/fechar:
-  `watched|artista|<artista>`.
+  (ganhando) ou vermelha (coberto), mesma regra de cor da borda. Abaixo do cabeçalho do artista, faixa "Pregões envolvidos" (uma linha por casa+`idLeilao`: pregão, dias/multi-dia, `AuctionStatusInline`, `PresencialOrUnsoldLink`, ver catálogo). Seção do artista sempre
+  recolhível; chaves de abrir/fechar: `watched|artista|<artista>`.
 - **Aba Vigiados por casa → catálogo, com organizador por dia (v0.94.0):** `watched-tab.tsx`
   não agrupa mais por dia → casa. Agora é **casa → catálogo (`idLeilao`)**
   (`groupWatchedByHouseCatalog`, `grouping.ts`). Casa com **mais de um catálogo** mostra um

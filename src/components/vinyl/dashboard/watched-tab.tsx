@@ -117,6 +117,9 @@ export function WatchedTab({ d }: { d: DashboardData }) {
           const catalogCount = visible.reduce((n, h) => n + h.shown.length, 0);
           // Visão por artista: catálogo (casa + idLeilao) → dias, para a barra de origem mostrar
           // o intervalo do catálogo inteiro (multi-dia) e não só o dia do lote.
+          const catalogByKey = new Map(
+            houses.flatMap((h) => h.catalogs.map((c) => [`${h.house}|${c.idLeilao}`, { h, c }])),
+          );
           const catalogDays = new Map(
             houses.flatMap((h) => h.catalogs.map((c) => [`${h.house}|${c.idLeilao}`, c.dayKeys])),
           );
@@ -285,9 +288,60 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                           />
                         </div>
                         {isOpen ? (
-                          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                            {group.lots.map((lot) => renderCard(lot, true))}
-                          </div>
+                          <>
+                            <div className="divide-y divide-border rounded-md border border-border bg-card">
+                              <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                Pregões envolvidos
+                              </p>
+                              {[...new Set(group.lots.map((l) => `${l.house}|${l.idLeilao}`))].map(
+                                (ck) => {
+                                  const entry = catalogByKey.get(ck);
+                                  if (!entry) return null;
+                                  const { h, c } = entry;
+                                  const info = catalogAuctionInfo(c);
+                                  return (
+                                    <div
+                                      key={ck}
+                                      className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 text-sm"
+                                    >
+                                      <span className="font-semibold text-foreground">
+                                        {h.house}
+                                      </span>
+                                      <span className="font-medium">Pregão {c.idLeilao}</span>
+                                      {c.dayKeys.length > 1 ? (
+                                        <Badge variant="outline">multi-dia</Badge>
+                                      ) : null}
+                                      <span className="text-xs text-muted-foreground">
+                                        {daysRangeLabel(c.dayKeys)}
+                                      </span>
+                                      <AuctionStatusInline info={info} />
+                                      <div className="ml-auto flex flex-wrap items-center gap-3">
+                                        {info?.presencialUrl ? (
+                                          <PresencialOrUnsoldLink
+                                            presencialUrl={info.presencialUrl}
+                                            idLeilao={info.idLeilao}
+                                            dayKey={info.dayKey}
+                                            status={info.status}
+                                          />
+                                        ) : null}
+                                        <a
+                                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                          href={info?.catalogUrl ?? h.houseUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                        >
+                                          ver catálogo <ExternalLink className="h-3 w-3" />
+                                        </a>
+                                      </div>
+                                    </div>
+                                  );
+                                },
+                              )}
+                            </div>
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                              {group.lots.map((lot) => renderCard(lot, true))}
+                            </div>
+                          </>
                         ) : null}
                       </section>
                     );
