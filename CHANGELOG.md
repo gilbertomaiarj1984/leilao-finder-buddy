@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **v0.99.1** — Docs: regra de escopo no `AGENTS.md` (este repositório não se mistura com o `pdf-unite-and-print`). Sem mudança de código/UI.
 - **v0.99.0** — Ao tirar a vigia de um lote, o aviso (toast à direita) fica 5 s e traz a ação **Desfazer**, que vigia o lote de novo (`toggle.onSuccess` em `use-dashboard-data.tsx`). Não validado no navegador. Também: nos cards de Vigiados "Por artista", ★ verde ao lado do nome da casa se ela tem algum lote com lance vencendo e ★ vermelha se tem lote coberto (uma, as duas ou nenhuma; `houseBidFlags`).
 - **v0.98.2** — Rolagem automática ao arrastar também no Analytics (arrastar uma venda até um álbum): o hook `use-drag-autoscroll.ts` saiu de `dashboard/` para `components/vinyl/` e é usado por Vigiados e Analytics. Não validado no navegador.
 - **v0.98.1** — Fix: ao arrastar card ou artista em Vigiados "Por artista" até a borda de cima/baixo da tela, a página rola sozinha (mais rápido quanto mais perto da borda) para alcançar outros artistas (`use-drag-autoscroll.ts`). Só janela; não validado no navegador.
