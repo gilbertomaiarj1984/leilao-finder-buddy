@@ -202,11 +202,9 @@ export function useDashboardData() {
   const [search, setSearch] = useState<string>("");
   const [watchedViewDay, setWatchedViewDay] = useState<string | null>(null);
   const [bidsViewDay, setBidsViewDay] = useState<string | null>(null);
-  // Estado de abertura dos grupos por dia nas abas gerais de Vigiados/Lances (chave =
-  // dayKey). Sem override explícito, o dia atual (days[0]) começa aberto e os demais
-  // fechados — só grava aqui quando o usuário clica, então o padrão segue acompanhando
-  // qual é "hoje" mesmo com o passar dos dias.
-  const [watchedDayOpen, setWatchedDayOpen] = useState<Record<string, boolean>>({});
+  // Estado de abertura dos grupos por dia na aba geral de Lances (chave = dayKey). Sem override
+  // explícito, o dia atual (days[0]) começa aberto e os demais fechados — só grava aqui quando
+  // o usuário clica, então o padrão segue acompanhando qual é "hoje" mesmo com o passar dos dias.
   const [bidsDayOpen, setBidsDayOpen] = useState<Record<string, boolean>>({});
   const [showFinishedDays, setShowFinishedDays] = useState<Set<string>>(new Set());
   const toggleShowFinished = (day: string) =>
@@ -244,6 +242,8 @@ export function useDashboardData() {
     });
   const closeAllHouseSections = (keys: string[]) =>
     setClosedHouseSections((prev) => new Set([...prev, ...keys]));
+  const openAllHouseSections = (keys: string[]) =>
+    setClosedHouseSections((prev) => new Set([...prev].filter((key) => !keys.includes(key))));
   // Casas já verificadas (chave `${dia}|${casa}`): marcador verde que move a casa
   // para a seção "Já verificadas" no fim da lista. PERSISTE no servidor (app_state,
   // via getVerifiedHouses/setVerifiedHouses) — antes ficava só no localStorage do
@@ -1526,6 +1526,7 @@ export function useDashboardData() {
     finishedToggleHost,
     toggleShowFinished,
     closeAllHouseSections,
+    openAllHouseSections,
     closedHouseSections,
     toggleHouseSection,
     currentPriceFor,
@@ -1557,9 +1558,7 @@ export function useDashboardData() {
     setHouseArtistFor,
     setHousePriceFor,
     closeAllHouses,
-    watchedDayOpen,
     stickyBelowHeader,
-    setWatchedDayOpen,
     bidsDayOpen,
     setBidsDayOpen,
     ownedPanelLot,
