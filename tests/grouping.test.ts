@@ -110,47 +110,29 @@ describe("groupWatchedByArtist — correção de nomes", () => {
   });
 });
 
-describe("groupWatchedByArtist — álbuns", () => {
-  const w = (id: string, artist: string, title: string, l: ReturnType<typeof lot>) => ({
-    ...l,
-    id,
-    artist,
-    title,
-  });
+describe("groupWatchedByArtist — mover lote", () => {
+  const w = (id: string, artist: string, l: ReturnType<typeof lot>) => ({ ...l, id, artist });
   const lots = [
-    w("1-1", "Pink Floyd", "Pink Floyd - The Wall LP", lot("a", "1", "01/10/2026", "19h", "1")),
-    w("1-2", "Pink Floyd", "Pink Floyd - Animals LP", lot("a", "1", "01/10/2026", "19h", "2")),
-    w(
-      "1-3",
-      "Pink Floyd",
-      "Roger Waters - Amused to Death",
-      lot("a", "1", "01/10/2026", "19h", "3"),
-    ),
-    w("1-4", "Roger Waters", "Roger Waters - Radio KAOS", lot("a", "1", "01/10/2026", "19h", "4")),
+    w("1-1", "Pink Floyd", lot("a", "1", "01/10/2026", "19h", "1")),
+    w("1-2", "Pink Floyd", lot("a", "1", "01/10/2026", "19h", "2")),
+    w("1-3", "Pink Floyd", lot("a", "1", "01/10/2026", "19h", "3")),
+    w("1-4", "Roger Waters", lot("a", "1", "01/10/2026", "19h", "4")),
   ];
 
-  test("artista → álbuns em ordem alfabética", () => {
-    const pink = groupWatchedByArtist(lots).find((g) => g.artist === "Pink Floyd")!;
-    expect(pink.albums.map((a) => a.album)).toEqual([
-      "Amused to Death",
-      "Animals LP",
-      "The Wall LP",
+  test("correção por lote leva só aquele lote para outro artista", () => {
+    const g = groupWatchedByArtist(lots, { sales: { "1-3": { artist: "Roger Waters" } } });
+    expect(g.find((x) => x.artist === "Pink Floyd")!.lots.map((l) => l.id)).toEqual(["1-1", "1-2"]);
+    expect(g.find((x) => x.artist === "Roger Waters")!.lots.map((l) => l.id)).toEqual([
+      "1-3",
+      "1-4",
     ]);
   });
 
-  test("correção por lote leva o álbum para outro artista", () => {
+  test("lote movido também segue o apelido do artista de destino", () => {
     const g = groupWatchedByArtist(lots, {
-      sales: { "1-3": { artist: "Roger Waters", album: "Amused to Death" } },
+      artists: { "roger waters": "Roger Waters (solo)" },
+      sales: { "1-3": { artist: "Roger Waters" } },
     });
-    const pink = g.find((x) => x.artist === "Pink Floyd")!;
-    const roger = g.find((x) => x.artist === "Roger Waters")!;
-    expect(pink.lots).toHaveLength(2);
-    expect(roger.albums.map((a) => a.album)).toEqual(["Amused to Death", "Radio KAOS"]);
-  });
-
-  test("apelido de álbum renomeia dentro do artista final", () => {
-    const g = groupWatchedByArtist(lots, { albums: { "pink floyd|animals lp": "Animals" } });
-    const pink = g.find((x) => x.artist === "Pink Floyd")!;
-    expect(pink.albums.some((a) => a.album === "Animals")).toBe(true);
+    expect(g.find((x) => x.artist === "Roger Waters (solo)")!.lots).toHaveLength(2);
   });
 });

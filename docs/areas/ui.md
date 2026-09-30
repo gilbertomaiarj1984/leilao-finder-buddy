@@ -128,17 +128,17 @@
     proxy**; o `Set-Cookie` da casa é absorvido no jar do servidor (`absorbSetCookie`) e a sessão
     **persiste**. Por isso não se força re-login em 401/403 (destruiria uma sessão de login manual).
     Só erro de rede na casa vira 502 (com o motivo real, escapado no HTML).
-- **Vigiados por artista → álbum, arrastar e mover (v0.97.0):** `groupWatchedByArtist(lots,
-curation)` devolve artista → `albums[]` (álbum = `deriveAlbum`, "não identificado" por último;
-  `curation` = `artists`/`albums`/`sales` de `getAnalyticsAliases`, tudo lido pela
-  `useAnalyticsAliasesQuery`). Cada álbum é subgrupo recolhível (`watched|artista|<k>|<álbum>`).
-  **Corrigir artista** (`WatchedArtistDialog`): escolher um destino LEVA o artista editado para o
-  selecionado (alias das chaves de origem → nome do destino); sem destino, só renomeia. **Mover
-  álbum** (`WatchedAlbumDialog`, lápis do álbum): destino da lista ou digitado; grava
-  `sales[lot.id] = {artist, album}` para todos os lotes do álbum via `setAnalyticsSaleOverrides`
-  (uma leitura-e-escrita só — chamadas paralelas perderiam escritas no JSON único); vale só para os
-  lotes atuais e também aparece no Analytics. **Arrastar** (HTML5 DnD; não funciona em touch — use
-  o lápis): artista ou álbum sobre o cabeçalho de outro artista → `ConfirmMoveDialog` → mesma ação.
+- **Vigiados por artista — corrigir artista e mover lote (v0.98.0; reverte o "álbum" do v0.97.0):**
+  `groupWatchedByArtist(lots, curation)` (`curation` = `artists`/`sales` de `getAnalyticsAliases`,
+  via `useAnalyticsAliasesQuery`) agrupa por artista e já aplica a correção por lote
+  (`sales[lot.id].artist`). **Corrigir artista** (`WatchedArtistDialog`): escolher um destino LEVA o
+  artista editado para o selecionado (alias das chaves de origem → nome do destino); sem destino,
+  só renomeia. **Mover lote** (`WatchedLotDialog`, botão na barra do card via `LotCard`
+  `origin.onMove`): destino da lista ou digitado; grava `sales[lot.id]` com
+  `setAnalyticsSaleOverrides` (lote único numa leitura-e-escrita; preserva o álbum já corrigido);
+  também aparece no Analytics; "Desfazer correção" remove. **Arrastar** (HTML5 DnD; não funciona em
+  touch — use o botão/lápis): artista ou card de lote sobre o cabeçalho de outro artista →
+  `ConfirmMoveDialog` → mesma ação. Não há subgrupo de álbum em Vigiados.
 - **Vigiados — visão "Por artista" (v0.95.0):** `watched-tab.tsx` tem seletor de visão ("Por casa"
   = a de cima, padrão; "Por artista"), estado local (`view`). Por artista: `groupWatchedByArtist`
   (`grouping.ts`) — artistas alfabéticos, baldes genéricos no fim, lotes por **casa → data →
