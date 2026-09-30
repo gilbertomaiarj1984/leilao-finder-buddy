@@ -765,14 +765,14 @@ export function parseAuctionRef(url: string): { domain: string; idLeilao: string
 /**
  * Link para ABRIR o lote no navegador. O `abre_catalogo.asp?t=1|<domínio>|<idLeilao>|<idPeca>` da
  * listagem geral é só um redirecionador do LeilõesBR e quebra em algumas casas (ex.: Trem das 7,
- * domínio `http://www...`); a página do lote no site da casa (`<domínio>/peca.asp?ID=<idPeca>`,
+ * domínio `http://www...`); a página do lote no site da casa (`<domínio>/peca.asp?ID=<idPeca>&ctd=1&tot=&tipo=&artista=`, com os parâmetros que a casa exige;
  * o mesmo formato das páginas de conta) abre direto. Links fora do padrão passam intactos.
  */
 export function lotOpenUrl(url: string): string {
   const m = url.match(/abre_catalogo\.asp\?t=\d+\|[^|]+\|\d+\|(\d+)/i);
   const ref = parseAuctionRef(url);
   if (!m || !ref) return url;
-  return `${ref.domain.replace(/^http:/i, "https:")}/peca.asp?ID=${m[1]}`;
+  return `${ref.domain.replace(/^http:/i, "https:")}/peca.asp?ID=${m[1]}&ctd=1&tot=&tipo=&artista=`;
 }
 
 /**
@@ -791,7 +791,7 @@ export function presencialUrlFrom(entryUrl: string | null | undefined): string |
 /**
  * Domínio (origin) da casa a partir do link do lote — cobre os DOIS formatos do site:
  * listagem geral (`abre_catalogo.asp?t=1|<domínio>|<idLeilao>|<idPeca>`, via `parseAuctionRef`)
- * e páginas de conta — vigiados/lances (`<domínio>/peca.asp?ID=<idPeca>`, já no domínio da
+ * e páginas de conta — vigiados/lances (`<domínio>/peca.asp?ID=<idPeca>&ctd=1&tot=&tipo=&artista=`, com os parâmetros que a casa exige; já no domínio da
  * casa, SEM o idLeilao embutido). Mesma extração usada em `leiloesbr-lot-details.server.ts`
  * (`pecaUrl`) para montar a URL da `peca.asp`.
  */

@@ -110,7 +110,7 @@ describe("lotOpenUrl", () => {
       lotOpenUrl(
         "https://leiloesbr.com.br/abre_catalogo.asp?t=1|http://www.tremdas7.com.br|65073|32383278",
       ),
-    ).toBe("https://www.tremdas7.com.br/peca.asp?ID=32383278");
+    ).toBe("https://www.tremdas7.com.br/peca.asp?ID=32383278&ctd=1&tot=&tipo=&artista=");
   });
   test("deixa links fora do padrão intactos", () => {
     expect(lotOpenUrl("https://casa.com.br/peca.asp?ID=1")).toBe(
