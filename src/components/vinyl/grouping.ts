@@ -1,5 +1,6 @@
 // Helpers puros de agrupamento/ordenação e tipos compartilhados pela listagem de
 // vinil. Sem JSX — a UI que consome isto vive nos componentes ao lado.
+import { deriveAlbum } from "@/lib/analytics";
 import {
   auctionFinished,
   auctionStarted,
@@ -403,6 +404,16 @@ export function groupWatchedByHouseCatalog<T extends WatchedLike>(lots: T[]): Wa
   });
 }
 
+const NO_ALBUM = "(álbum não identificado)";
+
+type WatchedAlbumGroup<T> = {
+  /** Nome exibido: apelido curado, ou a grafia mais frequente. */
+  album: string;
+  /** Chave do álbum dentro do artista (`normalizeForMatch`). */
+  key: string;
+  lots: T[];
+};
+
 type WatchedArtistGroup<T> = {
   /** Nome exibido: apelido curado, ou a grafia mais frequente entre os lotes. */
   artist: string;
@@ -413,6 +424,18 @@ type WatchedArtistGroup<T> = {
   /** Casas distintas com lote vigiado deste artista. */
   houseCount: number;
   lots: T[];
+  /** Álbuns do artista (alfabético; "não identificado" por último). */
+  albums: WatchedAlbumGroup<T>[];
+};
+
+/** Curadoria aplicada ao agrupamento — mesmos mapas do Analytics (`getAnalyticsAliases`). */
+type WatchedArtistCuration = {
+  /** chave original do artista → nome canônico. */
+  artists?: Record<string, string>;
+  /** `"${chaveFinalDoArtista}|${chaveDoÁlbum}"` → nome canônico do álbum. */
+  albums?: Record<string, string>;
+  /** `lot.id` → artista/álbum daquele lote (mover álbum para outro artista). */
+  sales?: Record<string, { artist?: string; album?: string }>;
 };
 
 /** Chave normalizada do artista de um lote vigiado (vazio → "não classificados"). */
@@ -420,52 +443,89 @@ function watchedArtistKey(artist: string): string {
   return normalizeForMatch(artist) || normalizeForMatch(UNCLASSIFIED_LABEL);
 }
 
+function pickName(counts: Map<string, number>): string {
+  return [...counts.entries()].sort(
+    (x, y) => y[1] - x[1] || x[0].localeCompare(y[0], "pt-BR"),
+  )[0]![0];
+}
+
 /**
- * Agrupa vigiados por artista. Grafias que só diferem em caixa/acento/pontuação já caem juntas
- * (`normalizeForMatch`); `aliases` (mesmos apelidos do Analytics: chave original → nome
- * canônico) renomeia/funde os demais. Artistas em ordem alfabética, baldes genéricos no fim
- * (`artistRank`). Lotes do artista por casa, dia, horário e nº do lote.
+ * Agrupa vigiados por artista → álbum. Grafias que só diferem em caixa/acento/pontuação já caem
+ * juntas (`normalizeForMatch`); a curadoria (mesmos apelidos do Analytics) renomeia/funde artistas
+ * e álbuns, e a correção por lote leva um álbum para outro artista. Artistas em ordem alfabética,
+ * baldes genéricos no fim (`artistRank`). Lotes por casa, dia, horário e nº do lote.
  */
-export function groupWatchedByArtist<T extends WatchedLike & { artist: string }>(
-  lots: T[],
-  aliases: Record<string, string> = {},
-): WatchedArtistGroup<T>[] {
-  type Bucket = { lots: T[]; raw: Map<string, number>; sourceKeys: Set<string>; alias?: string };
+export function groupWatchedByArtist<
+  T extends WatchedLike & { artist: string; id?: string; title?: string },
+>(lots: T[], curation: WatchedArtistCuration = {}): WatchedArtistGroup<T>[] {
+  const artistAliases = curation.artists ?? {};
+  const albumAliases = curation.albums ?? {};
+  const sales = curation.sales ?? {};
+  type AlbumBucket = { lots: T[]; raw: Map<string, number>; alias?: string };
+  type Bucket = {
+    lots: T[];
+    raw: Map<string, number>;
+    sourceKeys: Set<string>;
+    alias?: string;
+    albums: Map<string, AlbumBucket>;
+  };
   const byKey = new Map<string, Bucket>();
   for (const lot of lots) {
-    const rawName = lot.artist || UNCLASSIFIED_LABEL;
-    const rawKey = watchedArtistKey(lot.artist);
-    const alias = aliases[rawKey]?.trim();
+    const ov = lot.id ? sales[lot.id] : undefined;
+    const rawName = ov?.artist?.trim() || lot.artist || UNCLASSIFIED_LABEL;
+    const rawKey = watchedArtistKey(rawName);
+    const alias = artistAliases[rawKey]?.trim();
     const key = alias ? normalizeForMatch(alias) || rawKey : rawKey;
     const bucket: Bucket = byKey.get(key) ?? {
       lots: [],
       raw: new Map(),
       sourceKeys: new Set(),
+      albums: new Map(),
     };
     bucket.lots.push(lot);
     bucket.raw.set(rawName, (bucket.raw.get(rawName) ?? 0) + 1);
     bucket.sourceKeys.add(rawKey);
     if (alias) bucket.alias = alias;
+    const albumName = ov?.album?.trim() || deriveAlbum(lot.title ?? "", rawName);
+    const rawAlbumKey = normalizeForMatch(albumName) || albumName;
+    const albumAlias = albumAliases[`${key}|${rawAlbumKey}`]?.trim();
+    const albumKey = albumAlias ? normalizeForMatch(albumAlias) || rawAlbumKey : rawAlbumKey;
+    const ab: AlbumBucket = bucket.albums.get(albumKey) ?? { lots: [], raw: new Map() };
+    ab.lots.push(lot);
+    ab.raw.set(albumName, (ab.raw.get(albumName) ?? 0) + 1);
+    if (albumAlias) ab.alias = albumAlias;
+    bucket.albums.set(albumKey, ab);
     byKey.set(key, bucket);
   }
+  const sortLots = (list: T[]) =>
+    list.sort(
+      (x, y) =>
+        x.house.localeCompare(y.house, "pt-BR") ||
+        watchedLotDayKey(x).localeCompare(watchedLotDayKey(y)) ||
+        timeMinutes(x.time) - timeMinutes(y.time) ||
+        loteNum(x.lote) - loteNum(y.lote),
+    );
   return [...byKey.entries()]
     .map(([key, b]) => {
-      b.lots.sort(
-        (x, y) =>
-          x.house.localeCompare(y.house, "pt-BR") ||
-          watchedLotDayKey(x).localeCompare(watchedLotDayKey(y)) ||
-          timeMinutes(x.time) - timeMinutes(y.time) ||
-          loteNum(x.lote) - loteNum(y.lote),
-      );
-      const commonName = [...b.raw.entries()].sort(
-        (x, y) => y[1] - x[1] || x[0].localeCompare(y[0], "pt-BR"),
-      )[0]![0];
+      sortLots(b.lots);
+      const albums = [...b.albums.entries()]
+        .map(([albumKey, ab]) => ({
+          album: ab.alias ?? pickName(ab.raw),
+          key: albumKey,
+          lots: sortLots(ab.lots),
+        }))
+        .sort(
+          (x, y) =>
+            Number(x.album === NO_ALBUM) - Number(y.album === NO_ALBUM) ||
+            x.album.localeCompare(y.album, "pt-BR"),
+        );
       return {
-        artist: b.alias ?? commonName,
+        artist: b.alias ?? pickName(b.raw),
         key,
         sourceKeys: [...b.sourceKeys],
         houseCount: new Set(b.lots.map((l) => l.house)).size,
         lots: b.lots,
+        albums,
       };
     })
     .sort(

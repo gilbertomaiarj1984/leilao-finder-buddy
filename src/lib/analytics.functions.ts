@@ -138,6 +138,27 @@ export const setAnalyticsSaleOverride = createServerFn({ method: "POST" })
     return await save(data.lotId, value);
   });
 
+/** Correção por venda em LOTE (mover um álbum inteiro): mesma `value` para todos os `lotIds`. */
+export const setAnalyticsSaleOverrides = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator(
+    (input: { lotIds?: unknown; artist?: unknown; album?: unknown; clear?: unknown }) => ({
+      lotIds: Array.isArray(input?.lotIds)
+        ? input.lotIds.filter((k): k is string => typeof k === "string" && !!k).slice(0, 500)
+        : [],
+      artist: typeof input?.artist === "string" ? input.artist.trim() : "",
+      album: typeof input?.album === "string" ? input.album.trim() : "",
+      clear: input?.clear === true,
+    }),
+  )
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setAnalyticsSaleOverrides: save } = await import("./app-state.server");
+    const value = data.clear ? null : { artist: data.artist, album: data.album };
+    return await save(data.lotIds, value);
+  });
+
 /** Excluir/reincluir uma VENDA do Analytics (oculta por `lot_id`, sem deletar do banco). */
 export const setAnalyticsExcludedSale = createServerFn({ method: "POST" })
   .middleware([requireAuth])
