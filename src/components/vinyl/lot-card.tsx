@@ -53,6 +53,7 @@ export function LotCard({
   onExclude,
   onDismissTrash,
   origin,
+  dateBar,
 }: {
   lot: CardLot;
   busy: boolean;
@@ -91,6 +92,8 @@ export function LotCard({
   onDismissTrash?: () => void;
   // Barra superior de origem (visão "Por artista" dos Vigiados): casa, pregão e data. A cor
   // segue o estado do card — amarelo vigiando, verde ganhando, vermelho coberto.
+  // Faixa grossa no topo com a data do lote (catálogos multi-dia na visão "Por casa").
+  dateBar?: string;
   origin?: {
     house: string;
     // Casa com algum lote meu vencendo (★ verde) e/ou coberto (★ vermelha).
@@ -161,6 +164,21 @@ export function LotCard({
           <div className="absolute left-1/2 top-[38%] w-[150%] -translate-x-1/2 -translate-y-1/2 -rotate-[32deg] bg-red-600 py-1 text-center text-xs font-bold uppercase tracking-widest text-white shadow-md">
             Vendido{soldLabel !== "Vendido" ? ` — ${soldLabel}` : ""}
           </div>
+        </div>
+      ) : null}
+      {dateBar && !origin ? (
+        <div
+          className={`px-3 py-1.5 text-center text-sm font-bold tracking-wide ${
+            hasBid
+              ? winning
+                ? "bg-green-500 text-white"
+                : "bg-red-500 text-white"
+              : lot.watched
+                ? "bg-yellow-400 text-yellow-950"
+                : "bg-secondary text-foreground"
+          }`}
+        >
+          {dateBar}
         </div>
       ) : null}
       {origin ? (

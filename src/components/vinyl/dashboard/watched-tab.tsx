@@ -268,6 +268,11 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                   myBid: myBidById.get(lot.idPeca),
                   nextBid: nextBidById.get(lot.id),
                 }}
+                dateBar={
+                  !withOrigin && catDays.length > 1
+                    ? `${lot.date}${lot.time ? ` · ${lot.time}` : ""}`
+                    : undefined
+                }
                 origin={
                   withOrigin
                     ? {
