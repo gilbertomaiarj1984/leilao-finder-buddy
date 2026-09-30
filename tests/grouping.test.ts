@@ -76,3 +76,36 @@ describe("groupWatchedByArtist", () => {
     expect(miles.lots.map((l) => `${l.house}${l.date.slice(0, 2)}`)).toEqual(["a03", "b01", "b02"]);
   });
 });
+
+describe("groupWatchedByArtist — correção de nomes", () => {
+  const w = (artist: string, l: ReturnType<typeof lot>) => ({ ...l, artist });
+  const lots = [
+    w("Pink Floyd", lot("a", "10", "01/10/2026", "19h", "1")),
+    w("PINK FLOYD", lot("a", "10", "01/10/2026", "19h", "2")),
+    w("Pink Floid", lot("b", "20", "02/10/2026", "19h", "1")),
+    w("Miles Davis", lot("b", "20", "02/10/2026", "19h", "2")),
+  ];
+
+  test("grafias que só diferem em caixa já caem juntas; typo fica à parte", () => {
+    const g = groupWatchedByArtist(lots);
+    expect(g.map((x) => [x.artist, x.lots.length])).toEqual([
+      ["Miles Davis", 1],
+      ["Pink Floid", 1],
+      ["Pink Floyd", 2],
+    ]);
+  });
+
+  test("apelido funde o typo no nome canônico e expõe as chaves de origem", () => {
+    const g = groupWatchedByArtist(lots, { "pink floid": "Pink Floyd" });
+    const pink = g.find((x) => x.artist === "Pink Floyd")!;
+    expect(g).toHaveLength(2);
+    expect(pink.lots).toHaveLength(3);
+    expect(pink.houseCount).toBe(2);
+    expect(pink.sourceKeys.sort()).toEqual(["pink floid", "pink floyd"]);
+  });
+
+  test("apelido renomeia um artista sozinho", () => {
+    const g = groupWatchedByArtist(lots, { "miles davis": "Miles Davis Quintet" });
+    expect(g.some((x) => x.artist === "Miles Davis Quintet")).toBe(true);
+  });
+});
