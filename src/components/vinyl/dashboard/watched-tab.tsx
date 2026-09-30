@@ -34,6 +34,7 @@ import {
 } from "@/lib/analytics.functions";
 import { queryKeys, useAnalyticsAliasesQuery } from "@/lib/queries";
 
+import { useDragAutoScroll } from "./use-drag-autoscroll";
 import type { DashboardData } from "./use-dashboard-data";
 import { ConfirmMoveDialog, WatchedLotDialog, WatchedArtistDialog } from "./watched-artist-dialog";
 
@@ -101,6 +102,7 @@ export function WatchedTab({ d }: { d: DashboardData }) {
   const [editingLot, setEditingLot] = useState<string | null>(null);
   type DragItem = { kind: "artist"; artist: string } | { kind: "lot"; artist: string; id: string };
   const dragRef = useRef<DragItem | null>(null);
+  const autoScroll = useDragAutoScroll();
   const [dropOver, setDropOver] = useState<string | null>(null);
   const [pendingDrop, setPendingDrop] = useState<{ item: DragItem; to: string } | null>(null);
   const patchArtistAliases = (fn: (map: Record<string, string>) => void) => {
@@ -305,6 +307,7 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                 draggable
                 onDragStart={(e) => {
                   dragRef.current = { kind: "lot", artist: fromKey, id: lot.id };
+                  autoScroll.start();
                   e.dataTransfer.setData("text/plain", lot.title);
                   e.dataTransfer.effectAllowed = "move";
                 }}
@@ -404,6 +407,7 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                           draggable
                           onDragStart={(e) => {
                             dragRef.current = { kind: "artist", artist: group.key };
+                            autoScroll.start();
                             e.dataTransfer.setData("text/plain", group.artist);
                             e.dataTransfer.effectAllowed = "move";
                           }}
