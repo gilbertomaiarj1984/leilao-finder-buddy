@@ -93,6 +93,9 @@ export function LotCard({
   // segue o estado do card — amarelo vigiando, verde ganhando, vermelho coberto.
   origin?: {
     house: string;
+    // Casa com algum lote meu vencendo (★ verde) e/ou coberto (★ vermelha).
+    houseWinning?: boolean;
+    houseCovered?: boolean;
     idLeilao: string;
     days: string;
     multiDay: boolean;
@@ -171,6 +174,20 @@ export function LotCard({
           }`}
         >
           <span className="font-bold">{origin.house}</span>
+          {origin.houseWinning || origin.houseCovered ? (
+            <span className="inline-flex items-center gap-0.5 rounded bg-white/90 px-1 text-[11px] leading-4">
+              {origin.houseWinning ? (
+                <span className="text-green-600" title="Casa com lance vencendo">
+                  ★
+                </span>
+              ) : null}
+              {origin.houseCovered ? (
+                <span className="text-red-600" title="Casa com lance coberto">
+                  ★
+                </span>
+              ) : null}
+            </span>
+          ) : null}
           <span>Pregão {origin.idLeilao}</span>
           {origin.days ? <span>{origin.days}</span> : null}
           {origin.multiDay ? (

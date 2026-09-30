@@ -57,6 +57,8 @@ import {
 import { buildTrashModel, matchPossibleTrash, trashProfile } from "@/lib/lot-exclusion";
 import { saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
 import {
+  bidIsCovered,
+  bidIsWinning,
   COMPILATION_LABEL,
   isDiscBundle,
   LOTE_LABEL,
@@ -1145,7 +1147,12 @@ export function useDashboardData() {
       // próprio endpoint de toggle); o próximo refetch natural (`staleTime`, refresh manual etc.)
       // reconcilia quando a conta do LeilõesBR já tiver atualizado.
       queryClient.setQueryData(queryKeys.watched, [...watchedAccumRef.current!.values()]);
-      toast.success(result.watched ? "Lote vigiado no LeilõesBR" : "Vigia removida no LeilõesBR");
+      if (result.watched) toast.success("Lote vigiado no LeilõesBR");
+      else
+        toast.success("Vigia removida no LeilõesBR", {
+          duration: 5000,
+          action: { label: "Desfazer", onClick: () => toggle.mutate({ ...lot, watch: true }) },
+        });
     },
     onError: (error: Error) => toast.error(error.message || "Não foi possível sincronizar a vigia"),
     onSettled: () => setPending(null),
@@ -1194,6 +1201,18 @@ export function useDashboardData() {
   const bidStatusById = useMemo(() => {
     const map = new Map<string, string>();
     for (const b of bids.data ?? []) map.set(b.idPeca, b.status);
+    return map;
+  }, [bids.data]);
+  // Por casa: tem algum lote com lance vencendo (estrela verde) e/ou coberto (vermelha) —
+  // mostradas ao lado do nome da casa nos cards de Vigiados.
+  const houseBidFlags = useMemo(() => {
+    const map = new Map<string, { winning: boolean; covered: boolean }>();
+    for (const b of bids.data ?? []) {
+      const cur = map.get(b.house) ?? { winning: false, covered: false };
+      if (bidIsWinning(b.status)) cur.winning = true;
+      if (bidIsCovered(b.status)) cur.covered = true;
+      map.set(b.house, cur);
+    }
     return map;
   }, [bids.data]);
   // Nº do lote não vem na listagem geral; preenchemos com o que já lemos das
@@ -1506,6 +1525,7 @@ export function useDashboardData() {
     watchedIds,
     effectiveArtist,
     bidStatusById,
+    houseBidFlags,
     showFinishedDays,
     artistFilter,
     watchedViewDay,
