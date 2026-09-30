@@ -211,7 +211,7 @@ export function LotCard({
           falha), o navegador desenha o texto do `alt` (o título, às vezes enorme) no lugar —
           e sem o clip ele transbordava por cima do card inteiro. Aqui ele fica contido. */}
       <a
-        href={lotOpenUrl(lot.url)}
+        href={lotOpenUrl(lot.url, lot.title)}
         target="_blank"
         rel="noreferrer"
         className="relative block h-44 w-full overflow-hidden bg-secondary"
@@ -350,7 +350,7 @@ export function LotCard({
           </Button>
           <Button size="sm" variant="ghost" asChild>
             <a
-              href={lotOpenUrl(lot.url)}
+              href={lotOpenUrl(lot.url, lot.title)}
               target="_blank"
               rel="noreferrer"
               aria-label="Abrir lote no leiloeiro"

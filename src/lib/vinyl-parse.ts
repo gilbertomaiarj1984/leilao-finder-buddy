@@ -763,16 +763,37 @@ export function parseAuctionRef(url: string): { domain: string; idLeilao: string
 }
 
 /**
+ * Casas cuja `peca.asp` NÃO abre por link direto (erro do IIS "The custom error module does not
+ * recognize this error", mesmo com cookie/sessão — só abria navegando de dentro do catálogo).
+ * Para elas o link do lote abre o CATÁLOGO do leilão já filtrado pelo título (`catalogo.asp`
+ * abre a frio). Ver `lotOpenUrl`.
+ */
+const CATALOG_ONLY_HOSTS = ["tremdas7.com.br"];
+
+/**
  * Link para ABRIR o lote no navegador. O `abre_catalogo.asp?t=1|<domínio>|<idLeilao>|<idPeca>` da
  * listagem geral é só um redirecionador do LeilõesBR e quebra em algumas casas (ex.: Trem das 7,
- * domínio `http://www...`); a página do lote no site da casa (`<domínio>/peca.asp?ID=<idPeca>&ctd=1&tot=&tipo=&artista=`,
- * o mesmo formato das páginas de conta) abre direto. Links fora do padrão passam intactos.
+ * domínio `http://www...`); a página do lote no site da casa
+ * (`<domínio>/peca.asp?ID=<idPeca>&ctd=1&tot=&tipo=&artista=`, o mesmo formato das páginas de
+ * conta) abre direto. Nas casas de `CATALOG_ONLY_HOSTS` abre o catálogo filtrado pelas primeiras
+ * palavras do título. Links fora do padrão passam intactos.
  */
-export function lotOpenUrl(url: string): string {
+export function lotOpenUrl(url: string, title = ""): string {
   const m = url.match(/abre_catalogo\.asp\?t=\d+\|[^|]+\|\d+\|(\d+)/i);
   const ref = parseAuctionRef(url);
   if (!m || !ref) return url;
-  return `${ref.domain.replace(/^http:/i, "https:")}/peca.asp?ID=${m[1]}&ctd=1&tot=&tipo=&artista=`;
+  const domain = ref.domain.replace(/^http:/i, "https:");
+  if (CATALOG_ONLY_HOSTS.some((h) => domain.toLowerCase().includes(h))) {
+    const words = title
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 4)
+      .join(" ");
+    const q = words ? `&p=on&pesquisa=${encodeURIComponent(words).replace(/%20/g, "+")}` : "";
+    return `${domain}/catalogo.asp?Num=${ref.idLeilao}${q}`;
+  }
+  return `${domain}/peca.asp?ID=${m[1]}&ctd=1&tot=&tipo=&artista=`;
 }
 
 /**
