@@ -16,6 +16,11 @@ com **Postgres** próprio como backend e deploy em **VPS** (Docker Compose + Cad
 
 ## Convenções de trabalho
 
+- **ESCOPO (regra de sessão):** este repositório é SÓ o app de leilão (`leilao-finder-buddy`). Se a
+  branch/sessão é do `pdf-unite-and-print` (gerador de etiquetas), NUNCA ler, editar, commitar,
+  dar push ou abrir PR aqui — e, numa sessão daqui, nunca tocar no `pdf-unite-and-print`. Não
+  aplicar pedido, código, commit ou doc de um projeto no outro; se o pedido parecer ser do outro,
+  perguntar antes. Resumos falam de um projeto por vez.
 - **Responder em português** ao interagir com o usuário.
 - **Recriar a branch de trabalho a partir de `origin/main` antes de cada tarefa**
   (pós-cutover da Fase 6 — ver aviso acima; `main` é a branch de produção/base agora).
