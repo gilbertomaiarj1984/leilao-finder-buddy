@@ -763,6 +763,19 @@ export function parseAuctionRef(url: string): { domain: string; idLeilao: string
 }
 
 /**
+ * Link para ABRIR o lote no navegador. O `abre_catalogo.asp?t=1|<domínio>|<idLeilao>|<idPeca>` da
+ * listagem geral é só um redirecionador do LeilõesBR e quebra em algumas casas (ex.: Trem das 7,
+ * domínio `http://www...`); a página do lote no site da casa (`<domínio>/peca.asp?ID=<idPeca>`,
+ * o mesmo formato das páginas de conta) abre direto. Links fora do padrão passam intactos.
+ */
+export function lotOpenUrl(url: string): string {
+  const m = url.match(/abre_catalogo\.asp\?t=\d+\|[^|]+\|\d+\|(\d+)/i);
+  const ref = parseAuctionRef(url);
+  if (!m || !ref) return url;
+  return `${ref.domain.replace(/^http:/i, "https:")}/peca.asp?ID=${m[1]}`;
+}
+
+/**
  * URL do pregão presencial da casa a partir do link do lote:
  * `<domínio>/presencial/presencial.asp?Num=<idLeilao>`. `null` para casas fora do padrão
  * LeilõesBR (o link não casa `parseAuctionRef`).
