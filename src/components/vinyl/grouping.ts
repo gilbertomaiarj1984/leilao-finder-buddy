@@ -382,8 +382,12 @@ export function groupWatchedByHouseCatalog<T extends WatchedLike>(lots: T[]): Wa
     a.idLeilao.localeCompare(b.idLeilao);
   const houses: WatchedHouse<T>[] = [...byHouse.entries()].map(([house, entry]) => {
     const catalogs = [...entry.byCat.entries()].map(([idLeilao, catLots]) => {
+      // Catálogo multi-dia: datas em ordem crescente; dentro do dia, pelo nº do lote.
       catLots.sort(
-        (a, b) => loteNum(a.lote) - loteNum(b.lote) || a.lote.localeCompare(b.lote, "pt-BR"),
+        (a, b) =>
+          watchedLotDayKey(a).localeCompare(watchedLotDayKey(b)) ||
+          loteNum(a.lote) - loteNum(b.lote) ||
+          a.lote.localeCompare(b.lote, "pt-BR"),
       );
       const dayKeys = [...new Set(catLots.map(watchedLotDayKey).filter(Boolean))].sort();
       const firstDayTimes = catLots

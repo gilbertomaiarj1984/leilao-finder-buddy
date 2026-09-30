@@ -3,6 +3,7 @@
 Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/version.ts`
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
+- **v0.99.3** — Vigiados "Por casa": num catálogo multi-dia os lotes ficam em ordem crescente de data (depois nº do lote), em vez de só pelo nº do lote (`groupWatchedByHouseCatalog`). "Por artista" e as abas de dia já ordenavam por data.
 - **v0.99.2** — Vigiados "Por casa": em catálogos multi-dia, cada card ganha uma faixa grossa no topo com a data (e hora) do lote (`dateBar` em `lot-card.tsx`; cor segue vigiando/ganhando/coberto). Não validado no navegador.
 
 - **v0.99.1** — Docs: regra de escopo no `AGENTS.md` (este repositório não se mistura com o `pdf-unite-and-print`). Sem mudança de código/UI.
