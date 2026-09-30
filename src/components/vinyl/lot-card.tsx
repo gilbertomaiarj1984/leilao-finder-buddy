@@ -7,7 +7,13 @@ import { formatAiAlbum, type LotAi, type LotMarket } from "@/components/vinyl/ai
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import type { Condition } from "@/lib/grading";
 import type { ExclusionSignal } from "@/lib/lot-exclusion";
-import { auctionStarted, bidIsSold, bidIsWinning, decodeHtmlEntities } from "@/lib/vinyl-parse";
+import {
+  auctionStarted,
+  bidIsSold,
+  bidIsWinning,
+  decodeHtmlEntities,
+  lotOpenUrl,
+} from "@/lib/vinyl-parse";
 import { OWNED_CONFIDENT_MIN, type OwnedHit } from "@/lib/wantlist-match";
 
 type CardLot = {
@@ -205,7 +211,7 @@ export function LotCard({
           falha), o navegador desenha o texto do `alt` (o título, às vezes enorme) no lugar —
           e sem o clip ele transbordava por cima do card inteiro. Aqui ele fica contido. */}
       <a
-        href={lot.url}
+        href={lotOpenUrl(lot.url, lot.title)}
         target="_blank"
         rel="noreferrer"
         className="relative block h-44 w-full overflow-hidden bg-secondary"
@@ -343,7 +349,12 @@ export function LotCard({
             {lot.watched ? "Vigiando" : "Vigiar"}
           </Button>
           <Button size="sm" variant="ghost" asChild>
-            <a href={lot.url} target="_blank" rel="noreferrer" aria-label="Abrir lote no leiloeiro">
+            <a
+              href={lotOpenUrl(lot.url, lot.title)}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Abrir lote no leiloeiro"
+            >
               <ExternalLink className="h-4 w-4" />
             </a>
           </Button>

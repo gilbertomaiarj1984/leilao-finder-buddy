@@ -7,6 +7,7 @@ import {
   isVinylTitle,
   laterAuctionSlot,
   looksNonVinyl,
+  lotOpenUrl,
   normalizeForMatch,
   parsePrice,
   pickCanonical,
@@ -100,5 +101,30 @@ describe("laterAuctionSlot (leilão de vários dias)", () => {
     expect(laterAuctionSlot(null, a)).toBe(a);
     expect(laterAuctionSlot(a, null)).toBe(a);
     expect(laterAuctionSlot(a, { dayKey: "2026-10-05", time: "" })).toBe(a);
+  });
+});
+
+describe("lotOpenUrl", () => {
+  test("troca o redirecionador abre_catalogo pela peca.asp da casa", () => {
+    expect(
+      lotOpenUrl(
+        "https://leiloesbr.com.br/abre_catalogo.asp?t=1|http://www.casa.com.br|65073|32383278",
+      ),
+    ).toBe("https://www.casa.com.br/peca.asp?ID=32383278&ctd=1&tot=&tipo=&artista=");
+  });
+  test("Trem das 7 abre o catálogo filtrado pelo título", () => {
+    expect(
+      lotOpenUrl(
+        "https://leiloesbr.com.br/abre_catalogo.asp?t=1|http://www.tremdas7.com.br|65073|32383278",
+        "**LP BAILE GAÚCHO VOL. 2**, LANÇADO EM **1975**",
+      ),
+    ).toBe(
+      "https://www.tremdas7.com.br/catalogo.asp?Num=65073&p=on&pesquisa=LP+BAILE+GA%C3%9ACHO+VOL",
+    );
+  });
+  test("deixa links fora do padrão intactos", () => {
+    expect(lotOpenUrl("https://casa.com.br/peca.asp?ID=1")).toBe(
+      "https://casa.com.br/peca.asp?ID=1",
+    );
   });
 });

@@ -4,6 +4,7 @@ import { ChevronDown, Flag, Radio } from "lucide-react";
 import { useState } from "react";
 
 import { getUnsoldLots } from "@/lib/leiloesbr.functions";
+import { lotOpenUrl } from "@/lib/vinyl-parse";
 
 import { useManuallyFinished } from "./use-manually-finished";
 import { usePresencialNow } from "./use-presencial-now";
@@ -22,7 +23,7 @@ type UnsoldLotItem = {
 function UnsoldLotCard({ lot }: { lot: UnsoldLotItem }) {
   return (
     <a
-      href={lot.url}
+      href={lotOpenUrl(lot.url, lot.title)}
       target="_blank"
       rel="noreferrer"
       className="group relative flex flex-col overflow-hidden rounded-md border border-border bg-card transition hover:border-primary"
