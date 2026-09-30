@@ -135,7 +135,9 @@
   dias). Cada `LotCard` recebe `origin` (casa, pregão = `idLeilao`, dias do catálogo inteiro via
   `daysRangeLabel`, badge multi-dia) e desenha uma **barra superior** amarela (vigiando), verde
   (ganhando) ou vermelha (coberto), mesma regra de cor da borda. Abaixo do cabeçalho do artista, faixa "Pregões envolvidos" (uma linha por casa+`idLeilao`: pregão, dias/multi-dia, `AuctionStatusInline`, `PresencialOrUnsoldLink`, ver catálogo). Seção do artista sempre
-  recolhível; chaves de abrir/fechar: `watched|artista|<artista>`.
+  recolhível; **lápis** → `WatchedArtistDialog` (renomear/juntar/desfazer) gravando nos MESMOS apelidos do
+  Analytics (`analytics_artist_aliases`, `setAnalyticsArtistAlias`/`clearAnalyticsAlias`, escrita
+  otimista em `queryKeys.analyticsAliases`; v0.96.0); chaves de abrir/fechar: `watched|artista|<chave do artista>`.
 - **Aba Vigiados por casa → catálogo, com organizador por dia (v0.94.0):** `watched-tab.tsx`
   não agrupa mais por dia → casa. Agora é **casa → catálogo (`idLeilao`)**
   (`groupWatchedByHouseCatalog`, `grouping.ts`). Casa com **mais de um catálogo** mostra um

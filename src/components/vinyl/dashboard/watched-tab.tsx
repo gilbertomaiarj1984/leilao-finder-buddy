@@ -1,5 +1,8 @@
-import { ChevronDown, ChevronRight, ChevronUp, ExternalLink } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { ChevronDown, ChevronRight, ChevronUp, ExternalLink, Pencil } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,8 +20,11 @@ import {
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
 import { PresencialOrUnsoldLink } from "@/components/vinyl/presencial-or-unsold-link";
+import { clearAnalyticsAlias, setAnalyticsArtistAlias } from "@/lib/analytics.functions";
+import { queryKeys, useAnalyticsAliasesQuery } from "@/lib/queries";
 
 import type { DashboardData } from "./use-dashboard-data";
+import { WatchedArtistDialog } from "./watched-artist-dialog";
 
 const chipClass = (active: boolean) =>
   `inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -68,6 +74,49 @@ export function WatchedTab({ d }: { d: DashboardData }) {
   const [selectedDay, setSelectedDay] = useState<string>("all");
   // Visão: "casa" (padrão, casa → catálogo) ou "artista" (artista → cards com barra de origem).
   const [view, setView] = useState<"casa" | "artista">("casa");
+  // Correção do nome do artista (renomear/juntar) — mesmos apelidos do Analytics.
+  const [editingArtist, setEditingArtist] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const aliasesQuery = useAnalyticsAliasesQuery();
+  const runSetArtistAlias = useServerFn(setAnalyticsArtistAlias);
+  const runClearAlias = useServerFn(clearAnalyticsAlias);
+  const artistAliases = aliasesQuery.data?.artists ?? {};
+  const patchArtistAliases = (fn: (map: Record<string, string>) => void) => {
+    const prev = aliasesQuery.data;
+    const artists = { ...(prev?.artists ?? {}) };
+    fn(artists);
+    queryClient.setQueryData(queryKeys.analyticsAliases, {
+      albums: {},
+      sales: {},
+      excludedSales: {},
+      excludedArtists: {},
+      ...prev,
+      artists,
+    });
+    return prev;
+  };
+  const applyArtistAlias = (sourceKeys: string[], name: string) => {
+    const prev = patchArtistAliases((m) => {
+      for (const k of sourceKeys) m[k] = name;
+    });
+    void runSetArtistAlias({ data: { sourceKeys, name } })
+      .then(() => toast.success(`Artista atualizado: ${name}`))
+      .catch((error: unknown) => {
+        queryClient.setQueryData(queryKeys.analyticsAliases, prev);
+        toast.error((error as Error)?.message || "Não foi possível salvar o artista");
+      });
+  };
+  const clearArtistAlias = (sourceKeys: string[]) => {
+    const prev = patchArtistAliases((m) => {
+      for (const k of sourceKeys) delete m[k];
+    });
+    void Promise.all(sourceKeys.map((key) => runClearAlias({ data: { kind: "artist", key } })))
+      .then(() => toast.success("Correção desfeita"))
+      .catch((error: unknown) => {
+        queryClient.setQueryData(queryKeys.analyticsAliases, prev);
+        toast.error((error as Error)?.message || "Não foi possível desfazer a correção");
+      });
+  };
   return (
     <TabsContent value="watched" className="space-y-4">
       {watched.isLoading ? (
@@ -129,11 +178,12 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                 activeDay === "all" ||
                 (catalogDays.get(`${lot.house}|${lot.idLeilao}`) ?? []).includes(activeDay),
             ),
+            artistAliases,
           );
-          const artistKey = (artist: string) => `watched|artista|${artist}`;
+          const artistKey = (key: string) => `watched|artista|${key}`;
           const sectionKeys =
             view === "artista"
-              ? artistGroups.map((g) => artistKey(g.artist))
+              ? artistGroups.map((g) => artistKey(g.key))
               : visible.flatMap((h) => [
                   `watched|${h.house}`,
                   ...(h.multi ? h.shown.map((c) => `watched|${h.house}|${c.idLeilao}`) : []),
@@ -261,10 +311,10 @@ export function WatchedTab({ d }: { d: DashboardData }) {
               {view === "artista" ? (
                 <div className="space-y-8">
                   {artistGroups.map((group) => {
-                    const key = artistKey(group.artist);
+                    const key = artistKey(group.key);
                     const isOpen = !closedHouseSections.has(key);
                     return (
-                      <section key={group.artist} className="space-y-3">
+                      <section key={group.key} className="space-y-3">
                         <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
                           <button
                             type="button"
@@ -280,6 +330,15 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                             <span className="text-xl font-semibold tracking-tight text-foreground">
                               {group.artist}
                             </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingArtist(group.key)}
+                            title="Corrigir o nome do artista ou juntar com outro"
+                            aria-label={`Corrigir artista ${group.artist}`}
+                            className="text-muted-foreground transition-colors hover:text-primary"
+                          >
+                            <Pencil className="h-4 w-4" />
                           </button>
                           <Badge variant="secondary">{group.lots.length} lote(s)</Badge>
                           <Badge variant="outline">{group.houseCount} casa(s)</Badge>
@@ -497,6 +556,27 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                   })}
                 </div>
               )}
+              {(() => {
+                const editing = artistGroups.find((g) => g.key === editingArtist);
+                if (!editing) return null;
+                const choice = (g: (typeof artistGroups)[number]) => ({
+                  key: g.key,
+                  artist: g.artist,
+                  sourceKeys: g.sourceKeys,
+                  lots: g.lots.length,
+                });
+                return (
+                  <WatchedArtistDialog
+                    key={editing.key}
+                    artist={choice(editing)}
+                    all={artistGroups.map(choice)}
+                    hasAlias={editing.sourceKeys.some((k) => k in artistAliases)}
+                    onClose={() => setEditingArtist(null)}
+                    onApply={applyArtistAlias}
+                    onClear={clearArtistAlias}
+                  />
+                );
+              })()}
             </div>
           );
         })()
