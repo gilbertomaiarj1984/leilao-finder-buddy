@@ -23,7 +23,7 @@ type UnsoldLotItem = {
 function UnsoldLotCard({ lot }: { lot: UnsoldLotItem }) {
   return (
     <a
-      href={lotOpenUrl(lot.url, lot.title)}
+      href={lotOpenUrl(lot.url, lot.title, lot.lote)}
       target="_blank"
       rel="noreferrer"
       className="group relative flex flex-col overflow-hidden rounded-md border border-border bg-card transition hover:border-primary"

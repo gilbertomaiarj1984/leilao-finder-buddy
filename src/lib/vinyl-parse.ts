@@ -778,12 +778,17 @@ const CATALOG_ONLY_HOSTS = ["tremdas7.com.br"];
  * conta) abre direto. Nas casas de `CATALOG_ONLY_HOSTS` abre o catálogo filtrado por uma palavra
  * do título. Links fora do padrão passam intactos.
  */
-export function lotOpenUrl(url: string, title = ""): string {
+export function lotOpenUrl(url: string, title = "", lote?: string | null): string {
   const m = url.match(/abre_catalogo\.asp\?t=\d+\|[^|]+\|\d+\|(\d+)/i);
   const ref = parseAuctionRef(url);
   if (!m || !ref) return url;
   const domain = ref.domain.replace(/^http:/i, "https:");
   if (CATALOG_ONLY_HOSTS.some((h) => domain.toLowerCase().includes(h))) {
+    // `irpara=<nº do lote>` vai direto ao lote (confirmado pelo usuário); sem o número, cai na busca.
+    const num = lote?.trim();
+    if (num) {
+      return `${domain}/catalogo.asp?Num=${ref.idLeilao}&p=on&irpara=${encodeURIComponent(num)}`;
+    }
     // A pesquisa do catálogo da casa é frágil com várias palavras (0 itens para "LP CLARIDADE
     // CLARA NUNES", mas "claridade" acha) — usa só a palavra mais longa das primeiras do título.
     const word = title

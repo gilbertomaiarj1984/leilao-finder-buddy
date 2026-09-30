@@ -128,6 +128,15 @@ describe("lotOpenUrl", () => {
       ),
     ).toBe("https://www.tremdas7.com.br/catalogo.asp?Num=65073&p=on&pesquisa=CLARIDADE");
   });
+  test("Trem das 7 com nº do lote vai direto ao lote", () => {
+    expect(
+      lotOpenUrl(
+        "https://leiloesbr.com.br/abre_catalogo.asp?t=1|http://www.tremdas7.com.br|65073|1",
+        "LP CLARIDADE CLARA NUNES 1975",
+        "655A",
+      ),
+    ).toBe("https://www.tremdas7.com.br/catalogo.asp?Num=65073&p=on&irpara=655A");
+  });
   test("deixa links fora do padrão intactos", () => {
     expect(lotOpenUrl("https://casa.com.br/peca.asp?ID=1")).toBe(
       "https://casa.com.br/peca.asp?ID=1",
