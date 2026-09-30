@@ -1,15 +1,16 @@
 import { ChevronDown, ChevronRight, ChevronUp, ExternalLink } from "lucide-react";
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TabsContent } from "@/components/ui/tabs";
 import { AuctionStatusInline, HouseStatBadges } from "@/components/vinyl/badges";
-import { HideableBar } from "@/components/vinyl/hideable-bar";
 import {
+  catalogAuctionInfo,
+  catalogHasDay,
   computeHouseStats,
   dayLabel,
-  groupWatchedByHouse,
-  houseAuctionInfo,
+  groupWatchedByHouseCatalog,
   watchedDateToKey,
   watchedMatchesSearch,
 } from "@/components/vinyl/grouping";
@@ -18,17 +19,33 @@ import { PresencialOrUnsoldLink } from "@/components/vinyl/presencial-or-unsold-
 
 import type { DashboardData } from "./use-dashboard-data";
 
+const chipClass = (active: boolean) =>
+  `inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+    active
+      ? "border-primary bg-primary text-primary-foreground"
+      : "border-border text-muted-foreground hover:border-primary hover:text-primary"
+  }`;
+
+const smallButtonClass =
+  "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary";
+
+/** "01/10" ou "01/10 a 03/10" (catálogo multi-dia) a partir dos dayKeys yyyy-mm-dd. */
+function daysRangeLabel(dayKeys: string[]): string {
+  const fmt = (k: string) => `${k.slice(8, 10)}/${k.slice(5, 7)}`;
+  if (dayKeys.length === 0) return "";
+  const first = dayKeys[0]!;
+  const last = dayKeys[dayKeys.length - 1]!;
+  return first === last ? fmt(first) : `${fmt(first)} a ${fmt(last)}`;
+}
+
 export function WatchedTab({ d }: { d: DashboardData }) {
   const {
     watched,
     searchNorm,
     albumFor,
     days,
-    watchedDayOpen,
-    barsHidden,
-    stickyBelowHeader,
-    setWatchedDayOpen,
     closeAllHouseSections,
+    openAllHouseSections,
     closedHouseSections,
     toggleHouseSection,
     watchedIds,
@@ -47,6 +64,7 @@ export function WatchedTab({ d }: { d: DashboardData }) {
     soldById,
     toggle,
   } = d;
+  const [selectedDay, setSelectedDay] = useState<string>("all");
   return (
     <TabsContent value="watched" className="space-y-4">
       {watched.isLoading ? (
@@ -59,8 +77,9 @@ export function WatchedTab({ d }: { d: DashboardData }) {
         <p className="text-sm text-muted-foreground">Você ainda não está vigiando nenhum lote.</p>
       ) : (
         (() => {
-          // A busca principal filtra os vigiados; o resultado é apresentado
-          // separado por dia e casa de leilão, igual às abas de dia.
+          // A busca principal filtra os vigiados; o resultado é agrupado por casa e, dentro
+          // dela, por catálogo (idLeilao) — um catálogo multi-dia aparece em todos os dias que
+          // atravessa quando o organizador por dia está filtrando.
           const filtered = (watched.data ?? []).filter((lot) =>
             watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
           );
@@ -71,164 +90,265 @@ export function WatchedTab({ d }: { d: DashboardData }) {
               </p>
             );
           }
-          const byDay = new Map<string, typeof filtered>();
-          for (const lot of filtered) {
-            const key = watchedDateToKey(lot.date) || lot.date || "";
-            const list = byDay.get(key) ?? [];
-            list.push(lot);
-            byDay.set(key, list);
-          }
-          // Dias sem data ("") vão para o fim; os demais em ordem crescente.
-          const dayKeys = [...byDay.keys()].sort((a, b) => {
-            if (!a) return 1;
-            if (!b) return -1;
-            return a.localeCompare(b);
-          });
+          const houses = groupWatchedByHouseCatalog(filtered);
+          const dayKeys = [
+            ...new Set(houses.flatMap((h) => h.catalogs.flatMap((c) => c.dayKeys))),
+          ].sort();
+          const activeDay = dayKeys.includes(selectedDay) ? selectedDay : "all";
+          const lotCount = (day: string) =>
+            houses.reduce(
+              (sum, h) =>
+                sum +
+                h.catalogs
+                  .filter((c) => day === "all" || catalogHasDay(c, day))
+                  .reduce((n, c) => n + c.lots.length, 0),
+              0,
+            );
+          const visible = houses
+            .map((h) => ({
+              ...h,
+              multi: h.catalogs.length > 1,
+              shown: h.catalogs.filter((c) => activeDay === "all" || catalogHasDay(c, activeDay)),
+            }))
+            .filter((h) => h.shown.length > 0);
+          const sectionKeys = visible.flatMap((h) => [
+            `watched|${h.house}`,
+            ...(h.multi ? h.shown.map((c) => `watched|${h.house}|${c.idLeilao}`) : []),
+          ]);
+          const catalogCount = visible.reduce((n, h) => n + h.shown.length, 0);
 
           return (
-            <div className="space-y-10">
-              {dayKeys.map((dayKey) => {
-                const dayLots = byDay.get(dayKey) ?? [];
-                const idx = days.indexOf(dayKey);
-                const label = dayKey ? dayLabel(dayKey, idx >= 0 ? idx : 99) : "Sem data";
-                const houses = groupWatchedByHouse(dayLots);
-                const isOpen = watchedDayOpen[dayKey] ?? dayKey === days[0];
-                return (
-                  <section key={dayKey || "sem-data"} className="space-y-6">
-                    <HideableBar
-                      hidden={barsHidden}
-                      style={stickyBelowHeader}
-                      className="z-10 -mx-4"
+            <div className="space-y-6">
+              <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Dia">
+                <button
+                  type="button"
+                  aria-pressed={activeDay === "all"}
+                  onClick={() => setSelectedDay("all")}
+                  className={chipClass(activeDay === "all")}
+                >
+                  Todos
+                  <span className="text-xs tabular-nums opacity-80">{lotCount("all")}</span>
+                </button>
+                {dayKeys.map((dayKey) => {
+                  const idx = days.indexOf(dayKey);
+                  return (
+                    <button
+                      key={dayKey}
+                      type="button"
+                      aria-pressed={activeDay === dayKey}
+                      onClick={() => setSelectedDay(dayKey)}
+                      className={chipClass(activeDay === dayKey)}
                     >
-                      <button
-                        type="button"
-                        aria-expanded={isOpen}
-                        onClick={() =>
-                          setWatchedDayOpen((prev) => ({ ...prev, [dayKey]: !isOpen }))
-                        }
-                        className="flex w-full flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 text-left backdrop-blur sm:py-3"
-                      >
-                        {isOpen ? (
-                          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        )}
-                        <span className="text-sm font-semibold text-foreground">{label}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {dayLots.length} lote(s) vigiado(s) em {houses.length} casa(s)
-                        </span>
-                      </button>
-                    </HideableBar>
-                    {!isOpen ? null : (
-                      <>
-                        {houses.length > 1 ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              closeAllHouseSections(
-                                houses.map((g) => `watched|${dayKey}|${g.house}`),
-                              )
-                            }
-                            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-                          >
-                            <ChevronUp className="h-3.5 w-3.5" />
-                            Fechar todas
-                          </button>
+                      {dayLabel(dayKey, idx >= 0 ? idx : 99)}
+                      <span className="text-xs tabular-nums opacity-80">{lotCount(dayKey)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground">
+                  {visible.length} casa(s) · {catalogCount} catálogo(s) · {lotCount(activeDay)}{" "}
+                  lote(s) vigiado(s)
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openAllHouseSections(sectionKeys)}
+                    className={smallButtonClass}
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                    Abrir todas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => closeAllHouseSections(sectionKeys)}
+                    className={smallButtonClass}
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" />
+                    Fechar todas
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-8">
+                {visible.map((houseGroup) => {
+                  const houseKey = `watched|${houseGroup.house}`;
+                  const isHouseOpen = !closedHouseSections.has(houseKey);
+                  const houseLots = houseGroup.shown.flatMap((c) => c.lots);
+                  const single = houseGroup.multi ? null : houseGroup.shown[0]!;
+                  const singleInfo = single ? catalogAuctionInfo(single) : null;
+                  const grid = (lots: typeof houseLots) => (
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {lots.map((lot) => (
+                        <LotCard
+                          key={lot.id}
+                          lot={{
+                            ...lot,
+                            price: currentPriceFor(lot.id, lot.price),
+                            dayKey: watchedDateToKey(lot.date) || lot.date,
+                            watched: true,
+                            myBid: myBidById.get(lot.idPeca),
+                            nextBid: nextBidById.get(lot.id),
+                          }}
+                          busy={pending === lot.idPeca}
+                          ai={aiFor(lot)}
+                          market={marketFor(lot)}
+                          album={albumFor(lot)}
+                          condition={conditionFor(lot)}
+                          demand={demandFor(lot)}
+                          owned={ownedFor(lot)}
+                          onOpenOwned={() => setOwnedPanelLot(lot)}
+                          onEditTags={editTags(lot.id)}
+                          bidStatus={bidStatusById.get(lot.idPeca)}
+                          sold={soldById.get(lot.id)}
+                          onToggle={() =>
+                            toggle.mutate({
+                              idPeca: lot.idPeca,
+                              idLeilao: lot.idLeilao,
+                              base: lot.base,
+                              watch: false,
+                            })
+                          }
+                        />
+                      ))}
+                    </div>
+                  );
+                  return (
+                    <section key={houseGroup.house} className="space-y-3">
+                      <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleHouseSection(houseKey)}
+                          aria-expanded={isHouseOpen}
+                          className="flex items-center gap-2 text-left"
+                        >
+                          {isHouseOpen ? (
+                            <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+                          )}
+                          <span className="text-xl font-semibold tracking-tight text-foreground">
+                            {houseGroup.house}
+                          </span>
+                        </button>
+                        <Badge variant="secondary">{houseLots.length} lote(s)</Badge>
+                        {houseGroup.multi ? (
+                          <Badge variant="outline">{houseGroup.shown.length} catálogos</Badge>
                         ) : null}
-                        {houses.map((houseGroup) => {
-                          const auctionInfo = houseAuctionInfo(dayKey, houseGroup.lots[0]);
-                          const houseSectionKey = `watched|${dayKey}|${houseGroup.house}`;
-                          const isHouseOpen = !closedHouseSections.has(houseSectionKey);
-                          return (
-                            <section key={houseGroup.house} className="space-y-3">
-                              <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
-                                <button
-                                  type="button"
-                                  onClick={() => toggleHouseSection(houseSectionKey)}
-                                  aria-expanded={isHouseOpen}
-                                  className="flex items-center gap-2 text-left"
-                                >
-                                  {isHouseOpen ? (
-                                    <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
-                                  ) : (
-                                    <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-                                  )}
-                                  <span className="text-xl font-semibold tracking-tight text-foreground">
-                                    {houseGroup.house}
-                                  </span>
-                                </button>
-                                <Badge variant="secondary">{houseGroup.lots.length} lote(s)</Badge>
-                                <HouseStatBadges
-                                  stats={computeHouseStats(
-                                    houseGroup.lots,
-                                    watchedIds,
-                                    bidStatusById,
-                                  )}
+                        <HouseStatBadges
+                          stats={computeHouseStats(houseLots, watchedIds, bidStatusById)}
+                        />
+                        {single ? (
+                          <>
+                            {single.dayKeys.length > 1 ? (
+                              <>
+                                <Badge variant="outline">multi-dia</Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {daysRangeLabel(single.dayKeys)}
+                                </span>
+                              </>
+                            ) : null}
+                            <AuctionStatusInline info={singleInfo} />
+                            <div className="ml-auto flex flex-wrap items-center gap-3">
+                              {singleInfo?.presencialUrl ? (
+                                <PresencialOrUnsoldLink
+                                  presencialUrl={singleInfo.presencialUrl}
+                                  idLeilao={singleInfo.idLeilao}
+                                  dayKey={singleInfo.dayKey}
+                                  status={singleInfo.status}
                                 />
-                                <AuctionStatusInline info={auctionInfo} />
-                                <div className="ml-auto flex flex-wrap items-center gap-3">
-                                  {auctionInfo?.presencialUrl ? (
-                                    <PresencialOrUnsoldLink
-                                      presencialUrl={auctionInfo.presencialUrl}
-                                      idLeilao={auctionInfo.idLeilao}
-                                      dayKey={auctionInfo.dayKey}
-                                      status={auctionInfo.status}
-                                    />
-                                  ) : null}
-                                  <a
-                                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                    href={auctionInfo?.catalogUrl ?? houseGroup.houseUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    site da casa <ExternalLink className="h-3 w-3" />
-                                  </a>
-                                </div>
-                              </div>
-                              {isHouseOpen ? (
-                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                  {houseGroup.lots.map((lot) => (
-                                    <LotCard
-                                      key={lot.id}
-                                      lot={{
-                                        ...lot,
-                                        price: currentPriceFor(lot.id, lot.price),
-                                        dayKey: watchedDateToKey(lot.date) || lot.date,
-                                        watched: true,
-                                        myBid: myBidById.get(lot.idPeca),
-                                        nextBid: nextBidById.get(lot.id),
-                                      }}
-                                      busy={pending === lot.idPeca}
-                                      ai={aiFor(lot)}
-                                      market={marketFor(lot)}
-                                      album={albumFor(lot)}
-                                      condition={conditionFor(lot)}
-                                      demand={demandFor(lot)}
-                                      owned={ownedFor(lot)}
-                                      onOpenOwned={() => setOwnedPanelLot(lot)}
-                                      onEditTags={editTags(lot.id)}
-                                      bidStatus={bidStatusById.get(lot.idPeca)}
-                                      sold={soldById.get(lot.id)}
-                                      onToggle={() =>
-                                        toggle.mutate({
-                                          idPeca: lot.idPeca,
-                                          idLeilao: lot.idLeilao,
-                                          base: lot.base,
-                                          watch: false,
-                                        })
-                                      }
-                                    />
-                                  ))}
-                                </div>
                               ) : null}
-                            </section>
-                          );
-                        })}
-                      </>
-                    )}
-                  </section>
-                );
-              })}
+                              <a
+                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                href={singleInfo?.catalogUrl ?? houseGroup.houseUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                site da casa <ExternalLink className="h-3 w-3" />
+                              </a>
+                            </div>
+                          </>
+                        ) : (
+                          <a
+                            className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                            href={houseGroup.houseUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            site da casa <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
+                      </div>
+                      {!isHouseOpen ? null : single ? (
+                        grid(single.lots)
+                      ) : (
+                        <div className="space-y-6 border-l-2 border-border pl-3 sm:pl-5">
+                          {houseGroup.shown.map((catalog) => {
+                            const catKey = `watched|${houseGroup.house}|${catalog.idLeilao}`;
+                            const isCatOpen = !closedHouseSections.has(catKey);
+                            const info = catalogAuctionInfo(catalog);
+                            return (
+                              <div key={catalog.idLeilao} className="space-y-3">
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleHouseSection(catKey)}
+                                    aria-expanded={isCatOpen}
+                                    className="flex items-center gap-2 text-left"
+                                  >
+                                    {isCatOpen ? (
+                                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                    )}
+                                    <span className="text-base font-semibold text-foreground">
+                                      Catálogo {catalog.idLeilao}
+                                    </span>
+                                  </button>
+                                  <Badge variant="secondary">{catalog.lots.length} lote(s)</Badge>
+                                  {catalog.dayKeys.length > 1 ? (
+                                    <Badge variant="outline">multi-dia</Badge>
+                                  ) : null}
+                                  <span className="text-xs text-muted-foreground">
+                                    {daysRangeLabel(catalog.dayKeys)}
+                                  </span>
+                                  <HouseStatBadges
+                                    stats={computeHouseStats(
+                                      catalog.lots,
+                                      watchedIds,
+                                      bidStatusById,
+                                    )}
+                                  />
+                                  <AuctionStatusInline info={info} />
+                                  <div className="ml-auto flex flex-wrap items-center gap-3">
+                                    {info?.presencialUrl ? (
+                                      <PresencialOrUnsoldLink
+                                        presencialUrl={info.presencialUrl}
+                                        idLeilao={info.idLeilao}
+                                        dayKey={info.dayKey}
+                                        status={info.status}
+                                      />
+                                    ) : null}
+                                    <a
+                                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                      href={info?.catalogUrl ?? houseGroup.houseUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      ver catálogo <ExternalLink className="h-3 w-3" />
+                                    </a>
+                                  </div>
+                                </div>
+                                {isCatOpen ? grid(catalog.lots) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
             </div>
           );
         })()
