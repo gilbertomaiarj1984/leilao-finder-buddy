@@ -37,6 +37,15 @@ describe("groupWatchedByHouseCatalog", () => {
     expect(multi.time).toBe("19:30h");
   });
 
+  test("lotes do catálogo multi-dia em ordem crescente de data, depois por lote", () => {
+    const mixed = groupWatchedByHouseCatalog([
+      lot("a", "10", "03/10/2026", "19h", "1"),
+      lot("a", "10", "01/10/2026", "19h", "8"),
+      lot("a", "10", "01/10/2026", "19h", "3"),
+    ]);
+    expect(mixed[0]!.catalogs[0]!.lots.map((l) => l.lote)).toEqual(["3", "8", "1"]);
+  });
+
   test("casas ordenadas pelo primeiro catálogo", () => {
     expect(houses.map((h) => h.house)).toEqual(["b", "a"]);
   });
