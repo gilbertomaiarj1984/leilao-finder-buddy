@@ -27,6 +27,7 @@ import {
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
 import { PresencialOrUnsoldLink } from "@/components/vinyl/presencial-or-unsold-link";
+import { useDragAutoScroll } from "@/components/vinyl/use-drag-autoscroll";
 import {
   clearAnalyticsAlias,
   setAnalyticsArtistAlias,
@@ -34,7 +35,6 @@ import {
 } from "@/lib/analytics.functions";
 import { queryKeys, useAnalyticsAliasesQuery } from "@/lib/queries";
 
-import { useDragAutoScroll } from "./use-drag-autoscroll";
 import type { DashboardData } from "./use-dashboard-data";
 import { ConfirmMoveDialog, WatchedLotDialog, WatchedArtistDialog } from "./watched-artist-dialog";
 
