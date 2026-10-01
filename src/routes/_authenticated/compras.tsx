@@ -9,6 +9,7 @@ import {
   List,
   RefreshCw,
   ShoppingBag,
+  Plus,
   Sparkles,
   Store,
 } from "lucide-react";
@@ -25,6 +26,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EditDialog } from "@/components/vinyl/colecao-dialogs";
+import { EMPTY_DRAFT, type Draft } from "@/components/vinyl/colecao-draft";
+import { readFileAsDataUrl } from "@/components/vinyl/collection-utils";
 import { GradeSelect } from "@/components/vinyl/grade-select";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
@@ -36,10 +40,11 @@ import {
   addCollectionItem,
   applyCollectionDecision,
   identifyPurchaseDraft,
+  uploadCollectionImage,
 } from "@/lib/collection.functions";
 import type { Purchase } from "@/lib/purchases.server";
 import { getPurchases, scanPurchases, scanPurchasesFull } from "@/lib/purchases.functions";
-import { extractArtist, titleCase } from "@/lib/vinyl-parse";
+import { extractArtist, titleCase, UNCLASSIFIED_LABEL } from "@/lib/vinyl-parse";
 import {
   lotIdentity,
   ownedSignatureFromLot,
@@ -89,6 +94,26 @@ function draftFromPurchase(p: Purchase): SendDraft {
     notes: "",
     description: "",
     tags: "",
+  };
+}
+
+/** Rascunho do disco EXTRA (lote com vários LPs): parte do que já está na tela de envio. */
+function extraDraftFrom(d: SendDraft): Draft {
+  return {
+    ...EMPTY_DRAFT,
+    artist: d.artist,
+    album: d.album,
+    title: d.purchase.title,
+    year: d.year,
+    image: d.purchase.image,
+    // Valor pago fica em branco: o da compra é do lote inteiro, quem digita é o usuário.
+    wonPrice: "",
+    wonDate: d.purchase.wonDate ?? "",
+    conditionMedia: d.conditionMedia,
+    conditionSleeve: d.conditionSleeve,
+    notes: d.notes,
+    description: d.description,
+    tags: d.tags,
   };
 }
 
@@ -274,6 +299,61 @@ function ComprasPage() {
     },
     onError: (e: Error) => toast.error(e.message || "Não foi possível enviar para a coleção"),
   });
+
+  // "Adicionar disco" no diálogo de envio: compra com mais de 1 LP vira N discos na coleção.
+  // O disco principal leva o `lot_id` (vínculo); cada extra grava só `origin_lot_id` (rastro).
+  const uploadImage = useServerFn(uploadCollectionImage);
+  const [extraDraft, setExtraDraft] = useState<Draft | null>(null);
+  const extraMut = useMutation({
+    mutationFn: (args: { d: Draft; purchase: Purchase }) =>
+      sendToCollection({
+        data: {
+          originLotId: args.purchase.lotId,
+          artist: args.d.artist,
+          album: args.d.album,
+          title: args.purchase.title,
+          year: args.d.year.trim() ? Number(args.d.year) || null : null,
+          image: args.d.image,
+          house: args.purchase.house,
+          uf: args.purchase.uf,
+          wonPrice: args.d.wonPrice,
+          wonDate: args.d.wonDate.trim() || null,
+          conditionMedia: args.d.conditionMedia,
+          conditionSleeve: args.d.conditionSleeve,
+          notes: args.d.notes,
+          description: args.d.description,
+          tags: args.d.tags
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean),
+        },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.collection });
+      setExtraDraft(null);
+      toast.success("Disco adicionado à coleção.");
+    },
+    onError: (e: Error) => toast.error(e.message || "Não foi possível adicionar o disco"),
+  });
+  const artistNames = useMemo(
+    () =>
+      [...new Set((collectionQuery.data ?? []).map((i) => i.artist.trim()))]
+        .filter((a) => a && a !== UNCLASSIFIED_LABEL)
+        .sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [collectionQuery.data],
+  );
+  // Discos já adicionados a partir da compra aberta (mais recente por último → o que se vincula).
+  const extrasOfDraft = sendDraft
+    ? (collectionQuery.data ?? []).filter((i) => i.originLotId === sendDraft.purchase.lotId)
+    : [];
+  const markAlreadySent = () => {
+    if (!sendDraft) return;
+    const last = extrasOfDraft[extrasOfDraft.length - 1];
+    if (!last) return;
+    applyDecision(sendDraft.purchase, last.id, last.id);
+    setSendDraft(null);
+    toast.success("Compra marcada como já enviada.");
+  };
 
   // "Identificar pela IA" no diálogo de envio: preenche artista/álbum/ano/descritivo/tags a
   // partir só do título da compra (mesmo prompt/modelo do reprocessar da Coleção), sem persistir
@@ -554,6 +634,27 @@ function ComprasPage() {
         onClose={() => setSendDraft(null)}
         onSend={() => sendDraft && sendMut.mutate(sendDraft)}
         onIdentify={() => void runIdentifyDraft()}
+        onAddDisc={() => sendDraft && setExtraDraft(extraDraftFrom(sendDraft))}
+        extrasCount={extrasOfDraft.length}
+        onAlreadySent={markAlreadySent}
+      />
+      <EditDialog
+        draft={extraDraft}
+        saving={extraMut.isPending}
+        artistNames={artistNames}
+        onChange={setExtraDraft}
+        onClose={() => setExtraDraft(null)}
+        onSave={() =>
+          extraDraft &&
+          sendDraft &&
+          extraMut.mutate({ d: extraDraft, purchase: sendDraft.purchase })
+        }
+        onUpload={async (file) => {
+          const res = (await uploadImage({ data: { dataUrl: await readFileAsDataUrl(file) } })) as {
+            url: string;
+          };
+          return res.url;
+        }}
       />
     </main>
   );
@@ -703,6 +804,9 @@ function SendToCollectionDialog({
   onClose,
   onSend,
   onIdentify,
+  onAddDisc,
+  extrasCount,
+  onAlreadySent,
 }: {
   draft: SendDraft | null;
   sending: boolean;
@@ -711,6 +815,9 @@ function SendToCollectionDialog({
   onClose: () => void;
   onSend: () => void;
   onIdentify: () => void;
+  onAddDisc: () => void;
+  extrasCount: number;
+  onAlreadySent: () => void;
 }) {
   const set = (patch: Partial<SendDraft>) => draft && onChange({ ...draft, ...patch });
   const busy = sending || identifying;
@@ -733,17 +840,30 @@ function SendToCollectionDialog({
               <p className="text-sm text-muted-foreground">
                 {draft.purchase.title || "(sem título)"}
               </p>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={onIdentify}
-                disabled={busy}
-                title="Identificar artista/álbum/ano e gerar um descritivo pela IA (só texto, a partir do título)"
-              >
-                <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
-                {identifying ? "Identificando…" : "Identificar pela IA"}
-              </Button>
+              <div className="flex shrink-0 flex-col items-stretch gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={onIdentify}
+                  disabled={busy}
+                  title="Identificar artista/álbum/ano e gerar um descritivo pela IA (só texto, a partir do título)"
+                >
+                  <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
+                  {identifying ? "Identificando…" : "Identificar pela IA"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={onAddDisc}
+                  disabled={busy}
+                  title="Compra com mais de 1 LP: abre 'Adicionar disco' pré-preenchido com estes dados"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Adicionar disco{extrasCount ? ` (${extrasCount})` : ""}
+                </Button>
+              </div>
             </div>
             <SendField label="Artista">
               <Input value={draft.artist} onChange={(e) => set({ artist: e.target.value })} />
@@ -806,8 +926,21 @@ function SendToCollectionDialog({
               <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
                 Cancelar
               </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onAlreadySent}
+                disabled={busy || extrasCount === 0}
+                title={
+                  extrasCount === 0
+                    ? "Disponível depois de adicionar ao menos um disco desta compra"
+                    : "Os discos desta compra já foram adicionados: marca a compra como enviada"
+                }
+              >
+                Item já enviado
+              </Button>
               <Button type="submit" disabled={busy}>
-                {sending ? "Enviando…" : "Enviar"}
+                {sending ? "Enviando…" : "Enviar para coleção"}
               </Button>
             </DialogFooter>
           </form>

@@ -22,6 +22,7 @@ function normalizeInput(input: Record<string, unknown> | undefined) {
     description?: string;
     tags?: string[];
     lotId?: string;
+    originLotId?: string;
   } = {};
   if (str(input?.artist) !== undefined) patch.artist = String(input!.artist);
   if (str(input?.album) !== undefined) patch.album = String(input!.album);
@@ -44,6 +45,7 @@ function normalizeInput(input: Record<string, unknown> | undefined) {
   if (Array.isArray(input?.tags))
     patch.tags = input!.tags.filter((t): t is string => typeof t === "string");
   if (str(input?.lotId) !== undefined) patch.lotId = String(input!.lotId);
+  if (str(input?.originLotId)) patch.originLotId = String(input!.originLotId);
   return patch;
 }
 

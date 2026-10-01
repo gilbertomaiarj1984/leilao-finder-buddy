@@ -26,6 +26,9 @@ import type { AiProvider } from "./ai-provider";
 export type CollectionItem = {
   id: string;
   lotId: string | null;
+  // Compra de origem quando o disco veio de um lote fracionado ("Adicionar disco" no envio) —
+  // só rastro: não vincula o lote (o `lot_id` é único e fica com o disco principal).
+  originLotId: string | null;
   source: string; // 'auction' | 'manual'
   artist: string;
   album: string;
@@ -62,6 +65,7 @@ type CollectionItemWrite = Partial<{
   market_high: string | null;
   market_low: string | null;
   notes: string;
+  origin_lot_id: string | null;
   position: number;
   source: string;
   source_url: string;
@@ -75,11 +79,12 @@ type CollectionItemWrite = Partial<{
 }>;
 
 const COLS =
-  "id, lot_id, source, artist, album, title, year, image, house, uf, won_price, won_date, condition_media, condition_sleeve, notes, description, tags, market_low, market_high, source_url, position";
+  "id, lot_id, origin_lot_id, source, artist, album, title, year, image, house, uf, won_price, won_date, condition_media, condition_sleeve, notes, description, tags, market_low, market_high, source_url, position";
 
 type DbRow = {
   id: string;
   lot_id: string | null;
+  origin_lot_id: string | null;
   source: string | null;
   artist: string | null;
   album: string | null;
@@ -105,6 +110,7 @@ function toItem(r: DbRow): CollectionItem {
   return {
     id: r.id,
     lotId: r.lot_id,
+    originLotId: r.origin_lot_id,
     source: r.source ?? "manual",
     artist: r.artist ?? "",
     album: r.album ?? "",
@@ -497,6 +503,8 @@ type CollectionInput = {
   // Presente só quando o disco vem de "Enviar para a coleção" (`/compras`) — vincula à peça
   // arrematada (`lot_id`), igual à antiga varredura direta.
   lotId?: string;
+  // Disco extra de uma compra com vários LPs: grava só o rastro (`origin_lot_id`), sem vincular.
+  originLotId?: string;
 };
 
 /**
@@ -516,7 +524,8 @@ export async function addCollectionItem(input: CollectionInput): Promise<Collect
     .from("collection_items")
     .insert({
       lot_id: input.lotId ?? null,
-      source: input.lotId ? "auction" : "manual",
+      origin_lot_id: input.originLotId ?? null,
+      source: input.lotId || input.originLotId ? "auction" : "manual",
       artist,
       album,
       title: (input.title ?? "").trim(),

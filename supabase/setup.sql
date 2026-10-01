@@ -338,6 +338,10 @@ CREATE TABLE IF NOT EXISTS public.collection_items (
 CREATE INDEX IF NOT EXISTS collection_items_artist_idx ON public.collection_items (artist);
 -- Coluna adicionada depois (bancos já criados): descritivo do disco buscado pela IA.
 ALTER TABLE public.collection_items ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT '';
+-- Compra de origem de um disco extra (lote com vários LPs fracionado no "Enviar para a coleção").
+-- Só rastro: `lot_id` segue único e fica com o disco principal.
+ALTER TABLE public.collection_items ADD COLUMN IF NOT EXISTS origin_lot_id text;
+CREATE INDEX IF NOT EXISTS collection_items_origin_lot_idx ON public.collection_items (origin_lot_id);
 
 DROP TRIGGER IF EXISTS update_collection_items_updated_at ON public.collection_items;
 CREATE TRIGGER update_collection_items_updated_at BEFORE UPDATE ON public.collection_items
