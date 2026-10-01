@@ -236,9 +236,16 @@ export function useDashboardData() {
   // `watched-day|`, `bids-day|`, `watched|`, `bids|`).
   // Filtro pelos badges de casa/catálogo/artista (vigia / lance ganhando / lance coberto),
   // único para o app todo (abas de dia, Vigiados do dia e aba Vigiados); clicar de novo limpa.
-  const [statFilter, setStatFilter] = useState<keyof HouseStats | null>(null);
+  // Seleção múltipla (OU): vazio = sem filtro.
+  const [statFilter, setStatFilter] = useState<ReadonlySet<keyof HouseStats>>(new Set());
+  const clearStatFilter = () => setStatFilter(new Set());
   const toggleStatFilter = (key: keyof HouseStats) =>
-    setStatFilter((cur) => (cur === key ? null : key));
+    setStatFilter((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   const [closedHouseSections, setClosedHouseSections] = useState<Set<string>>(new Set());
   const toggleHouseSection = (key: string) =>
     setClosedHouseSections((prev) => {
@@ -1579,7 +1586,7 @@ export function useDashboardData() {
     refreshWatchedAndBids,
     refreshingWatchedAndBids,
     statFilter,
-    setStatFilter,
+    clearStatFilter,
     toggleStatFilter,
     analyzeScope,
     analyzing,

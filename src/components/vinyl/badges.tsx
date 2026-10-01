@@ -79,7 +79,7 @@ const HOUSE_STAT_BADGES: {
 
 /**
  * Contadores ao lado do nome da casa: vigia, lance verde e lance vermelho. Com `onToggle`
- * viram botões de filtro (`active` = o filtro em vigor, destacado com anel).
+ * viram botões de filtro (`active` = os filtros marcados, destacados com anel; vários ao mesmo tempo).
  */
 export function HouseStatBadges({
   stats,
@@ -87,7 +87,7 @@ export function HouseStatBadges({
   onToggle,
 }: {
   stats: HouseStats;
-  active?: keyof HouseStats | null;
+  active?: ReadonlySet<keyof HouseStats>;
   onToggle?: (key: keyof HouseStats) => void;
 }) {
   return (
@@ -103,7 +103,7 @@ export function HouseStatBadges({
             </span>
           );
         }
-        const on = active === key;
+        const on = active?.has(key) ?? false;
         return (
           <button
             key={key}

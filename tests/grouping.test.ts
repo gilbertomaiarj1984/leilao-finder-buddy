@@ -7,6 +7,7 @@ import {
   groupWatchedByArtist,
   groupWatchedByHouseCatalog,
   houseStatKind,
+  matchesStatFilter,
 } from "../src/components/vinyl/grouping";
 
 const lot = (house: string, idLeilao: string, date: string, time: string, lote: string) => ({
@@ -158,5 +159,21 @@ describe("houseStatKind", () => {
     expect(houseStatKind("2", watched, bids)).toBe("green");
     expect(houseStatKind("3", watched, bids)).toBe("red");
     expect(houseStatKind("9", watched, bids)).toBeNull();
+  });
+});
+
+describe("matchesStatFilter", () => {
+  const watched = new Set(["1", "2", "3"]);
+  const bids = new Map([
+    ["2", "Vencendo"],
+    ["3", "Coberto"],
+  ]);
+  test("sem filtro passa tudo; com vários marcados vale o OU", () => {
+    expect(matchesStatFilter("9", watched, bids, new Set())).toBe(true);
+    const f = new Set<"vigia" | "green" | "red">(["green", "red"]);
+    expect(matchesStatFilter("1", watched, bids, f)).toBe(false);
+    expect(matchesStatFilter("2", watched, bids, f)).toBe(true);
+    expect(matchesStatFilter("3", watched, bids, f)).toBe(true);
+    expect(matchesStatFilter("9", watched, bids, f)).toBe(false);
   });
 });
