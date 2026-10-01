@@ -3,6 +3,7 @@
 Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/version.ts`
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
+- **v0.101.1** — Badges de vigia/ganhando/coberto viram filtro também nas abas de dia (lista geral por casa e "Vigiados do dia"); o filtro (`statFilter`) passa a ser único, em `use-dashboard-data.tsx`, e vale para o app todo.
 - **v0.101.0** — Vigiados: os badges da casa/artista/catálogo (olho amarelo = vigia, verde = ganhando, vermelho = coberto) viram filtro — clicar filtra a aba toda por aquele grupo, clicar de novo limpa (`HouseStatBadges` com `onToggle`, `houseStatKind` em `grouping.ts`).
 - **v0.100.0** — Vigiados: botão "Atualizar" (vigiados + lances) ao lado de "Por casa/Por artista" e auto-atualização silenciosa a cada 1 min enquanto a aba está aberta. O aviso de lance superado fica aberto até ser fechado (botão X) e mostra só nº do lote, artista e álbum.
 - **v0.99.4** — Infra: Caddyfile ganha o site `agenda.143-95-214-240.sslip.io` (AgendaBoa) e o `postgres` entra na rede externa `agendaboa_db` com alias `agendaboa-postgres` (`docker-compose.yml`). O deploy recria o Postgres. Sem mudança de código/UI.

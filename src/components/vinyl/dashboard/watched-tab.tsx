@@ -25,7 +25,6 @@ import {
   groupWatchedByArtist,
   groupWatchedByHouseCatalog,
   houseStatKind,
-  type HouseStats,
   watchedDateToKey,
   watchedMatchesSearch,
 } from "@/components/vinyl/grouping";
@@ -93,6 +92,9 @@ export function WatchedTab({ d }: { d: DashboardData }) {
     tab,
     refreshWatchedAndBids,
     refreshingWatchedAndBids,
+    statFilter,
+    setStatFilter,
+    toggleStatFilter,
   } = d;
   // Enquanto a aba Vigiados está aberta, atualiza vigiados + lances a cada minuto (silencioso).
   // A ref evita recriar o intervalo a cada render (a função fecha sobre as queries atuais).
@@ -108,10 +110,6 @@ export function WatchedTab({ d }: { d: DashboardData }) {
   const [selectedDay, setSelectedDay] = useState<string>("all");
   // Visão: "casa" (padrão, casa → catálogo) ou "artista" (artista → cards com barra de origem).
   const [view, setView] = useState<"casa" | "artista">("casa");
-  // Filtro pelos badges (vigia / lance ganhando / lance coberto); clicar de novo limpa.
-  const [statFilter, setStatFilter] = useState<keyof HouseStats | null>(null);
-  const toggleStatFilter = (key: keyof HouseStats) =>
-    setStatFilter((cur) => (cur === key ? null : key));
   // Correção do nome do artista (renomear/juntar) — mesmos apelidos do Analytics.
   const [editingArtist, setEditingArtist] = useState<string | null>(null);
   const queryClient = useQueryClient();
