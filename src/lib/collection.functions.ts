@@ -224,6 +224,37 @@ export const uploadCollectionImage = createServerFn({ method: "POST" })
     return await upload(data.dataUrl);
   });
 
+/** Busca capas no Discogs (artista/álbum) para o usuário escolher a melhor. */
+export const searchCollectionCovers = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { artist?: string; album?: string } | undefined) => ({
+    artist: typeof input?.artist === "string" ? input.artist : "",
+    album: typeof input?.album === "string" ? input.album : "",
+  }))
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { discogsConfigured, searchCoverOptions } = await import("./discogs.server");
+    if (!discogsConfigured()) {
+      throw new Error("Discogs não configurado (DISCOGS_TOKEN ausente).");
+    }
+    return await searchCoverOptions(data.artist, data.album);
+  });
+
+/** Baixa a capa escolhida (Discogs), comprime e grava; devolve a URL pública para `image`. */
+export const importCollectionCover = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { url?: string } | undefined) => {
+    if (!input?.url || typeof input.url !== "string") throw new Error("url obrigatória");
+    return { url: input.url };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { importCollectionCover: run } = await import("./collection.server");
+    return await run(data.url);
+  });
+
 /** Vínculos manuais lote → disco da Coleção ("já tenho"). Global. */
 export const getCollectionLinks = createServerFn({ method: "GET" })
   .middleware([requireAuth])

@@ -95,6 +95,8 @@ type SearchHit = {
   year?: number | string;
   format?: string[];
   community?: { have?: number; want?: number };
+  thumb?: string;
+  cover_image?: string;
 };
 
 /** O que a IA identificou, quebrado em artista/álbum/ano para casar melhor no Discogs. */
@@ -457,4 +459,89 @@ export async function fetchMarket(album: string | null, title: string): Promise<
   if ((base.priceLowBr ?? base.priceHighBr) !== null) base.currency = CURRENCY;
 
   return base;
+}
+
+// --- Capas (seletor de capa da Coleção) -------------------------------------
+
+export type CoverOption = {
+  id: number;
+  title: string;
+  year: number | null;
+  thumb: string;
+  cover: string;
+};
+
+/** Só aceita imagem servida pelo próprio Discogs (https) — evita SSRF no download da capa. */
+export function isDiscogsImageUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return (
+      u.protocol === "https:" &&
+      (u.hostname === "discogs.com" || u.hostname.endsWith(".discogs.com"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Transforma os resultados da busca em opções de capa (descarta os sem imagem real). */
+export function toCoverOptions(hits: SearchHit[], max = 12): CoverOption[] {
+  const out: CoverOption[] = [];
+  const seen = new Set<string>();
+  for (const h of hits) {
+    const cover = h.cover_image || h.thumb || "";
+    if (!h.id || !isDiscogsImageUrl(cover) || /spacer\.gif/i.test(cover) || seen.has(cover))
+      continue;
+    seen.add(cover);
+    const year = Number(h.year);
+    out.push({
+      id: h.id,
+      title: h.title ?? "",
+      year: Number.isFinite(year) && year > 0 ? year : null,
+      thumb: isDiscogsImageUrl(h.thumb ?? "") ? (h.thumb as string) : cover,
+      cover,
+    });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** Busca releases no Discogs (vinil primeiro, depois texto livre) para o usuário escolher a capa. */
+export async function searchCoverOptions(artist: string, album: string): Promise<CoverOption[]> {
+  const a = artist.trim();
+  const t = album.trim();
+  if (!a && !t) return [];
+  let hits: SearchHit[] = [];
+  if (a && t) {
+    hits = await searchReleases(
+      `type=release&format=Vinyl&per_page=25&artist=${encodeURIComponent(a)}&release_title=${encodeURIComponent(t)}`,
+    );
+  }
+  if (hits.length < 4) {
+    const more = await searchReleases(
+      `type=release&per_page=25&q=${encodeURIComponent(`${a} ${t}`.trim())}`,
+    );
+    hits = [...hits, ...more];
+  }
+  return toCoverOptions(hits);
+}
+
+/** Baixa a imagem escolhida (só hosts do Discogs). Devolve bytes + content-type. */
+export async function downloadDiscogsImage(
+  url: string,
+): Promise<{ bytes: Buffer; contentType: string }> {
+  if (!isDiscogsImageUrl(url)) throw new Error("Imagem inválida (só capas do Discogs).");
+  const token = process.env["DISCOGS_TOKEN"];
+  const resp = await fetch(url, {
+    headers: {
+      "User-Agent": UA,
+      Accept: "image/*",
+      ...(token ? { Authorization: `Discogs token=${token}` } : {}),
+    },
+  });
+  if (!resp.ok) throw new Error(`Não foi possível baixar a capa (${resp.status}).`);
+  if (!isDiscogsImageUrl(resp.url || url)) throw new Error("Redirecionamento inválido.");
+  const contentType = (resp.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+  if (!contentType.startsWith("image/")) throw new Error("A resposta não é uma imagem.");
+  return { bytes: Buffer.from(await resp.arrayBuffer()), contentType };
 }

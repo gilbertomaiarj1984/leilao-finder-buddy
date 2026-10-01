@@ -54,6 +54,7 @@ import {
   useGeminiModelQuery,
   queryKeys,
 } from "@/lib/queries";
+import { CoverPickerDialog } from "@/components/vinyl/cover-picker-dialog";
 import { BulkImportDialog, EditDialog } from "@/components/vinyl/colecao-dialogs";
 import { Draft, EMPTY_DRAFT, toDraft } from "@/components/vinyl/colecao-draft";
 
@@ -151,6 +152,7 @@ function ColecaoPage() {
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [coverItem, setCoverItem] = useState<CollectionItem | null>(null);
   const [identifying, setIdentifying] = useState(false);
 
   const query = useCollectionQuery();
@@ -519,6 +521,7 @@ function ColecaoPage() {
                             onRemove={() => removeMut.mutate(item.id)}
                             onReprocess={() => startReprocess(item.id)}
                             onTagsChange={(next) => tagsMut.mutate({ id: item.id, tags: next })}
+                            onPickCover={() => setCoverItem(item)}
                           />
                         ))}
                       </div>
@@ -558,6 +561,18 @@ function ColecaoPage() {
         </div>
       </Tabs>
 
+      <CoverPickerDialog
+        open={coverItem !== null}
+        artist={coverItem?.artist ?? ""}
+        album={coverItem?.album ?? ""}
+        onClose={() => setCoverItem(null)}
+        onPick={async (url) => {
+          if (!coverItem) return;
+          await updateItem({ data: { id: coverItem.id, image: url } });
+          await invalidate();
+          toast.success("Capa atualizada.");
+        }}
+      />
       <EditDialog
         draft={draft}
         saving={saveMut.isPending}

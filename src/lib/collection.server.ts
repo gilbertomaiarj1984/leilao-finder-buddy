@@ -728,6 +728,23 @@ export async function uploadCollectionImage(dataUrl: string): Promise<{ url: str
 }
 
 /**
+ * Baixa a capa escolhida no Discogs (só hosts `*.discogs.com`), comprime (mesmo fluxo do upload
+ * manual) e grava na pasta da coleção. Devolve a URL pública para gravar em `image`.
+ */
+export async function importCollectionCover(url: string): Promise<{ url: string }> {
+  const { downloadDiscogsImage } = await import("./discogs.server");
+  const { bytes } = await downloadDiscogsImage(url);
+  if (!bytes.length) throw new Error("Imagem vazia.");
+  if (bytes.length > MAX_IMAGE_BYTES) throw new Error("Imagem muito grande.");
+  const compressed = await compressCollectionImage(bytes);
+  const { publicUrl } = await uploadCollectionFile(
+    `${crypto.randomUUID()}.${compressed.ext}`,
+    compressed.bytes,
+  );
+  return { url: publicUrl };
+}
+
+/**
  * Backfill (v0.57.0): fotos da coleção enviadas antes da compressão automática existir, ainda
  * em resolução cheia no bucket. Compartilhado pelo cron (`step=compressimages`, chunked) e pelo
  * script standalone `scripts/compress-collection-images.ts` (roda tudo de uma vez, fora do

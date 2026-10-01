@@ -27,6 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EditDialog } from "@/components/vinyl/colecao-dialogs";
+import { CoverPickerDialog } from "@/components/vinyl/cover-picker-dialog";
 import { EMPTY_DRAFT, type Draft } from "@/components/vinyl/colecao-draft";
 import { readFileAsDataUrl } from "@/components/vinyl/collection-utils";
 import { GradeSelect } from "@/components/vinyl/grade-select";
@@ -71,6 +72,7 @@ type ViewMode = "flat" | "day" | "house";
 // --- "Enviar para a coleção": edita e cria um disco novo a partir de uma compra ---
 type SendDraft = {
   purchase: Purchase;
+  image: string | null; // capa (da compra, ou trocada pelo seletor do Discogs)
   artist: string;
   album: string;
   year: string;
@@ -86,6 +88,7 @@ function draftFromPurchase(p: Purchase): SendDraft {
   const guess = extractArtist(p.title);
   return {
     purchase: p,
+    image: p.image,
     artist: guess ? titleCase(guess) : "",
     album: "",
     year: "",
@@ -105,7 +108,7 @@ function extraDraftFrom(d: SendDraft): Draft {
     album: d.album,
     title: d.purchase.title,
     year: d.year,
-    image: d.purchase.image,
+    image: d.image,
     // Valor pago fica em branco: o da compra é do lote inteiro, quem digita é o usuário.
     wonPrice: "",
     wonDate: d.purchase.wonDate ?? "",
@@ -277,7 +280,7 @@ function ComprasPage() {
           album: d.album,
           title: d.purchase.title,
           year: d.year.trim() ? Number(d.year) || null : null,
-          image: d.purchase.image,
+          image: d.image,
           house: d.purchase.house,
           uf: d.purchase.uf,
           wonPrice: d.purchase.wonPrice,
@@ -820,6 +823,7 @@ function SendToCollectionDialog({
   onAlreadySent: () => void;
 }) {
   const set = (patch: Partial<SendDraft>) => draft && onChange({ ...draft, ...patch });
+  const [pickingCover, setPickingCover] = useState(false);
   const busy = sending || identifying;
 
   return (
@@ -837,9 +841,30 @@ function SendToCollectionDialog({
             }}
           >
             <div className="flex items-center justify-between gap-2 sm:col-span-2">
-              <p className="text-sm text-muted-foreground">
-                {draft.purchase.title || "(sem título)"}
-              </p>
+              <div className="flex min-w-0 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPickingCover(true)}
+                  disabled={busy}
+                  title="Trocar capa (buscar no Discogs)"
+                  className="shrink-0 rounded hover:ring-2 hover:ring-primary"
+                >
+                  {draft.image ? (
+                    <img
+                      src={draft.image}
+                      alt=""
+                      className="h-20 w-20 rounded bg-secondary object-contain"
+                    />
+                  ) : (
+                    <div className="flex h-20 w-20 items-center justify-center rounded bg-secondary text-center text-[11px] text-muted-foreground">
+                      sem foto — buscar capa
+                    </div>
+                  )}
+                </button>
+                <p className="text-sm text-muted-foreground">
+                  {draft.purchase.title || "(sem título)"}
+                </p>
+              </div>
               <div className="flex shrink-0 flex-col items-stretch gap-2">
                 <Button
                   type="button"
@@ -946,6 +971,15 @@ function SendToCollectionDialog({
           </form>
         ) : null}
       </DialogContent>
+      <CoverPickerDialog
+        open={pickingCover}
+        artist={draft?.artist ?? ""}
+        album={draft?.album ?? ""}
+        onClose={() => setPickingCover(false)}
+        onPick={(url) => {
+          set({ image: url });
+        }}
+      />
     </Dialog>
   );
 }
