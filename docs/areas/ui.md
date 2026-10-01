@@ -588,6 +588,15 @@ Três valores de **fontes diferentes** — não confundir:
   vigiados/lances). Quando há lote(s) recém-coberto(s), dispara `toast.warning` (`sonner`, já
   montado globalmente em `__root.tsx`) — um toast por lote, ou agrupado se vier mais de um na
   mesma leva.
+- **v0.100.0:** o toast **não some sozinho** (`duration: Infinity` + `closeButton`) e lista só
+  `Lote N — Artista — Álbum` por lote (`formatCoveredLot`, `ai-score-utils.ts`; álbum resolvido
+  via `albumById`, passado ao hook como `albumFor`; sem álbum cai no título do lance).
+- **Aba Vigiados — Atualizar + auto-refresh (v0.100.0):** botão "Atualizar" ao lado de
+  "Por casa/Por artista" chama `refreshWatchedAndBids` (`use-dashboard-data.tsx`: refaz
+  `watched` + `bids` juntos, com guarda contra chamadas concorrentes). Enquanto a aba está aberta
+  (`tab === "watched"`) e a página visível, o mesmo refresh roda sozinho a cada 60 s
+  (`AUTO_REFRESH_MS`, `watched-tab.tsx`), **silencioso** (sem toast) — o aviso de coberto continua
+  disparando pelo `useBidCoveredAlerts`.
 - **Indicador persistente na tela** continua sendo o badge vermelho já existente
   (`BidStatBadges`/`HouseStats.red`, `badges.tsx`/`grouping.ts`) — não foi criado nenhum badge
   novo, o toast é só o "empurrão" ativo.

@@ -323,9 +323,6 @@ function AnalisePage() {
   // "sumirem depois de um tempo" mesmo sem o usuário ter desvigiado nada.
   const { query: watchedQuery, accumRef: watchedAccumRef } = useWatchedQuery();
   const { query: bidsQuery } = useBidsQuery();
-  // Aviso (toast) quando um lote com lance vira "Coberto" — só com o app aberto, ver
-  // `@/lib/bid-alerts`.
-  useBidCoveredAlerts(bidsQuery.data);
 
   const saveInterestsMut = useMutation({
     mutationFn: (items: string[]) => saveInterests({ data: { items } }),
@@ -473,6 +470,9 @@ function AnalisePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiAlbumSig, identAlbumSig]);
   const albumFor = (lot: VinylLot): string | null => albumById.get(lot.id) ?? null;
+  // Aviso (toast) quando um lote com lance vira "Coberto" — só com o app aberto, ver
+  // `@/lib/bid-alerts`.
+  useBidCoveredAlerts(bidsQuery.data, (id) => albumById.get(id) ?? null);
   const matchesInterest = useMemo(
     () => buildInterestMatcher(interestsQuery.data ?? []),
     [interestsQuery.data],

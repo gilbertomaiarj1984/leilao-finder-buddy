@@ -56,6 +56,24 @@ export function formatAiAlbum(
   return year ? `${core} (${year})` : core;
 }
 
+/**
+ * Linha curta do aviso de lance superado: `Lote 12 — Artista — Álbum` (sem ano). `albumRaw` é o
+ * álbum resolvido pela IA ("Artista - Álbum (1970)"); sem ele, cai no título cru do lance.
+ */
+export function formatCoveredLot(
+  lot: { lote: string; title: string },
+  albumRaw: string | null | undefined,
+): string {
+  const parsed = parseAiAlbum(albumRaw);
+  const artist = parsed.artist ? titleCase(parsed.artist) : null;
+  const what =
+    artist && parsed.album
+      ? `${artist} — ${parsed.album}`
+      : (artist ?? parsed.album ?? lot.title.trim());
+  const lote = lot.lote.trim();
+  return lote ? `Lote ${lote} — ${what}` : what;
+}
+
 /** Avaliação da IA consumida pela UI (o que compõe a nota do lote). */
 export type LotAi = {
   score: number | null;
