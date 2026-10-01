@@ -3,6 +3,9 @@
 Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/version.ts`
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
+
+- **v0.103.0** — Capa pelo Discogs: clicar na imagem do card da Coleção, na foto do formulário de disco e na miniatura do "Enviar para a coleção" abre o seletor (`CoverPickerDialog`) com opções achadas no Discogs; a capa escolhida é baixada (só `*.discogs.com`), comprimida e gravada como as demais fotos. Link do leilão segue no rodapé do card. Não validado no navegador (precisa de `DISCOGS_TOKEN`).
+- **v0.102.0** — Compras: "Enviar para a coleção" ganha "Adicionar disco" (abre o formulário de disco pré-preenchido, valor pago em branco) para lotes com vários LPs, e o rodapé vira "Item já enviado" / "Enviar para coleção". Os discos extras guardam a compra de origem em `collection_items.origin_lot_id` (rastro, sem vínculo). Não validado no navegador.
 - **v0.101.1** — Badges de vigia/ganhando/coberto viram filtro também nas abas de dia (lista geral por casa e "Vigiados do dia"); o filtro (`statFilter`) passa a ser único, em `use-dashboard-data.tsx`, e vale para o app todo.
 - **v0.101.0** — Vigiados: os badges da casa/artista/catálogo (olho amarelo = vigia, verde = ganhando, vermelho = coberto) viram filtro — clicar filtra a aba toda por aquele grupo, clicar de novo limpa (`HouseStatBadges` com `onToggle`, `houseStatKind` em `grouping.ts`).
 - **v0.100.0** — Vigiados: botão "Atualizar" (vigiados + lances) ao lado de "Por casa/Por artista" e auto-atualização silenciosa a cada 1 min enquanto a aba está aberta. O aviso de lance superado fica aberto até ser fechado (botão X) e mostra só nº do lote, artista e álbum.

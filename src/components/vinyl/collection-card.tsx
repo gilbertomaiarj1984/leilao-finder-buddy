@@ -14,6 +14,7 @@ export function CollectionCard({
   onRemove,
   onReprocess,
   onTagsChange,
+  onPickCover,
 }: {
   item: CollectionItem;
   busy: boolean;
@@ -24,6 +25,8 @@ export function CollectionCard({
   onRemove?: () => void;
   onReprocess?: () => void;
   onTagsChange?: (next: string[]) => void;
+  // Clicar na imagem abre o seletor de capa do Discogs (o link do leilão segue no rodapé).
+  onPickCover?: () => void;
 }) {
   const artistLine = item.artist || "(sem artista)";
   const albumLine =
@@ -34,7 +37,16 @@ export function CollectionCard({
 
   return (
     <article className="relative flex flex-col overflow-hidden rounded-md border border-border bg-card">
-      {item.sourceUrl ? (
+      {onPickCover ? (
+        <button
+          type="button"
+          onClick={onPickCover}
+          title="Trocar capa (buscar no Discogs)"
+          className="block w-full bg-secondary"
+        >
+          <CardImage image={item.image} alt={alt} />
+        </button>
+      ) : item.sourceUrl ? (
         <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="block bg-secondary">
           <CardImage image={item.image} alt={alt} />
         </a>

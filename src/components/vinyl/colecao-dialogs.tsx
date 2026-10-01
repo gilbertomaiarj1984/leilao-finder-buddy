@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { CoverPickerDialog } from "@/components/vinyl/cover-picker-dialog";
 import { GradeSelect } from "@/components/vinyl/grade-select";
 import { GEMINI_IMPORT_PROMPT, parseCollectionBulkText } from "@/lib/collection-bulk";
 import { Draft } from "@/components/vinyl/colecao-draft";
@@ -163,6 +164,7 @@ export function EditDialog({
   onUpload: (file: File) => Promise<string>;
 }) {
   const [uploading, setUploading] = useState(false);
+  const [pickingCover, setPickingCover] = useState(false);
   const cameraRef = useRef<HTMLInputElement>(null);
   const set = (patch: Partial<Draft>) => draft && onChange({ ...draft, ...patch });
 
@@ -199,17 +201,25 @@ export function EditDialog({
             <div className="sm:col-span-2">
               <Field label="Foto (capa)">
                 <div className="flex items-center gap-3">
-                  {draft.image ? (
-                    <img
-                      src={draft.image}
-                      alt=""
-                      className="h-20 w-20 shrink-0 rounded bg-secondary object-contain"
-                    />
-                  ) : (
-                    <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded bg-secondary text-[11px] text-muted-foreground">
-                      sem foto
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setPickingCover(true)}
+                    disabled={uploading || saving}
+                    title="Trocar capa (buscar no Discogs)"
+                    className="shrink-0 rounded hover:ring-2 hover:ring-primary"
+                  >
+                    {draft.image ? (
+                      <img
+                        src={draft.image}
+                        alt=""
+                        className="h-20 w-20 rounded bg-secondary object-contain"
+                      />
+                    ) : (
+                      <div className="flex h-20 w-20 items-center justify-center rounded bg-secondary text-center text-[11px] text-muted-foreground">
+                        sem foto — buscar capa
+                      </div>
+                    )}
+                  </button>
                   <div className="flex flex-col items-start gap-1">
                     <input
                       type="file"
@@ -348,6 +358,15 @@ export function EditDialog({
           </form>
         ) : null}
       </DialogContent>
+      <CoverPickerDialog
+        open={pickingCover}
+        artist={draft?.artist ?? ""}
+        album={draft?.album ?? ""}
+        onClose={() => setPickingCover(false)}
+        onPick={(url) => {
+          set({ image: url });
+        }}
+      />
     </Dialog>
   );
 }

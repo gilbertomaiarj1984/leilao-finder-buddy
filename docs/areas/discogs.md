@@ -25,3 +25,16 @@
   colunas base. Cron `step=market`.
 - **Reprocessar:** o `basis` não muda, então matches errados já gravados **não** são
   reconsultados sozinhos → `DELETE FROM lot_market` (ou só os suspeitos) e rodar o `refresh.yml`.
+
+## Seletor de capa (v0.103.0)
+
+- `searchCoverOptions(artist, album)` (`discogs.server.ts`) usa `/database/search` (vinil estruturado,
+  completa com texto livre se vierem poucos) e `toCoverOptions` mantém só resultados com imagem real
+  (descarta `spacer.gif` e duplicadas), máx. 12. Exige `DISCOGS_TOKEN`.
+- `importCollectionCover(url)` (`collection.server.ts`) baixa a imagem (`downloadDiscogsImage`, **só
+  https em `*.discogs.com`** — `isDiscogsImageUrl`, anti-SSRF; manda `Authorization: Discogs token=`),
+  passa por `compressCollectionImage` (WEBP) e grava em `COLLECTION_DIR`; devolve a URL local, sem
+  hotlink para o Discogs.
+- UI: `CoverPickerDialog` (`cover-picker-dialog.tsx`), aberto ao clicar na imagem do `CollectionCard`
+  (grava via `updateCollectionItem({id, image})`), na foto do `EditDialog` e na miniatura do
+  `SendToCollectionDialog`. Busca pré-preenchida com artista/álbum, editável.

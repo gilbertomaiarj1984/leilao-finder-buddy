@@ -119,7 +119,15 @@ midia, capa, valor, tags, notas}`. Parser puro/**client-safe** `parseCollectionB
   `collection.server.ts`) com `lotId` = o `lot_id` da compra: grava `source: "auction"` e
   `lot_id` preenchido (igual à antiga varredura direta), herdando valor pago/data/casa/UF/imagem
   da própria compra. Recusa reenviar a mesma peça duas vezes (`existing.some(i => i.lotId ===
-  input.lotId)`).
+input.lotId)`).
+  - **Lote com vários LPs (v0.102.0):** o diálogo tem **"Adicionar disco"** (abaixo de "Identificar
+    pela IA"), que abre o `EditDialog` da Coleção pré-preenchido com o que está na tela
+    (artista/álbum/ano/grading/tags/descritivo/notas, capa e data da compra; **valor pago em
+    branco** — o usuário digita). O extra é gravado por `addCollectionItem` com `originLotId` (coluna
+    `collection_items.origin_lot_id`, só **rastro** da compra; `lot_id` segue `UNIQUE` e fica com o
+    disco principal). Pode repetir N vezes. Rodapé: **"Enviar para coleção"** (cria o disco principal,
+    vinculando `lot_id`) e **"Item já enviado"** (habilitado após ≥1 extra; vincula a compra ao
+    último extra via `applyCollectionDecision`, sem criar outro disco).
 - **IA por TEXTO (opt-in, gasta créditos):** dois caminhos, ambos via **`identCollectionSync`**.
   - **Em massa — botão "Identificar novos (IA)"** no header → `identifyCollection({offset, max,
 onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda sem
