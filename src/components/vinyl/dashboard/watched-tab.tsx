@@ -6,9 +6,11 @@ import {
   ChevronUp,
   ExternalLink,
   GripVertical,
+  Loader2,
   Pencil,
+  RefreshCw,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +46,9 @@ const chipClass = (active: boolean) =>
       ? "border-primary bg-primary text-primary-foreground"
       : "border-border text-muted-foreground hover:border-primary hover:text-primary"
   }`;
+
+/** Intervalo do auto-refresh de vigiados + lances enquanto a aba Vigiados está aberta. */
+const AUTO_REFRESH_MS = 60_000;
 
 const smallButtonClass =
   "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary";
@@ -83,7 +88,21 @@ export function WatchedTab({ d }: { d: DashboardData }) {
     editTags,
     soldById,
     toggle,
+    tab,
+    refreshWatchedAndBids,
+    refreshingWatchedAndBids,
   } = d;
+  // Enquanto a aba Vigiados está aberta, atualiza vigiados + lances a cada minuto (silencioso).
+  // A ref evita recriar o intervalo a cada render (a função fecha sobre as queries atuais).
+  const refreshRef = useRef(refreshWatchedAndBids);
+  refreshRef.current = refreshWatchedAndBids;
+  useEffect(() => {
+    if (tab !== "watched") return;
+    const id = window.setInterval(() => {
+      if (!document.hidden) refreshRef.current(true);
+    }, AUTO_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [tab]);
   const [selectedDay, setSelectedDay] = useState<string>("all");
   // Visão: "casa" (padrão, casa → catálogo) ou "artista" (artista → cards com barra de origem).
   const [view, setView] = useState<"casa" | "artista">("casa");
@@ -349,6 +368,21 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                   className={chipClass(view === "artista")}
                 >
                   Por artista
+                </button>
+                <button
+                  type="button"
+                  onClick={() => refreshWatchedAndBids()}
+                  disabled={refreshingWatchedAndBids}
+                  title="Atualizar vigiados e lances agora (atualiza sozinho a cada minuto nesta tela)"
+                  aria-label="Atualizar vigiados e lances"
+                  className={`${chipClass(false)} disabled:opacity-60`}
+                >
+                  {refreshingWatchedAndBids ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                  Atualizar
                 </button>
               </div>
               <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Dia">

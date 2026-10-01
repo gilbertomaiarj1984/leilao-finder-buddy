@@ -5,6 +5,8 @@
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
+import { formatCoveredLot } from "@/components/vinyl/ai-score-utils";
+
 import { bidIsCovered } from "./vinyl-parse";
 import { loadAccum, saveAccum } from "./watched-accum";
 import type { MyBid } from "./leiloesbr-bids.server";
@@ -35,11 +37,17 @@ function detectNewlyCoveredBids(
  * `bids.data` da MESMA query `["vinyl-my-bids"]` usada em `index.tsx`/`analise.tsx` — o
  * snapshot é compartilhado (mesma chave de `localStorage`) entre as duas rotas.
  */
-export function useBidCoveredAlerts(bids: MyBid[] | undefined): void {
+export function useBidCoveredAlerts(
+  bids: MyBid[] | undefined,
+  albumFor?: (lotId: string) => string | null,
+): void {
   const snapshotRef = useRef<Map<string, string> | null>(null);
   if (snapshotRef.current === null) {
     snapshotRef.current = loadAccum<string>(BID_STATUS_SNAPSHOT_KEY);
   }
+  // Ref para o efeito não reexecutar (e reavisar) quando só a função de álbum muda.
+  const albumForRef = useRef(albumFor);
+  albumForRef.current = albumFor;
 
   useEffect(() => {
     if (!bids) return;
@@ -47,13 +55,17 @@ export function useBidCoveredAlerts(bids: MyBid[] | undefined): void {
     snapshotRef.current = nextSnapshot;
     saveAccum(BID_STATUS_SNAPSHOT_KEY, nextSnapshot);
     if (newlyCovered.length === 0) return;
-    if (newlyCovered.length === 1) {
-      const bid = newlyCovered[0];
-      toast.warning(`Lance superado: ${bid.title}`, { description: bid.house });
-    } else {
-      toast.warning(`${newlyCovered.length} lances foram superados`, {
-        description: newlyCovered.map((b) => b.title).join(", "),
-      });
-    }
+    // Fica aberto até o usuário fechar (sem timeout) e mostra só nº do lote, artista e álbum.
+    toast.warning(
+      newlyCovered.length === 1 ? "Lance superado" : `${newlyCovered.length} lances superados`,
+      {
+        description: newlyCovered
+          .map((b) => formatCoveredLot(b, albumForRef.current?.(b.id)))
+          .join("\n"),
+        duration: Infinity,
+        closeButton: true,
+        style: { whiteSpace: "pre-line" },
+      },
+    );
   }, [bids]);
 }

@@ -326,9 +326,6 @@ export function useDashboardData() {
   // desta rota ao navegar entre as duas.
   const { query: watched, accumRef: watchedAccumRef } = useWatchedQuery();
   const { query: bids } = useBidsQuery();
-  // Aviso (toast) quando um lote com lance vira "Coberto" — só com o app aberto, ver
-  // `@/lib/bid-alerts`.
-  useBidCoveredAlerts(bids.data);
   // Avaliações da IA (score/raridade/oportunidade) e interesses do usuário: alimentam o
   // badge de nota no canto do card. Best-effort — sem avaliação, o card fica como hoje.
   const lotAiQuery = useLotAiQuery();
@@ -474,6 +471,9 @@ export function useDashboardData() {
     return map;
   }, [lotIdentQuery.data, lotAiQuery.data]);
   const albumFor = (lot: { id: string }): string | null => albumById.get(lot.id) ?? null;
+  // Aviso (toast) quando um lote com lance vira "Coberto" — só com o app aberto, ver
+  // `@/lib/bid-alerts`.
+  useBidCoveredAlerts(bids.data, (id) => albumById.get(id) ?? null);
   // Artista efetivo: o identificado pela IA (parte antes do "-") quando existir, senão o
   // artista heurístico do título. Alimenta o agrupamento e o filtro "por artista".
   const effectiveArtist = (lot: { id: string; artist: string; title?: string }): string => {
@@ -991,6 +991,36 @@ export function useDashboardData() {
         toast.error((error as Error)?.message || "Não foi possível atualizar os lances agora");
       } finally {
         setRefreshingBids(false);
+        void queryClient.invalidateQueries({ queryKey: ["lot-details"] });
+        void queryClient.invalidateQueries({ queryKey: ["sold-lots"] });
+      }
+    })();
+  };
+
+  // Vigiados + lances de uma vez (botão "Atualizar" da aba Vigiados e o auto-refresh de 1 min
+  // enquanto ela está aberta). `silent` = disparo automático: sem toast (nem de erro), para não
+  // poluir a tela a cada minuto. Ignora a chamada se a anterior ainda não terminou.
+  const [refreshingWatchedAndBids, setRefreshingWatchedAndBids] = useState(false);
+  const refreshingWatchedAndBidsRef = useRef(false);
+  const refreshWatchedAndBids = (silent = false) => {
+    if (refreshingWatchedAndBidsRef.current) return;
+    refreshingWatchedAndBidsRef.current = true;
+    void (async () => {
+      setRefreshingWatchedAndBids(true);
+      try {
+        const results = await Promise.all([
+          watched.refetch({ throwOnError: true }),
+          bids.refetch({ throwOnError: true }),
+        ]);
+        for (const r of results) if (r.error) throw r.error;
+        if (!silent) toast.success("Vigiados e lances atualizados");
+      } catch (error) {
+        if (!silent) {
+          toast.error((error as Error)?.message || "Não foi possível atualizar agora");
+        }
+      } finally {
+        refreshingWatchedAndBidsRef.current = false;
+        setRefreshingWatchedAndBids(false);
         void queryClient.invalidateQueries({ queryKey: ["lot-details"] });
         void queryClient.invalidateQueries({ queryKey: ["sold-lots"] });
       }
@@ -1541,6 +1571,8 @@ export function useDashboardData() {
     refreshingWatched,
     refreshBids,
     refreshingBids,
+    refreshWatchedAndBids,
+    refreshingWatchedAndBids,
     analyzeScope,
     analyzing,
     finishedToggleHost,
