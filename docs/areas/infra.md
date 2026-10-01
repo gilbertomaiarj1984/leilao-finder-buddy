@@ -87,6 +87,14 @@ folgado (49/500 MB), mas **egress do Supabase já estourado** e **Active CPU da 
 - **Lição:** a v0.48.1 planejou a partir do schema e mirou o tamanho do banco — alvo errado.
   Schema mostra o que _pode_ crescer; só telemetria mostra o que _está_ doendo.
 
+- **AgendaBoa no mesmo VPS (v0.99.4):** app separado (compose em `/opt/agendaboa`, rede externa
+  `proxy`) servido pelo Caddy em `agenda.143-95-214-240.sslip.io` → `agendaboa-app:3000`
+  (health check em `/login`). O `postgres` daqui entra também na rede externa `agendaboa_db`
+  (`external: true`, criada à mão: `docker network create agendaboa_db`) com o alias
+  `agendaboa-postgres`, mantendo a `default` (sem ela `app`/`backup` perderiam o banco). Só o
+  Postgres e o app do AgendaBoa participam dessa rede; o AgendaBoa deve usar banco e role próprios.
+  ⚠️ O deploy recria o container do Postgres (breve indisponibilidade) — mesclar fora do cron/backup.
+
 ## Ferramenta separada: `tools/missleiloes-sniper.user.js`
 
 Userscript (Tampermonkey/bookmarklet) que roda **na página do pregão ao vivo** do missleiloes
