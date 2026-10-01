@@ -591,6 +591,7 @@ Três valores de **fontes diferentes** — não confundir:
 - **v0.100.0:** o toast **não some sozinho** (`duration: Infinity` + `closeButton`) e lista só
   `Lote N — Artista — Álbum` por lote (`formatCoveredLot`, `ai-score-utils.ts`; álbum resolvido
   via `albumById`, passado ao hook como `albumFor`; sem álbum cai no título do lance).
+- **Badges como filtro (v0.101.0):** na aba Vigiados, `HouseStatBadges` recebe `active`/`onToggle` e vira botão (`aria-pressed`). O estado `statFilter` (`vigia`|`green`|`red`) filtra os lotes da aba inteira via `houseStatKind` (mesma regra do `computeHouseStats`); clicar de novo limpa. Se o filtro zera a lista, aparece "Limpar filtro". Fora da aba Vigiados (lista do dia) os badges seguem só informativos.
 - **Aba Vigiados — Atualizar + auto-refresh (v0.100.0):** botão "Atualizar" ao lado de
   "Por casa/Por artista" chama `refreshWatchedAndBids` (`use-dashboard-data.tsx`: refaz
   `watched` + `bids` juntos, com guarda contra chamadas concorrentes). Enquanto a aba está aberta

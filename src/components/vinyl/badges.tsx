@@ -1,4 +1,5 @@
 import { Clock, Eye, Trophy } from "lucide-react";
+import type { ReactNode } from "react";
 
 import type { AuctionStatus, BidStats, HouseAuctionInfo, HouseStats } from "./grouping";
 import { LiveLotNow } from "./live-lot-now";
@@ -50,37 +51,75 @@ export function AuctionStatusInline({ info }: { info: HouseAuctionInfo | null })
   );
 }
 
-/** Contadores ao lado do nome da casa: vigia, lance verde e lance vermelho. */
-export function HouseStatBadges({ stats }: { stats: HouseStats }) {
+const HOUSE_STAT_BADGES: {
+  key: keyof HouseStats;
+  title: string;
+  className: string;
+  icon: ReactNode;
+}[] = [
+  {
+    key: "vigia",
+    title: "Lotes vigiados",
+    className: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
+    icon: <Eye className="h-3 w-3" />,
+  },
+  {
+    key: "green",
+    title: "Lotes com lance ganhando (verde)",
+    className: "bg-green-500/15 text-green-700 dark:text-green-400",
+    icon: <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden />,
+  },
+  {
+    key: "red",
+    title: "Lotes com lance coberto (vermelho)",
+    className: "bg-red-500/15 text-red-700 dark:text-red-400",
+    icon: <span className="h-2 w-2 rounded-full bg-red-500" aria-hidden />,
+  },
+];
+
+/**
+ * Contadores ao lado do nome da casa: vigia, lance verde e lance vermelho. Com `onToggle`
+ * viram botões de filtro (`active` = o filtro em vigor, destacado com anel).
+ */
+export function HouseStatBadges({
+  stats,
+  active,
+  onToggle,
+}: {
+  stats: HouseStats;
+  active?: keyof HouseStats | null;
+  onToggle?: (key: keyof HouseStats) => void;
+}) {
   return (
     <>
-      {stats.vigia > 0 ? (
-        <span
-          title="Lotes vigiados"
-          className="inline-flex items-center gap-1 rounded bg-yellow-500/15 px-1.5 py-0.5 text-xs font-medium text-yellow-700 dark:text-yellow-400"
-        >
-          <Eye className="h-3 w-3" />
-          {stats.vigia}
-        </span>
-      ) : null}
-      {stats.green > 0 ? (
-        <span
-          title="Lotes com lance ganhando (verde)"
-          className="inline-flex items-center gap-1 rounded bg-green-500/15 px-1.5 py-0.5 text-xs font-medium text-green-700 dark:text-green-400"
-        >
-          <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden />
-          {stats.green}
-        </span>
-      ) : null}
-      {stats.red > 0 ? (
-        <span
-          title="Lotes com lance coberto (vermelho)"
-          className="inline-flex items-center gap-1 rounded bg-red-500/15 px-1.5 py-0.5 text-xs font-medium text-red-700 dark:text-red-400"
-        >
-          <span className="h-2 w-2 rounded-full bg-red-500" aria-hidden />
-          {stats.red}
-        </span>
-      ) : null}
+      {HOUSE_STAT_BADGES.map(({ key, title, className, icon }) => {
+        if (stats[key] <= 0) return null;
+        const base = `inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${className}`;
+        if (!onToggle) {
+          return (
+            <span key={key} title={title} className={base}>
+              {icon}
+              {stats[key]}
+            </span>
+          );
+        }
+        const on = active === key;
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onToggle(key)}
+            aria-pressed={on}
+            title={`${title} — ${on ? "clique para limpar o filtro" : "clique para filtrar"}`}
+            className={`${base} cursor-pointer transition-shadow hover:ring-1 hover:ring-current ${
+              on ? "ring-2 ring-current" : ""
+            }`}
+          >
+            {icon}
+            {stats[key]}
+          </button>
+        );
+      })}
     </>
   );
 }

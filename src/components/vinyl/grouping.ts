@@ -127,21 +127,26 @@ export function computeHouseStats(
   watchedIds: Set<string>,
   bidStatusById: Map<string, string>,
 ): HouseStats {
-  let vigia = 0;
-  let green = 0;
-  let red = 0;
+  const stats: HouseStats = { vigia: 0, green: 0, red: 0 };
   for (const lot of lots) {
-    const status = bidStatusById.get(lot.idPeca);
-    if (status) {
-      // Mesma prioridade das cores do card: lance ganhando = verde, coberto = vermelho.
-      if (bidIsWinning(status)) green += 1;
-      else red += 1;
-    } else if (watchedIds.has(lot.idPeca)) {
-      // Vigiado sem lance = amarelo (nº de vigia).
-      vigia += 1;
-    }
+    const kind = houseStatKind(lot.idPeca, watchedIds, bidStatusById);
+    if (kind) stats[kind] += 1;
   }
-  return { vigia, green, red };
+  return stats;
+}
+
+/**
+ * Em qual contador do lote cai: lance ganhando = verde, coberto = vermelho (mesma prioridade
+ * das cores do card); vigiado sem lance = amarelo (vigia); senão nenhum. Base do filtro dos badges.
+ */
+export function houseStatKind(
+  idPeca: string,
+  watchedIds: Set<string>,
+  bidStatusById: Map<string, string>,
+): keyof HouseStats | null {
+  const status = bidStatusById.get(idPeca);
+  if (status) return bidIsWinning(status) ? "green" : "red";
+  return watchedIds.has(idPeca) ? "vigia" : null;
 }
 
 /**
