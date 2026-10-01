@@ -24,6 +24,8 @@ import {
   dayLabel,
   groupWatchedByArtist,
   groupWatchedByHouseCatalog,
+  houseStatKind,
+  type HouseStats,
   watchedDateToKey,
   watchedMatchesSearch,
 } from "@/components/vinyl/grouping";
@@ -106,6 +108,10 @@ export function WatchedTab({ d }: { d: DashboardData }) {
   const [selectedDay, setSelectedDay] = useState<string>("all");
   // Visão: "casa" (padrão, casa → catálogo) ou "artista" (artista → cards com barra de origem).
   const [view, setView] = useState<"casa" | "artista">("casa");
+  // Filtro pelos badges (vigia / lance ganhando / lance coberto); clicar de novo limpa.
+  const [statFilter, setStatFilter] = useState<keyof HouseStats | null>(null);
+  const toggleStatFilter = (key: keyof HouseStats) =>
+    setStatFilter((cur) => (cur === key ? null : key));
   // Correção do nome do artista (renomear/juntar) — mesmos apelidos do Analytics.
   const [editingArtist, setEditingArtist] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -214,13 +220,24 @@ export function WatchedTab({ d }: { d: DashboardData }) {
           // A busca principal filtra os vigiados; o resultado é agrupado por casa e, dentro
           // dela, por catálogo (idLeilao) — um catálogo multi-dia aparece em todos os dias que
           // atravessa quando o organizador por dia está filtrando.
-          const filtered = (watched.data ?? []).filter((lot) =>
-            watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
+          const filtered = (watched.data ?? []).filter(
+            (lot) =>
+              watchedMatchesSearch(lot, searchNorm, albumFor(lot)) &&
+              (!statFilter || houseStatKind(lot.idPeca, watchedIds, bidStatusById) === statFilter),
           );
           if (filtered.length === 0) {
             return (
               <p className="text-sm text-muted-foreground">
-                Nenhum lote vigiado corresponde à busca.
+                Nenhum lote vigiado corresponde à busca{statFilter ? " e ao filtro" : ""}.{" "}
+                {statFilter ? (
+                  <button
+                    type="button"
+                    onClick={() => setStatFilter(null)}
+                    className="text-primary hover:underline"
+                  >
+                    Limpar filtro
+                  </button>
+                ) : null}
               </p>
             );
           }
@@ -510,6 +527,8 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                           <Badge variant="outline">{group.houseCount} casa(s)</Badge>
                           <HouseStatBadges
                             stats={computeHouseStats(group.lots, watchedIds, bidStatusById)}
+                            active={statFilter}
+                            onToggle={toggleStatFilter}
                           />
                         </div>
                         {isOpen ? (
@@ -609,6 +628,8 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                           ) : null}
                           <HouseStatBadges
                             stats={computeHouseStats(houseLots, watchedIds, bidStatusById)}
+                            active={statFilter}
+                            onToggle={toggleStatFilter}
                           />
                           {single ? (
                             <>
@@ -690,6 +711,8 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                                         watchedIds,
                                         bidStatusById,
                                       )}
+                                      active={statFilter}
+                                      onToggle={toggleStatFilter}
                                     />
                                     <AuctionStatusInline info={info} />
                                     <div className="ml-auto flex flex-wrap items-center gap-3">

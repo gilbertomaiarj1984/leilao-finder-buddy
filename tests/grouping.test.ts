@@ -6,6 +6,7 @@ import {
   catalogHasDay,
   groupWatchedByArtist,
   groupWatchedByHouseCatalog,
+  houseStatKind,
 } from "../src/components/vinyl/grouping";
 
 const lot = (house: string, idLeilao: string, date: string, time: string, lote: string) => ({
@@ -143,5 +144,19 @@ describe("groupWatchedByArtist — mover lote", () => {
       sales: { "1-3": { artist: "Roger Waters" } },
     });
     expect(g.find((x) => x.artist === "Roger Waters (solo)")!.lots).toHaveLength(2);
+  });
+});
+
+describe("houseStatKind", () => {
+  const watched = new Set(["1", "2", "3"]);
+  const bids = new Map([
+    ["2", "Vencendo"],
+    ["3", "Coberto"],
+  ]);
+  test("classifica vigia, ganhando, coberto e nenhum", () => {
+    expect(houseStatKind("1", watched, bids)).toBe("vigia");
+    expect(houseStatKind("2", watched, bids)).toBe("green");
+    expect(houseStatKind("3", watched, bids)).toBe("red");
+    expect(houseStatKind("9", watched, bids)).toBeNull();
   });
 });
