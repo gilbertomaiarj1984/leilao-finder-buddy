@@ -30,6 +30,7 @@ import {
   groupWatchedByHouse,
   houseAnchor,
   houseAuctionInfo,
+  houseStatKind,
   matchesPriceRange,
   watchedDateToKey,
   watchedMatchesSearch,
@@ -110,6 +111,9 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     setHouseArtistFor,
     setHousePriceFor,
     closeAllHouses,
+    statFilter,
+    setStatFilter,
+    toggleStatFilter,
   } = d;
   const rawDay = (lots.data?.lots ?? [])
     .map((lot) => ({
@@ -141,15 +145,21 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
   ).filter(matchesSearch);
   const artists = artistOptions(dayLots);
   const globalActive = artistFilter !== "";
-  const visibleLots = globalActive
+  const byArtist = globalActive
     ? dayLots.filter((lot) => (lot.artist || UNCLASSIFIED_LABEL) === artistFilter)
     : dayLots;
+  // Filtro pelos badges (vigia / ganhando / coberto) — ver `statFilter` em use-dashboard-data.
+  const visibleLots = statFilter
+    ? byArtist.filter((lot) => houseStatKind(lot.idPeca, watchedIds, bidStatusById) === statFilter)
+    : byArtist;
   const groups = groupByHouse(visibleLots);
   const isWatchedView = watchedViewDay === day;
   // Vigiados do dia: a busca principal também filtra aqui.
   const watchedForDay = (watched.data ?? []).filter(
     (lot) =>
-      watchedDateToKey(lot.date) === day && watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
+      watchedDateToKey(lot.date) === day &&
+      watchedMatchesSearch(lot, searchNorm, albumFor(lot)) &&
+      (!statFilter || houseStatKind(lot.idPeca, watchedIds, bidStatusById) === statFilter),
   );
   // Vigiados do dia agrupados por casa e ordenados por nº do lote.
   const watchedByHouse = groupWatchedByHouse(watchedForDay);
@@ -279,6 +289,11 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                       Limpar filtro
                     </Button>
                   ) : null}
+                  {statFilter ? (
+                    <Button variant="ghost" size="sm" onClick={() => setStatFilter(null)}>
+                      Limpar filtro de status
+                    </Button>
+                  ) : null}
                   <span className="text-xs text-muted-foreground">
                     {visibleLots.length} lote(s) em {groups.length} casa(s)
                   </span>
@@ -286,6 +301,11 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
               ) : isWatchedView ? (
                 <span className="text-xs text-muted-foreground">
                   {watchedForDay.length} lote(s) vigiado(s) neste dia
+                  {statFilter ? (
+                    <Button variant="ghost" size="sm" onClick={() => setStatFilter(null)}>
+                      Limpar filtro de status
+                    </Button>
+                  ) : null}
                 </span>
               ) : (
                 <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -313,7 +333,9 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
         watched.isLoading ? (
           <Skeleton className="h-40 w-full" />
         ) : watchedForDay.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhum lote vigiado neste dia.</p>
+          <p className="text-sm text-muted-foreground">
+            Nenhum lote vigiado neste dia{statFilter ? " com este filtro" : ""}.
+          </p>
         ) : (
           <div className="space-y-8">
             {watchedByHouse.length > 1 ? (
@@ -353,6 +375,8 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     <Badge variant="secondary">{houseGroup.lots.length} lote(s)</Badge>
                     <HouseStatBadges
                       stats={computeHouseStats(houseGroup.lots, watchedIds, bidStatusById)}
+                      active={statFilter}
+                      onToggle={toggleStatFilter}
                     />
                     <AuctionStatusInline info={auctionInfo} />
                     <div className="ml-auto flex flex-wrap items-center gap-3">
@@ -444,11 +468,13 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
           <p className="text-sm text-muted-foreground">
             {searchNorm
               ? "Nenhum lote corresponde à busca neste dia."
-              : artistFilter
-                ? "Nenhum lote deste artista neste dia."
-                : rawDay.length === 0
-                  ? "Nenhum disco de vinil na varredura para este dia. Leilões que já estão ao vivo somem da listagem pública — tente “Atualizar tudo”."
-                  : `Todos os ${finishedCount} leilão(ões) deste dia já começaram há mais de 3h.`}
+              : statFilter
+                ? "Nenhum lote com este filtro de status neste dia."
+                : artistFilter
+                  ? "Nenhum lote deste artista neste dia."
+                  : rawDay.length === 0
+                    ? "Nenhum disco de vinil na varredura para este dia. Leilões que já estão ao vivo somem da listagem pública — tente “Atualizar tudo”."
+                    : `Todos os ${finishedCount} leilão(ões) deste dia já começaram há mais de 3h.`}
           </p>
           {!artistFilter && rawDay.length > 0 && !showFinished ? (
             <Button variant="outline" size="sm" onClick={() => toggleShowFinished(day)}>
@@ -590,6 +616,8 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     <Badge variant="secondary">{houseLots.length} lotes</Badge>
                     <HouseStatBadges
                       stats={computeHouseStats(houseLots, watchedIds, bidStatusById)}
+                      active={statFilter}
+                      onToggle={toggleStatFilter}
                     />
                     <AuctionStatusInline info={auctionInfo} />
                     <div className="ml-auto flex flex-wrap items-center gap-3">

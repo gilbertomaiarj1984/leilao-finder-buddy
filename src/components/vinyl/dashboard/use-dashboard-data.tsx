@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { watchedDateToKey } from "@/components/vinyl/grouping";
+import { watchedDateToKey, type HouseStats } from "@/components/vinyl/grouping";
 import { type Condition, type Grade, parseConditionFromText, scoreCondition } from "@/lib/grading";
 import {
   buildInterestMatcher,
@@ -234,6 +234,11 @@ export function useDashboardData() {
   // sempre abertas. Aqui o padrão é o OPOSTO do `openHouses` acima: a casa começa ABERTA e
   // só entra neste set quando o usuário fecha (chave livre, cada tela usa seu prefixo:
   // `watched-day|`, `bids-day|`, `watched|`, `bids|`).
+  // Filtro pelos badges de casa/catálogo/artista (vigia / lance ganhando / lance coberto),
+  // único para o app todo (abas de dia, Vigiados do dia e aba Vigiados); clicar de novo limpa.
+  const [statFilter, setStatFilter] = useState<keyof HouseStats | null>(null);
+  const toggleStatFilter = (key: keyof HouseStats) =>
+    setStatFilter((cur) => (cur === key ? null : key));
   const [closedHouseSections, setClosedHouseSections] = useState<Set<string>>(new Set());
   const toggleHouseSection = (key: string) =>
     setClosedHouseSections((prev) => {
@@ -1573,6 +1578,9 @@ export function useDashboardData() {
     refreshingBids,
     refreshWatchedAndBids,
     refreshingWatchedAndBids,
+    statFilter,
+    setStatFilter,
+    toggleStatFilter,
     analyzeScope,
     analyzing,
     finishedToggleHost,
