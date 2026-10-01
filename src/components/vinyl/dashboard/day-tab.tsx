@@ -30,7 +30,7 @@ import {
   groupWatchedByHouse,
   houseAnchor,
   houseAuctionInfo,
-  houseStatKind,
+  matchesStatFilter,
   matchesPriceRange,
   watchedDateToKey,
   watchedMatchesSearch,
@@ -112,7 +112,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     setHousePriceFor,
     closeAllHouses,
     statFilter,
-    setStatFilter,
+    clearStatFilter,
     toggleStatFilter,
   } = d;
   const rawDay = (lots.data?.lots ?? [])
@@ -149,9 +149,9 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     ? dayLots.filter((lot) => (lot.artist || UNCLASSIFIED_LABEL) === artistFilter)
     : dayLots;
   // Filtro pelos badges (vigia / ganhando / coberto) — ver `statFilter` em use-dashboard-data.
-  const visibleLots = statFilter
-    ? byArtist.filter((lot) => houseStatKind(lot.idPeca, watchedIds, bidStatusById) === statFilter)
-    : byArtist;
+  const visibleLots = byArtist.filter((lot) =>
+    matchesStatFilter(lot.idPeca, watchedIds, bidStatusById, statFilter),
+  );
   const groups = groupByHouse(visibleLots);
   const isWatchedView = watchedViewDay === day;
   // Vigiados do dia: a busca principal também filtra aqui.
@@ -159,7 +159,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     (lot) =>
       watchedDateToKey(lot.date) === day &&
       watchedMatchesSearch(lot, searchNorm, albumFor(lot)) &&
-      (!statFilter || houseStatKind(lot.idPeca, watchedIds, bidStatusById) === statFilter),
+      matchesStatFilter(lot.idPeca, watchedIds, bidStatusById, statFilter),
   );
   // Vigiados do dia agrupados por casa e ordenados por nº do lote.
   const watchedByHouse = groupWatchedByHouse(watchedForDay);
@@ -289,8 +289,8 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                       Limpar filtro
                     </Button>
                   ) : null}
-                  {statFilter ? (
-                    <Button variant="ghost" size="sm" onClick={() => setStatFilter(null)}>
+                  {statFilter.size > 0 ? (
+                    <Button variant="ghost" size="sm" onClick={clearStatFilter}>
                       Limpar filtro de status
                     </Button>
                   ) : null}
@@ -301,8 +301,8 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
               ) : isWatchedView ? (
                 <span className="text-xs text-muted-foreground">
                   {watchedForDay.length} lote(s) vigiado(s) neste dia
-                  {statFilter ? (
-                    <Button variant="ghost" size="sm" onClick={() => setStatFilter(null)}>
+                  {statFilter.size > 0 ? (
+                    <Button variant="ghost" size="sm" onClick={clearStatFilter}>
                       Limpar filtro de status
                     </Button>
                   ) : null}
@@ -334,7 +334,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
           <Skeleton className="h-40 w-full" />
         ) : watchedForDay.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Nenhum lote vigiado neste dia{statFilter ? " com este filtro" : ""}.
+            Nenhum lote vigiado neste dia{statFilter.size > 0 ? " com este filtro" : ""}.
           </p>
         ) : (
           <div className="space-y-8">
@@ -468,7 +468,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
           <p className="text-sm text-muted-foreground">
             {searchNorm
               ? "Nenhum lote corresponde à busca neste dia."
-              : statFilter
+              : statFilter.size > 0
                 ? "Nenhum lote com este filtro de status neste dia."
                 : artistFilter
                   ? "Nenhum lote deste artista neste dia."

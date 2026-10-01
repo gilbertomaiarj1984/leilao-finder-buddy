@@ -24,7 +24,7 @@ import {
   dayLabel,
   groupWatchedByArtist,
   groupWatchedByHouseCatalog,
-  houseStatKind,
+  matchesStatFilter,
   watchedDateToKey,
   watchedMatchesSearch,
 } from "@/components/vinyl/grouping";
@@ -93,7 +93,7 @@ export function WatchedTab({ d }: { d: DashboardData }) {
     refreshWatchedAndBids,
     refreshingWatchedAndBids,
     statFilter,
-    setStatFilter,
+    clearStatFilter,
     toggleStatFilter,
   } = d;
   // Enquanto a aba Vigiados está aberta, atualiza vigiados + lances a cada minuto (silencioso).
@@ -221,16 +221,16 @@ export function WatchedTab({ d }: { d: DashboardData }) {
           const filtered = (watched.data ?? []).filter(
             (lot) =>
               watchedMatchesSearch(lot, searchNorm, albumFor(lot)) &&
-              (!statFilter || houseStatKind(lot.idPeca, watchedIds, bidStatusById) === statFilter),
+              matchesStatFilter(lot.idPeca, watchedIds, bidStatusById, statFilter),
           );
           if (filtered.length === 0) {
             return (
               <p className="text-sm text-muted-foreground">
-                Nenhum lote vigiado corresponde à busca{statFilter ? " e ao filtro" : ""}.{" "}
-                {statFilter ? (
+                Nenhum lote vigiado corresponde à busca{statFilter.size > 0 ? " e ao filtro" : ""}.{" "}
+                {statFilter.size > 0 ? (
                   <button
                     type="button"
-                    onClick={() => setStatFilter(null)}
+                    onClick={clearStatFilter}
                     className="text-primary hover:underline"
                   >
                     Limpar filtro

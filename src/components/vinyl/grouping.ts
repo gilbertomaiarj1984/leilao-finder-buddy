@@ -135,6 +135,21 @@ export function computeHouseStats(
   return stats;
 }
 
+/** Filtro dos badges com seleção múltipla (OU): vazio = sem filtro. */
+type StatFilter = ReadonlySet<keyof HouseStats>;
+
+/** O lote passa no filtro? Sem filtro, sempre; com filtro, só se cai em UM dos contadores marcados. */
+export function matchesStatFilter(
+  idPeca: string,
+  watchedIds: Set<string>,
+  bidStatusById: Map<string, string>,
+  filter: StatFilter,
+): boolean {
+  if (filter.size === 0) return true;
+  const kind = houseStatKind(idPeca, watchedIds, bidStatusById);
+  return kind !== null && filter.has(kind);
+}
+
 /**
  * Em qual contador do lote cai: lance ganhando = verde, coberto = vermelho (mesma prioridade
  * das cores do card); vigiado sem lance = amarelo (vigia); senão nenhum. Base do filtro dos badges.
