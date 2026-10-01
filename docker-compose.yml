@@ -78,7 +78,11 @@ services:
       # IF NOT EXISTS — rodar de novo à mão depois não quebra nada).
       - ./supabase-init:/docker-entrypoint-initdb.d:ro
     networks:
-      - default
+      default: {}
+      # Rede dedicada ao AgendaBoa (app separado, /opt/agendaboa): só o Postgres e o app dele
+      # participam. Criada fora deste compose (`docker network create agendaboa_db`).
+      agendaboa_db:
+        aliases: [agendaboa-postgres]
     # Sem `ports:` de propósito — acesso administrativo só por túnel SSH
     # (ver "Endurecimento da máquina" em docs/arquivo/economia-fase-2-vps-unico.md).
 
@@ -120,6 +124,9 @@ networks:
   # Rede overlay criada pelo instalador do Dokploy (Fase 7) — o Caddy entra nela só pra
   # alcançar o `dokploy-traefik` pelo nome, nada mais deste projeto usa essa rede.
   dokploy-network:
+    external: true
+  # Rede externa do AgendaBoa (ver serviço postgres).
+  agendaboa_db:
     external: true
   default:
 

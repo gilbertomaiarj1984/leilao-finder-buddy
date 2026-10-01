@@ -3,6 +3,7 @@
 Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/version.ts`
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
+- **v0.99.4** — Infra: Caddyfile ganha o site `agenda.143-95-214-240.sslip.io` (AgendaBoa) e o `postgres` entra na rede externa `agendaboa_db` com alias `agendaboa-postgres` (`docker-compose.yml`). O deploy recria o Postgres. Sem mudança de código/UI.
 - **v0.99.3** — Vigiados "Por casa": num catálogo multi-dia os lotes ficam em ordem crescente de data (depois nº do lote), em vez de só pelo nº do lote (`groupWatchedByHouseCatalog`). "Por artista" e as abas de dia já ordenavam por data.
 - **v0.99.2** — Vigiados "Por casa": em catálogos multi-dia, cada card ganha uma faixa grossa no topo com a data (e hora) do lote (`dateBar` em `lot-card.tsx`; cor segue vigiando/ganhando/coberto). Não validado no navegador.
 

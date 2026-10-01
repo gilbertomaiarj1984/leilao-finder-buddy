@@ -110,3 +110,12 @@ pdf.143-95-214-240.sslip.io {
 	}
 	reverse_proxy dokploy-traefik:8081
 }
+
+# AgendaBoa (app separado; compose em /opt/agendaboa na VPS, rede externa proxy)
+agenda.143-95-214-240.sslip.io {
+	reverse_proxy agendaboa-app:3000 {
+		health_uri /login
+		health_interval 10s
+		health_timeout 5s
+	}
+}
