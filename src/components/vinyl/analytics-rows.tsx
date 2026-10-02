@@ -1,6 +1,7 @@
 // Linhas, marcadores e controles do Vinil Analytics (artista → álbum → vendas).
 
 import { useMemo, useRef, useState } from "react";
+import { usePersistedState } from "@/lib/persisted-state";
 import type { DragEvent } from "react";
 
 import {
@@ -301,7 +302,7 @@ export function ArtistRow({
 }) {
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(false);
-  const [albumSort, setAlbumSort] = useState<AlbumSort>("count");
+  const [albumSort, setAlbumSort] = usePersistedState<AlbumSort>("analytics-album-sort", "count");
   const canEdit = !readOnly;
 
   const sortedAlbums = useMemo(() => {

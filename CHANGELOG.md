@@ -4,7 +4,8 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
-- **v0.105.1** — Persistência cobre o que faltou: Visão (casa/artista) e dia do Vigiados, filtros da Análise, busca/artista da Coleção, visão de Compras, busca/ordem do Analytics e "esconder topo" de todas as telas; restauração da rolagem reaplica até a página parar de crescer.
+- **v0.105.2** — Ordem dos álbuns e do detalhe no Analytics e busca/adquiridos da Wantlist passam a ser lembrados (`usePersistedState`).
+- **v0.105.1**** — Persistência cobre o que faltou: Visão (casa/artista) e dia do Vigiados, filtros da Análise, busca/artista da Coleção, visão de Compras, busca/ordem do Analytics e "esconder topo" de todas as telas; restauração da rolagem reaplica até a página parar de crescer.
 - **v0.105.0** — Home e demais telas lembram onde você estava ao recarregar/reabrir (aba/dia, página da barra de dias, busca, filtros, casas abertas/fechadas, rolagem) via `localStorage` (`persisted-state.ts`); botão "Atualizar relações" rebusca a Coleção e recalcula o casamento de todos os lotes respeitando os "não tenho".
 - **v0.104.0** — Filtro dos badges (vigia/ganhando/coberto) aceita seleção múltipla (OU): dá para marcar mais de um ao mesmo tempo (`statFilter` vira `Set`, `matchesStatFilter` em `grouping.ts`).
 - **v0.103.0** — Capa pelo Discogs: clicar na imagem do card da Coleção, na foto do formulário de disco e na miniatura do "Enviar para a coleção" abre o seletor (`CoverPickerDialog`) com opções achadas no Discogs; a capa escolhida é baixada (só `*.discogs.com`), comprimida e gravada como as demais fotos. Link do leilão segue no rodapé do card. Não validado no navegador (precisa de `DISCOGS_TOKEN`).
