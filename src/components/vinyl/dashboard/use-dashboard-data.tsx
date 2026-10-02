@@ -1,6 +1,13 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  localDayKey,
+  setCodec,
+  shiftSavedDayTab,
+  usePersistedScroll,
+  usePersistedState,
+} from "@/lib/persisted-state";
 import { toast } from "sonner";
 
 import { watchedDateToKey, type HouseStats } from "@/components/vinyl/grouping";
@@ -165,7 +172,7 @@ export function useDashboardData() {
   // direção do scroll). No desktop, esconder recolhe tudo MENOS a lista de dias/abas
   // (`TabsList`) — ela fica de fora do `HideableBar` colapsável, sempre visível, pra sempre
   // dar pra trocar de dia/Vigiados/Lances mesmo com o resto escondido.
-  const [barsHidden, setBarsHidden] = useState(false);
+  const [barsHidden, setBarsHidden] = usePersistedState("home-bars-hidden", false);
   // Altura real de cada parte do header sticky, medida ao vivo — as barras sticky internas
   // (dia/casas, seções de Vigiados/Lances) usam a soma como `top` para colar logo abaixo do
   // que estiver visível no momento, em vez de ficarem escondidas atrás. A `ref` fica no
@@ -177,6 +184,14 @@ export function useDashboardData() {
   const stickyBelowHeader = { top: tabsBarHeight + (barsHidden ? 0 : headerHeight) };
 
   const [tab, setTab] = useState<string>(`day-${TODAY_INDEX}`);
+  // Aba/página da barra de dias persistidas (recarregar ou reabrir o site volta ao mesmo lugar).
+  // `savedOn` permite reapontar `day-N` para o mesmo dia quando a data virou.
+  const [savedNav, setSavedNav, navHydrated] = usePersistedState<{
+    tab: string;
+    dayPage: number;
+    savedOn: string;
+  } | null>("home-nav", null);
+  const [navReady, setNavReady] = useState(false);
   // Página (de 5 dias) da barra de dias em exibição e as já visitadas: as páginas de histórico
   // e futuro só são buscadas (`useLotsRangeQueries`) depois de abertas pela primeira vez.
   const [dayPage, setDayPageState] = useState<number>(TODAY_PAGE);
@@ -185,6 +200,34 @@ export function useDashboardData() {
     setDayPageState(page);
     setVisitedPages((cur) => (cur.includes(page) ? cur : [...cur, page]));
   };
+  useEffect(() => {
+    if (!navHydrated) return;
+    if (savedNav && typeof savedNav.tab === "string") {
+      const today = localDayKey();
+      const restoredTab = shiftSavedDayTab(
+        savedNav.tab,
+        savedNav.savedOn,
+        today,
+        BAR_PAGES * DAY_PAGE,
+      );
+      const dayMatch = /^day-(\d+)$/.exec(restoredTab);
+      const page =
+        savedNav.savedOn === today && Number.isInteger(savedNav.dayPage)
+          ? savedNav.dayPage
+          : dayMatch
+            ? Math.floor(Number(dayMatch[1]) / DAY_PAGE)
+            : TODAY_PAGE;
+      const safePage = Math.max(0, Math.min(BAR_PAGES - 1, page));
+      setTab(restoredTab);
+      setDayPage(safePage);
+    }
+    setNavReady(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navHydrated]);
+  useEffect(() => {
+    if (!navReady) return;
+    setSavedNav({ tab, dayPage, savedOn: localDayKey() });
+  }, [navReady, tab, dayPage, setSavedNav]);
   // Alvo (via portal) para a barra de controles do dia (Vigiados/Lances/Analisar/casas),
   // renderizada dentro do header — acima da lista de dias — em vez de sticky abaixo dele.
   const [dayBarHost, setDayBarHost] = useState<HTMLDivElement | null>(null);
@@ -197,18 +240,31 @@ export function useDashboardData() {
   useEffect(() => {
     setFooterExtraHost(document.getElementById("footer-extra"));
   }, []);
-  const [artistFilter, setArtistFilter] = useState<string>("");
+  const [artistFilter, setArtistFilter] = usePersistedState<string>("home-artist-filter", "");
   // A busca só roda ao confirmar (Enter/botão) — evita filtrar a lista a cada tecla. O rascunho
   // digitado vive isolado em `LotSearchBox` para não re-renderizar esta árvore inteira a cada
   // tecla (era isso que travava a digitação, mesmo já não filtrando em tempo real).
-  const [search, setSearch] = useState<string>("");
-  const [watchedViewDay, setWatchedViewDay] = useState<string | null>(null);
-  const [bidsViewDay, setBidsViewDay] = useState<string | null>(null);
+  const [search, setSearch] = usePersistedState<string>("home-search", "");
+  const [watchedViewDay, setWatchedViewDay] = usePersistedState<string | null>(
+    "home-watched-view-day",
+    null,
+  );
+  const [bidsViewDay, setBidsViewDay] = usePersistedState<string | null>(
+    "home-bids-view-day",
+    null,
+  );
   // Estado de abertura dos grupos por dia na aba geral de Lances (chave = dayKey). Sem override
   // explícito, o dia atual (days[0]) começa aberto e os demais fechados — só grava aqui quando
   // o usuário clica, então o padrão segue acompanhando qual é "hoje" mesmo com o passar dos dias.
-  const [bidsDayOpen, setBidsDayOpen] = useState<Record<string, boolean>>({});
-  const [showFinishedDays, setShowFinishedDays] = useState<Set<string>>(new Set());
+  const [bidsDayOpen, setBidsDayOpen] = usePersistedState<Record<string, boolean>>(
+    "home-bids-day-open",
+    {},
+  );
+  const [showFinishedDays, setShowFinishedDays] = usePersistedState<Set<string>>(
+    "home-show-finished",
+    new Set(),
+    setCodec,
+  );
   const toggleShowFinished = (day: string) =>
     setShowFinishedDays((prev) => {
       const next = new Set(prev);
@@ -217,9 +273,19 @@ export function useDashboardData() {
       return next;
     });
   // Estado por casa (chave `${dia}|${casa}`): casas iniciam fechadas.
-  const [openHouses, setOpenHouses] = useState<Set<string>>(new Set());
-  const [houseArtist, setHouseArtist] = useState<Record<string, string>>({});
-  const [housePrice, setHousePrice] = useState<Record<string, string>>({});
+  const [openHouses, setOpenHouses] = usePersistedState<Set<string>>(
+    "home-open-houses",
+    new Set(),
+    setCodec,
+  );
+  const [houseArtist, setHouseArtist] = usePersistedState<Record<string, string>>(
+    "home-house-artist",
+    {},
+  );
+  const [housePrice, setHousePrice] = usePersistedState<Record<string, string>>(
+    "home-house-price",
+    {},
+  );
   const toggleHouse = (key: string) =>
     setOpenHouses((prev) => {
       const next = new Set(prev);
@@ -237,7 +303,15 @@ export function useDashboardData() {
   // Filtro pelos badges de casa/catálogo/artista (vigia / lance ganhando / lance coberto),
   // único para o app todo (abas de dia, Vigiados do dia e aba Vigiados); clicar de novo limpa.
   // Seleção múltipla (OU): vazio = sem filtro.
-  const [statFilter, setStatFilter] = useState<ReadonlySet<keyof HouseStats>>(new Set());
+  const [statFilterRaw, setStatFilterRaw] = usePersistedState<Set<string>>(
+    "home-stat-filter",
+    new Set(),
+    setCodec,
+  );
+  const statFilter = statFilterRaw as ReadonlySet<keyof HouseStats>;
+  const setStatFilter = setStatFilterRaw as unknown as Dispatch<
+    SetStateAction<ReadonlySet<keyof HouseStats>>
+  >;
   const clearStatFilter = () => setStatFilter(new Set());
   const toggleStatFilter = (key: keyof HouseStats) =>
     setStatFilter((cur) => {
@@ -246,7 +320,11 @@ export function useDashboardData() {
       else next.add(key);
       return next;
     });
-  const [closedHouseSections, setClosedHouseSections] = useState<Set<string>>(new Set());
+  const [closedHouseSections, setClosedHouseSections] = usePersistedState<Set<string>>(
+    "home-closed-sections",
+    new Set(),
+    setCodec,
+  );
   const toggleHouseSection = (key: string) =>
     setClosedHouseSections((prev) => {
       const next = new Set(prev);
@@ -736,6 +814,25 @@ export function useDashboardData() {
     // collLabel depende de collById (memo estável); ownedByLotId/identityById cobrem os dados.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownedCands, ownedByLotId, identityById, collById, collectionKeywordDenylist]);
+
+  // "Atualizar relações": rebusca Coleção, vínculos, rejeições ("não tenho") e termos negados —
+  // a Coleção fica em cache por 1h, então discos recém-adicionados (aqui ou em outro aparelho)
+  // não casavam com os lotes até expirar. O casamento é recalculado para TODOS os lotes e
+  // `resolveOwned` continua respeitando as decisões do usuário (rejeitado/vinculado não muda).
+  const [refreshingCollection, setRefreshingCollection] = useState(false);
+  const refreshCollectionMatches = async () => {
+    setRefreshingCollection(true);
+    try {
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: queryKeys.collection }),
+        queryClient.refetchQueries({ queryKey: queryKeys.collectionLinks }),
+        queryClient.refetchQueries({ queryKey: queryKeys.collectionFeedback }),
+        queryClient.refetchQueries({ queryKey: ["collection-keyword-denylist"] }),
+      ]);
+    } finally {
+      setRefreshingCollection(false);
+    }
+  };
 
   const EMPTY_IDENTITY: LotIdentity = useMemo(
     () => ({ text: "", tokens: new Set<string>(), years: new Set<number>() }),
@@ -1540,6 +1637,11 @@ export function useDashboardData() {
     [bids.data, houseUrlByName, houseTimeByDayHouse, dayKeyByLotId],
   );
 
+  usePersistedScroll(
+    `home:${tab}:${watchedViewDay ?? ""}:${bidsViewDay ?? ""}`,
+    navReady && !lots.isLoading,
+  );
+
   return {
     barsHidden,
     setBarsHidden,
@@ -1587,6 +1689,8 @@ export function useDashboardData() {
     refreshingWatchedAndBids,
     statFilter,
     clearStatFilter,
+    refreshingCollection,
+    refreshCollectionMatches,
     toggleStatFilter,
     analyzeScope,
     analyzing,

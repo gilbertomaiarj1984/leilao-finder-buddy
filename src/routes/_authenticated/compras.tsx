@@ -14,6 +14,7 @@ import {
   Store,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
+import { usePersistedScroll } from "@/lib/persisted-state";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -166,6 +167,7 @@ function groupPurchasesByHouse(purchases: Purchase[]) {
 
 function ComprasPage() {
   const [barsHidden, setBarsHidden] = useState(false);
+  usePersistedScroll("compras", true);
   const [viewMode, setViewMode] = useState<ViewMode>("flat");
   const queryClient = useQueryClient();
   const fetchPurchases = useServerFn(getPurchases);
