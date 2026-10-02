@@ -1,6 +1,7 @@
 // Diálogos do Vinil Analytics (detalhe da venda, edição de artista/álbum, detalhe do grupo).
 
 import { useMemo, useRef, useState } from "react";
+import { usePersistedState } from "@/lib/persisted-state";
 
 import { Check, EyeOff, ExternalLink } from "lucide-react";
 
@@ -588,7 +589,10 @@ export function DetailDialog({
   onClose: () => void;
 }) {
   // Padrão: score ascendente (pior → melhor), como o eixo dos mini cards.
-  const [sort, setSort] = useState<{ col: SortCol; dir: 1 | -1 }>({ col: "score", dir: 1 });
+  const [sort, setSort] = usePersistedState<{ col: SortCol; dir: 1 | -1 }>(
+    "analytics-detail-sort",
+    { col: "score", dir: 1 },
+  );
   const sorted = useMemo(() => {
     const list = [...album.sales];
     const { col, dir } = sort;
