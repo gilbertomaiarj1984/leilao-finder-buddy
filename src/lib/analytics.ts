@@ -98,7 +98,7 @@ function avg(values: (number | null)[]): number | null {
 }
 
 const FORMAT_PREFIX =
-  /^(lps?|disco de vinil|discos?|vinil|compacto|bolacha|ep|[aá]lbum)\b[\s:.\-–—]*/i;
+  /^(lps?|disco de vinil|discos?|vinil|compacto|bolacha|ep|[aá]lbum|duplo|triplo)\b[\s:.\-–—]*/i;
 
 // Marcador de estado embutido no título SEM dois-pontos ("… - CAPA VG+ - DISCO VG+/NM …"):
 // rótulo Capa/Disco/Mídia/Vinil seguido de um grau. Tudo a partir daí não é o nome do álbum.
@@ -113,6 +113,12 @@ const GRADE_MARK =
  */
 export function deriveAlbum(title: string, artist: string): string {
   let s = (title || "").trim();
+  // Metadados de catálogo após "|" ("2 Na Bossa | Código: P 632 | Artista(s): [...] | Ano") não
+  // fazem parte do nome — sem isso, a mesma obra vira um álbum à parte do título limpo.
+  const meta = s.match(
+    /\s*\|\s*(?:c[oó]digo|artistas?(?:\(s\))?|ano|estilos?(?:\(s\))?|g[eê]neros?|gravadora|selo|ref)\b/i,
+  );
+  if (meta && meta.index !== undefined && meta.index > 0) s = s.slice(0, meta.index);
   // Corta no 1º marcador de estado sem dois-pontos ("… - CAPA VG+ - DISCO VG+/NM - …").
   const mark = s.match(GRADE_MARK);
   if (mark && mark.index !== undefined && mark.index > 0) s = s.slice(0, mark.index);
@@ -134,6 +140,19 @@ export function deriveAlbum(title: string, artist: string): string {
     return "(álbum não identificado)";
   }
   return s;
+}
+
+/**
+ * Une singular/plural na chave do álbum ("Autógrafo de Sucessos" = "Autógrafos de Sucesso"):
+ * tira o "s" final de cada palavra longa. NÃO mexe em nomes com número (ano, "Vol. 1"/"2"), para
+ * nunca juntar edições diferentes.
+ */
+export function foldPlural(key: string): string {
+  if (/\d/.test(key)) return key;
+  return key
+    .split(" ")
+    .map((w) => (w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w))
+    .join(" ");
 }
 
 /** Médias por Faixa de Classificação (só faixas com pelo menos uma venda). */
@@ -267,7 +286,9 @@ export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): Art
     // Apelido de álbum: chave no escopo do artista FINAL (pós-alias), acompanhando fusões.
     const albumAliasKey = `${artistKey}|${rawAlbumKey}`;
     const albumOverride = albumAliases[albumAliasKey];
-    const albumKey = albumOverride ? normalizeForMatch(albumOverride) || rawAlbumKey : rawAlbumKey;
+    const albumKey = foldPlural(
+      albumOverride ? normalizeForMatch(albumOverride) || rawAlbumKey : rawAlbumKey,
+    );
 
     const aBucket: ArtistBucket = byArtist.get(artistKey) ?? {
       variants: [],
