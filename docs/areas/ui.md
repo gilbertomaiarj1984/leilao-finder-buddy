@@ -755,3 +755,9 @@ segue existindo, usado pela home ("Atualizar tudo" — desde v0.84.0 também rod
   Coleção (aba Cards/Títulos), Análise (dia) e rolagem de Compras/Ao vivo também.
 - "Atualizar relações" (rodapé da home): rebusca Coleção/vínculos/rejeições/termos negados (cache de
   1h) e o casamento é recalculado para todos os lotes; `resolveOwned` segue respeitando "não tenho".
+
+- **Persistência de filtros/ordenações (v0.105.2):** além do que já usava `usePersistedState`, agora também
+  lembram a escolha (chave `ui-state:*` no `localStorage`): ordem dos álbuns no artista do Analytics
+  (`analytics-album-sort`, alfabética vs. contagem), ordenação do diálogo de detalhe do álbum
+  (`analytics-detail-sort`) e busca/"mostrar adquiridos" do diálogo da Wantlist
+  (`wantlist-search`, `wantlist-show-acquired`). Estados de diálogo/rascunho seguem efêmeros de propósito.
