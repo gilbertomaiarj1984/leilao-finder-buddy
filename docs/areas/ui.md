@@ -753,5 +753,6 @@ segue existindo, usado pela home ("Atualizar tudo" — desde v0.84.0 também rod
   desiste se o usuário rolar). Home persiste aba, página da barra de dias (reapontada com
   `shiftSavedDayTab` se o dia virou), busca, filtros, casas abertas/fechadas, Vigiados/Lances do dia;
   Coleção (aba Cards/Títulos), Análise (dia) e rolagem de Compras/Ao vivo também.
+  Analytics também lembra a ordenação dos álbuns e do detalhe; Análise lembra "mostrar adquiridos".
 - "Atualizar relações" (rodapé da home): rebusca Coleção/vínculos/rejeições/termos negados (cache de
   1h) e o casamento é recalculado para todos os lotes; `resolveOwned` segue respeitando "não tenho".
