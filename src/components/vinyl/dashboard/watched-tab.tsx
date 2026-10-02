@@ -11,6 +11,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { usePersistedState } from "@/lib/persisted-state";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -107,9 +108,9 @@ export function WatchedTab({ d }: { d: DashboardData }) {
     }, AUTO_REFRESH_MS);
     return () => window.clearInterval(id);
   }, [tab]);
-  const [selectedDay, setSelectedDay] = useState<string>("all");
+  const [selectedDay, setSelectedDay] = usePersistedState<string>("watched-selected-day", "all");
   // Visão: "casa" (padrão, casa → catálogo) ou "artista" (artista → cards com barra de origem).
-  const [view, setView] = useState<"casa" | "artista">("casa");
+  const [view, setView] = usePersistedState<"casa" | "artista">("watched-view", "casa");
   // Correção do nome do artista (renomear/juntar) — mesmos apelidos do Analytics.
   const [editingArtist, setEditingArtist] = useState<string | null>(null);
   const queryClient = useQueryClient();

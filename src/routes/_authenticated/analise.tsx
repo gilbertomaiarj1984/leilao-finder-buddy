@@ -257,7 +257,7 @@ function AnalisePage() {
   // `MobileTopToggle`, só no mobile — desde que a versão anterior por scroll
   // (`useHideOnScroll`) ficava piscando (recálculo de altura de um `sticky`
   // durante a transição realimentava a lógica de direção do scroll).
-  const [barsHidden, setBarsHidden] = useState(false);
+  const [barsHidden, setBarsHidden] = usePersistedState("analise-bars-hidden", false);
   usePersistedScroll("analise", true);
   // Altura real do header sticky, medida ao vivo — o nav sticky de "ir para casa" (por dia)
   // usa esse valor como `top` para colar logo abaixo dele, em vez de ficar escondido atrás
@@ -297,16 +297,16 @@ function AnalisePage() {
     });
 
   // Filtros (valem para o Top 100 E para a visão por dia/casa).
-  const [search, setSearch] = useState("");
-  const [houseFilter, setHouseFilter] = useState("");
-  const [dayFilter, setDayFilter] = useState("");
-  const [scoreMin, setScoreMin] = useState("");
-  const [scoreMax, setScoreMax] = useState("");
-  const [rarityFilter, setRarityFilter] = useState("");
-  const [onlyWant, setOnlyWant] = useState(false);
-  const [onlyWatched, setOnlyWatched] = useState(false);
-  const [onlyBid, setOnlyBid] = useState(false);
-  const [topOpen, setTopOpen] = useState(true);
+  const [search, setSearch] = usePersistedState("analise-search", "");
+  const [houseFilter, setHouseFilter] = usePersistedState("analise-house", "");
+  const [dayFilter, setDayFilter] = usePersistedState("analise-day", "");
+  const [scoreMin, setScoreMin] = usePersistedState("analise-score-min", "");
+  const [scoreMax, setScoreMax] = usePersistedState("analise-score-max", "");
+  const [rarityFilter, setRarityFilter] = usePersistedState("analise-rarity", "");
+  const [onlyWant, setOnlyWant] = usePersistedState("analise-only-want", false);
+  const [onlyWatched, setOnlyWatched] = usePersistedState("analise-only-watched", false);
+  const [onlyBid, setOnlyBid] = usePersistedState("analise-only-bid", false);
+  const [topOpen, setTopOpen] = usePersistedState("analise-top-open", true);
   const [activeDay, setActiveDay] = usePersistedState("analise-active-day", "");
   const [pending, setPending] = useState<string | null>(null);
 

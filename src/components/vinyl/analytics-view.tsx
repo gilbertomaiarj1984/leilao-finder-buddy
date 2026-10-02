@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
 import type { ReactNode } from "react";
 
 import { BarChart3, RefreshCw, Sparkles } from "lucide-react";
@@ -79,13 +80,17 @@ export function AnalyticsView({
   headerExtra?: ReactNode;
 }) {
   // Esconder/mostrar o topo é MANUAL — botão `MobileTopToggle`, só no mobile.
-  const [barsHidden, setBarsHidden] = useState(false);
+  const [barsHidden, setBarsHidden] = usePersistedState("analytics-bars-hidden", false);
+  usePersistedScroll("analytics", true);
   const canEdit = !readOnly && !!handlers;
 
   const analytics = useMemo(() => buildAnalytics(rows, aliases), [rows, aliases]);
 
-  const [search, setSearch] = useState("");
-  const [artistSort, setArtistSort] = useState<ArtistSort>("count");
+  const [search, setSearch] = usePersistedState("analytics-search", "");
+  const [artistSort, setArtistSort] = usePersistedState<ArtistSort>(
+    "analytics-artist-sort",
+    "count",
+  );
   const searchNorm = normalizeForMatch(search);
   const artists = useMemo(() => {
     const filtered = !searchNorm
