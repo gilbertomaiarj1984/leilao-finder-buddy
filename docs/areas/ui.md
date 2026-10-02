@@ -744,3 +744,14 @@ segue existindo, usado pela home ("Atualizar tudo" — desde v0.84.0 também rod
 - **Histórico e dias futuros (v0.92.0):** `lots` retém hoje-10..hoje+14 (`pruneOutOfWindow`, constantes em `src/lib/day-bar.ts`). Hoje..+4 seguem varridos 4×/dia (`refresh.yml`); +5..+14 só 1×/dia às 02:00 BRT (`refresh-extended.yml`: `step=chunk&ext=1` e `step=enrich&ext=1`, mesmo `concurrency.group`). Histórico é só o que já estava gravado (nunca re-varrido; começa a acumular a partir do deploy). A barra de dias tem 25 dias em 5 páginas de 5 (`dayPage`, abre em hoje); páginas fora de hoje..+4 vêm sob demanda de `getVinylLotsRange` (`useLotsRangeQueries`) e são mescladas em `lots.data`. Dia passado abre mostrando finalizados e sem o botão de atualizar.
 
 - **Cores e "Hoje" (v0.93.0):** abas de dias passados em amarelo, futuros em azul (`dashboard-header.tsx`); botão "Hoje" ao lado da seta direita volta para a página de hoje e seleciona a aba de hoje.
+
+## Estado lembrado entre sessões e "Atualizar relações" (v0.105.0)
+
+- `src/lib/persisted-state.ts`: `usePersistedState(key, initial, codec?)` espelha o estado em
+  `localStorage` (prefixo `ui-state:`); 1º render usa o valor inicial (SSR) e o salvo entra após
+  montar. `usePersistedScroll(key, ready)` salva/restaura a rolagem (espera a lista crescer até ~8s;
+  desiste se o usuário rolar). Home persiste aba, página da barra de dias (reapontada com
+  `shiftSavedDayTab` se o dia virou), busca, filtros, casas abertas/fechadas, Vigiados/Lances do dia;
+  Coleção (aba Cards/Títulos), Análise (dia) e rolagem de Compras/Ao vivo também.
+- "Atualizar relações" (rodapé da home): rebusca Coleção/vínculos/rejeições/termos negados (cache de
+  1h) e o casamento é recalculado para todos os lotes; `resolveOwned` segue respeitando "não tenho".

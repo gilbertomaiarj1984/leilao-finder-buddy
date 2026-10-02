@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { shiftSavedDayTab } from "../src/lib/persisted-state";
 import { BAR_PAGES, buildBarDays, shiftDayKey, TODAY_INDEX, TODAY_PAGE } from "../src/lib/day-bar";
 
 describe("day-bar", () => {
@@ -16,5 +17,14 @@ describe("day-bar", () => {
     expect(days[24]).toBe("2026-10-13");
     expect(BAR_PAGES).toBe(5);
     expect(TODAY_PAGE).toBe(2);
+  });
+});
+
+describe("shiftSavedDayTab", () => {
+  test("mesmo dia mantém; virou o dia anda o índice; abas não-dia passam", () => {
+    expect(shiftSavedDayTab("day-12", "2026-10-02", "2026-10-02", 25)).toBe("day-12");
+    expect(shiftSavedDayTab("day-12", "2026-10-02", "2026-10-03", 25)).toBe("day-11");
+    expect(shiftSavedDayTab("day-0", "2026-10-02", "2026-10-05", 25)).toBe("day-0");
+    expect(shiftSavedDayTab("watched", "2026-10-02", "2026-10-05", 25)).toBe("watched");
   });
 });

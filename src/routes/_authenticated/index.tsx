@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Loader2, LogOut, RefreshCw, Sparkles } from "lucide-react";
+import { Disc3, Loader2, LogOut, RefreshCw, Sparkles } from "lucide-react";
 import { Component, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -171,6 +171,8 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     geminiModel,
     changeGeminiModel,
     refreshAll,
+    refreshingCollection,
+    refreshCollectionMatches,
     refreshingAll,
     refreshPct,
     refreshPhase,
@@ -320,6 +322,20 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 : refreshingAll && refreshPhase
                   ? refreshPhase
                   : "Atualizar tudo"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void refreshCollectionMatches()}
+              disabled={refreshingCollection}
+              title="Relaciona todos os lotes com os discos recém-adicionados à Coleção, sem refazer relações que você já marcou como 'não tenho'"
+            >
+              {refreshingCollection ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Disc3 className="mr-2 h-4 w-4" />
+              )}
+              Atualizar relações
             </Button>
             {lots.data?.updatedAt ? (
               <span title="Última atualização da lista">

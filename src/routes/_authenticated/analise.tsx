@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -257,6 +258,7 @@ function AnalisePage() {
   // (`useHideOnScroll`) ficava piscando (recálculo de altura de um `sticky`
   // durante a transição realimentava a lógica de direção do scroll).
   const [barsHidden, setBarsHidden] = useState(false);
+  usePersistedScroll("analise", true);
   // Altura real do header sticky, medida ao vivo — o nav sticky de "ir para casa" (por dia)
   // usa esse valor como `top` para colar logo abaixo dele, em vez de ficar escondido atrás
   // (ambos ficariam em top:0). A `ref` fica no CONTEÚDO do header (altura natural estável),
@@ -305,7 +307,7 @@ function AnalisePage() {
   const [onlyWatched, setOnlyWatched] = useState(false);
   const [onlyBid, setOnlyBid] = useState(false);
   const [topOpen, setTopOpen] = useState(true);
-  const [activeDay, setActiveDay] = useState("");
+  const [activeDay, setActiveDay] = usePersistedState("analise-active-day", "");
   const [pending, setPending] = useState<string | null>(null);
 
   const lots = useLotsQuery();

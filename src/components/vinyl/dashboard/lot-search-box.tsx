@@ -1,5 +1,5 @@
 import { Search as SearchIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,8 @@ export function LotSearchBox({
   onClear: () => void;
 }) {
   const [draft, setDraft] = useState(committed);
+  // A busca confirmada pode ser restaurada do armazenamento local após a montagem.
+  useEffect(() => setDraft(committed), [committed]);
   return (
     <div className="flex items-center gap-2">
       <Input

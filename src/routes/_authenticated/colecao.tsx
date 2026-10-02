@@ -12,6 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -137,6 +138,8 @@ function groupByArtist(items: CollectionItem[]): ArtistGroup[] {
 function ColecaoPage() {
   // Esconder/mostrar o topo é MANUAL — botão `MobileTopToggle`, só no mobile.
   const [barsHidden, setBarsHidden] = useState(false);
+  usePersistedScroll("colecao", true);
+  const [viewTab, setViewTab] = usePersistedState("colecao-view-tab", "cards");
   const queryClient = useQueryClient();
   const addItem = useServerFn(addCollectionItem);
   const importBulk = useServerFn(importCollectionText);
@@ -395,7 +398,7 @@ function ColecaoPage() {
   return (
     <main className="min-h-screen bg-background">
       <MobileTopToggle collapsed={barsHidden} onToggle={() => setBarsHidden((c) => !c)} />
-      <Tabs defaultValue="cards">
+      <Tabs value={viewTab} onValueChange={setViewTab}>
         <HideableBar hidden={barsHidden} className="top-0 z-30">
           <div className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
             <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">
