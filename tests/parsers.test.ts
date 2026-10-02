@@ -25,7 +25,19 @@ test("parseCollectionBulkText", () => {
 });
 
 test("deriveAlbum", () => {
+  expect(
+    deriveAlbum(
+      "duplo: Trem Azul | Código: 411.6006 | Artista(s): [`Elis Regina`] | Ano: | Estilo(s): [`M",
+      "Elis Regina",
+    ),
+  ).toBe("Trem Azul");
   expect(deriveAlbum("LP Chico Buarque - Construção 1971", "Chico Buarque")).toBe("Construção");
+  expect(
+    deriveAlbum(
+      "2 Na Bossa | Código: P 632 765 L | Artista(s): [`Elis Regina`, `Jair Rodrigues`] | Ano",
+      "Elis Regina",
+    ),
+  ).toBe("2 Na Bossa");
 });
 
 test("extractKeywords", () => {

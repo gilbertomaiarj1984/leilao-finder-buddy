@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **v0.105.3** — Analytics: título com metadados de catálogo após "|" (Código/Artista(s)/Ano) agora deriva o mesmo álbum do título limpo (junta automaticamente).
 - **v0.105.2** — Persiste também a ordenação dos álbuns (alfabética/nº) e do detalhe no Analytics e o "mostrar adquiridos" da wantlist.
 - **v0.105.1** — Persistência cobre o que faltou: Visão (casa/artista) e dia do Vigiados, filtros da Análise, busca/artista da Coleção, visão de Compras, busca/ordem do Analytics e "esconder topo" de todas as telas; restauração da rolagem reaplica até a página parar de crescer.
 - **v0.105.0** — Home e demais telas lembram onde você estava ao recarregar/reabrir (aba/dia, página da barra de dias, busca, filtros, casas abertas/fechadas, rolagem) via `localStorage` (`persisted-state.ts`); botão "Atualizar relações" rebusca a Coleção e recalcula o casamento de todos os lotes respeitando os "não tenho".

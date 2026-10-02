@@ -72,6 +72,7 @@ Visão de mercado por obra, independente da casa de leilão, sobre o histórico 
   no header do `index.tsx`). Lê `getVinylSales` (query `["vinyl-sales"]`).
 - **Agregação pura** `src/lib/analytics.ts` (`buildAnalytics`): agrupa **artista → álbum**
   (`deriveAlbum` deriva o álbum do título — heurístico, ruidoso; dá p/ refinar com `lot_ident`),
+  Metadados de catálogo após `|` (Código/Artista(s)/Ano) são cortados do título antes de derivar o álbum (v0.105.3).
   com preço **médio/min/max**, **contagem na base**, **médias por Faixa** (`faixasFor` via
   `faixaFromScore`) e vendas ordenadas **pior→melhor** score.
 - **Padronização de nomes (v0.41.0, evita duplicatas):** o agrupamento é por **CHAVE
