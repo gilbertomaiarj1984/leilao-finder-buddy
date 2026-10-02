@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { ArrowLeft, ExternalLink, LogIn, Radio, RefreshCw, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { usePersistedScroll } from "@/lib/persisted-state";
+import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -203,7 +203,7 @@ function AuctionCard({
 
 function AoVivoPage() {
   // Esconder/mostrar o topo é MANUAL — botão `MobileTopToggle`, só no mobile.
-  const [barsHidden, setBarsHidden] = useState(false);
+  const [barsHidden, setBarsHidden] = usePersistedState("ao-vivo-bars-hidden", false);
   usePersistedScroll("ao-vivo", true);
   const fetchToday = useServerFn(getTodayAuctions);
   const query = useQuery({

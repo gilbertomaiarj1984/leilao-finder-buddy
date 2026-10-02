@@ -745,7 +745,7 @@ segue existindo, usado pela home ("Atualizar tudo" — desde v0.84.0 também rod
 
 - **Cores e "Hoje" (v0.93.0):** abas de dias passados em amarelo, futuros em azul (`dashboard-header.tsx`); botão "Hoje" ao lado da seta direita volta para a página de hoje e seleciona a aba de hoje.
 
-## Estado lembrado entre sessões e "Atualizar relações" (v0.105.0)
+## Estado lembrado entre sessões e "Atualizar relações" (v0.105.0; v0.105.1 cobre Vigiados / filtros da Análise / Coleção / Compras / Analytics)
 
 - `src/lib/persisted-state.ts`: `usePersistedState(key, initial, codec?)` espelha o estado em
   `localStorage` (prefixo `ui-state:`); 1º render usa o valor inicial (SSR) e o salvo entra após

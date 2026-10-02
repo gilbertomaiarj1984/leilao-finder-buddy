@@ -137,7 +137,7 @@ function groupByArtist(items: CollectionItem[]): ArtistGroup[] {
 
 function ColecaoPage() {
   // Esconder/mostrar o topo é MANUAL — botão `MobileTopToggle`, só no mobile.
-  const [barsHidden, setBarsHidden] = useState(false);
+  const [barsHidden, setBarsHidden] = usePersistedState("colecao-bars-hidden", false);
   usePersistedScroll("colecao", true);
   const [viewTab, setViewTab] = usePersistedState("colecao-view-tab", "cards");
   const queryClient = useQueryClient();
@@ -151,8 +151,8 @@ function ColecaoPage() {
   const removeItem = useServerFn(deleteCollectionItem);
   const uploadImage = useServerFn(uploadCollectionImage);
 
-  const [artist, setArtist] = useState("");
-  const [search, setSearch] = useState("");
+  const [artist, setArtist] = usePersistedState("colecao-artist", "");
+  const [search, setSearch] = usePersistedState("colecao-search", "");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [coverItem, setCoverItem] = useState<CollectionItem | null>(null);

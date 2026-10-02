@@ -84,7 +84,7 @@ export function shiftSavedDayTab(
 
 /**
  * Salva a rolagem da janela por `key` e, quando `ready`, devolve o usuário ao ponto salvo —
- * esperando a página crescer (lista carregando) por até ~8s e desistindo se ele rolar antes.
+ * esperando a página parar de crescer (listas carregando) por até ~12s e desistindo se ele rolar antes.
  */
 export function usePersistedScroll(key: string, ready: boolean): void {
   const restored = useRef<string | null>(null);
@@ -130,15 +130,28 @@ export function usePersistedScroll(key: string, ready: boolean): void {
       canSave = true;
     } else {
       const started = Date.now();
+      let lastHeight = -1;
+      let stableSince = Date.now();
+      // Reaplica a posição enquanto a página ainda cresce (listas/queries chegando em ondas) e só
+      // libera o salvamento depois de a altura ficar estável por ~800ms (ou ~12s no total).
       const tryRestore = () => {
         if (cancelled) return;
-        const reachable = document.documentElement.scrollHeight - window.innerHeight;
-        if (reachable >= target || Date.now() - started > 8000) {
+        const height = document.documentElement.scrollHeight;
+        const reachable = height - window.innerHeight;
+        if (height !== lastHeight) {
+          lastHeight = height;
+          stableSince = Date.now();
+        }
+        if (reachable >= target && Math.abs(window.scrollY - target) > 2) {
           window.scrollTo(0, target);
+        }
+        const elapsed = Date.now() - started;
+        if ((reachable >= target && Date.now() - stableSince > 800) || elapsed > 12000) {
+          if (reachable < target) window.scrollTo(0, Math.max(0, reachable));
           canSave = true;
           return;
         }
-        timer = setTimeout(tryRestore, 150);
+        timer = setTimeout(tryRestore, 100);
       };
       tryRestore();
     }
