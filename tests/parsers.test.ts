@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { deriveAlbum } from "@/lib/analytics";
+import { deriveAlbum, foldPlural } from "@/lib/analytics";
 import { parseCollectionBulkText } from "@/lib/collection-bulk";
 import { extractKeywords } from "@/lib/lot-exclusion";
 import { bestWantForLot, lotIdentity, wantCandidate } from "@/lib/wantlist-match";
@@ -57,4 +57,10 @@ test("sondagem casa o lote certo", () => {
   const hit = bestWantForLot(cands, lotIdentity({ title: "LP Chico Buarque - Construção 1971" }));
   expect(hit?.cand.id).toBe("1");
   expect(bestWantForLot(cands, lotIdentity({ title: "LP Roberto Carlos - Detalhes" }))).toBeNull();
+});
+
+test("foldPlural", () => {
+  expect(foldPlural("autografos de sucesso")).toBe(foldPlural("autografo de sucessos"));
+  expect(foldPlural("sucessos 1")).not.toBe(foldPlural("sucessos 2"));
+  expect(foldPlural("sucessos 1971")).toBe("sucessos 1971");
 });
