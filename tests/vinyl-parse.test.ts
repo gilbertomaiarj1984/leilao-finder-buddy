@@ -22,6 +22,12 @@ describe("vinil x não-vinil", () => {
   test("títulos que não são disco", () => {
     expect(looksNonVinyl("CD Caetano Veloso - Transa")).toBe(true);
     expect(looksNonVinyl("Vitrola antiga Philips")).toBe(true);
+    expect(looksNonVinyl("LD - Cher N/D; Disco e capa em bons estado.")).toBe(true);
+    expect(looksNonVinyl("Laser Disc Buddy Holly Story")).toBe(true);
+    expect(isVinylTitle("LD - The Buddy Holly Story (1995); Disco e capa em bons estado.")).toBe(
+      false,
+    );
+    expect(looksNonVinyl("LP Cher - Heart of Stone")).toBe(false);
   });
 });
 

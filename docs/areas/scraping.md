@@ -7,7 +7,7 @@
 
 - **Varredura geral é PÚBLICA** (sem login) via `publicFetch` — evita o 500 que o site dá
   logado sob carga. Categoria fixada por `tp=|446973636F2064652076696E696C|` (hex de "Disco de
-  vinil") → **todo lote já é vinil**; não exigir palavra-chave no título, só descartar CD/DVD/K7
+  vinil") → **todo lote já é vinil**; não exigir palavra-chave no título, só descartar CD/DVD/LD (Laser Disc)/K7
   (`looksNonVinyl`, em `vinyl-parse.ts`).
 - **Login (`authFetch`)** só para a **conta**: env `LEILOESBR_EMAIL` / `LEILOESBR_SENHA`.
   - **Vigias**: `conta_site.asp?l=8` → `listWatchedFromSite` (cards `.oc-item`,
