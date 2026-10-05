@@ -7,6 +7,7 @@ fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 - **v0.106.2** — Ícone de tracklist também nos cards de Compras e Coleção, reaproveitando a tracklist do lote de origem (`lot_id`/`origin_lot_id`); itens manuais ou de lotes já podados ficam com o ícone apagado.
 - **v0.106.1** — Tracklist retroativa: novo `step=tracklist` do cron (e do `refresh.yml`) preenche as faixas dos lotes de hoje em diante que já têm avaliação com álbum e ainda não têm tracklist (por nome do álbum, sem imagem; `[]` = IA não soube, não reconsulta).
 - **v0.106.0** — Ícone de tracklist abaixo do ícone da Coleção nos cards de lote: o hover mostra as faixas por lado com bolinha verde (mais famosas), amarela (menos) ou vermelha (desconhecidas/lado B); dados vêm da avaliação da IA (`lot_ai.tracklist`, só lotes avaliados/reavaliados depois desta versão).
+- **v0.105.6** — Vigiados/lances fora da varredura geral (casas parceiras, ex. Alberto Lopes) agora recebem nota da IA: cron `aieval` os inclui como candidatos e a aba Vigiados ganha o botão "Analisar vigiados" (`analyzeOnDemand` com `watched: true`).
 - **v0.105.5** — Lotes "LD"/Laser Disc deixam de entrar na lista (tratados como DVD/Blu-ray: só passam com sinal forte de vinil, ex. LP).
 - **v0.105.4** — Analytics junta álbuns que só diferem em singular/plural ("Autógrafo de Sucessos" = "Autógrafos de Sucesso"); nomes com número/ano nunca são unidos.
 - **v0.105.3** — Analytics: título com metadados de catálogo após "|" (Código/Artista(s)/Ano) agora deriva o mesmo álbum do título limpo (junta automaticamente).

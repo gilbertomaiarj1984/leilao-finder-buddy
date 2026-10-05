@@ -482,9 +482,9 @@ export function useDashboardData() {
   // o dia (`day`) ou a casa (`${day}|${casa}`). Roda em laço até esgotar os não avaliados
   // (ou parar de progredir), depois revalida o cache queryKeys.lotAi para as notas aparecerem.
   const [analyzing, setAnalyzing] = useState<string | null>(null);
-  const analyzeScope = (opts: { day: string; house?: string }) => {
+  const analyzeScope = (opts: { day: string; house?: string; watched?: boolean }) => {
     if (analyzing) return; // uma análise por vez (evita disparar vários batches síncronos)
-    const key = opts.house ? `${opts.day}|${opts.house}` : opts.day;
+    const key = opts.watched ? "watched" : opts.house ? `${opts.day}|${opts.house}` : opts.day;
     // Usa SEMPRE o provedor selecionado no topo da página (sem perguntar).
     const provider = aiProvider;
     void (async () => {
@@ -497,7 +497,7 @@ export function useDashboardData() {
       try {
         for (let guard = 0; guard < 60; guard += 1) {
           const res = await runAnalyze({
-            data: { day: opts.day, house: opts.house, max: 25, provider },
+            data: { day: opts.day, house: opts.house, watched: opts.watched, max: 25, provider },
           });
           evaluated += res.evaluated;
           failed += res.failed ?? 0;

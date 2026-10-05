@@ -9,6 +9,7 @@ import {
   Loader2,
   Pencil,
   RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { usePersistedState } from "@/lib/persisted-state";
@@ -75,6 +76,8 @@ export function WatchedTab({ d }: { d: DashboardData }) {
     closedHouseSections,
     toggleHouseSection,
     watchedIds,
+    analyzeScope,
+    analyzing,
     bidStatusById,
     houseBidFlags,
     currentPriceFor,
@@ -435,6 +438,19 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                   · {lotCount(activeDay)} lote(s) vigiado(s)
                 </p>
                 <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => analyzeScope({ day: "", watched: true })}
+                    disabled={analyzing !== null}
+                    className={smallButtonClass}
+                  >
+                    {analyzing === "watched" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5" />
+                    )}
+                    Analisar vigiados
+                  </button>
                   <button
                     type="button"
                     onClick={() => openAllHouseSections(sectionKeys)}
