@@ -147,6 +147,18 @@ jobs:
             sleep 60
           done
 
+          echo "== Tracklist retroativa (lotes de hoje em diante já avaliados) =="
+          for i in $(seq 1 10); do
+            if ! res="$(call_soft "/api/cron?step=tracklist&max=20")"; then
+              echo "tracklist $i: falhou — $res"
+              soft_failed=1
+              break
+            fi
+            echo "tracklist $i: $res"
+            if echo "$res" | jq -e '.skipped' >/dev/null 2>&1; then break; fi
+            if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
+          done
+
           echo "== Identificação simplificada (artista/álbum, Batches) =="
           # Camada barata que roda para TODOS os lotes (independente do modo da avaliação
           # completa): 1ª passada só por título; escala para a capa nos de baixa confiança.

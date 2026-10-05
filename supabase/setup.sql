@@ -130,6 +130,9 @@ CREATE TABLE IF NOT EXISTS public.lot_ai (
 -- quando o preço de um vigiado/lance sobe o bastante a avaliação é refeita (ver
 -- `src/lib/ai-reprice.ts`). NULL = avaliação antiga (antes desta coluna) ou sem preço.
 ALTER TABLE public.lot_ai ADD COLUMN IF NOT EXISTS eval_price numeric;
+-- Tracklist do álbum devolvida pela IA na avaliação: [{side, title, fame}] com fame
+-- 'alta' | 'media' | 'baixa' (verde/amarelo/vermelho no card). NULL = ainda não informada.
+ALTER TABLE public.lot_ai ADD COLUMN IF NOT EXISTS tracklist jsonb;
 
 -- ---------------------------------------------------------------------
 -- lot_ident — identificação SIMPLIFICADA da IA por lote (só artista/álbum/ano).

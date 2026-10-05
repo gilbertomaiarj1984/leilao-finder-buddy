@@ -207,6 +207,16 @@ export async function handleCron(request: Request): Promise<Response | null> {
     // nos de baixa confiança. Alimenta exibição/busca/filtro por artista e o Discogs. Lógica
     // em `ai-ident-step.server.ts` (extraída em v0.84.0 pra ser reaproveitada também pelo
     // botão manual "Atualizar tudo", ver `leiloesbr.functions.ts`/`runAiident`).
+    // Retroativo da tracklist: lotes de hoje em diante já avaliados e sem faixas. Ver
+    // `tracklist-step.server.ts`. Idempotente; no-op sem provedor de IA.
+    if (step === "tracklist") {
+      const { aiConfigured } = await import("./ai-eval.server");
+      if (!aiConfigured()) return json({ skipped: "nenhum provedor de IA configurado" });
+      const { runTracklistBackfill } = await import("./tracklist-step.server");
+      const max = Number(url.searchParams.get("max")) || 20;
+      return json(await runTracklistBackfill(max));
+    }
+
     if (step === "aiident") {
       const { runAiIdentStep } = await import("./ai-ident-step.server");
       const max = url.searchParams.get("max") ? Number(url.searchParams.get("max")) : undefined;

@@ -93,6 +93,15 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   confiança + tem imagem → **escala para a capa**). Persistência `lot-ident.server.ts`; estado
   próprio `app_state.ai_ident_batch`. **Discogs usa o álbum mesclado** `lot_ai` (preferido) +
   `lot_ident`.
+- **Tracklist (v0.106.0) — `lot_ai.tracklist` (jsonb):** a avaliação completa também pede à IA
+  as faixas do álbum `[{side, title, fame}]` (`fame` = `alta`/`media`/`baixa` → verde/amarelo/
+  vermelho no card; vermelho = desconhecida e/ou lado B). `maxTokens` da avaliação subiu 400→1200.
+  Normalização/agrupamento puros em `tracklist.ts` (`normalizeTracklist`, `groupTracksBySide`);
+  UI em `tracklist-hover.tsx` (ícone abaixo do da Coleção no `LotCard`; hover/toque abre a lista).
+  Retroativo (v0.106.1): `step=tracklist` (`tracklist-step.server.ts`, também no `refresh.yml`) preenche
+  lotes com `day_key >=` hoje que têm `lot_ai.album` e `tracklist` NULL, pedindo só as faixas pelo
+  nome do álbum (dedup por álbum; `[]` = tentou e a IA não soube). Só atualiza linhas existentes de
+  `lot_ai` (lote só com `lot_ident` não é coberto). Antes disso, o ícone fica apagado. O prompt manda não inventar faixas (`[]` quando não sabe).
 - **Modo automático — chave `ai_mode`** (`getAiMode`/`setAiMode`): `"off" | "all" | "watched"`,
   **padrão `"watched"`** (econômico). No `step=aieval`: `off` não coleta/submete; `all` = todos
   os lotes; `watched` = só lotes vigiados ∪ com lance (ids de `listWatchedFromSite` +

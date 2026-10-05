@@ -1,6 +1,7 @@
 import { Disc3, ExternalLink, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { LotTracklistHover } from "@/components/vinyl/tracklist-hover";
 import type { Purchase } from "@/lib/purchases.server";
 
 /** dd/mm/aaaa a partir de "yyyy-mm-dd" (ou "" se ausente/inválida). */
@@ -55,6 +56,10 @@ export function PurchaseCard({
       >
         <Disc3 className="h-4 w-4" />
       </button>
+
+      <div className="absolute right-2 top-11 z-10">
+        <LotTracklistHover lotId={purchase.lotId} title={purchase.title || undefined} />
+      </div>
 
       <div className="flex flex-1 flex-col gap-2 p-4">
         <p className="line-clamp-2 text-sm font-semibold leading-snug text-foreground">
