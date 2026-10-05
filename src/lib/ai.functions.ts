@@ -289,11 +289,17 @@ export const setGeminiModel = createServerFn({ method: "POST" })
  */
 export const analyzeOnDemand = createServerFn({ method: "POST" })
   .inputValidator(
-    (input: { day?: string; house?: string; max?: number; provider?: string } | undefined) => {
+    (
+      input:
+        | { day?: string; house?: string; max?: number; provider?: string; watched?: boolean }
+        | undefined,
+    ) => {
       const day = typeof input?.day === "string" ? input.day.trim() : "";
-      if (!day) throw new Error("Dia obrigatório.");
+      const watched = input?.watched === true;
+      if (!day && !watched) throw new Error("Dia obrigatório.");
       return {
         day,
+        watched,
         house: typeof input?.house === "string" && input.house.trim() ? input.house.trim() : null,
         max: Math.min(Math.max(Number(input?.max) || 25, 1), 50),
         // Provedor escolhido na hora (opcional): senão usa o padrão do `app_state`.
@@ -316,9 +322,30 @@ export const analyzeOnDemand = createServerFn({ method: "POST" })
     const [snapshot, aiRows] = await Promise.all([scrapeVinylLots(false), getAllLotAi()]);
 
     // Recorta o dia (e a casa, quando informada) e seleciona só o que falta avaliar.
-    const scope = snapshot.lots.filter(
-      (lot) => lot.dayKey === data.day && (!data.house || lot.house === data.house),
-    );
+    // Modo `watched`: vigiados ∪ lances — inclui os que NÃO estão na varredura geral (casas
+    // parceiras/catálogos), que de outro modo nunca receberiam nota.
+    let scope: { id: string; title: string; price: string; house: string; image: string | null }[];
+    if (data.watched) {
+      const { listWatchedFromSite } = await import("./leiloesbr-watch.server");
+      const { listMyBidsFromSite } = await import("./leiloesbr-bids.server");
+      const [w, b] = await Promise.all([
+        listWatchedFromSite().catch(() => []),
+        listMyBidsFromSite().catch(() => []),
+      ]);
+      const byId = new Map(snapshot.lots.map((lot) => [lot.id, lot]));
+      const merged = new Map<
+        string,
+        { id: string; title: string; price: string; house: string; image: string | null }
+      >();
+      for (const l of [...w, ...b]) {
+        merged.set(l.id, byId.get(l.id) ?? { ...l, price: "price" in l ? l.price : "" });
+      }
+      scope = [...merged.values()];
+    } else {
+      scope = snapshot.lots.filter(
+        (lot) => lot.dayKey === data.day && (!data.house || lot.house === data.house),
+      );
+    }
     const pending = selectLotsToEvaluate(scope, aiRows, Number.MAX_SAFE_INTEGER);
     const toEval = pending.slice(0, data.max);
     if (!toEval.length) {
