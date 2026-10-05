@@ -1,4 +1,13 @@
-import { ArrowRightLeft, Disc3, ExternalLink, Eye, EyeOff, Loader2, Trash2 } from "lucide-react";
+import {
+  ArrowRightLeft,
+  Binoculars,
+  Disc3,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Loader2,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -8,12 +17,14 @@ import { formatAiAlbum, type LotAi, type LotMarket } from "@/components/vinyl/ai
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import type { Condition } from "@/lib/grading";
 import type { ExclusionSignal } from "@/lib/lot-exclusion";
+import { LOOKOUT_CONFIDENT_MIN, priceVsCeiling, type LookoutHit } from "@/lib/lookout-match";
 import {
   auctionStarted,
   bidIsSold,
   bidIsWinning,
   decodeHtmlEntities,
   lotOpenUrl,
+  parsePrice,
 } from "@/lib/vinyl-parse";
 import { OWNED_CONFIDENT_MIN, type OwnedHit } from "@/lib/wantlist-match";
 
@@ -53,6 +64,9 @@ export function LotCard({
   possibleTrash,
   onExclude,
   onDismissTrash,
+  lookout,
+  onToggleLookout,
+  onResolveLookout,
   origin,
   dateBar,
 }: {
@@ -91,6 +105,14 @@ export function LotCard({
   // Clicar no badge "possível lixo" → "isto NÃO é lixo": nega os termos que causaram o
   // casamento (aprendizado global, ver dismissPossibleTrash). Sem isso o badge é só leitura.
   onDismissTrash?: () => void;
+  // "Ficar de olho": `on` = ESTE lote foi marcado como compra muito em vista; `hit` = este lote
+  // casa (artista+álbum) com um disco que o usuário está de olho (outro lote, ex.: reapareceu em
+  // leilão futuro) — destaca o card (borda própria) e mostra o selo. `maxPrice` é o teto do item.
+  // O botão de marcar só aparece com `onToggleLookout`; confirmar/descartar só com
+  // `onResolveLookout` (decisão por lote, aprendida em `app_state.lookout_links`).
+  lookout?: { on: boolean; hit: LookoutHit | null; maxPrice: number | null };
+  onToggleLookout?: () => void;
+  onResolveLookout?: (decision: "confirm" | "dismiss") => void;
   // Barra superior de origem (visão "Por artista" dos Vigiados): casa, pregão e data. A cor
   // segue o estado do card — amarelo vigiando, verde ganhando, vermelho coberto.
   // Faixa grossa no topo com a data do lote (catálogos multi-dia na visão "Por casa").
@@ -146,13 +168,17 @@ export function LotCard({
   // valor defasado, anterior ao meu lance vencedor). Quando estou coberto, o valor
   // atual é o da listagem (o lance que me cobriu).
   const currentPrice = winning && lot.myBid ? lot.myBid : lot.price;
+  // Precedência da borda: lance (verde/vermelho) > vigiando (amarelo) > de olho (fúcsia).
+  const lookoutActive = Boolean(lookout && (lookout.on || lookout.hit));
   const cardClass = hasBid
     ? winning
       ? "border-green-500 ring-1 ring-green-500/40"
       : "border-red-500 ring-1 ring-red-500/40"
     : lot.watched
       ? "border-yellow-500 ring-1 ring-yellow-500/40"
-      : "border-border";
+      : lookoutActive
+        ? "border-fuchsia-500 ring-1 ring-fuchsia-500/40"
+        : "border-border";
   return (
     <article
       className={`relative flex flex-col overflow-hidden rounded-md border bg-card ${cardClass}`}
@@ -393,6 +419,58 @@ export function LotCard({
                 </span>
               )
             ) : null}
+            {/* "Ficar de olho": este lote casa com um disco que o usuário marcou como compra muito
+              em vista. Confiante (≥ 80% ou confirmado) = selo cheio; abaixo disso, "?" com ✓/✕ para
+              confirmar ou descartar (aprendido por lote). Mostra o valor atual × teto quando há. */}
+            {lookout?.hit
+              ? (() => {
+                  const hit = lookout.hit;
+                  const sure = hit.confirmed || hit.score >= LOOKOUT_CONFIDENT_MIN;
+                  const vs = priceVsCeiling(parsePrice(currentPrice ?? ""), lookout.maxPrice);
+                  return (
+                    <span
+                      className="inline-flex items-center gap-1 rounded bg-fuchsia-500/15 px-1.5 py-0.5 font-medium text-fuchsia-700 dark:text-fuchsia-300"
+                      title={`De olho: ${hit.label} (${Math.round(hit.score * 100)}%${hit.confirmed ? ", confirmado" : ""})`}
+                    >
+                      <Binoculars className="h-3 w-3" aria-hidden="true" />
+                      De olho{sure ? "" : "?"} · {Math.round(hit.score * 100)}%
+                      {vs === "under" ? (
+                        <span className="text-green-600 dark:text-green-400">· abaixo do teto</span>
+                      ) : vs === "over" ? (
+                        <span className="text-red-600 dark:text-red-400">· acima do teto</span>
+                      ) : null}
+                      {onResolveLookout && !hit.confirmed && !sure ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onResolveLookout("confirm");
+                          }}
+                          className="rounded px-1 hover:bg-fuchsia-500/25"
+                          aria-label="Confirmar: é o disco que estou de olho"
+                          title="É este disco"
+                        >
+                          ✓
+                        </button>
+                      ) : null}
+                      {onResolveLookout ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onResolveLookout("dismiss");
+                          }}
+                          className="rounded px-1 hover:bg-fuchsia-500/25"
+                          aria-label="Descartar: não é o disco que estou de olho"
+                          title="Não é este disco"
+                        >
+                          ✕
+                        </button>
+                      ) : null}
+                    </span>
+                  );
+                })()
+              : null}
             {showDate && lot.dayKey ? <span>{lot.dayKey}</span> : null}
             {lot.time ? <span>{lot.time}</span> : null}
             {lot.uf ? <span>{lot.uf}</span> : null}
@@ -432,6 +510,24 @@ export function LotCard({
               )}
               {lot.watched ? "Vigiando" : "Vigiar"}
             </Button>
+            {onToggleLookout ? (
+              <Button
+                size="sm"
+                variant={lookout?.on ? "secondary" : "ghost"}
+                onClick={onToggleLookout}
+                aria-pressed={Boolean(lookout?.on)}
+                aria-label={lookout?.on ? "Parar de ficar de olho" : "Ficar de olho"}
+                title={
+                  lookout?.on
+                    ? "De olho — clique para desmarcar"
+                    : "Ficar de olho — compra muito em vista: destaca este disco quando reaparecer"
+                }
+              >
+                <Binoculars
+                  className={`h-4 w-4 ${lookout?.on ? "text-fuchsia-600 dark:text-fuchsia-400" : "text-muted-foreground"}`}
+                />
+              </Button>
+            ) : null}
             <Button size="sm" variant="ghost" asChild>
               <a
                 href={lotOpenUrl(lot.url, lot.title, lot.lote)}

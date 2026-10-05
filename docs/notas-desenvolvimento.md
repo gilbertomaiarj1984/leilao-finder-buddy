@@ -28,7 +28,7 @@ VPS único (histórico em `docs/arquivo/`).
 | Histórico de vendas, Vinil Analytics                                  | `docs/areas/vendas-e-analytics.md`       | `lot-sales.server.ts`, `analytics.ts`, `analytics-view.tsx`                                  |
 | IA (avaliação, identificação, provedores, custo)                      | `docs/areas/ia.md`                       | `ai-eval.server.ts`, `ai-provider.server.ts`                                                 |
 | Discogs / mercado                                                     | `docs/areas/discogs.md`                  | `discogs.server.ts`, `lot-market.server.ts`                                                  |
-| Coleção, Sondagem, Compras                                            | `docs/areas/colecao-sondagem-compras.md` | `collection*.ts`, `wantlist*.ts`, `purchases*.ts`                                            |
+| Coleção, Sondagem, Compras, De olho                                   | `docs/areas/colecao-sondagem-compras.md` | `collection*.ts`, `wantlist*.ts`, `purchases*.ts`, `lookout*.ts`                             |
 | Exclusão de lotes / "possível lixo"                                   | `docs/areas/exclusao-de-lotes.md`        | `lot-exclusion*.ts`                                                                          |
 | Infra, deploy, migração, ferramentas avulsas                          | `docs/areas/infra.md`                    | `docker-compose.yml`, `Caddyfile`, `deploy.yml`                                              |
 | Pendências em aberto                                                  | `docs/pendencias.md`                     | —                                                                                            |
@@ -59,7 +59,7 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
   **histórico/changelog** do schema. Ao criar tabela/coluna, editar `setup.sql` e o tipo
   da linha no módulo `*.server.ts` da tabela (não há tipos gerados do banco). Tabelas: `lots`, `known_artists`, `app_state`,
   `seen_auctions`, `lot_ai`, `lot_ident`, `lot_market`, `lot_condition`, `lot_sales`,
-  `wantlist_items`, `collection_items`, `purchases`, `excluded_lots`.
+  `wantlist_items`, `collection_items`, `purchases`, `excluded_lots`, `lookout_items`.
 - **Git push HTTPS costuma funcionar**; quando não, usar os tools `mcp__github__*`.
 
 ## Arquitetura de dados

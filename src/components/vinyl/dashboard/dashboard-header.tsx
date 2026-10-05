@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import {
   BarChart3,
+  Binoculars,
   ChevronLeft,
   ChevronRight,
   Library,
@@ -15,6 +16,7 @@ import { TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { bidMatchesSearch, dayLabel, watchedMatchesSearch } from "@/components/vinyl/grouping";
 import { BAR_PAGES, DAY_PAGE, TODAY_INDEX, TODAY_PAGE } from "@/lib/day-bar";
+import { useLookoutOverviewQuery } from "@/lib/queries";
 import { auctionFinished } from "@/lib/vinyl-parse";
 
 import { LotSearchBox } from "./lot-search-box";
@@ -29,6 +31,9 @@ export function DashboardHeader({
   email: string;
   onSignOut: () => Promise<void>;
 }) {
+  // Contador de matches novos do "De olho" (versão leve: sem histórico de vendas). Best-effort —
+  // sem itens ou em erro, o botão aparece sem selo.
+  const lookoutNew = useLookoutOverviewQuery({ history: false }).data?.newCount ?? 0;
   const {
     barsHidden,
     headerRef,
@@ -91,6 +96,22 @@ export function DashboardHeader({
                 <Link to="/analise">
                   <Sparkles className="mr-2 h-4 w-4" />
                   Análise
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                asChild
+                title="Discos que você quer muito — matches nos leilões por vir"
+              >
+                <Link to="/olho">
+                  <Binoculars className="mr-2 h-4 w-4" />
+                  De olho
+                  {lookoutNew > 0 ? (
+                    <span className="ml-1.5 rounded-full bg-fuchsia-500 px-1.5 text-[10px] font-bold leading-4 text-white">
+                      {lookoutNew}
+                    </span>
+                  ) : null}
                 </Link>
               </Button>
               <Button variant="outline" size="sm" asChild title="Minha coleção de vinil">

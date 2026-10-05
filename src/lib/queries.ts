@@ -29,6 +29,9 @@ import {
   getVinylLotsRange,
   listMyBids,
 } from "@/lib/leiloesbr.functions";
+import { getLookout, getLookoutLinks, getLookoutOverview } from "@/lib/lookout.functions";
+import type { LookoutItem, LookoutLinks } from "@/lib/lookout-match";
+import type { LookoutOverview } from "@/lib/lookout-matches.server";
 import { getWantlist } from "@/lib/wantlist.functions";
 import {
   BIDS_ACCUM_STORAGE_KEY,
@@ -53,6 +56,9 @@ export const queryKeys = {
   collectionLinks: ["collection-links"],
   collectionFeedback: ["collection-feedback"],
   wantlist: ["wantlist"],
+  lookout: ["lookout"],
+  lookoutLinks: ["lookout-links"],
+  lookoutOverview: ["lookout-overview"],
   analyticsAliases: ["analytics-aliases"],
 } as const;
 
@@ -283,5 +289,57 @@ export function useAnalyticsAliasesQuery() {
     queryFn: () => fetchAliases(),
     staleTime: HOUR,
     refetchOnWindowFocus: false,
+  });
+}
+
+// "Ficar de olho": itens e vínculos por lote. Best-effort como a Coleção — a feature é acessória
+// na home, então um erro aqui cai para vazio sem retentar e nunca derruba a tela.
+export function useLookoutQuery() {
+  const fetchLookout = useServerFn(getLookout);
+  return useQuery<LookoutItem[]>({
+    queryKey: queryKeys.lookout,
+    queryFn: async () => {
+      try {
+        return ((await fetchLookout()) as LookoutItem[]) ?? [];
+      } catch {
+        return [];
+      }
+    },
+    staleTime: HOUR,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+}
+
+export function useLookoutLinksQuery() {
+  const fetchLinks = useServerFn(getLookoutLinks);
+  return useQuery<LookoutLinks>({
+    queryKey: queryKeys.lookoutLinks,
+    queryFn: async () => {
+      try {
+        return ((await fetchLinks()) as LookoutLinks) ?? {};
+      } catch {
+        return {};
+      }
+    },
+    staleTime: HOUR,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+}
+
+/**
+ * Matches por vir + histórico + contador de novos (cálculo no servidor, `lookout-matches.server`).
+ * Alimenta a página `/olho` (com histórico) e o contador do menu (`history: false`, mais leve —
+ * chave própria para não misturar os dois formatos).
+ */
+export function useLookoutOverviewQuery(opts: { history: boolean }) {
+  const fetchOverview = useServerFn(getLookoutOverview);
+  return useQuery<LookoutOverview>({
+    queryKey: [...queryKeys.lookoutOverview, opts.history ? "full" : "light"],
+    queryFn: () => fetchOverview({ data: { history: opts.history } }) as Promise<LookoutOverview>,
+    staleTime: 15 * MIN,
+    refetchOnWindowFocus: false,
+    retry: false,
   });
 }

@@ -182,7 +182,9 @@
 
 - **Verde** = tenho lance e estou ganhando/arrematei (`bidIsWinning(status)` casa
   `venc|arremat|arrebat`). **Vermelho** = tenho lance mas coberto. **Amarelo** = só vigiado.
-  Precedência: **lance vence vigia**.
+  Precedência: **lance vence vigia**. **Fúcsia** = "De olho" (v0.107.0: o lote marcado ou um lote
+  futuro que casa com um disco marcado — ver `colecao-sondagem-compras.md`); perde para lance e
+  vigia. O ícone `Binoculars` fica na linha de ações do card, ao lado de Vigiar.
 - **Tarja diagonal "Vendido" (v0.50.0):** lote **vigiado ou com lance** cujo leilão já
   terminou com venda confirmada em `lot_sales` (mesma tabela do Vinil Analytics, preenchida pelo
   cron `step=sales`/`captureFinishedSales` após cada leilão terminar — cobre TODO lote de vinil

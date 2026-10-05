@@ -408,6 +408,36 @@ CREATE INDEX IF NOT EXISTS excluded_lots_keywords_gin_idx
   ON public.excluded_lots USING GIN (keywords);
 
 -- ---------------------------------------------------------------------
+-- lookout_items — "Ficar de olho": discos que o usuário quer MUITO e quer reconhecer quando
+-- reaparecerem em leilões futuros. Guarda um SNAPSHOT do lote de origem (sem FK para `lots`:
+-- `pruneOutOfWindow` apaga lotes antigos e o marcador não pode ir junto). `artist`/`album`/`year`
+-- alimentam o casamento (src/lib/lookout-match.ts); `max_price` é o teto opcional. Histórico:
+-- supabase/migrations/20261005120000_lookout.sql.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.lookout_items (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  lot_id       text UNIQUE NOT NULL,      -- lote de origem ("${idLeilao}-${idPeca}")
+  artist       text NOT NULL DEFAULT '',
+  album        text NOT NULL DEFAULT '',
+  year         integer,
+  title        text NOT NULL DEFAULT '',
+  house        text NOT NULL DEFAULT '',
+  image        text,
+  url          text NOT NULL DEFAULT '',
+  day_key      text NOT NULL DEFAULT '',
+  max_price    numeric,                   -- teto (R$), opcional
+  note         text NOT NULL DEFAULT '',
+  status       text NOT NULL DEFAULT 'active', -- active | acquired | dismissed
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS lookout_items_status_idx ON public.lookout_items (status, created_at DESC);
+
+DROP TRIGGER IF EXISTS update_lookout_items_updated_at ON public.lookout_items;
+CREATE TRIGGER update_lookout_items_updated_at BEFORE UPDATE ON public.lookout_items
+FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- ---------------------------------------------------------------------
 -- FKs de limpeza (Fase 5 da migração para VPS): `lot_ai`/`lot_ident`/`lot_market`/
 -- `lot_condition` (todos com `id` = `lots.id`) viram órfãos quando `pruneOutOfWindow`
 -- apaga de `lots` os lotes fora da janela de dias. `ON DELETE CASCADE` evita isso dali
@@ -459,6 +489,7 @@ ALTER TABLE public.wantlist_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.collection_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchases        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.excluded_lots    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lookout_items    ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.seen_auctions  FROM anon, authenticated;
 REVOKE ALL ON public.lots           FROM anon, authenticated;
@@ -473,6 +504,7 @@ REVOKE ALL ON public.wantlist_items FROM anon, authenticated;
 REVOKE ALL ON public.collection_items FROM anon, authenticated;
 REVOKE ALL ON public.purchases        FROM anon, authenticated;
 REVOKE ALL ON public.excluded_lots    FROM anon, authenticated;
+REVOKE ALL ON public.lookout_items    FROM anon, authenticated;
 
 GRANT ALL ON public.seen_auctions  TO service_role;
 GRANT ALL ON public.lots           TO service_role;
@@ -487,3 +519,4 @@ GRANT ALL ON public.wantlist_items TO service_role;
 GRANT ALL ON public.collection_items TO service_role;
 GRANT ALL ON public.purchases        TO service_role;
 GRANT ALL ON public.excluded_lots    TO service_role;
+GRANT ALL ON public.lookout_items    TO service_role;
