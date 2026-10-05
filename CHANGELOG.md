@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **v0.105.6** — Vigiados/lances fora da varredura geral (casas parceiras, ex. Alberto Lopes) agora recebem nota da IA: cron `aieval` os inclui como candidatos e a aba Vigiados ganha o botão "Analisar vigiados" (`analyzeOnDemand` com `watched: true`).
 - **v0.105.5** — Lotes "LD"/Laser Disc deixam de entrar na lista (tratados como DVD/Blu-ray: só passam com sinal forte de vinil, ex. LP).
 - **v0.105.4** — Analytics junta álbuns que só diferem em singular/plural ("Autógrafo de Sucessos" = "Autógrafos de Sucesso"); nomes com número/ano nunca são unidos.
 - **v0.105.3** — Analytics: título com metadados de catálogo após "|" (Código/Artista(s)/Ano) agora deriva o mesmo álbum do título limpo (junta automaticamente).

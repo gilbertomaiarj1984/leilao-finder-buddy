@@ -97,6 +97,7 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   **padrão `"watched"`** (econômico). No `step=aieval`: `off` não coleta/submete; `all` = todos
   os lotes; `watched` = só lotes vigiados ∪ com lance (ids de `listWatchedFromSite` +
   `listMyBidsFromSite`).
+- **Vigiados fora da varredura:** lotes de `listWatchedFromSite`/`listMyBidsFromSite` ausentes de `scrapeVinylLots` entram como candidatos no `step=aieval` e no botão "Analisar vigiados" (`analyzeOnDemand({watched:true})`), senão nunca teriam `lot_ai`.
 - **Análise sob demanda** (síncrona): `evalLotsSync(lots, provider)` usa `runText`
   (concorrência 4, com failover) — não a Batches. Server fn
   `analyzeOnDemand({day, house?, max, provider?})` avalia só os não avaliados (até `max`=25) e

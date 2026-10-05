@@ -127,20 +127,43 @@ export async function handleCron(request: Request): Promise<Response | null> {
       // - sempre: esses lotes são REAVALIADOS quando o preço subiu desde a avaliação (a nota
       //   inclui a oportunidade — ver `ai-reprice.ts`).
       const ids = new Set<string>();
+      // Vigiados/lances FORA da varredura geral (casas parceiras) também viram candidatos —
+      // senão nunca recebem nota.
+      const extra = new Map<string, (typeof snapshot.lots)[number]>();
+      const known = new Set(snapshot.lots.map((lot) => lot.id));
+      const addExtra = (l: {
+        id: string;
+        title: string;
+        house: string;
+        image: string | null;
+        price?: string;
+      }) => {
+        ids.add(l.id);
+        if (!known.has(l.id)) {
+          extra.set(l.id, {
+            id: l.id,
+            title: l.title,
+            house: l.house,
+            image: l.image,
+            price: l.price ?? "",
+          } as (typeof snapshot.lots)[number]);
+        }
+      };
       try {
         const { listWatchedFromSite } = await import("./leiloesbr-watch.server");
-        for (const w of await listWatchedFromSite()) ids.add(w.id);
+        for (const w of await listWatchedFromSite()) addExtra(w);
       } catch (error) {
         console.error("[cron] aieval: falha ao ler vigiados", error);
       }
       try {
         const { listMyBidsFromSite } = await import("./leiloesbr-bids.server");
-        for (const b of await listMyBidsFromSite()) ids.add(b.id);
+        for (const b of await listMyBidsFromSite()) addExtra(b);
       } catch (error) {
         console.error("[cron] aieval: falha ao ler lances", error);
       }
       let candidates = snapshot.lots;
       if (mode === "watched") candidates = snapshot.lots.filter((lot) => ids.has(lot.id));
+      candidates = [...candidates, ...extra.values()];
 
       const toEval = selectLotsToEvaluate(candidates, aiRows, max, ids);
       if (!toEval.length) return json({ done: true, submitted: 0, mode, provider });
