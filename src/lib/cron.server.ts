@@ -390,6 +390,13 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await syncPurchasesIncremental());
     }
 
+    // Aviso externo (ntfy.sh) de lotes novos que casam com um disco marcado em "De olho"
+    // (menu De olho). Dedupe em `app_state` (`lookout_notified`); no-op sem `NTFY_TOPIC`.
+    if (step === "lookoutnotify") {
+      const { notifyLookoutMatches } = await import("./lookout-matches.server");
+      return json(await notifyLookoutMatches());
+    }
+
     // Diagnóstico da captura de vendas: sinais crus do catálogo dos leilões terminados
     // (não grava, não marca). Útil quando `sales` volta 0 — confirma se é legítimo.
     if (step === "salesdebug") {

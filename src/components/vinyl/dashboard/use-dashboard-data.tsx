@@ -53,6 +53,13 @@ import {
   type GeminiModel,
 } from "@/lib/ai-provider";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
+import { setLookoutLink, toggleLookout } from "@/lib/lookout.functions";
+import {
+  lookoutCandidates,
+  matchLookoutForLot,
+  type LookoutHit,
+  type LookoutLinks,
+} from "@/lib/lookout-match";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
 import type { CollectionItem } from "@/lib/collection.server";
 import {
@@ -103,6 +110,8 @@ import {
   useLotMarketQuery,
   useLotsQuery,
   useLotsRangeQueries,
+  useLookoutLinksQuery,
+  useLookoutQuery,
   patchLotsCaches,
   useBidsQuery,
   useWatchedQuery,
@@ -367,6 +376,8 @@ export function useDashboardData() {
   const runSetGeminiModel = useServerFn(setGeminiModel);
   const runAnalyze = useServerFn(analyzeOnDemand);
   const runApplyDecision = useServerFn(applyCollectionDecision);
+  const runToggleLookout = useServerFn(toggleLookout);
+  const runSetLookoutLink = useServerFn(setLookoutLink);
   const fetchCollectionKeywordDenylist = useServerFn(getCollectionKeywordDenylist);
   const runDismissCollectionMatch = useServerFn(dismissCollectionMatchTerms);
   const runExcludeLot = useServerFn(excludeLot);
@@ -921,6 +932,120 @@ export function useDashboardData() {
         void queryClient.invalidateQueries({ queryKey: queryKeys.collectionLinks });
         void queryClient.invalidateQueries({ queryKey: queryKeys.collectionFeedback });
       });
+  };
+
+  // --- "Ficar de olho" -------------------------------------------------------------------
+  // Marca um lote como compra muito em vista; quando OUTRO lote casa (artista+álbum, mesmo
+  // motor da Coleção) com um disco marcado, o card ganha borda/selo próprios. Best-effort: um
+  // erro aqui nunca derruba a home (queries com fallback vazio, casamento em try/catch).
+  const lookoutQuery = useLookoutQuery();
+  const lookoutLinksQuery = useLookoutLinksQuery();
+  const lookoutCands = useMemo(
+    () => lookoutCandidates(lookoutQuery.data ?? [], artistAliases),
+    [lookoutQuery.data, artistAliases],
+  );
+  // Itens ATIVOS por lote de origem (o lote marcado) e por id (para o teto do selo).
+  const lookoutByOrigin = useMemo(() => {
+    const map = new Map<string, (typeof lookoutCands)[number]["item"]>();
+    for (const it of lookoutQuery.data ?? []) if (it.status === "active") map.set(it.lotId, it);
+    return map;
+  }, [lookoutQuery.data]);
+  const lookoutItemById = useMemo(
+    () => new Map((lookoutQuery.data ?? []).map((it) => [it.id, it])),
+    [lookoutQuery.data],
+  );
+  type LookoutLot = {
+    id: string;
+    title: string;
+    artist?: string;
+    image: string | null;
+    house: string;
+    url: string;
+    dayKey?: string;
+  };
+  const lookoutFor = (lot: { id: string }) => {
+    const origin = lookoutByOrigin.get(lot.id) ?? null;
+    let hit: LookoutHit | null = null;
+    try {
+      const identity = identityById.get(lot.id);
+      if (identity && lookoutCands.length) {
+        hit = matchLookoutForLot(lookoutCands, lot.id, identity, lookoutLinksQuery.data);
+      }
+    } catch {
+      /* falha de casamento de um lote é ignorada */
+    }
+    const maxPrice = hit
+      ? (lookoutItemById.get(hit.itemId)?.maxPrice ?? null)
+      : (origin?.maxPrice ?? null);
+    return { on: Boolean(origin), hit, maxPrice };
+  };
+  const toggleLookoutMutation = useMutation({
+    mutationFn: async (lot: LookoutLot) => {
+      const origin = lookoutByOrigin.get(lot.id) ?? null;
+      const ai = parseAiAlbum(albumById.get(lot.id) ?? null);
+      const market = marketById.get(lot.id);
+      const artist = effectiveArtist({ id: lot.id, artist: lot.artist ?? "", title: lot.title });
+      const res = await runToggleLookout({
+        data: {
+          lotId: lot.id,
+          on: !origin,
+          itemId: origin?.id,
+          artist,
+          album: ai.album ?? "",
+          year: ai.year ?? market?.year ?? null,
+          title: lot.title,
+          house: lot.house,
+          image: lot.image,
+          url: lot.url,
+          dayKey: lot.dayKey ?? "",
+        },
+      });
+      return { added: !origin, item: res.item, artist };
+    },
+    onSuccess: ({ added, item, artist }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lookout });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lookoutOverview });
+      if (!added) {
+        toast.success("Deixou de ficar de olho");
+      } else if (!item?.album || !artist || artist === LOTE_LABEL) {
+        toast.warning(
+          "De olho marcado, mas o artista/álbum não foi identificado — complete na página De olho para o destaque funcionar",
+        );
+      } else {
+        toast.success("De olho: vou destacar este disco quando reaparecer");
+      }
+    },
+    onError: (error: unknown) =>
+      toast.error((error as Error)?.message || "Não foi possível ficar de olho"),
+  });
+  // Confirmar ("é este disco") ou descartar ("não é") UM lote — otimista, com rollback.
+  const resolveLookout = (lotId: string, decision: "confirm" | "dismiss", hit: LookoutHit) => {
+    const value: string | false = decision === "confirm" ? hit.itemId : false;
+    const prev = lookoutLinksQuery.data ?? {};
+    queryClient.setQueryData<LookoutLinks>(queryKeys.lookoutLinks, (old) => ({
+      ...(old ?? {}),
+      [lotId]: value,
+    }));
+    void runSetLookoutLink({ data: { lotId, value } })
+      .catch((error: unknown) => {
+        queryClient.setQueryData(queryKeys.lookoutLinks, prev);
+        toast.error((error as Error)?.message || "Não foi possível salvar a decisão");
+      })
+      .finally(() => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.lookoutLinks });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.lookoutOverview });
+      });
+  };
+  /** Props do `LotCard` para o "ficar de olho" (espalhar no card: `{...lookoutProps(lot)}`). */
+  const lookoutProps = (lot: LookoutLot) => {
+    const lookout = lookoutFor(lot);
+    return {
+      lookout,
+      onToggleLookout: () => toggleLookoutMutation.mutate(lot),
+      onResolveLookout: (decision: "confirm" | "dismiss") => {
+        if (lookout.hit) resolveLookout(lot.id, decision, lookout.hit);
+      },
+    };
   };
 
   // "Este termo não deveria contar" (painel de relação, casamento com falso positivo) — mesmo
@@ -1710,6 +1835,7 @@ export function useDashboardData() {
     conditionFor,
     demandFor,
     ownedFor,
+    lookoutProps,
     setOwnedPanelLot,
     editTags,
     soldById,

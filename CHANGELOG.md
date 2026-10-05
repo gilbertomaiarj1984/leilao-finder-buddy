@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **v0.107.0** — "Ficar de olho": ícone de binóculos nos cards de lote marca um disco como compra muito em vista; lotes futuros que casam (artista+álbum, mesmo motor da Coleção) ganham borda fúcsia + selo "De olho · NN%" (✓/✕ confirmam/descartam por lote); nova página **De olho** (`/olho`) com matches por vir, teto de preço, histórico de aparições (`lot_sales`) e contador de novos no menu; aviso push opcional via ntfy.sh (`step=lookoutnotify` do cron, `NTFY_TOPIC`). Nova tabela `lookout_items`.
 - **v0.106.2** — Ícone de tracklist também nos cards de Compras e Coleção, reaproveitando a tracklist do lote de origem (`lot_id`/`origin_lot_id`); itens manuais ou de lotes já podados ficam com o ícone apagado.
 - **v0.106.1** — Tracklist retroativa: novo `step=tracklist` do cron (e do `refresh.yml`) preenche as faixas dos lotes de hoje em diante que já têm avaliação com álbum e ainda não têm tracklist (por nome do álbum, sem imagem; `[]` = IA não soube, não reconsulta).
 - **v0.106.0** — Ícone de tracklist abaixo do ícone da Coleção nos cards de lote: o hover mostra as faixas por lado com bolinha verde (mais famosas), amarela (menos) ou vermelha (desconhecidas/lado B); dados vêm da avaliação da IA (`lot_ai.tracklist`, só lotes avaliados/reavaliados depois desta versão).

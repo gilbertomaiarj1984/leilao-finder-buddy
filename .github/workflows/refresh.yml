@@ -243,6 +243,17 @@ jobs:
           res="$(call "/api/cron?step=purchases")"
           echo "purchases: $res"
 
+          echo "== Aviso de matches do \"De olho\" (push via ntfy.sh) =="
+          # Lotes novos que casam (artista+álbum, confiança alta) com discos marcados em "De olho"
+          # viram 1 push cada (dedupe em app_state). Vem DEPOIS da identificação/mercado (álbum
+          # resolvido) e antes da faxina. No-op sem NTFY_TOPIC no .env do servidor; falha aqui é
+          # só avisada (não reprova a run) — o lote volta a ser candidato na próxima execução.
+          if res="$(call_soft "/api/cron?step=lookoutnotify")"; then
+            echo "lookoutnotify: $res"
+          else
+            echo "lookoutnotify: falhou (não crítico) — $res"
+          fi
+
           echo "== Faxina de seen_auctions (Fase 5 da migração para VPS) =="
           # Remove leilões cujas vendas já foram capturadas e fora da janela de retenção —
           # tabela nunca era podada antes, só crescia. 1 chamada, idempotente.

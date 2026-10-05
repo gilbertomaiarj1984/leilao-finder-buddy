@@ -89,6 +89,7 @@ export function WatchedTab({ d }: { d: DashboardData }) {
     conditionFor,
     demandFor,
     ownedFor,
+    lookoutProps,
     setOwnedPanelLot,
     editTags,
     soldById,
@@ -331,6 +332,7 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                 condition={conditionFor(lot)}
                 demand={demandFor(lot)}
                 owned={ownedFor(lot)}
+                {...lookoutProps(lot)}
                 onOpenOwned={() => setOwnedPanelLot(lot)}
                 onEditTags={editTags(lot.id)}
                 bidStatus={bidStatusById.get(lot.idPeca)}

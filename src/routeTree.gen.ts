@@ -17,6 +17,7 @@ import { Route as AuthenticatedAnaliseRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedAoVivoRouteImport } from './routes/_authenticated/ao-vivo'
 import { Route as AuthenticatedColecaoRouteImport } from './routes/_authenticated/colecao'
 import { Route as AuthenticatedComprasRouteImport } from './routes/_authenticated/compras'
+import { Route as AuthenticatedOlhoRouteImport } from './routes/_authenticated/olho'
 import { Route as AuthenticatedVinilAnalyticsRouteImport } from './routes/_authenticated/vinil-analytics'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
@@ -58,6 +59,11 @@ const AuthenticatedComprasRoute = AuthenticatedComprasRouteImport.update({
   path: '/compras',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedOlhoRoute = AuthenticatedOlhoRouteImport.update({
+  id: '/olho',
+  path: '/olho',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedVinilAnalyticsRoute =
   AuthenticatedVinilAnalyticsRouteImport.update({
     id: '/vinil-analytics',
@@ -73,6 +79,7 @@ export interface FileRoutesByFullPath {
   '/ao-vivo': typeof AuthenticatedAoVivoRoute
   '/colecao': typeof AuthenticatedColecaoRoute
   '/compras': typeof AuthenticatedComprasRoute
+  '/olho': typeof AuthenticatedOlhoRoute
   '/vinil-analytics': typeof AuthenticatedVinilAnalyticsRoute
 }
 export interface FileRoutesByTo {
@@ -82,6 +89,7 @@ export interface FileRoutesByTo {
   '/ao-vivo': typeof AuthenticatedAoVivoRoute
   '/colecao': typeof AuthenticatedColecaoRoute
   '/compras': typeof AuthenticatedComprasRoute
+  '/olho': typeof AuthenticatedOlhoRoute
   '/vinil-analytics': typeof AuthenticatedVinilAnalyticsRoute
   '/': typeof AuthenticatedIndexRoute
 }
@@ -94,6 +102,7 @@ export interface FileRoutesById {
   '/_authenticated/ao-vivo': typeof AuthenticatedAoVivoRoute
   '/_authenticated/colecao': typeof AuthenticatedColecaoRoute
   '/_authenticated/compras': typeof AuthenticatedComprasRoute
+  '/_authenticated/olho': typeof AuthenticatedOlhoRoute
   '/_authenticated/vinil-analytics': typeof AuthenticatedVinilAnalyticsRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
 }
@@ -107,6 +116,7 @@ export interface FileRouteTypes {
     | '/ao-vivo'
     | '/colecao'
     | '/compras'
+    | '/olho'
     | '/vinil-analytics'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -116,6 +126,7 @@ export interface FileRouteTypes {
     | '/ao-vivo'
     | '/colecao'
     | '/compras'
+    | '/olho'
     | '/vinil-analytics'
     | '/'
   id:
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/_authenticated/ao-vivo'
     | '/_authenticated/colecao'
     | '/_authenticated/compras'
+    | '/_authenticated/olho'
     | '/_authenticated/vinil-analytics'
     | '/_authenticated/'
   fileRoutesById: FileRoutesById
@@ -195,6 +207,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedComprasRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/olho': {
+      id: '/_authenticated/olho'
+      path: '/olho'
+      fullPath: '/olho'
+      preLoaderRoute: typeof AuthenticatedOlhoRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/vinil-analytics': {
       id: '/_authenticated/vinil-analytics'
       path: '/vinil-analytics'
@@ -210,6 +229,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAoVivoRoute: typeof AuthenticatedAoVivoRoute
   AuthenticatedColecaoRoute: typeof AuthenticatedColecaoRoute
   AuthenticatedComprasRoute: typeof AuthenticatedComprasRoute
+  AuthenticatedOlhoRoute: typeof AuthenticatedOlhoRoute
   AuthenticatedVinilAnalyticsRoute: typeof AuthenticatedVinilAnalyticsRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
@@ -219,6 +239,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAoVivoRoute: AuthenticatedAoVivoRoute,
   AuthenticatedColecaoRoute: AuthenticatedColecaoRoute,
   AuthenticatedComprasRoute: AuthenticatedComprasRoute,
+  AuthenticatedOlhoRoute: AuthenticatedOlhoRoute,
   AuthenticatedVinilAnalyticsRoute: AuthenticatedVinilAnalyticsRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }

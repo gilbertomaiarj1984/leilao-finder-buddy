@@ -89,6 +89,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     conditionFor,
     demandFor,
     ownedFor,
+    lookoutProps,
     setOwnedPanelLot,
     editTags,
     soldById,
@@ -418,6 +419,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                           condition={conditionFor(lot)}
                           demand={demandFor(lot)}
                           owned={ownedFor(lot)}
+                          {...lookoutProps(lot)}
                           onOpenOwned={() => setOwnedPanelLot(lot)}
                           onEditTags={editTags(lot.id)}
                           bidStatus={bidStatusById.get(lot.idPeca)}
@@ -511,6 +513,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     condition={conditionFor(lot)}
                     demand={demandFor(lot)}
                     owned={ownedFor(lot)}
+                    {...lookoutProps(lot)}
                     onOpenOwned={() => setOwnedPanelLot(lot)}
                     onEditTags={editTags(lot.id)}
                     bidStatus={bidStatusById.get(lot.idPeca)}
@@ -699,6 +702,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                                 condition={conditionFor(lot)}
                                 demand={demandFor(lot)}
                                 owned={ownedFor(lot)}
+                                {...lookoutProps(lot)}
                                 onOpenOwned={() => setOwnedPanelLot(lot)}
                                 onEditTags={editTags(lot.id)}
                                 bidStatus={bidStatusById.get(lot.idPeca)}

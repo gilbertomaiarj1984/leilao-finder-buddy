@@ -170,6 +170,57 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   lotes. Preço em `<b class="pb-1 …">` (classe composta), data = data do leilão, casa do
   `.ellipsis-overflow` (l=6 não traz `pesq-uf`). Testado com card real via `bun -e`.
 
+## De olho — "ficar de olho" (`lookout_items`, v0.107.0)
+
+- **O que é:** o usuário marca um lote (ícone de binóculos na linha de ações do `LotCard`, ao lado
+  de Vigiar/abrir/excluir) como **compra muito em vista**. Quando o MESMO disco reaparecer em
+  outro lote futuro, o card é destacado e a página **De olho** (`/olho`, botão no header da home
+  com contador de novos) lista os matches. **Não usa a vigia**: ela vive na conta do LeilõesBR e
+  não persiste nada local — por isso tabela própria.
+- **Tabela `lookout_items`** (`setup.sql` + `migrations/20261005120000_lookout.sql`): `lot_id`
+  (UNIQUE, lote de origem), snapshot (`artist`, `album`, `year`, `title`, `house`, `image`, `url`,
+  `day_key`), `max_price` (teto, opcional), `note`, `status` (`active`/`acquired`/`dismissed`).
+  **Sem FK para `lots`** — `pruneOutOfWindow` apaga lotes antigos e o marcador sobrevive pelo
+  snapshot. CRUD em `lookout.server.ts` (`addLookoutFromLot` idempotente por `lot_id`: reativa sem
+  sobrescrever teto/nota) exposto por `lookout.functions.ts` (`toggleLookout`, `updateLookout`,
+  `deleteLookout`, `setLookoutLink`, `markLookoutSeen`, `getLookoutOverview`, …).
+- **Estado em `app_state`:** `lookout_links` (`lotId → itemId | false`: ✓ confirma / ✕ descarta UM
+  lote), `lookout_seen` (chaves `lotId|itemId` já vistas na página → "novo"/contador) e
+  `lookout_notified` (dedupe do aviso externo). Listas limitadas às 2000 mais recentes.
+- **Casamento** (`lookout-match.ts`, puro/client-safe): reusa o motor da Coleção
+  (`ownedCandidate`/`ownedScore` de `wantlist-match.ts`) — artista×artista e álbum×álbum, não
+  palavras soltas; apelidos de artista do Analytics (`resolveArtistAlias`). O item faz o papel do
+  "disco da coleção". `matchLookoutForLot` ignora o lote de origem, respeita `lookout_links` e
+  aceita score ≥ 0,6 (`LOOKOUT_MATCH_MIN`); ≥ 0,8 (`LOOKOUT_CONFIDENT_MIN`) ou confirmado = selo
+  cheio e elegível a aviso, abaixo = "?" com ✓/✕. Só itens `active` com artista real e álbum
+  viram candidatos (buckets "Lote"/"Coletâneas" e item sem álbum não casam — a UI avisa e a
+  página tem lápis para corrigir artista/álbum/ano). `buildLotIdentity` replica a identidade da
+  home (artista efetivo + álbum IA + release Discogs).
+- **Destaque no card:** prop `lookout` do `LotCard` (`{on, hit, maxPrice}`; fiação em
+  `use-dashboard-data.tsx` → `lookoutProps(lot)` espalhado nos cards de `day-tab.tsx` e
+  `watched-tab.tsx`; a seção de lances não recebe). Borda **fúcsia**; precedência
+  **lance > vigia > de olho**. Selo "De olho · NN%" (+ "abaixo/acima do teto" vs. valor atual).
+  O lote marcado também fica fúcsia, com o botão preenchido.
+- **Página `/olho`:** `getLookoutOverview` → `computeLookout` (`lookout-matches.server.ts`, fonte
+  única da página, do contador e do aviso): lotes de hoje até +14 dias (retenção de `lots`) que
+  ainda não terminaram, com IA/Discogs; por item mostra teto/nota editáveis, matches **por vir**
+  (Vigiar via `toggleWatch`, abrir, ✓/✕, "novo") e **aparições anteriores** = vendas arquivadas
+  em `lot_sales` (≥ 80%, sem kits) com faixa de preço vendido. Abrir a página marca os matches
+  como vistos (zera o contador do menu; o selo "novo" daquela visita permanece). O contador do
+  menu usa a versão leve (`history: false`, staleTime 15 min).
+- **Aviso externo (ntfy.sh):** `step=lookoutnotify` do cron (`refresh.yml`, depois de
+  aiident/market, antes da faxina, via `call_soft` — falha não reprova a run) →
+  `notifyLookoutMatches`: para cada match confiante ainda não avisado (`pickNotifiable`, dedupe
+  `lotId|itemId` gravado SÓ após o envio) faz um POST JSON (UTF-8) em `NTFY_SERVER`
+  (padrão `https://ntfy.sh`) no tópico `NTFY_TOPIC`; prioridade alta quando o valor atual está
+  dentro do teto; `Click` = `PUBLIC_BASE_URL/olho`. Máx. 8 pushes por rodada, o resto vira um
+  resumo. **Sem `NTFY_TOPIC` é no-op.** Ao marcar o primeiro disco, lotes já casando disparam
+  (limitado pelo teto acima).
+- **Limites conhecidos:** o histórico só vê o que `lot_sales` guarda (e artista/título gravados);
+  `lots.price` é o valor da listagem (pode estar defasado); o estado "vigiando" da página é local
+  à visita; scraping/ntfy não são testáveis no ambiente de desenvolvimento (validado com banco
+  local + servidor HTTP falso no lugar do ntfy).
+
 ## Compras do usuário (`purchases`, v0.61.1–2)
 
 - **Histórico de "Minhas compras" (vinil), PERSISTIDO** — diferente de Vigia/Lances (sempre lidos

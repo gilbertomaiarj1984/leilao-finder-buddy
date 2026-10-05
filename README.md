@@ -34,6 +34,7 @@ Veja `.env.example`. Resumo:
 | `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`  | servidor                  | IA (avaliação/identificação) — Claude e/ou Gemini, opcional    |
 | `DISCOGS_TOKEN`                         | servidor                  | âncora de preço/mercado, opcional                              |
 | `COLLECTION_DIR` / `PUBLIC_BASE_URL`    | servidor                  | fotos da Coleção em disco (ver `.env.example`)                 |
+| `NTFY_TOPIC` / `NTFY_SERVER`            | servidor                  | aviso push do "De olho" (ntfy.sh), opcional                    |
 
 Lista completa e comentada em `.env.example`.
 

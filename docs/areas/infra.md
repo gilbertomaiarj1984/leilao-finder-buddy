@@ -105,3 +105,5 @@ estado em `statusatual` (P→X→1/2/3→4 FECHANDO→F), `valorpecaatual` (pró
 status 4 (FECHANDO)**, Turbo (polling ~250ms) + confirmação. Sniping clássico não existe no
 soft-close; a vantagem é reagir mais rápido no último instante. (`tools/` é ignorado no
 ESLint/Prettier.)
+
+- **Env opcional `NTFY_TOPIC` / `NTFY_SERVER` (v0.107.0):** aviso push do "De olho" via ntfy.sh, lido só pelo servidor (`.env` do VPS; não é secret do GitHub). O tópico funciona como senha — usar nome longo/aleatório. Mudança no `.env` exige recriar o serviço (`docker compose up -d app`).
