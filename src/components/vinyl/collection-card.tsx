@@ -3,6 +3,7 @@ import { ExternalLink, Pencil, RotateCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LotTags } from "@/components/vinyl/ai-score";
 import { scoreTone } from "@/components/vinyl/ai-score-utils";
+import { LotTracklistHover } from "@/components/vinyl/tracklist-hover";
 import type { CollectionItem } from "@/lib/collection.server";
 import { normalizeGrade, scoreCondition } from "@/lib/grading";
 
@@ -55,6 +56,11 @@ export function CollectionCard({
           <CardImage image={item.image} alt={alt} />
         </div>
       )}
+
+      {/* Tracklist reaproveitada da avaliação do lote de origem (itens manuais não têm). */}
+      <div className="absolute right-2 top-2 z-10">
+        <LotTracklistHover lotId={item.lotId ?? item.originLotId} title={alt} />
+      </div>
 
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div>

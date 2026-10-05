@@ -757,4 +757,4 @@ segue existindo, usado pela home ("Atualizar tudo" — desde v0.84.0 também rod
 - "Atualizar relações" (rodapé da home): rebusca Coleção/vínculos/rejeições/termos negados (cache de
   1h) e o casamento é recalculado para todos os lotes; `resolveOwned` segue respeitando "não tenho".
 
-- **Tracklist no card (v0.106.0):** `TracklistHover` (`tracklist-hover.tsx`) no canto direito do `LotCard`, logo abaixo do ícone da Coleção; dados de `LotAi.tracklist` (ver `ia.md`). Não aparece nos cards de Compras/Coleção (não têm avaliação `lot_ai`).
+- **Tracklist no card (v0.106.0):** `TracklistHover` (`tracklist-hover.tsx`) no canto direito do `LotCard`, logo abaixo do ícone da Coleção; dados de `LotAi.tracklist` (ver `ia.md`). Compras e Coleção usam `LotTracklistHover` (v0.106.2): busca a tracklist em `lot_ai` pelo `lot_id` (Coleção: `lotId ?? originLotId`) — itens manuais ou de lotes já podados (cascade apaga `lot_ai`) ficam com o ícone apagado.

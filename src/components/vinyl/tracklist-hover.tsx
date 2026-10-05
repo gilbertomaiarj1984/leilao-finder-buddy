@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ListMusic } from "lucide-react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useLotAiQuery } from "@/lib/queries";
 import { groupTracksBySide, type Track, type TrackFame } from "@/lib/tracklist";
 
 const FAME_DOT: Record<TrackFame, string> = {
@@ -104,4 +105,18 @@ export function TracklistHover({
       ) : null}
     </Popover>
   );
+}
+
+/**
+ * Tracklist de um item que veio de um LOTE (Compras/Coleção): reaproveita a tracklist já
+ * gravada na avaliação da IA do lote (`lot_ai.tracklist`), achada pelo `lotId`. Sem lote ou sem
+ * avaliação (ex.: lote já podado do banco), o ícone fica apagado.
+ */
+export function LotTracklistHover({ lotId, title }: { lotId?: string | null; title?: string }) {
+  const aiQuery = useLotAiQuery();
+  const tracklist = useMemo(
+    () => (lotId ? (aiQuery.data?.find((r) => r.id === lotId)?.tracklist ?? null) : null),
+    [aiQuery.data, lotId],
+  );
+  return <TracklistHover tracklist={tracklist} title={title} />;
 }
