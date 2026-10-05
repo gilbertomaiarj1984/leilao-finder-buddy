@@ -217,8 +217,9 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   resumo. **Sem `NTFY_TOPIC` é no-op.** Ao marcar o primeiro disco, lotes já casando disparam
   (limitado pelo teto acima).
 - **Limites conhecidos:** o histórico só vê o que `lot_sales` guarda (e artista/título gravados);
-  `lots.price` é o valor da listagem (pode estar defasado); o estado "vigiando" da página é local
-  à visita; scraping/ntfy não são testáveis no ambiente de desenvolvimento (validado com banco
+  `lots.price` é o valor da listagem (pode estar defasado); o estado "vigiando" da página vem da vigia
+  real (`useWatchedQuery`: mesmo cache/acumulador da home e da Análise, casando por `idPeca`;
+  vigiar/desvigiar atualiza o acumulador na hora, sem invalidar a query); scraping/ntfy não são testáveis no ambiente de desenvolvimento (validado com banco
   local + servidor HTTP falso no lugar do ntfy).
 
 ## Compras do usuário (`purchases`, v0.61.1–2)

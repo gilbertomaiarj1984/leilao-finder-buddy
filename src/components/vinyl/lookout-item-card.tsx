@@ -61,6 +61,7 @@ export function LookoutItemCard({
   upcoming,
   history,
   watchedIds,
+  watchLoading,
   busyWatch,
   onUpdate,
   onDelete,
@@ -70,7 +71,10 @@ export function LookoutItemCard({
   item: LookoutItem;
   upcoming: LookoutUpcoming[];
   history: LookoutPastSale[];
+  /** `idPeca` dos lotes vigiados na conta (mesmo critério da home e da Análise). */
   watchedIds: ReadonlySet<string>;
+  /** Lista de vigiados ainda carregando: o botão espera, para não mostrar "Vigiar" errado. */
+  watchLoading: boolean;
   busyWatch: string | null;
   onUpdate: (patch: LookoutPatch) => void;
   onDelete: () => void;
@@ -264,7 +268,7 @@ export function LookoutItemCard({
               {upcoming.map((m) => {
                 const sure = m.confirmed || m.score >= LOOKOUT_CONFIDENT_MIN;
                 const vs = priceVsCeiling(m.priceNum, item.maxPrice);
-                const watching = watchedIds.has(m.lotId);
+                const watching = watchedIds.has(m.idPeca);
                 return (
                   <li
                     key={m.lotId}
@@ -340,7 +344,7 @@ export function LookoutItemCard({
                         size="sm"
                         variant={watching ? "default" : "outline"}
                         onClick={() => onWatch(m)}
-                        disabled={busyWatch === m.lotId}
+                        disabled={watchLoading || busyWatch === m.lotId}
                       >
                         <Eye className="mr-1 h-4 w-4" />
                         {watching ? "Vigiando" : "Vigiar"}

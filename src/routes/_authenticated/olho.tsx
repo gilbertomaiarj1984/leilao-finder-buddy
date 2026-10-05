@@ -20,7 +20,8 @@ import {
 import { notifyKey } from "@/lib/lookout-match";
 import type { LookoutUpcoming } from "@/lib/lookout-matches.server";
 import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
-import { queryKeys, useLookoutOverviewQuery } from "@/lib/queries";
+import { queryKeys, useLookoutOverviewQuery, useWatchedQuery } from "@/lib/queries";
+import { saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
 
 export const Route = createFileRoute("/_authenticated/olho")({
   head: () => ({ meta: [{ title: "De olho — Garimpo de Vinil" }] }),
@@ -90,25 +91,52 @@ function OlhoPage() {
       toast.error((error as Error)?.message || "Não foi possível salvar"),
   });
 
-  // Vigiar direto da página (reusa a server function da home). O estado "vigiando" é local à
-  // visita — a vigia de verdade vive na conta do LeilõesBR.
-  const [watchedIds, setWatchedIds] = useState<ReadonlySet<string>>(new Set());
+  // Vigia REAL: a lista vem da conta do LeilõesBR (`listWatched`), exposta pelo mesmo hook/cache/
+  // acumulador da home e da Análise (`useWatchedQuery` — as rotas precisam usar a MESMA lógica,
+  // ver `watched-accum.ts`). Casa por `idPeca`, como as outras duas telas.
+  const { query: watched, accumRef: watchedAccumRef } = useWatchedQuery();
+  const watchedIds = useMemo(
+    () => new Set((watched.data ?? []).map((w) => w.idPeca)),
+    [watched.data],
+  );
   const [busyWatch, setBusyWatch] = useState<string | null>(null);
   const watchLot = async (m: LookoutUpcoming) => {
-    const watch = !watchedIds.has(m.lotId);
+    const watch = !watchedIds.has(m.idPeca);
     setBusyWatch(m.lotId);
     try {
-      await runWatch({
+      const result = await runWatch({
         data: { idPeca: m.idPeca, idLeilao: m.idLeilao, base: m.base, watch },
       });
-      setWatchedIds((prev) => {
-        const next = new Set(prev);
-        if (watch) next.add(m.lotId);
-        else next.delete(m.lotId);
-        return next;
-      });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.watched });
-      toast.success(watch ? "Vigiando este lote" : "Vigia removida");
+      // Atualiza o acumulador NA HORA nas duas direções, como o `toggle` da home: a conta do
+      // LeilõesBR pode demorar a refletir, então NÃO invalidamos `queryKeys.watched` (um refetch
+      // imediato traria a lista atrasada e desfaria a atualização).
+      const key = `${m.idLeilao}-${m.idPeca}`;
+      if (!result.watched) {
+        watchedAccumRef.current!.delete(key);
+      } else {
+        const [yyyy, mm, dd] = m.dayKey.split("-");
+        watchedAccumRef.current!.set(key, {
+          id: key,
+          idPeca: m.idPeca,
+          idLeilao: m.idLeilao,
+          base: m.base,
+          lote: m.lote,
+          title: m.title,
+          url: m.url,
+          image: m.image,
+          price: m.price,
+          date: dd && mm && yyyy ? `${dd}/${mm}/${yyyy}` : "",
+          time: m.time,
+          house: m.house,
+          houseUrl: "",
+          uf: m.uf,
+          artist: "",
+          watched: true,
+        });
+      }
+      saveAccum(WATCHED_ACCUM_STORAGE_KEY, watchedAccumRef.current!);
+      queryClient.setQueryData(queryKeys.watched, [...watchedAccumRef.current!.values()]);
+      toast.success(result.watched ? "Lote vigiado no LeilõesBR" : "Vigia removida no LeilõesBR");
     } catch (error) {
       toast.error((error as Error)?.message || "Não foi possível alterar a vigia");
     } finally {
@@ -213,6 +241,7 @@ function OlhoPage() {
                 upcoming={upcomingByItem.get(item.id) ?? []}
                 history={historyByItem.get(item.id) ?? []}
                 watchedIds={watchedIds}
+                watchLoading={watched.isLoading}
                 busyWatch={busyWatch}
                 onUpdate={(patch) => updateMut.mutate({ id: item.id, patch })}
                 onDelete={() => deleteMut.mutate(item.id)}
@@ -237,6 +266,7 @@ function OlhoPage() {
                     upcoming={[]}
                     history={[]}
                     watchedIds={watchedIds}
+                    watchLoading={false}
                     busyWatch={busyWatch}
                     onUpdate={(patch) => updateMut.mutate({ id: item.id, patch })}
                     onDelete={() => deleteMut.mutate(item.id)}
