@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
+import { TracklistHover } from "@/components/vinyl/tracklist-hover";
 import { formatAiAlbum, type LotAi, type LotMarket } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import type { Condition } from "@/lib/grading";
@@ -273,6 +274,11 @@ export function LotCard({
             </div>
           );
         })()}
+        {/* Tracklist do álbum (IA): ícone logo ABAIXO do da Coleção; o hover mostra as faixas com
+          bolinha verde/amarela/vermelha pela fama (vermelho = desconhecida e/ou lado B). */}
+        <div className="absolute right-2 top-[3.75rem] z-10">
+          <TracklistHover tracklist={ai?.tracklist} title={aiLabel || undefined} />
+        </div>
         {/* Nº do lote no canto superior ESQUERDO, espelhando a nota da IA (canto direito).
           Visão padrão de todos os cards. */}
         {lot.lote ? (

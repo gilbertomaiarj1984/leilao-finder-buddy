@@ -447,6 +447,7 @@ function AnalisePage() {
         reason: r.reason,
         tags: r.tags,
         evalPrice: r.eval_price,
+        tracklist: r.tracklist,
       });
     return map;
   }, [lotAiQuery.data]);

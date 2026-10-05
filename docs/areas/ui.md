@@ -756,3 +756,5 @@ segue existindo, usado pela home ("Atualizar tudo" — desde v0.84.0 também rod
   Analytics também lembra a ordenação dos álbuns e do detalhe; Análise lembra "mostrar adquiridos".
 - "Atualizar relações" (rodapé da home): rebusca Coleção/vínculos/rejeições/termos negados (cache de
   1h) e o casamento é recalculado para todos os lotes; `resolveOwned` segue respeitando "não tenho".
+
+- **Tracklist no card (v0.106.0):** `TracklistHover` (`tracklist-hover.tsx`) no canto direito do `LotCard`, logo abaixo do ícone da Coleção; dados de `LotAi.tracklist` (ver `ia.md`). Não aparece nos cards de Compras/Coleção (não têm avaliação `lot_ai`).

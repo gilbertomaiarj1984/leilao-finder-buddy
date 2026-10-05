@@ -1,3 +1,4 @@
+import type { Track } from "@/lib/tracklist";
 import { bidIsWinning, normalizeForMatch, parsePrice, titleCase } from "@/lib/vinyl-parse";
 
 /**
@@ -84,6 +85,8 @@ export type LotAi = {
   tags: string[];
   /** Preço (R$) do lote quando a nota foi dada (`lot_ai.eval_price`) — ver `ai-reprice.ts`. */
   evalPrice?: number | null;
+  /** Tracklist com a fama de cada faixa (`lot_ai.tracklist`); null/ausente = não informada. */
+  tracklist?: Track[] | null;
   matchesInterests?: boolean;
 };
 

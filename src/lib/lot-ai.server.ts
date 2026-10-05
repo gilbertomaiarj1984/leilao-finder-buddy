@@ -1,4 +1,5 @@
 import { db } from "@/lib/db-client.server";
+import { normalizeTracklist, type Track } from "@/lib/tracklist";
 
 /**
  * Avaliação da IA de UM lote, como fica no banco (`lot_ai`) e como a UI consome.
@@ -17,6 +18,8 @@ export type LotAiRow = {
   model: string | null;
   /** Preço (R$) usado na avaliação — ver `ai-reprice.ts`. null = avaliação antiga/sem preço. */
   eval_price: number | null;
+  /** Tracklist do álbum com a fama de cada faixa (ver `tracklist.ts`); null = não informada. */
+  tracklist: Track[] | null;
 };
 
 /** `numeric` do Postgres chega como string (postgres.js) — normaliza para number|null. */
@@ -44,7 +47,9 @@ export async function getAllLotAi(): Promise<LotAiRow[]> {
   const rows: LotAiRow[] = [];
   const { data, error } = await db
     .from<LotAiRow>("lot_ai")
-    .select("id, title_hash, score, rarity, deal, album, reason, tags, model, eval_price");
+    .select(
+      "id, title_hash, score, rarity, deal, album, reason, tags, model, eval_price, tracklist",
+    );
   if (error) throw error;
   const batch = data ?? [];
   for (const r of batch) {
@@ -59,6 +64,7 @@ export async function getAllLotAi(): Promise<LotAiRow[]> {
       tags: toTags(r.tags),
       model: r.model,
       eval_price: toPrice(r.eval_price),
+      tracklist: normalizeTracklist(r.tracklist),
     });
   }
   allCache = { at: Date.now(), rows };
@@ -116,6 +122,7 @@ export async function upsertLotAi(rows: LotAiRow[]): Promise<number> {
     tags: r.tags,
     model: r.model,
     eval_price: r.eval_price,
+    tracklist: r.tracklist,
     evaluated_at: evaluatedAt,
   }));
   const { error } = await db.from("lot_ai").upsert(payload, { onConflict: "id" });
