@@ -98,8 +98,10 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   vermelho no card; vermelho = desconhecida e/ou lado B). `maxTokens` da avaliação subiu 400→1200.
   Normalização/agrupamento puros em `tracklist.ts` (`normalizeTracklist`, `groupTracksBySide`);
   UI em `tracklist-hover.tsx` (ícone abaixo do da Coleção no `LotCard`; hover/toque abre a lista).
-  Só lotes avaliados/reavaliados DEPOIS desta versão têm tracklist (sem backfill; o ícone fica
-  apagado até lá). O prompt manda não inventar faixas (`[]` quando não sabe).
+  Retroativo (v0.106.1): `step=tracklist` (`tracklist-step.server.ts`, também no `refresh.yml`) preenche
+  lotes com `day_key >=` hoje que têm `lot_ai.album` e `tracklist` NULL, pedindo só as faixas pelo
+  nome do álbum (dedup por álbum; `[]` = tentou e a IA não soube). Só atualiza linhas existentes de
+  `lot_ai` (lote só com `lot_ident` não é coberto). Antes disso, o ícone fica apagado. O prompt manda não inventar faixas (`[]` quando não sabe).
 - **Modo automático — chave `ai_mode`** (`getAiMode`/`setAiMode`): `"off" | "all" | "watched"`,
   **padrão `"watched"`** (econômico). No `step=aieval`: `off` não coleta/submete; `all` = todos
   os lotes; `watched` = só lotes vigiados ∪ com lance (ids de `listWatchedFromSite` +

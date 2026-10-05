@@ -48,3 +48,37 @@ export function groupTracksBySide(tracks: Track[]): { side: string | null; track
   }
   return groups;
 }
+
+/** Extrai a tracklist do texto devolvido pelo modelo (objeto `{tracklist:[...]}` ou array). */
+export function parseTracklistText(text: string): Track[] | null {
+  if (!text) return null;
+  const objStart = text.indexOf("{");
+  const arrStart = text.indexOf("[");
+  try {
+    if (objStart >= 0 && (arrStart < 0 || objStart < arrStart)) {
+      const obj = JSON.parse(text.slice(objStart, text.lastIndexOf("}") + 1)) as Record<
+        string,
+        unknown
+      >;
+      return normalizeTracklist(obj["tracklist"]);
+    }
+    if (arrStart >= 0) {
+      return normalizeTracklist(JSON.parse(text.slice(arrStart, text.lastIndexOf("]") + 1)));
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/** Prompt (só texto) que pede a tracklist de um álbum JÁ identificado — usado no retroativo. */
+export function buildTracklistPrompt(album: string): string {
+  return (
+    `Álbum de vinil: ${JSON.stringify(album)}.\n` +
+    'Devolva um objeto JSON com a chave "tracklist": faixas do álbum na ordem do disco, como ' +
+    'array de {"side":"A","title":"Nome da faixa","fame":"alta|media|baixa"}. "side" é o lado ' +
+    'do vinil ("A", "B"...). "fame": "alta" = maiores sucessos do álbum, "media" = ' +
+    'conhecidas, "baixa" = pouco conhecidas e/ou de lado B. Só responda se tiver CERTEZA do ' +
+    "álbum e de suas faixas — nunca invente; use [] quando não souber. Responda só com o JSON."
+  );
+}

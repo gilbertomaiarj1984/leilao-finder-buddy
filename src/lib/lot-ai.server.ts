@@ -41,6 +41,11 @@ function toTags(value: unknown): string[] {
 let allCache: { at: number; rows: LotAiRow[] } | null = null;
 const ALL_TTL_MS = 30_000;
 
+/** Descarta o cache de `getAllLotAi` (escritas feitas fora deste módulo, ex.: retroativo). */
+export function invalidateLotAiCache(): void {
+  allCache = null;
+}
+
 /** Lê todas as avaliações (single-user; poucas centenas de linhas). Best-effort. */
 export async function getAllLotAi(): Promise<LotAiRow[]> {
   if (allCache && Date.now() - allCache.at < ALL_TTL_MS) return allCache.rows;

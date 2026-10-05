@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { groupTracksBySide, normalizeTracklist } from "../src/lib/tracklist";
+import { groupTracksBySide, normalizeTracklist, parseTracklistText } from "../src/lib/tracklist";
 
 describe("normalizeTracklist", () => {
   test("normaliza lado, fama e título", () => {
@@ -36,5 +36,19 @@ describe("groupTracksBySide", () => {
       ["A", 2],
       ["B", 1],
     ]);
+  });
+});
+
+describe("parseTracklistText", () => {
+  test("aceita objeto com cercas e array puro", () => {
+    const t = '```json\n{"tracklist":[{"side":"A","title":"X","fame":"alta"}]}\n```';
+    expect(parseTracklistText(t)).toEqual([{ side: "A", title: "X", fame: "alta" }]);
+    expect(parseTracklistText('[{"title":"Y","fame":"media"}]')).toEqual([
+      { side: null, title: "Y", fame: "media" },
+    ]);
+  });
+  test("vazio/lixo vira null", () => {
+    expect(parseTracklistText('{"tracklist":[]}')).toBeNull();
+    expect(parseTracklistText("nada")).toBeNull();
   });
 });
