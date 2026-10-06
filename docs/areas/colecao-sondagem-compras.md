@@ -216,6 +216,18 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   casam (precisão antes de cobertura) — a correção por venda no Analytics resolve. Abrir a página marca os matches
   como vistos (zera o contador do menu; o selo "novo" daquela visita permanece). O contador do
   menu usa a versão leve (`history: false`, staleTime 15 min).
+- **Disco de nome genérico → validação por ANO (v0.111.0):** quando o nome do álbum é o do próprio
+  artista (homônimo — `selfTitled`) ou só tem termos genéricos ("Ao Vivo"), o nome não distingue
+  (o artista tem vários discos assim), então só o ano distingue (`yearVerdict`,
+  `lookout-match.ts`): o lote/venda cita o ano do item → ok; cita só outro(s) ano(s) → rejeita; não
+  informa ano (ou o item não tem ano) → **"a validar"** (score limitado a 0,7: nunca confiante, nunca
+  avisa por ntfy). Anos considerados: texto do título/álbum/release, `lot_ident.year`
+  (`knownYear`) e Discogs. No histórico, as pendentes ficam numa lista própria (✓ confirma =
+  `lookout_links[lotId]=itemId`, ✕ descarta = `false`, "Descartar todas" via
+  `setLookoutLinksBatch`) e **não entram na contagem nem na média**; para as pendentes o servidor
+  ainda olha o descritivo completo (`lot_sales.orig_text`, só dos pendentes, até 300) e confirma
+  se ele cita o ano do item (nunca rejeita por aí). No Analytics o ano é conferido venda a venda
+  (o álbum agregado junta vários anos). Vale também para lotes futuros ("?" + dica no tooltip).
 - **Identificar por IA (v0.110.0):** botão ✨ sob o lápis no card do item de `/olho` →
   `identifyLookout` → `identifyLookoutItem` (`lookout-ident.server.ts`, isolado): usa
   `identLotsSyncRows(…, withImage=true)` (mesmo prompt/parser da identificação dos lotes, **texto

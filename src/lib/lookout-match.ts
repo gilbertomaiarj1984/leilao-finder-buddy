@@ -56,6 +56,8 @@ export type LookoutLinks = Record<string, string | false>;
 const LOOKOUT_MATCH_MIN = 0.6;
 /** Confiante: destaque normal e elegível a aviso externo. */
 export const LOOKOUT_CONFIDENT_MIN = OWNED_CONFIDENT_MIN;
+/** Teto do score quando o ano não permite validar um disco de nome genérico ("a validar"). */
+const LOOKOUT_PENDING_SCORE = 0.7;
 
 /** Resultado do casamento de um lote com um item de olho. */
 export type LookoutHit = {
@@ -65,10 +67,42 @@ export type LookoutHit = {
   score: number;
   /** Confirmado manualmente pelo usuário (score 1). */
   confirmed: boolean;
+  /**
+   * Disco de nome genérico (homônimo do artista, "Ao Vivo"…) cujo ANO não deu para validar:
+   * fica "a validar" pelo usuário (score limitado a 0,7). Ver `yearVerdict`.
+   */
+  yearPending?: boolean;
 };
 
 type OwnedCand = ReturnType<typeof ownedCandidate>;
 export type LookoutCandidate = { item: LookoutItem; cand: OwnedCand };
+
+/**
+ * Disco de nome GENÉRICO: o nome do álbum é o do próprio artista (homônimo — "Caetano Veloso —
+ * Caetano Veloso") ou só tem termos genéricos ("Ao Vivo", "Seus Sucessos"). O artista costuma ter
+ * VÁRIOS discos assim, então o nome sozinho não identifica: só o ANO distingue.
+ */
+function isGenericLookoutAlbum(c: Pick<OwnedCand, "selfTitled" | "albumTokens">): boolean {
+  return c.selfTitled || c.albumTokens.length === 0;
+}
+
+/**
+ * Validação por ANO para discos de nome genérico (v0.111.0):
+ *  - não genérico → "ok" (o nome já distingue);
+ *  - ano do item desconhecido, ou o lote/venda não informa ano → "pending" (usuário valida);
+ *  - o lote informa o ano do item → "ok";
+ *  - o lote informa outro(s) ano(s) e nenhum é o do item → "reject" (é outro disco do artista).
+ */
+type YearVerdict = "ok" | "pending" | "reject";
+export function yearVerdict(
+  item: Pick<LookoutItem, "year">,
+  c: Pick<OwnedCand, "selfTitled" | "albumTokens">,
+  years: ReadonlySet<number>,
+): YearVerdict {
+  if (!isGenericLookoutAlbum(c)) return "ok";
+  if (item.year == null || years.size === 0) return "pending";
+  return years.has(item.year) ? "ok" : "reject";
+}
 
 /** Rótulo curto do item ("Artista — Álbum (Ano)"). */
 export function lookoutLabel(item: Pick<LookoutItem, "artist" | "album" | "year">): string {
@@ -116,6 +150,8 @@ export function buildLotIdentity(input: {
   album?: string | null;
   marketTitle?: string | null;
   marketYear?: number | null;
+  /** Ano já conhecido por outra fonte (ex.: `lot_ident.year`) — entra nos anos do lote. */
+  knownYear?: number | null;
   aliases?: Readonly<Record<string, string>>;
 }): LotIdentity {
   const parsed = parseAiAlbum(input.album ?? null).artist;
@@ -125,13 +161,15 @@ export function buildLotIdentity(input: {
       : parsed
         ? titleCase(parsed)
         : input.artist;
-  return lotIdentity({
+  const identity = lotIdentity({
     title: input.title,
     artist: resolveArtistAlias(artist, input.aliases),
     album: input.album ?? null,
     marketTitle: input.marketTitle ?? null,
     marketYear: input.marketYear ?? null,
   });
+  if (input.knownYear && input.knownYear > 0) identity.years.add(input.knownYear);
+  return identity;
 }
 
 /**
@@ -144,6 +182,7 @@ export function matchLookoutForLot(
   lotId: string,
   identity: LotIdentity,
   links?: LookoutLinks,
+  opts?: { yearGate?: boolean },
 ): LookoutHit | null {
   const link = links?.[lotId];
   if (link === false) return null;
@@ -161,10 +200,21 @@ export function matchLookoutForLot(
   let best: LookoutHit | null = null;
   for (const { item, cand } of cands) {
     if (item.lotId === lotId) continue;
-    const score = ownedScore(cand, identity);
+    let score = ownedScore(cand, identity);
     if (score < LOOKOUT_MATCH_MIN) continue;
+    // Disco de nome genérico: só o ano distingue. Outro ano → não é este disco; sem ano → "a
+    // validar" (score limitado, nunca avisa nem conta como confirmado).
+    let yearPending = false;
+    if (opts?.yearGate !== false) {
+      const verdict = yearVerdict(item, cand, identity.years);
+      if (verdict === "reject") continue;
+      if (verdict === "pending") {
+        score = Math.min(score, LOOKOUT_PENDING_SCORE);
+        yearPending = true;
+      }
+    }
     if (!best || score > best.score) {
-      best = { itemId: item.id, label: lookoutLabel(item), score, confirmed: false };
+      best = { itemId: item.id, label: lookoutLabel(item), score, confirmed: false, yearPending };
     }
   }
   return best;

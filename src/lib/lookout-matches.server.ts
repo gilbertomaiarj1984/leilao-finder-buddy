@@ -62,6 +62,8 @@ export type LookoutUpcoming = {
   /** Faixa de mercado no Brasil (Discogs), quando casada. */
   marketLowBr: number | null;
   marketHighBr: number | null;
+  /** Disco de nome genérico cujo ano não deu para validar (usuário valida com ✓/✕). */
+  yearPending?: boolean;
 };
 
 /**
@@ -87,6 +89,11 @@ export type LookoutPastSale = {
   url?: string;
   /** Veio do casamento direto em `lot_sales` ou do agrupamento curado do Analytics. */
   source?: "direct" | "analytics";
+  /**
+   * Disco de nome genérico (ex.: homônimo do artista) sem ano que confirme que é ESTE disco: fica
+   * "a validar" pelo usuário e não entra na contagem/estatística (v0.111.0).
+   */
+  pending?: boolean;
 };
 
 export type LookoutOverview = {
@@ -99,6 +106,32 @@ export type LookoutOverview = {
 
 function asItems(rows: LookoutRow[]): LookoutItem[] {
   return rows;
+}
+
+/**
+ * Aparições "a validar" (disco de nome genérico sem ano no título): olha o DESCRITIVO completo do
+ * catálogo (`lot_sales.orig_text`, coluna pesada — só dos pendentes, até 300) e, se ele cita o ano
+ * do item, confirma. Nunca rejeita por aqui (o texto pode citar outros anos de passagem): o que
+ * continuar sem prova fica "a validar" para o usuário.
+ */
+async function confirmPendingByDescription(
+  history: LookoutPastSale[],
+  items: LookoutRow[],
+): Promise<void> {
+  const pending = history.filter((h) => h.pending).slice(0, 300);
+  if (!pending.length) return;
+  const yearByItem = new Map(items.map((i) => [i.id, i.year]));
+  try {
+    const rows = await getAllLotSales({ ids: pending.map((h) => h.lotId), withOrig: true });
+    const textById = new Map(rows.map((r) => [r.lot_id, r.orig_text ?? ""]));
+    for (const h of pending) {
+      const year = yearByItem.get(h.itemId);
+      const text = textById.get(h.lotId);
+      if (year && text && new RegExp(`\\b${year}\\b`).test(text)) h.pending = undefined;
+    }
+  } catch (error) {
+    console.error("[lookout] não foi possível ler os descritivos das vendas a validar", error);
+  }
 }
 
 /**
@@ -128,6 +161,9 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
   const albumById = new Map<string, string>();
   for (const r of identRows) if (r.album) albumById.set(r.id, r.album);
   for (const r of aiRows) if (r.album) albumById.set(r.id, r.album);
+  // Ano da identificação por IA (`lot_ident.year`) — ajuda a validar discos de nome genérico.
+  const identYearById = new Map<string, number>();
+  for (const r of identRows) if (r.year) identYearById.set(r.id, r.year);
   const scoreById = new Map<string, number | null>();
   for (const r of aiRows) scoreById.set(r.id, r.score);
   const marketById = new Map(
@@ -152,6 +188,7 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
       album: albumById.get(lot.id) ?? null,
       marketTitle: market?.releaseTitle ?? null,
       marketYear: market?.year ?? null,
+      knownYear: identYearById.get(lot.id) ?? null,
       aliases,
     });
     const hit = matchLookoutForLot(aliased, lot.id, identity, links);
@@ -179,6 +216,7 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
       aiScore: scoreById.get(lot.id) ?? null,
       marketLowBr: market?.priceLowBr ?? null,
       marketHighBr: market?.priceHighBr ?? null,
+      yearPending: hit.yearPending || undefined,
     });
   }
   upcoming.sort(
@@ -197,10 +235,13 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
           title: s.title,
           artist: s.artist,
           album: albumById.get(s.lot_id) ?? null,
+          knownYear: identYearById.get(s.lot_id) ?? null,
           aliases,
         });
         const hit = matchLookoutForLot(aliased, s.lot_id, identity, links);
-        if (!hit || hit.score < LOOKOUT_CONFIDENT_MIN) continue;
+        // Casamento incerto só entra quando é por falta de ano num disco de nome genérico ("a
+        // validar"); os demais incertos continuam de fora.
+        if (!hit || (hit.score < LOOKOUT_CONFIDENT_MIN && !hit.yearPending)) continue;
         history.push({
           lotId: s.lot_id,
           itemId: hit.itemId,
@@ -214,6 +255,7 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
           sleeve: s.sleeve || undefined,
           url: s.source_url || undefined,
           source: "direct",
+          pending: hit.yearPending || undefined,
         });
       }
       if (LOOKOUT_HISTORY_FROM_ANALYTICS) {
@@ -224,8 +266,12 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
           aliases: fullAliases,
           cands: aliased,
           links,
+          yearOf: (lotId) => identYearById.get(lotId) ?? null,
         });
         for (const a of extra) {
+          // Se o casamento direto já validou este lote (ano ok), não rebaixa para "a validar".
+          const already = byLot.get(a.sale.lot_id);
+          const pending = a.pending && (already ? already.pending === true : true);
           byLot.set(a.sale.lot_id, {
             lotId: a.sale.lot_id,
             itemId: a.itemId,
@@ -239,11 +285,13 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
             sleeve: a.sale.sleeve || undefined,
             url: a.sale.source_url || undefined,
             source: "analytics",
+            pending: pending || undefined,
           });
         }
         history.length = 0;
         history.push(...byLot.values());
       }
+      await confirmPendingByDescription(history, items);
       history.sort((a, b) => (b.soldDate ?? "").localeCompare(a.soldDate ?? ""));
     } catch (error) {
       console.error("[lookout] não foi possível ler o histórico de vendas (usando vazio)", error);

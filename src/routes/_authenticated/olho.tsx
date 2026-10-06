@@ -16,6 +16,7 @@ import {
   identifyLookout,
   markLookoutSeen,
   setLookoutLink,
+  setLookoutLinksBatch,
   updateLookout,
 } from "@/lib/lookout.functions";
 import { formatFailoverTrail } from "@/lib/ai-provider";
@@ -40,6 +41,7 @@ function OlhoPage() {
   const runSeen = useServerFn(markLookoutSeen);
   const runWatch = useServerFn(toggleWatch);
   const runIdentify = useServerFn(identifyLookout);
+  const runLinksBatch = useServerFn(setLookoutLinksBatch);
 
   const query = useLookoutOverviewQuery({ history: true });
   const overview = query.data;
@@ -114,6 +116,16 @@ function OlhoPage() {
     onError: (error: unknown) =>
       toast.error((error as Error)?.message || "Não foi possível identificar pela IA"),
     onSettled: () => setIdentifyingId(null),
+  });
+  const dismissPendingMut = useMutation({
+    mutationFn: async (lotIds: string[]) =>
+      await runLinksBatch({ data: { lotIds, value: false as const } }),
+    onSuccess: () => {
+      toast.success("Aparições descartadas");
+      refresh();
+    },
+    onError: (error: unknown) =>
+      toast.error((error as Error)?.message || "Não foi possível descartar"),
   });
   const resolveMut = useMutation({
     mutationFn: async (vars: { lotId: string; value: string | false }) =>
@@ -279,6 +291,13 @@ function OlhoPage() {
                 onDelete={() => deleteMut.mutate(item.id)}
                 onIdentify={() => identifyMut.mutate(item.id)}
                 identifying={identifyingId === item.id}
+                onDismissPending={(lotIds) => dismissPendingMut.mutate(lotIds)}
+                onResolveSale={(h, decision) =>
+                  resolveMut.mutate({
+                    lotId: h.lotId,
+                    value: decision === "confirm" ? item.id : false,
+                  })
+                }
                 onWatch={(m) => void watchLot(m)}
                 onResolve={(m, decision) =>
                   resolveMut.mutate({
@@ -306,6 +325,8 @@ function OlhoPage() {
                     onDelete={() => deleteMut.mutate(item.id)}
                     onIdentify={() => identifyMut.mutate(item.id)}
                     identifying={identifyingId === item.id}
+                    onDismissPending={() => undefined}
+                    onResolveSale={() => undefined}
                     onWatch={() => undefined}
                     onResolve={() => undefined}
                   />

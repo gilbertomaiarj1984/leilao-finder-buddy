@@ -213,3 +213,22 @@ export const identifyLookout = createServerFn({ method: "POST" })
     const { identifyLookoutItem } = await import("./lookout-ident.server");
     return await identifyLookoutItem(data.id);
   });
+
+/** Descarta (`false`) ou confirma (`itemId`) vários lotes de uma vez — "Descartar todas" a validar. */
+export const setLookoutLinksBatch = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { lotIds?: string[]; value?: string | false } | undefined) => {
+    const lotIds = Array.isArray(input?.lotIds)
+      ? input.lotIds.filter((k): k is string => typeof k === "string" && !!k).slice(0, 500)
+      : [];
+    const v = input?.value;
+    if (v !== false && typeof v !== "string") throw new Error("valor inválido");
+    return { lotIds, value: v };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setLookoutLinks } = await import("./lookout.server");
+    await setLookoutLinks(data.lotIds, data.value);
+    return { ok: true as const };
+  });

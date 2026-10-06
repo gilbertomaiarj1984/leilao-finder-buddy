@@ -69,6 +69,8 @@ export function LookoutItemCard({
   onDelete,
   onWatch,
   onResolve,
+  onResolveSale,
+  onDismissPending,
   onIdentify,
   identifying,
 }: {
@@ -84,6 +86,10 @@ export function LookoutItemCard({
   onDelete: () => void;
   onWatch: (m: LookoutUpcoming) => void;
   onResolve: (m: LookoutUpcoming, decision: "confirm" | "dismiss") => void;
+  /** Valida (✓ é este disco) ou descarta (✕) uma aparição anterior "a validar". */
+  onResolveSale: (h: LookoutPastSale, decision: "confirm" | "dismiss") => void;
+  /** Descarta de uma vez todas as aparições "a validar" deste disco. */
+  onDismissPending: (lotIds: string[]) => void;
   /** Identifica artista/álbum/ano pela IA (texto + imagem) — botão sob o lápis. */
   onIdentify: () => void;
   identifying: boolean;
@@ -108,10 +114,68 @@ export function LookoutItemCard({
     setEditing(false);
   };
 
-  const sold = history.map((h) => h.soldPrice).filter((v): v is number => v != null && v > 0);
+  // Aparições "a validar" (disco de nome genérico sem ano que o confirme) ficam à parte: não
+  // contam nem entram na estatística até o usuário confirmar (✓) ou descartar (✕).
+  const confirmedHistory = history.filter((h) => !h.pending);
+  const pendingHistory = history.filter((h) => h.pending);
+  const sold = confirmedHistory
+    .map((h) => h.soldPrice)
+    .filter((v): v is number => v != null && v > 0);
   const soldMin = sold.length ? Math.min(...sold) : null;
   const soldMax = sold.length ? Math.max(...sold) : null;
   const soldAvg = sold.length ? sold.reduce((a, b) => a + b, 0) / sold.length : null;
+
+  const renderSale = (h: LookoutPastSale, validate: boolean) => (
+    <li key={h.lotId} className="flex flex-wrap items-center gap-x-2">
+      <span className="font-semibold text-foreground">{brl(h.soldPrice)}</span>
+      <span>{h.soldDate ? shortDay(h.soldDate) : "—"}</span>
+      <span>{h.house}</span>
+      {h.media || h.sleeve ? (
+        <span title="Grau do disco / da capa">
+          {h.media ? `Disco ${h.media}` : ""}
+          {h.media && h.sleeve ? " · " : ""}
+          {h.sleeve ? `Capa ${h.sleeve}` : ""}
+        </span>
+      ) : null}
+      <span className="min-w-0 flex-1 truncate" title={h.title}>
+        {h.title}
+      </span>
+      {h.url ? (
+        <a
+          href={h.url}
+          target="_blank"
+          rel="noreferrer"
+          className="underline hover:text-foreground"
+        >
+          ver
+        </a>
+      ) : null}
+      {validate ? (
+        <span className="flex items-center">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1"
+            onClick={() => onResolveSale(h, "confirm")}
+            aria-label="É este disco"
+            title="É este disco"
+          >
+            <Check className="h-4 w-4" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1"
+            onClick={() => onResolveSale(h, "dismiss")}
+            aria-label="Não é este disco"
+            title="Não é este disco"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </span>
+      ) : null}
+    </li>
+  );
 
   return (
     <section
@@ -345,7 +409,13 @@ export function LookoutItemCard({
                     </div>
                     <span
                       className="rounded bg-fuchsia-500/15 px-1.5 py-0.5 text-xs font-medium text-fuchsia-700 dark:text-fuchsia-300"
-                      title={m.confirmed ? "Confirmado por você" : "Confiança do casamento"}
+                      title={
+                        m.yearPending
+                          ? "Nome de disco genérico e o lote não informa o ano — confirme se é este disco"
+                          : m.confirmed
+                            ? "Confirmado por você"
+                            : "Confiança do casamento"
+                      }
                     >
                       {sure ? "" : "? "}
                       {Math.round(m.score * 100)}%
@@ -403,47 +473,46 @@ export function LookoutItemCard({
             className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
             {showHistory ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-            Aparições anteriores ({history.length})
+            Aparições anteriores ({confirmedHistory.length})
             {soldMin != null
               ? ` · vendeu de ${brl(soldMin)} a ${brl(soldMax)} · média ${brl(soldAvg)}`
               : ""}
+            {pendingHistory.length ? ` · ${pendingHistory.length} a validar` : ""}
           </button>
           {showHistory ? (
-            history.length === 0 ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Nenhuma venda anterior arquivada deste disco.
-              </p>
-            ) : (
-              <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
-                {history.map((h) => (
-                  <li key={h.lotId} className="flex flex-wrap gap-x-2">
-                    <span className="font-semibold text-foreground">{brl(h.soldPrice)}</span>
-                    <span>{h.soldDate ? shortDay(h.soldDate) : "—"}</span>
-                    <span>{h.house}</span>
-                    {h.media || h.sleeve ? (
-                      <span title="Grau do disco / da capa">
-                        {h.media ? `Disco ${h.media}` : ""}
-                        {h.media && h.sleeve ? " · " : ""}
-                        {h.sleeve ? `Capa ${h.sleeve}` : ""}
-                      </span>
-                    ) : null}
-                    <span className="min-w-0 flex-1 truncate" title={h.title}>
-                      {h.title}
-                    </span>
-                    {h.url ? (
-                      <a
-                        href={h.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="underline hover:text-foreground"
-                      >
-                        ver
-                      </a>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )
+            <>
+              {confirmedHistory.length === 0 ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Nenhuma venda anterior confirmada deste disco.
+                </p>
+              ) : (
+                <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                  {confirmedHistory.map((h) => renderSale(h, false))}
+                </ul>
+              )}
+              {pendingHistory.length ? (
+                <div className="mt-3 rounded border border-orange-500/40 bg-orange-500/5 p-2">
+                  <p className="text-xs font-medium text-orange-700 dark:text-orange-300">
+                    A validar ({pendingHistory.length}) — o nome do disco é genérico (o artista tem
+                    vários com esse nome) e a venda não informa o ano
+                    {item.year ? ` ${item.year}` : ""}. Confirme (✓) se é ESTE disco ou descarte
+                    (✕).
+                  </p>
+                  <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                    {pendingHistory.map((h) => renderSale(h, true))}
+                  </ul>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-2"
+                    onClick={() => onDismissPending(pendingHistory.map((h) => h.lotId))}
+                    title="Nenhuma destas é este disco — descarta todas de uma vez"
+                  >
+                    Descartar todas ({pendingHistory.length})
+                  </Button>
+                </div>
+              ) : null}
+            </>
           ) : null}
         </div>
       ) : null}
