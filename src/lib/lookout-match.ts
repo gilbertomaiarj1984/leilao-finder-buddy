@@ -68,7 +68,7 @@ export type LookoutHit = {
 };
 
 type OwnedCand = ReturnType<typeof ownedCandidate>;
-type LookoutCandidate = { item: LookoutItem; cand: OwnedCand };
+export type LookoutCandidate = { item: LookoutItem; cand: OwnedCand };
 
 /** Rótulo curto do item ("Artista — Álbum (Ano)"). */
 export function lookoutLabel(item: Pick<LookoutItem, "artist" | "album" | "year">): string {

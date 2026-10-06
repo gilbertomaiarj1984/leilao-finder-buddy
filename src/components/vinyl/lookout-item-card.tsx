@@ -104,6 +104,7 @@ export function LookoutItemCard({
   const sold = history.map((h) => h.soldPrice).filter((v): v is number => v != null && v > 0);
   const soldMin = sold.length ? Math.min(...sold) : null;
   const soldMax = sold.length ? Math.max(...sold) : null;
+  const soldAvg = sold.length ? sold.reduce((a, b) => a + b, 0) / sold.length : null;
 
   return (
     <section
@@ -373,7 +374,9 @@ export function LookoutItemCard({
           >
             {showHistory ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             Aparições anteriores ({history.length})
-            {soldMin != null ? ` · vendeu de ${brl(soldMin)} a ${brl(soldMax)}` : ""}
+            {soldMin != null
+              ? ` · vendeu de ${brl(soldMin)} a ${brl(soldMax)} · média ${brl(soldAvg)}`
+              : ""}
           </button>
           {showHistory ? (
             history.length === 0 ? (
@@ -387,9 +390,26 @@ export function LookoutItemCard({
                     <span className="font-semibold text-foreground">{brl(h.soldPrice)}</span>
                     <span>{h.soldDate ? shortDay(h.soldDate) : "—"}</span>
                     <span>{h.house}</span>
+                    {h.media || h.sleeve ? (
+                      <span title="Grau do disco / da capa">
+                        {h.media ? `Disco ${h.media}` : ""}
+                        {h.media && h.sleeve ? " · " : ""}
+                        {h.sleeve ? `Capa ${h.sleeve}` : ""}
+                      </span>
+                    ) : null}
                     <span className="min-w-0 flex-1 truncate" title={h.title}>
                       {h.title}
                     </span>
+                    {h.url ? (
+                      <a
+                        href={h.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline hover:text-foreground"
+                      >
+                        ver
+                      </a>
+                    ) : null}
                   </li>
                 ))}
               </ul>

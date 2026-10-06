@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import type { SaleRow } from "@/lib/analytics";
+import { analyticsHistoryForItems } from "@/lib/lookout-analytics";
 import {
   buildLotIdentity,
   lookoutCandidates,
@@ -102,5 +104,54 @@ describe("priceVsCeiling", () => {
     expect(priceVsCeiling(120, 80)).toBe("over");
     expect(priceVsCeiling(null, 80)).toBeNull();
     expect(priceVsCeiling(50, null)).toBeNull();
+  });
+});
+
+describe("analyticsHistoryForItems", () => {
+  const sale = (lot_id: string, title: string, over: Partial<SaleRow> = {}): SaleRow => ({
+    lot_id,
+    id_leilao: "1",
+    id_peca: lot_id,
+    artist: "Gal Costa",
+    title,
+    sold_price: 50,
+    sold_price_raw: "R$ 50,00",
+    sold_date: "2026-09-01",
+    house: "Casa X",
+    uf: "SP",
+    media: "",
+    sleeve: "",
+    score: null,
+    faixa: "",
+    insert_state: "",
+    source_url: "",
+    ...over,
+  });
+  const cands = lookoutCandidates([
+    item({ id: "g", lotId: "origem", artist: "Gal Costa", album: "Profana", year: 1984 }),
+  ]);
+  const sales = [
+    sale("a", "LP Gal Costa - Profana 1984"),
+    sale("b", "Gal Costa - Profana - Capa VG+ - Disco EX", { media: "EX", sleeve: "VG+" }),
+    sale("oculta", "LP Gal Costa - Profana 1984"),
+    sale("kit", "LP Gal Costa - Profana 1984", { bundle: true }),
+    sale("outro", "LP Gal Costa - Fa-Tal 1971"),
+    sale("origem", "LP Gal Costa - Profana 1984"),
+  ];
+
+  test("traz as vendas do álbum certo, sem ocultas, kits, outro disco nem o lote de origem", () => {
+    const hits = analyticsHistoryForItems({
+      sales,
+      aliases: { excludedSales: { oculta: "Gal Costa — Profana" } },
+      cands,
+    });
+    expect(hits.map((h) => h.sale.lot_id).sort()).toEqual(["a", "b"]);
+    expect(hits.every((h) => h.itemId === "g")).toBe(true);
+  });
+
+  test("respeita o descarte por lote e funciona sem candidatos", () => {
+    const hits = analyticsHistoryForItems({ sales, aliases: {}, cands, links: { a: false } });
+    expect(hits.map((h) => h.sale.lot_id)).not.toContain("a");
+    expect(analyticsHistoryForItems({ sales, aliases: {}, cands: [] })).toEqual([]);
   });
 });

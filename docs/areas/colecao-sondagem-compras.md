@@ -205,7 +205,15 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   única da página, do contador e do aviso): lotes de hoje até +14 dias (retenção de `lots`) que
   ainda não terminaram, com IA/Discogs; por item mostra teto/nota editáveis, matches **por vir**
   (Vigiar via `toggleWatch`, abrir, ✓/✕, "novo") e **aparições anteriores** = vendas arquivadas
-  em `lot_sales` (≥ 80%, sem kits) com faixa de preço vendido. Abrir a página marca os matches
+  em `lot_sales` (≥ 80%, sem kits) com faixa de preço vendido. **Desde a v0.109.0 soma também o
+  Analytics** (`lookout-analytics.ts`, puro): `buildAnalytics` agrega as vendas (IA, correção por
+  venda, apelidos, exclusões, kits fora, singular/plural) e cada álbum agregado que casa (≥ 80%)
+  com o item contribui com suas vendas; união por `lot_id` (em duplicata vale a linha do
+  Analytics), vendas ocultadas no Analytics (`excludedSales`) não contam, o lote de origem e os
+  lotes descartados (✕) ficam de fora; mostra Disco/Capa, link e média. Chave-mestra
+  `LOOKOUT_HISTORY_FROM_ANALYTICS` em `lookout-matches.server.ts` (`false` = comportamento
+  anterior). Limite: títulos ruidosos ("Profana (RCA)") viram álbum separado no Analytics e não
+  casam (precisão antes de cobertura) — a correção por venda no Analytics resolve. Abrir a página marca os matches
   como vistos (zera o contador do menu; o selo "novo" daquela visita permanece). O contador do
   menu usa a versão leve (`history: false`, staleTime 15 min).
 - **Aviso externo (ntfy.sh):** `step=lookoutnotify` do cron (`refresh.yml`, depois de
