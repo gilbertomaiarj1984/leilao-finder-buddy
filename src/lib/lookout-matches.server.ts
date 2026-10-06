@@ -1,5 +1,6 @@
 import { toLotMarket } from "@/components/vinyl/ai-score-utils";
 import { getAnalyticsAliases } from "@/lib/app-state.server";
+import type { AnalyticsAliases, SaleRow } from "@/lib/analytics";
 import { BAR_FORWARD_DAYS, shiftDayKey } from "@/lib/day-bar";
 import { getAllLotAi } from "@/lib/lot-ai.server";
 import { getAllLotIdent } from "@/lib/lot-ident.server";
@@ -14,6 +15,7 @@ import {
   type LookoutRow,
 } from "@/lib/lookout.server";
 import { readLotsRange } from "@/lib/leiloesbr-scrape.server";
+import { analyticsHistoryForItems } from "@/lib/lookout-analytics";
 import {
   buildLotIdentity,
   lookoutCandidates,
@@ -62,6 +64,13 @@ export type LookoutUpcoming = {
   marketHighBr: number | null;
 };
 
+/**
+ * Chave-mestra da função "aparições anteriores também a partir do Analytics" (v0.109.0, ver
+ * `lookout-analytics.ts`). `false` = volta ao comportamento anterior (só casamento direto em
+ * `lot_sales`); a UI funciona igual com os campos extras ausentes.
+ */
+const LOOKOUT_HISTORY_FROM_ANALYTICS = true;
+
 /** Aparição passada do disco (venda arquivada em `lot_sales`). */
 export type LookoutPastSale = {
   lotId: string;
@@ -72,6 +81,12 @@ export type LookoutPastSale = {
   soldPrice: number | null;
   soldDate: string | null;
   image: string | null;
+  /** Grau do disco/capa e link da venda (quando a venda traz) — v0.109.0. */
+  media?: string;
+  sleeve?: string;
+  url?: string;
+  /** Veio do casamento direto em `lot_sales` ou do agrupamento curado do Analytics. */
+  source?: "direct" | "analytics";
 };
 
 export type LookoutOverview = {
@@ -97,16 +112,15 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
     return { items, upcoming: [], history: [], newCount: 0 };
   }
 
-  const [aliases, links, seen, aiRows, identRows, marketRows] = await Promise.all([
-    getAnalyticsAliases()
-      .then((a) => a.artists)
-      .catch(() => ({}) as Record<string, string>),
+  const [fullAliases, links, seen, aiRows, identRows, marketRows] = await Promise.all([
+    getAnalyticsAliases().catch(() => ({}) as AnalyticsAliases),
     getLookoutLinks(),
     getLookoutSeen(),
     getAllLotAi().catch(() => []),
     getAllLotIdent().catch(() => []),
     getAllLotMarket().catch(() => []),
   ]);
+  const aliases: Record<string, string> = fullAliases.artists ?? {};
   // Os candidatos dependem dos apelidos de artista (grafias fundidas no Analytics).
   const aliased = lookoutCandidates(asItems(items), aliases);
   if (!aliased.length) return { items, upcoming: [], history: [], newCount: 0 };
@@ -175,8 +189,10 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
   if (withHistory) {
     try {
       const sales = await getAllLotSales({ withOrig: false });
+      // Vendas ocultadas no Analytics (por venda) não contam como aparição.
+      const hidden = new Set(Object.keys(fullAliases.excludedSales ?? {}));
       for (const s of sales) {
-        if (s.bundle) continue;
+        if (s.bundle || hidden.has(s.lot_id)) continue;
         const identity = buildLotIdentity({
           title: s.title,
           artist: s.artist,
@@ -194,7 +210,39 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
           soldPrice: s.sold_price != null ? Number(s.sold_price) : null,
           soldDate: s.sold_date,
           image: s.image && s.image.length > 0 ? s.image : null,
+          media: s.media || undefined,
+          sleeve: s.sleeve || undefined,
+          url: s.source_url || undefined,
+          source: "direct",
         });
+      }
+      if (LOOKOUT_HISTORY_FROM_ANALYTICS) {
+        // Soma o que o Analytics já agrupou/curou; em duplicata (mesmo lote), vale a linha dele.
+        const byLot = new Map(history.map((h) => [h.lotId, h]));
+        const extra = analyticsHistoryForItems({
+          sales: sales as unknown as SaleRow[],
+          aliases: fullAliases,
+          cands: aliased,
+          links,
+        });
+        for (const a of extra) {
+          byLot.set(a.sale.lot_id, {
+            lotId: a.sale.lot_id,
+            itemId: a.itemId,
+            score: a.score,
+            title: a.sale.title,
+            house: a.sale.house,
+            soldPrice: a.sale.sold_price != null ? Number(a.sale.sold_price) : null,
+            soldDate: a.sale.sold_date,
+            image: a.sale.image && a.sale.image.length > 0 ? a.sale.image : null,
+            media: a.sale.media || undefined,
+            sleeve: a.sale.sleeve || undefined,
+            url: a.sale.source_url || undefined,
+            source: "analytics",
+          });
+        }
+        history.length = 0;
+        history.push(...byLot.values());
       }
       history.sort((a, b) => (b.soldDate ?? "").localeCompare(a.soldDate ?? ""));
     } catch (error) {
