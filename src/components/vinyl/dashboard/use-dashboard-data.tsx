@@ -502,6 +502,7 @@ export function useDashboardData() {
       setAnalyzing(key);
       let evaluated = 0;
       let failed = 0;
+      let scopeSize = 0;
       let lastError: string | null = null;
       let switchedTo: AiProvider | null = null;
       let attemptErrors: Partial<Record<AiProvider, string>> = {};
@@ -512,6 +513,7 @@ export function useDashboardData() {
           });
           evaluated += res.evaluated;
           failed += res.failed ?? 0;
+          scopeSize = Math.max(scopeSize, res.scope ?? 0);
           if (res.error) lastError = res.error;
           if (res.switched && res.served) switchedTo = res.served;
           if (res.attemptErrors) attemptErrors = { ...attemptErrors, ...res.attemptErrors };
@@ -539,8 +541,15 @@ export function useDashboardData() {
           toast.error(
             `A IA não retornou avaliação${lastError ? ` (${lastError})` : ""} — verifique a chave/limite do provedor`,
           );
+        } else if (opts.watched && scopeSize === 0) {
+          // Escopo vazio: a lista de vigiados/lances não veio (ex.: sessão do LeilõesBR expirada).
+          toast.error(
+            "Nenhum vigiado/lance foi encontrado no LeilõesBR — confira o login da conta",
+          );
         } else {
-          toast.success("Nada novo para avaliar aqui (já avaliado)");
+          toast.success(
+            `Nada novo para avaliar (${scopeSize} lote(s) verificado(s), todos já avaliados)`,
+          );
         }
       } catch (error) {
         toast.error((error as Error)?.message || "Não foi possível analisar agora");

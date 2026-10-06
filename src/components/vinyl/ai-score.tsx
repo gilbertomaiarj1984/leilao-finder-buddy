@@ -334,7 +334,7 @@ export function ScoreBadge({
  * por título) e atualiza o cache local (`queryKeys.lotAi`) com o resultado — a nota/raridade/
  * oportunidade do card/linha atualizam sozinhas, sem precisar recarregar a página.
  */
-function ReevaluateButton({ lot }: { lot: ReevalLot }) {
+function useReevaluate(lot: ReevalLot) {
   const queryClient = useQueryClient();
   const runReevaluate = useServerFn(reevaluateLot);
   const mutation = useMutation({
@@ -352,6 +352,11 @@ function ReevaluateButton({ lot }: { lot: ReevalLot }) {
     onError: (error: Error) =>
       toast.error(error.message || "Não foi possível refazer a consulta à IA"),
   });
+  return mutation;
+}
+
+function ReevaluateButton({ lot }: { lot: ReevalLot }) {
+  const mutation = useReevaluate(lot);
   return (
     <button
       type="button"
@@ -370,6 +375,35 @@ function ReevaluateButton({ lot }: { lot: ReevalLot }) {
       )}
       refazer consulta
     </button>
+  );
+}
+
+/**
+ * Botão do canto do card para lote SEM nota: avalia na hora (mesmo `reevaluateLot`, que ignora o
+ * cache) e mostra o erro do provedor em toast quando falha. Ocupa o lugar do selo da nota.
+ */
+export function EvaluateCornerButton({ lot }: { lot: ReevalLot }) {
+  const mutation = useReevaluate(lot);
+  return (
+    <div className="absolute right-2 top-2 z-10">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          mutation.mutate();
+        }}
+        disabled={mutation.isPending}
+        title="Sem nota — avaliar este lote com a IA agora"
+        aria-label="Avaliar este lote com a IA"
+        className="flex items-center gap-0.5 rounded-full bg-zinc-500/80 px-2 py-0.5 text-xs font-bold text-white shadow hover:bg-primary disabled:opacity-60"
+      >
+        {mutation.isPending ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <Sparkles className="h-3 w-3" />
+        )}
+      </button>
+    </div>
   );
 }
 

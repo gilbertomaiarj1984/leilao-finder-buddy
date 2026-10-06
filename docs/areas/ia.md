@@ -102,6 +102,7 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   lotes com `day_key >=` hoje que têm `lot_ai.album` e `tracklist` NULL, pedindo só as faixas pelo
   nome do álbum (dedup por álbum; `[]` = tentou e a IA não soube). Só atualiza linhas existentes de
   `lot_ai` (lote só com `lot_ident` não é coberto). Antes disso, o ícone fica apagado. O prompt manda não inventar faixas (`[]` quando não sabe).
+- **Lote sem nota (v0.112.0):** o `LotCard` mostra `EvaluateCornerButton` (✨, onde ficaria o selo) que chama `reevaluateLot`; resposta ilegível da IA conta como `failed` em `evalLotsSync` e o toast de `analyzeOnDemand` distingue escopo vazio (login) de "tudo já avaliado".
 - **Modo automático — chave `ai_mode`** (`getAiMode`/`setAiMode`): `"off" | "all" | "watched"`,
   **padrão `"watched"`** (econômico). No `step=aieval`: `off` não coleta/submete; `all` = todos
   os lotes; `watched` = só lotes vigiados ∪ com lance (ids de `listWatchedFromSite` +
