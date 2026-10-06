@@ -534,6 +534,11 @@ export async function evalLotsSync(
             model: r.model,
             eval_price: parsePrice(lot.price) || null,
           });
+        } else {
+          // Resposta que não vira JSON de avaliação: conta como falha (senão a UI diria "já avaliado").
+          failed += 1;
+          if (!firstError) firstError = "resposta da IA ilegível";
+          console.error(`[ai-eval] resposta ilegível para o lote ${lot.id}`);
         }
       } catch (error) {
         failed += 1;

@@ -329,8 +329,14 @@ export const analyzeOnDemand = createServerFn({ method: "POST" })
       const { listWatchedFromSite } = await import("./leiloesbr-watch.server");
       const { listMyBidsFromSite } = await import("./leiloesbr-bids.server");
       const [w, b] = await Promise.all([
-        listWatchedFromSite().catch(() => []),
-        listMyBidsFromSite().catch(() => []),
+        listWatchedFromSite().catch((error: unknown) => {
+          console.error("[analyzeOnDemand] falha ao listar vigiados", error);
+          return [];
+        }),
+        listMyBidsFromSite().catch((error: unknown) => {
+          console.error("[analyzeOnDemand] falha ao listar lances", error);
+          return [];
+        }),
       ]);
       const byId = new Map(snapshot.lots.map((lot) => [lot.id, lot]));
       const merged = new Map<

@@ -11,7 +11,7 @@ import {
 import { useEffect, useRef, useState, type ComponentProps } from "react";
 
 import { Button } from "@/components/ui/button";
-import { LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
+import { EvaluateCornerButton, LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
 import { TracklistHover } from "@/components/vinyl/tracklist-hover";
 import { formatAiAlbum, type LotAi, type LotMarket } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
@@ -257,7 +257,7 @@ function LotCardDesktop({
         </div>
       ) : null}
       <div className="relative flex flex-1 flex-col">
-        {ai ? (
+        {ai && ai.score !== null ? (
           <ScoreCorner
             ai={ai}
             market={market}
@@ -273,6 +273,16 @@ function LotCardDesktop({
                   }
                 : undefined
             }
+          />
+        ) : lot.id ? (
+          <EvaluateCornerButton
+            lot={{
+              id: lot.id,
+              title: lot.title,
+              price: lot.price,
+              house: lot.house,
+              image: lot.image,
+            }}
           />
         ) : null}
         {/* Relação com a Coleção: ícone no canto DIREITO, logo ABAIXO da nota da IA. Aparece em
