@@ -237,6 +237,14 @@ export async function setLookoutLink(lotId: string, value: string | false | null
   await writeValue(LINKS_KEY, links);
 }
 
+/** Descarta/confirma VÁRIOS lotes de uma vez (uma só gravação) — "Descartar todas" das pendentes. */
+export async function setLookoutLinks(lotIds: string[], value: string | false): Promise<void> {
+  if (!lotIds.length) return;
+  const links = await getLookoutLinks();
+  for (const id of lotIds) links[id] = value;
+  await writeValue(LINKS_KEY, links);
+}
+
 /** Chaves (`lotId|itemId`) de matches que o usuário já viu na página `/olho`. */
 export async function getLookoutSeen(): Promise<string[]> {
   try {

@@ -155,3 +155,79 @@ describe("analyticsHistoryForItems", () => {
     expect(analyticsHistoryForItems({ sales, aliases: {}, cands: [] })).toEqual([]);
   });
 });
+
+describe("disco de nome genérico (homônimo do artista) — validação por ano", () => {
+  const cands = lookoutCandidates([
+    item({
+      id: "cv",
+      lotId: "origem",
+      artist: "Caetano Veloso",
+      album: "Caetano Veloso",
+      year: 1986,
+    }),
+  ]);
+  const lot = (title: string, knownYear?: number) =>
+    buildLotIdentity({
+      title,
+      artist: "Caetano Veloso",
+      album: "Caetano Veloso - Caetano Veloso",
+      knownYear,
+    });
+
+  test("ano igual ao do item → confirmado; ano diferente → não é este disco", () => {
+    const ok = matchLookoutForLot(cands, "a", lot("LP Caetano Veloso 1986"));
+    expect(ok?.yearPending).toBeFalsy();
+    expect(ok!.score).toBeGreaterThanOrEqual(0.8);
+    expect(matchLookoutForLot(cands, "b", lot("LP Caetano Veloso 1971"))).toBeNull();
+  });
+
+  test("sem ano → fica 'a validar' (score limitado, nunca confiante)", () => {
+    const hit = matchLookoutForLot(cands, "c", lot("LP Caetano Veloso"));
+    expect(hit?.yearPending).toBe(true);
+    expect(hit!.score).toBeLessThan(0.8);
+    expect(hit!.score).toBeGreaterThanOrEqual(0.6);
+  });
+
+  test("ano conhecido por outra fonte (lot_ident) vale; vínculo do usuário vence", () => {
+    expect(matchLookoutForLot(cands, "d", lot("LP Caetano Veloso", 1986))?.yearPending).toBeFalsy();
+    expect(matchLookoutForLot(cands, "e", lot("LP Caetano Veloso", 1971))).toBeNull();
+    const forced = matchLookoutForLot(cands, "f", lot("LP Caetano Veloso 1971"), { f: "cv" });
+    expect(forced?.confirmed).toBe(true);
+  });
+
+  test("histórico do Analytics: confere o ano venda a venda", () => {
+    const mk = (id: string, title: string): SaleRow => ({
+      lot_id: id,
+      id_leilao: "1",
+      id_peca: id,
+      artist: "Caetano Veloso",
+      title,
+      sold_price: 50,
+      sold_price_raw: "",
+      sold_date: "2026-09-01",
+      house: "Casa",
+      uf: "SP",
+      media: "",
+      sleeve: "",
+      score: null,
+      faixa: "",
+      insert_state: "",
+      source_url: "",
+    });
+    const sales = [
+      mk("s86", "Caetano Veloso 1986"),
+      mk("s71", "Caetano Veloso 1971"),
+      mk("sem", "Caetano Veloso - Uns"),
+      mk("ident", "Caetano Veloso LP"),
+    ];
+    const overrides = Object.fromEntries(sales.map((x) => [x.lot_id, { album: "Caetano Veloso" }]));
+    const hits = analyticsHistoryForItems({
+      sales,
+      aliases: { sales: overrides },
+      cands,
+      yearOf: (id) => (id === "ident" ? 1986 : null),
+    });
+    const byId = Object.fromEntries(hits.map((h) => [h.sale.lot_id, h.pending]));
+    expect(byId).toEqual({ s86: false, sem: true, ident: false });
+  });
+});

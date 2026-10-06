@@ -3,6 +3,7 @@ import {
   buildLotIdentity,
   LOOKOUT_CONFIDENT_MIN,
   matchLookoutForLot,
+  yearVerdict,
   type LookoutCandidate,
   type LookoutLinks,
 } from "@/lib/lookout-match";
@@ -18,10 +19,17 @@ import {
  * `lookout-matches.server.ts` (ou reverter o commit v0.109.0 — nada mais depende deste arquivo).
  */
 
+/** Anos citados num texto (título da venda). */
+function yearsIn(text: string): Set<number> {
+  return new Set([...text.matchAll(/\b(?:19|20)\d{2}\b/g)].map((m) => Number(m[0])));
+}
+
 type AnalyticsHistoryHit = {
   itemId: string;
   score: number;
   sale: SaleRow;
+  /** Disco de nome genérico sem ano validável nesta venda: fica "a validar" pelo usuário. */
+  pending: boolean;
 };
 
 /** Álbum agregado sem nome definido — nunca casa com um disco específico. */
@@ -32,10 +40,13 @@ export function analyticsHistoryForItems(input: {
   aliases: AnalyticsAliases;
   cands: readonly LookoutCandidate[];
   links?: LookoutLinks;
+  /** Ano conhecido da venda por outra fonte (ex.: `lot_ident.year`). */
+  yearOf?: (lotId: string) => number | null;
 }): AnalyticsHistoryHit[] {
-  const { sales, aliases, cands, links } = input;
+  const { sales, aliases, cands, links, yearOf } = input;
   if (!cands.length || !sales.length) return [];
   const originByItem = new Map(cands.map((c) => [c.item.id, c.item.lotId]));
+  const candByItem = new Map(cands.map((c) => [c.item.id, c]));
   const out: AnalyticsHistoryHit[] = [];
   for (const artist of buildAnalytics(sales, aliases)) {
     for (const album of artist.albums) {
@@ -46,13 +57,26 @@ export function analyticsHistoryForItems(input: {
         artist: artist.artist,
         album: `${artist.artist} - ${album.album}`,
       });
-      const hit = matchLookoutForLot(cands, "", identity);
+      // Sem o filtro de ano aqui: o álbum agregado junta vendas de VÁRIOS anos; o ano é conferido
+      // venda a venda logo abaixo (disco de nome genérico, ex.: homônimo do artista).
+      const hit = matchLookoutForLot(cands, "", identity, undefined, { yearGate: false });
       if (!hit || hit.score < LOOKOUT_CONFIDENT_MIN) continue;
       const origin = originByItem.get(hit.itemId);
+      const cand = candByItem.get(hit.itemId);
       for (const sale of album.sales) {
         if (sale.lot_id === origin) continue; // o próprio lote marcado não é "aparição anterior"
-        if (links?.[sale.lot_id] === false) continue; // descartado pelo usuário
-        out.push({ itemId: hit.itemId, score: hit.score, sale });
+        const link = links?.[sale.lot_id];
+        if (link === false) continue; // descartado pelo usuário
+        let pending = false;
+        if (cand && link !== hit.itemId) {
+          const years = yearsIn(sale.title);
+          const known = yearOf?.(sale.lot_id);
+          if (known) years.add(known);
+          const verdict = yearVerdict(cand.item, cand.cand, years);
+          if (verdict === "reject") continue; // outro disco do mesmo artista
+          pending = verdict === "pending";
+        }
+        out.push({ itemId: hit.itemId, score: pending ? 0.7 : hit.score, sale, pending });
       }
     }
   }
