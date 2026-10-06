@@ -460,7 +460,7 @@ function ComprasPage() {
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">
             <div>
               <div className="flex items-center gap-3">
-                <Button variant="ghost" size="sm" asChild>
+                <Button variant="ghost" size="sm" asChild className="max-sm:hidden">
                   <Link to="/">
                     <ArrowLeft className="mr-2 h-4 w-4" />
                     Voltar

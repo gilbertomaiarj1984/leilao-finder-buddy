@@ -8,7 +8,7 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
@@ -27,6 +27,9 @@ import {
   parsePrice,
 } from "@/lib/vinyl-parse";
 import { OWNED_CONFIDENT_MIN, type OwnedHit } from "@/lib/wantlist-match";
+import { useIsMobile } from "@/lib/use-is-mobile";
+
+import { LotCardMobile } from "./mobile/lot-card-mobile";
 
 type CardLot = {
   // Opcional só por cautela de tipagem; todo lote real tem id (chave da tabela `lots`) — sem
@@ -46,7 +49,7 @@ type CardLot = {
   nextBid?: string; // próximo lance mínimo (quando conhecido — via peca.asp)
 };
 
-export function LotCard({
+function LotCardDesktop({
   lot,
   busy,
   onToggle,
@@ -554,4 +557,16 @@ export function LotCard({
       </div>
     </article>
   );
+}
+
+export type LotCardProps = ComponentProps<typeof LotCardDesktop>;
+
+/**
+ * Cartão de lote. Abaixo de `sm` (celular) renderiza o cartão compacto + cartão aberto
+ * (`LotCardMobile`); de `sm` em diante é exatamente o `LotCardDesktop` de sempre. No servidor
+ * e na hidratação `useIsMobile()` é `false`, então o HTML inicial é o do desktop.
+ */
+export function LotCard(props: LotCardProps) {
+  const mobile = useIsMobile();
+  return mobile ? <LotCardMobile {...props} /> : <LotCardDesktop {...props} />;
 }

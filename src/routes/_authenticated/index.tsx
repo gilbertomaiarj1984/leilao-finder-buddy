@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { Disc3, Loader2, LogOut, RefreshCw, Sparkles } from "lucide-react";
-import { Component, type ReactNode } from "react";
+import { Component, useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,15 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs } from "@/components/ui/tabs";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
+import { MobileDashboardHeader } from "@/components/vinyl/mobile/mobile-dashboard-header";
+import { homeTabOf } from "@/components/vinyl/mobile/mobile-nav-utils";
+import {
+  setHomeNav,
+  useMobileNavState,
+  type HomeTab,
+} from "@/components/vinyl/mobile/mobile-nav-store";
+import { TODAY_INDEX } from "@/lib/day-bar";
+import { useIsMobile } from "@/lib/use-is-mobile";
 import { LiveAuctions } from "@/components/vinyl/live-auctions";
 import { OwnedPanel } from "@/components/vinyl/owned-panel";
 import { getAccessStatus } from "@/lib/leiloesbr.functions";
@@ -140,6 +149,8 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 
 function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
   const d = useDashboardData();
+  const mobile = useIsMobile();
+  const { menuExtraHost } = useMobileNavState();
   const {
     barsHidden,
     setBarsHidden,
@@ -176,23 +187,48 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     refreshingAll,
     refreshPct,
     refreshPhase,
+    watched,
+    bids,
   } = d;
+
+  const selectTab = (value: string) => {
+    setTab(value);
+    setArtistFilter("");
+  };
+
+  // Celular: a barra inferior (montada no layout) troca de aba por aqui e mostra os contadores.
+  const watchedCount = (watched.data ?? []).length;
+  const bidsCount = (bids.data ?? []).length;
+  useEffect(() => {
+    if (!mobile) return;
+    setHomeNav({
+      tab: homeTabOf(tab),
+      setTab: (target: HomeTab) =>
+        selectTab(
+          target === "days" ? (/^day-\d+$/.test(tab) ? tab : `day-${TODAY_INDEX}`) : target,
+        ),
+      watchedCount,
+      bidsCount,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectTab só usa setters estáveis
+  }, [mobile, tab, watchedCount, bidsCount]);
+  useEffect(() => () => setHomeNav(null), []);
 
   return (
     <main className="min-h-screen bg-background">
-      <MobileTopToggle
-        collapsed={barsHidden}
-        onToggle={() => setBarsHidden((c) => !c)}
-        alwaysVisible
-      />
-      <Tabs
-        value={tab}
-        onValueChange={(value) => {
-          setTab(value);
-          setArtistFilter("");
-        }}
-      >
-        <DashboardHeader d={d} onSignOut={onSignOut} email={email} />
+      {mobile ? null : (
+        <MobileTopToggle
+          collapsed={barsHidden}
+          onToggle={() => setBarsHidden((c) => !c)}
+          alwaysVisible
+        />
+      )}
+      <Tabs value={tab} onValueChange={selectTab}>
+        {mobile ? (
+          <MobileDashboardHeader d={d} onSelectTab={selectTab} />
+        ) : (
+          <DashboardHeader d={d} onSignOut={onSignOut} email={email} />
+        )}
 
         <div className="mx-auto max-w-6xl px-4 pt-3 pb-8">
           <LiveAuctions />
@@ -281,7 +317,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           excludeMutation.mutate({ lotId: excludeTarget!.id, reason: reason || undefined })
         }
       />
-      {footerExtraHost &&
+      {(mobile ? menuExtraHost : footerExtraHost) &&
         createPortal(
           <>
             <div
@@ -343,7 +379,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               </span>
             ) : null}
           </>,
-          footerExtraHost,
+          (mobile ? menuExtraHost : footerExtraHost)!,
         )}
     </main>
   );

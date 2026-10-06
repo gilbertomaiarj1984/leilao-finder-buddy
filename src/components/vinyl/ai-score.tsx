@@ -374,7 +374,7 @@ function ReevaluateButton({ lot }: { lot: ReevalLot }) {
 }
 
 /** Conteúdo do overlay/coluna: o que compõe a nota. Reutilizado no card e na Análise. */
-function ScoreDetails({
+export function ScoreDetails({
   ai,
   market,
   price,

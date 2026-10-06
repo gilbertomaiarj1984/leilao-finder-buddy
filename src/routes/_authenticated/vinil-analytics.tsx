@@ -367,7 +367,7 @@ function VinilAnalyticsPage() {
       ai={ai}
       headerExtra={
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" asChild>
+          <Button variant="ghost" size="sm" asChild className="max-sm:hidden">
             <Link to="/">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Voltar

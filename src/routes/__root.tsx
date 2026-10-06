@@ -119,14 +119,14 @@ function RootComponent() {
       {/* pb-14 reserva espaço para o rodapé fixo (Footer é `position: fixed`) — um pouco
       mais que a altura só do texto, porque a tela inicial injeta controles (via portal em
       `#footer-extra`) que deixam a linha um pouco mais alta. */}
-      <div className="flex min-h-screen flex-col pb-14">
+      <div className="flex min-h-screen flex-col pb-14 max-sm:pb-24">
         <div className="flex-1">
           {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
           <Outlet />
         </div>
       </div>
       <Footer />
-      <Toaster richColors />
+      <Toaster richColors mobileOffset={{ bottom: 88 }} />
     </QueryClientProvider>
   );
 }
