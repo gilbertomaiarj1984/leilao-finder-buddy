@@ -3,6 +3,32 @@
 > Só o que ainda está em aberto. Ao resolver um item, mova-o para
 > `docs/arquivo/pendencias-resolvidas.md` (e registre a versão no `CHANGELOG.md`).
 
+**Interface mobile — o que ficou fora da v1 (v0.108.0)** — referência: protótipo aprovado
+(artefato "Garimpo Mobile Protótipo") e `docs/areas/ui.md`, seção "Interface mobile".
+
+- **Não validado com dados reais no celular**: build, lint, typecheck e testes passam e a casca
+  (barra, Menu, cabeçalho, navegação entre telas, cartão compacto/aberto em harness) foi
+  conferida num navegador headless, mas sem banco/rede; falta o usuário abrir no celular com os
+  dados de verdade (faixa de dias, Vigiados/Lances, cartão aberto) e reportar ajustes visuais.
+- **Telas secundárias com o desenho do protótipo**: linha sticky única (filtros à esquerda,
+  lupa/atualizar/⋯ à direita), folha de **Filtros** da Análise (hoje os filtros seguem em
+  linha), folha ⋯ de ações (Sondagem/Interesses, Adicionar em massa, Varredura completa),
+  botão flutuante "Adicionar disco" na Coleção, "Enviar para a coleção" em tela cheia em Compras,
+  tabela do Analytics com 1ª coluna fixa. Hoje essas telas mantêm o cabeçalho atual (rolável).
+- **Cartão aberto — Coleção inline**: a aba Coleção abre o `OwnedPanel` existente (fecha a folha
+  antes); no protótipo o painel (confirmar/não tenho/buscar disco/termos negáveis) era inline.
+  Idem Excluir: confirma na folha e abre o `ExcludeLotDialog` (motivo) existente.
+- **Gestos**: deslizar para trocar de dia / de lote, puxar para atualizar, deslizar para
+  desvigiar (sugestões do protótipo, não implementadas).
+- **Casa em pregão sobe para o topo do dia** e a **faixa vermelha de andamento** (lote, peça x/y,
+  %) em toda casa ao vivo: hoje usa o `AuctionStatusInline`/`LiveLotNow` já existentes no cabeçalho
+  de cada casa (informação completa, layout do desktop quebrando linha); falta a faixa dedicada
+  tocável que abre o presencial.
+- **Tela "Ao vivo"**: filtros Todos/Ao vivo/Em breve/Encerrados e ordem fixa (ao vivo → em breve →
+  encerrados) do protótipo.
+- **Vigiados**: tiles de resumo (vigiando/ganhando/coberto) que filtram por toque, como no
+  protótipo (hoje só os filtros por dia e os badges de status das casas).
+
 **Roadmap — novos provedores de IA (avaliado, não iniciado)**
 
 Avaliamos o repo `tashfeenahmed/freellmapi` (proxy **local** `localhost:3001`, OpenAI-compatible,

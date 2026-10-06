@@ -72,38 +72,47 @@ export function TracklistHover({
           onMouseLeave={hide}
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
-          {title ? <p className="mb-2 text-sm font-semibold leading-snug">{title}</p> : null}
-          <div className="space-y-2">
-            {groupTracksBySide(tracklist ?? []).map((g, gi) => (
-              <div key={`${g.side ?? "-"}-${gi}`}>
-                {g.side ? (
-                  <p className="mb-1 font-semibold text-muted-foreground">Lado {g.side}</p>
-                ) : null}
-                <ul className="space-y-1">
-                  {g.tracks.map((t, i) => (
-                    <li key={`${t.title}-${i}`} className="flex items-start gap-2">
-                      <span
-                        className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${FAME_DOT[t.fame]}`}
-                        title={FAME_LABEL[t.fame]}
-                      />
-                      <span className="leading-snug">{t.title}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-border pt-2 text-[10px] text-muted-foreground">
-            {(Object.keys(FAME_DOT) as TrackFame[]).map((f) => (
-              <span key={f} className="flex items-center gap-1">
-                <span className={`h-2 w-2 rounded-full ${FAME_DOT[f]}`} />
-                {FAME_LABEL[f]}
-              </span>
-            ))}
-          </div>
+          <TracklistContent tracklist={tracklist ?? []} title={title} />
         </PopoverContent>
       ) : null}
     </Popover>
+  );
+}
+
+/** Corpo da tracklist (lados + bolinhas de fama + legenda): popover do desktop e cartão aberto do celular. */
+export function TracklistContent({ tracklist, title }: { tracklist: Track[]; title?: string }) {
+  return (
+    <>
+      {title ? <p className="mb-2 text-sm font-semibold leading-snug">{title}</p> : null}
+      <div className="space-y-2">
+        {groupTracksBySide(tracklist).map((g, gi) => (
+          <div key={`${g.side ?? "-"}-${gi}`}>
+            {g.side ? (
+              <p className="mb-1 font-semibold text-muted-foreground">Lado {g.side}</p>
+            ) : null}
+            <ul className="space-y-1">
+              {g.tracks.map((t, i) => (
+                <li key={`${t.title}-${i}`} className="flex items-start gap-2">
+                  <span
+                    className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${FAME_DOT[t.fame]}`}
+                    title={FAME_LABEL[t.fame]}
+                  />
+                  <span className="leading-snug">{t.title}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-border pt-2 text-[10px] text-muted-foreground">
+        {(Object.keys(FAME_DOT) as TrackFame[]).map((f) => (
+          <span key={f} className="flex items-center gap-1">
+            <span className={`h-2 w-2 rounded-full ${FAME_DOT[f]}`} />
+            {FAME_LABEL[f]}
+          </span>
+        ))}
+      </div>
+    </>
   );
 }
 

@@ -1785,6 +1785,7 @@ export function useDashboardData() {
     todayKey,
     dayPage,
     setDayPage,
+    visitedPages,
     pageLoading,
     matchesSearch,
     watched,
