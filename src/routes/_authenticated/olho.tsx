@@ -13,11 +13,13 @@ import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import {
   deleteLookout,
+  identifyLookout,
   markLookoutSeen,
   setLookoutLink,
   updateLookout,
 } from "@/lib/lookout.functions";
-import { notifyKey } from "@/lib/lookout-match";
+import { formatFailoverTrail } from "@/lib/ai-provider";
+import { lookoutLabel, notifyKey } from "@/lib/lookout-match";
 import type { LookoutUpcoming } from "@/lib/lookout-matches.server";
 import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
 import { queryKeys, useLookoutOverviewQuery, useWatchedQuery } from "@/lib/queries";
@@ -37,6 +39,7 @@ function OlhoPage() {
   const runLink = useServerFn(setLookoutLink);
   const runSeen = useServerFn(markLookoutSeen);
   const runWatch = useServerFn(toggleWatch);
+  const runIdentify = useServerFn(identifyLookout);
 
   const query = useLookoutOverviewQuery({ history: true });
   const overview = query.data;
@@ -82,6 +85,35 @@ function OlhoPage() {
     },
     onError: (error: unknown) =>
       toast.error((error as Error)?.message || "Não foi possível remover"),
+  });
+  // Identificação por IA (texto + imagem) de UM item: preenche artista/álbum/ano e recalcula os
+  // matches. `identifyingId` = item em andamento (spinner só nele).
+  const [identifyingId, setIdentifyingId] = useState<string | null>(null);
+  const identifyMut = useMutation({
+    mutationFn: async (id: string) => await runIdentify({ data: { id } }),
+    onMutate: (id) => setIdentifyingId(id),
+    onSuccess: (r) => {
+      const trail = r.switched
+        ? ` (trocou de provedor — ${formatFailoverTrail(r.attemptErrors)})`
+        : "";
+      if (r.identified && r.item) {
+        toast.success(
+          `IA: ${lookoutLabel(r.item)}${r.confidence ? ` · confiança ${r.confidence}` : ""}${
+            r.usedImage ? "" : " · sem imagem utilizável, só pelo texto"
+          }${trail}`,
+        );
+      } else {
+        toast.warning(
+          r.error
+            ? `IA não conseguiu identificar: ${r.error}`
+            : "A IA não conseguiu identificar este disco — edite no lápis.",
+        );
+      }
+      refresh();
+    },
+    onError: (error: unknown) =>
+      toast.error((error as Error)?.message || "Não foi possível identificar pela IA"),
+    onSettled: () => setIdentifyingId(null),
   });
   const resolveMut = useMutation({
     mutationFn: async (vars: { lotId: string; value: string | false }) =>
@@ -245,6 +277,8 @@ function OlhoPage() {
                 busyWatch={busyWatch}
                 onUpdate={(patch) => updateMut.mutate({ id: item.id, patch })}
                 onDelete={() => deleteMut.mutate(item.id)}
+                onIdentify={() => identifyMut.mutate(item.id)}
+                identifying={identifyingId === item.id}
                 onWatch={(m) => void watchLot(m)}
                 onResolve={(m, decision) =>
                   resolveMut.mutate({
@@ -270,6 +304,8 @@ function OlhoPage() {
                     busyWatch={busyWatch}
                     onUpdate={(patch) => updateMut.mutate({ id: item.id, patch })}
                     onDelete={() => deleteMut.mutate(item.id)}
+                    onIdentify={() => identifyMut.mutate(item.id)}
+                    identifying={identifyingId === item.id}
                     onWatch={() => undefined}
                     onResolve={() => undefined}
                   />
