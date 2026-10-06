@@ -196,3 +196,20 @@ export const markLookoutSeen = createServerFn({ method: "POST" })
     await save(data.keys);
     return { ok: true as const };
   });
+
+/**
+ * Identifica pela IA (texto + imagem) o artista/álbum/ano de um item de olho — botão sob o lápis.
+ * Gasta créditos de IA; só sob demanda. Ver `lookout-ident.server.ts`.
+ */
+export const identifyLookout = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { id?: string } | undefined) => {
+    if (!input?.id || typeof input.id !== "string") throw new Error("id obrigatório");
+    return { id: input.id };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { identifyLookoutItem } = await import("./lookout-ident.server");
+    return await identifyLookoutItem(data.id);
+  });

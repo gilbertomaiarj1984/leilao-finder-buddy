@@ -216,6 +216,13 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   casam (precisão antes de cobertura) — a correção por venda no Analytics resolve. Abrir a página marca os matches
   como vistos (zera o contador do menu; o selo "novo" daquela visita permanece). O contador do
   menu usa a versão leve (`history: false`, staleTime 15 min).
+- **Identificar por IA (v0.110.0):** botão ✨ sob o lápis no card do item de `/olho` →
+  `identifyLookout` → `identifyLookoutItem` (`lookout-ident.server.ts`, isolado): usa
+  `identLotsSyncRows(…, withImage=true)` (mesmo prompt/parser da identificação dos lotes, **texto
+  do lote de origem + foto**), provedor padrão do usuário com failover; se a chamada com imagem
+  falhar (casa bloqueando a foto), repete só com o texto. Só preenche/melhora artista/álbum/ano
+  (nunca apaga com resultado vazio); depois os matches são recalculados. Gasta créditos de IA —
+  só sob demanda. O toast mostra o resultado, a confiança e se houve troca de provedor.
 - **Aviso externo (ntfy.sh):** `step=lookoutnotify` do cron (`refresh.yml`, depois de
   aiident/market, antes da faxina, via `call_soft` — falha não reprova a run) →
   `notifyLookoutMatches`: para cada match confiante ainda não avisado (`pickNotifiable`, dedupe

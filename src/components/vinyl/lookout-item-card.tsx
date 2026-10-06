@@ -5,7 +5,9 @@ import {
   ChevronUp,
   ExternalLink,
   Eye,
+  Loader2,
   Pencil,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -67,6 +69,8 @@ export function LookoutItemCard({
   onDelete,
   onWatch,
   onResolve,
+  onIdentify,
+  identifying,
 }: {
   item: LookoutItem;
   upcoming: LookoutUpcoming[];
@@ -80,6 +84,9 @@ export function LookoutItemCard({
   onDelete: () => void;
   onWatch: (m: LookoutUpcoming) => void;
   onResolve: (m: LookoutUpcoming, decision: "confirm" | "dismiss") => void;
+  /** Identifica artista/álbum/ano pela IA (texto + imagem) — botão sob o lápis. */
+  onIdentify: () => void;
+  identifying: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -166,21 +173,44 @@ export function LookoutItemCard({
                   {item.dayKey ? ` · ${shortDay(item.dayKey)}` : ""} — {item.title}
                 </p>
               </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setEditing(true)}
-                aria-label="Editar artista/álbum/ano"
-                title="Editar artista/álbum/ano (o casamento usa estes campos)"
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
+              <div className="flex shrink-0 flex-col items-center">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    // Recarrega os campos do item (a IA pode ter mudado artista/álbum/ano).
+                    setArtist(item.artist);
+                    setAlbum(item.album);
+                    setYear(item.year ? String(item.year) : "");
+                    setEditing(true);
+                  }}
+                  aria-label="Editar artista/álbum/ano"
+                  title="Editar artista/álbum/ano (o casamento usa estes campos)"
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={onIdentify}
+                  disabled={identifying}
+                  aria-label="Identificar com IA (texto + imagem)"
+                  title="Identificar artista/álbum/ano com IA, pelo texto do lote + a imagem (gasta créditos de IA)"
+                >
+                  {identifying ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4 text-fuchsia-600 dark:text-fuchsia-400" />
+                  )}
+                </Button>
+              </div>
             </div>
           )}
 
           {incomplete && !editing ? (
             <p className="rounded bg-orange-500/15 px-2 py-1 text-xs text-orange-700 dark:text-orange-300">
-              Artista/álbum não identificados — edite (lápis) para o casamento funcionar.
+              Artista/álbum não identificados — use a IA (✨) ou edite (lápis) para o casamento
+              funcionar.
             </p>
           ) : null}
 
