@@ -18,6 +18,12 @@ import {
 } from "@/lib/vinyl-parse";
 
 import type { AiProvider } from "./ai-provider";
+import {
+  buildTracklistPrompt,
+  normalizeTracklist,
+  parseTracklistText,
+  type Track,
+} from "./tracklist";
 
 /**
  * Um disco da coleção do usuário, como a UI consome (camelCase; espelha as colunas
@@ -48,6 +54,8 @@ export type CollectionItem = {
   marketHigh: string | null;
   sourceUrl: string;
   position: number;
+  // Tracklist buscada pela IA (mesmo formato de `lot_ai.tracklist`); null = ainda não buscada.
+  tracklist: Track[] | null;
 };
 
 /** Colunas graváveis de `collection_items` (espelha `supabase/setup.sql`; todas opcionais). */
@@ -70,6 +78,7 @@ type CollectionItemWrite = Partial<{
   source: string;
   source_url: string;
   tags: string[];
+  tracklist: Track[] | null;
   title: string;
   uf: string;
   updated_at: string;
@@ -79,7 +88,7 @@ type CollectionItemWrite = Partial<{
 }>;
 
 const COLS =
-  "id, lot_id, origin_lot_id, source, artist, album, title, year, image, house, uf, won_price, won_date, condition_media, condition_sleeve, notes, description, tags, market_low, market_high, source_url, position";
+  "id, lot_id, origin_lot_id, source, artist, album, title, year, image, house, uf, won_price, won_date, condition_media, condition_sleeve, notes, description, tags, market_low, market_high, source_url, position, tracklist";
 
 type DbRow = {
   id: string;
@@ -104,6 +113,7 @@ type DbRow = {
   market_high: string | null;
   source_url: string | null;
   position: number;
+  tracklist: unknown;
 };
 
 function toItem(r: DbRow): CollectionItem {
@@ -130,6 +140,7 @@ function toItem(r: DbRow): CollectionItem {
     marketHigh: r.market_high,
     sourceUrl: r.source_url ?? "",
     position: r.position,
+    tracklist: normalizeTracklist(r.tracklist),
   };
 }
 
@@ -420,6 +431,44 @@ export async function reidentifyCollectionItem(
   const { error } = await db.from("collection_items").update(patch).eq("id", id);
   if (error) throw new Error(`Não foi possível gravar: ${error.message}`);
   return { updated: true, served, switched, error: null, attemptErrors };
+}
+
+/**
+ * Busca SÓ a tracklist de um disco da coleção (por texto, mesmo prompt do retroativo dos lotes —
+ * `buildTracklistPrompt`) e grava em `collection_items.tracklist`. Não mexe em artista/álbum/ano.
+ * Quando a IA não sabe, não grava nada (`found: false`) para o botão poder tentar de novo.
+ */
+export async function fetchCollectionTracklist(
+  id: string,
+  provider: AiProvider,
+): Promise<{ found: boolean; tracklist: Track[] | null }> {
+  const { aiConfigured, resolveGeminiModel } = await import("./ai-eval.server");
+  const { runText } = await import("./ai-provider.server");
+  const { TRACKLIST_SYSTEM } = await import("./tracklist-step.server");
+  if (!aiConfigured()) {
+    throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
+  }
+  const item = (await getAllCollection()).find((i) => i.id === id);
+  if (!item) throw new Error("Disco não encontrado na coleção.");
+  const name = [item.artist, item.album || item.title].filter(Boolean).join(" — ");
+  if (!name.trim()) throw new Error("Disco sem artista/álbum para buscar a tracklist.");
+
+  const r = await runText(
+    {
+      system: TRACKLIST_SYSTEM,
+      maxTokens: 1000,
+      text: buildTracklistPrompt(item.year ? `${name} (${item.year})` : name),
+      image: null,
+      json: true,
+    },
+    provider,
+    await resolveGeminiModel(),
+  );
+  const tracklist = parseTracklistText(r.text);
+  if (!tracklist) return { found: false, tracklist: null };
+  const { error } = await db.from("collection_items").update({ tracklist }).eq("id", id);
+  if (error) throw new Error(`Não foi possível gravar a tracklist: ${error.message}`);
+  return { found: true, tracklist };
 }
 
 /**

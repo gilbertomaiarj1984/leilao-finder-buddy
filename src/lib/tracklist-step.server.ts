@@ -11,7 +11,7 @@ import { getAiProvider } from "./app-state.server";
 import { resolveGeminiModel, SYNC_CONCURRENCY } from "./ai-eval.server";
 import { buildTracklistPrompt, parseTracklistText, type Track } from "./tracklist";
 
-const SYSTEM =
+export const TRACKLIST_SYSTEM =
   "Você conhece discografias de música (principalmente brasileira) e fala sobre discos de " +
   "vinil. Responda SOMENTE com um objeto JSON, sem nenhum texto fora do JSON.";
 
@@ -56,7 +56,7 @@ export async function runTracklistBackfill(max = 20): Promise<{
       try {
         const r = await runText(
           {
-            system: SYSTEM,
+            system: TRACKLIST_SYSTEM,
             maxTokens: 1000,
             text: buildTracklistPrompt(album),
             image: null,

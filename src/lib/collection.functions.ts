@@ -114,6 +114,22 @@ export const reprocessCollectionItem = createServerFn({ method: "POST" })
     return await reidentifyCollectionItem(data.id, provider);
   });
 
+/** Busca só a tracklist do disco pela IA (texto) e grava em `collection_items.tracklist`. */
+export const fetchCollectionTracklistFn = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { id?: string; provider?: string } | undefined) => {
+    if (!input?.id || typeof input.id !== "string") throw new Error("id obrigatório");
+    return { id: input.id, provider: isAiProvider(input?.provider) ? input.provider : null };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getAiProvider } = await import("./app-state.server");
+    const provider = data.provider ?? (await getAiProvider());
+    const { fetchCollectionTracklist } = await import("./collection.server");
+    return await fetchCollectionTracklist(data.id, provider);
+  });
+
 /**
  * Identifica pela IA (texto) um disco que ainda NÃO está na coleção — usado pelo diálogo
  * "Enviar para a coleção" em `/compras` para pré-preencher artista/álbum/ano/descritivo/tags a

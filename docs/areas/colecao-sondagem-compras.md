@@ -24,8 +24,9 @@
 
 - **Catálogo dos vinis que o usuário possui**, agrupado por artista. Página
   `_authenticated/colecao.tsx` (menu **Coleção** no header do `index.tsx`), duas visões
-  (`Tabs`): **Cards** (`CollectionCard`, mesmo visual dos cards de leilão) e **Títulos**
-  (lista simplificada). **Filtro por artista** (`ArtistFilter` reusado) + **busca** por
+  (`Tabs`): **Títulos** (padrão desde a v0.114.0; lista simplificada — `CollectionTitleRow`: hover/toque
+  na linha abre o **card completo flutuante** (`Popover`) com Editar/reprocessar/remover/tags/tracklist)
+  e **Cards** (`CollectionCard`, mesmo visual dos cards de leilão). **Filtro por artista** (`ArtistFilter` reusado) + **busca** por
   artista/álbum/título (`normalizeForMatch`).
 - **Agrupamento normalizado (garante juntar o artista):** grupos e filtro usam a CHAVE
   `normalizeForMatch(artist)` (sem acento/caixa/pontuação), então variações do mesmo nome caem
@@ -79,6 +80,11 @@
   pré-formatado) para ler o texto todo. **Tags editáveis no card** reusando `LotTags` (mesmo × / + tag
   dos lotes) → `updateCollectionItem({id, tags})` otimista (`tagsMut`, rollback em erro). **Não**
   mostra faixa de mercado nem casa de leilão. A visão **Títulos** (`collectionLabel`) segue como estava.
+- **Tracklist (v0.114.0):** o ícone do card mostra `collection_items.tracklist` (jsonb, formato de
+  `lot_ai.tracklist`) ou, na falta, a do lote de origem. Sem nenhuma, o botão fica **clicável** →
+  `fetchCollectionTracklistFn` → `fetchCollectionTracklist` (`collection.server.ts`): pede à IA SÓ a
+  tracklist (`buildTracklistPrompt`, texto, sem tocar em artista/álbum/ano) e grava; se a IA não soube,
+  não grava (dá para tentar de novo).
 - **Descritivo da IA (`buildCollectionIdentPrompt`, `ai-eval.server.ts`):** prompt pede um texto
   RICO/LONGO baseado **principalmente no nome do álbum** (+ artista): momento histórico do álbum,
   panorama do artista e **faixa a faixa** quando souber; `max_tokens=2000`, slice do descritivo até

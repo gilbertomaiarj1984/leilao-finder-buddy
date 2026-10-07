@@ -16,6 +16,8 @@ export function CollectionCard({
   onReprocess,
   onTagsChange,
   onPickCover,
+  onFetchTracklist,
+  tracklistLoading = false,
 }: {
   item: CollectionItem;
   busy: boolean;
@@ -28,6 +30,9 @@ export function CollectionCard({
   onTagsChange?: (next: string[]) => void;
   // Clicar na imagem abre o seletor de capa do Discogs (o link do leilão segue no rodapé).
   onPickCover?: () => void;
+  // Sem tracklist, o botão fica clicável e busca SÓ a tracklist (IA) para este disco.
+  onFetchTracklist?: () => void;
+  tracklistLoading?: boolean;
 }) {
   const artistLine = item.artist || "(sem artista)";
   const albumLine =
@@ -57,9 +62,15 @@ export function CollectionCard({
         </div>
       )}
 
-      {/* Tracklist reaproveitada da avaliação do lote de origem (itens manuais não têm). */}
+      {/* Tracklist própria do disco ou a da avaliação do lote de origem; sem nenhuma, o botão busca. */}
       <div className="absolute right-2 top-2 z-10">
-        <LotTracklistHover lotId={item.lotId ?? item.originLotId} title={alt} />
+        <LotTracklistHover
+          lotId={item.lotId ?? item.originLotId}
+          title={alt}
+          own={item.tracklist}
+          onRequest={onFetchTracklist}
+          loading={tracklistLoading}
+        />
       </div>
 
       <div className="flex flex-1 flex-col gap-3 p-4">
