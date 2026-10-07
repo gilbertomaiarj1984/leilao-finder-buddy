@@ -89,6 +89,14 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   (mapa `loteById`).
 - Diagnóstico: `GET /api/cron?step=catdebug` (sonda os catálogos das casas sem número).
 
+## Regra: nunca bloquear casa (v0.112.1)
+
+- **Nenhuma casa é bloqueada ou tratada à parte** — vale para todas. Casas generalistas podem ter
+  pregões só de discos no dia a dia; item esporádico fora de categoria se resolve por título
+  (`looksNonVinyl`/`isVinylTitle`, em `vinyl-parse.ts`) ou pela exclusão manual de lote
+  (`exclusao-de-lotes.md`), nunca escondendo a casa. (O antigo `BLOCKED_HOUSES` da v0.73.5, que
+  derrubava a "Alberto Lopes - Leiloeiro Público" inteira, foi removido.)
+
 ## Casas verificadas
 
 - "Marcar casa como verificada" (chave `${dia}|${casa}`) **PERSISTE no servidor**: `app_state`
