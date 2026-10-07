@@ -280,6 +280,18 @@ export const COMPILATION_LABEL = "Coletâneas";
  */
 export const ANALYTICS_COMPILATION_LABEL = "Coletâneas, Novela e etc";
 
+/**
+ * Disco da coleção "sem informação": sem artista (ou caído em "não classificados") OU sem nome
+ * do álbum — exceto os baldes "Lote"/"Coletâneas", que nunca têm um álbum único. Critério do
+ * "Identificar novos (IA)" (client-safe: a UI usa para contar, o servidor para filtrar).
+ */
+export function collectionNeedsIdentification(item: { artist: string; album: string }): boolean {
+  const a = item.artist.trim();
+  if (!a || a === UNCLASSIFIED_LABEL) return true;
+  if (a === LOTE_LABEL || a === COMPILATION_LABEL) return false;
+  return !item.album.trim();
+}
+
 // "Artistas" que na verdade são um balaio de LOTE/lixo de catálogo (não um nome real): o próprio
 // "Lote", códigos de casa tipo "Discos5"/"Discos 6" e placeholders de pregão ("Proposta de Lote
 // Para Leilão"). Já normalizados (sem acento/caixa/pontuação). Alvo da IA de identificação.

@@ -1,6 +1,8 @@
-import { ExternalLink, Pencil, RotateCw, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { ExternalLink, ImageIcon, Pencil, RotateCw, Trash2, Type } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { LotTags } from "@/components/vinyl/ai-score";
 import { scoreTone } from "@/components/vinyl/ai-score-utils";
 import { LotTracklistHover } from "@/components/vinyl/tracklist-hover";
@@ -26,7 +28,8 @@ export function CollectionCard({
   // somente-leitura — ex.: o card exibido no painel de relação da home).
   onEdit?: () => void;
   onRemove?: () => void;
-  onReprocess?: () => void;
+  // Reprocessa pela IA: "image" = pela capa; "text" = pelo nome do artista e álbum.
+  onReprocess?: (mode: "image" | "text") => void;
   onTagsChange?: (next: string[]) => void;
   // Clicar na imagem abre o seletor de capa do Discogs (o link do leilão segue no rodapé).
   onPickCover?: () => void;
@@ -39,6 +42,7 @@ export function CollectionCard({
     [item.album, item.year ? `(${item.year})` : ""].filter(Boolean).join(" ") ||
     item.title ||
     "(sem álbum)";
+  const [reprocessOpen, setReprocessOpen] = useState(false);
   const alt = [item.artist, item.album].filter(Boolean).join(" - ") || item.title || "disco";
 
   return (
@@ -161,16 +165,50 @@ export function CollectionCard({
               </Button>
             ) : null}
             {onReprocess ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={onReprocess}
-                disabled={busy || reprocessing}
-                aria-label="Reprocessar identificação pela IA"
-                title="Reprocessar pela IA (só texto): refaz artista/álbum/ano e o descritivo, sobrescrevendo o atual."
-              >
-                <RotateCw className={`h-4 w-4 ${reprocessing ? "animate-spin" : ""}`} />
-              </Button>
+              <Popover open={reprocessOpen} onOpenChange={setReprocessOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy || reprocessing}
+                    aria-label="Reprocessar identificação pela IA"
+                    title="Reprocessar pela IA: refaz artista/álbum/ano e o descritivo, sobrescrevendo o atual."
+                  >
+                    <RotateCw className={`h-4 w-4 ${reprocessing ? "animate-spin" : ""}`} />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-64 space-y-1 p-2">
+                  <p className="px-2 pb-1 text-xs font-semibold text-muted-foreground">
+                    Atualizar pela IA com base…
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-auto w-full justify-start gap-2 whitespace-normal py-2 text-left"
+                    disabled={!item.image}
+                    title={item.image ? undefined : "Este disco não tem capa"}
+                    onClick={() => {
+                      setReprocessOpen(false);
+                      onReprocess("image");
+                    }}
+                  >
+                    <ImageIcon className="h-4 w-4 shrink-0" />
+                    <span>1 · Na imagem da capa</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-auto w-full justify-start gap-2 whitespace-normal py-2 text-left"
+                    onClick={() => {
+                      setReprocessOpen(false);
+                      onReprocess("text");
+                    }}
+                  >
+                    <Type className="h-4 w-4 shrink-0" />
+                    <span>2 · No nome do artista e do álbum</span>
+                  </Button>
+                </PopoverContent>
+              </Popover>
             ) : null}
             {onRemove ? (
               <Button

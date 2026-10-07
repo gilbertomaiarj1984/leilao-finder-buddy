@@ -14,7 +14,7 @@ import {
   LOTE_LABEL,
   normalizeForMatch,
   titleCase,
-  UNCLASSIFIED_LABEL,
+  collectionNeedsIdentification,
 } from "@/lib/vinyl-parse";
 
 import type { AiProvider } from "./ai-provider";
@@ -193,12 +193,6 @@ type ReidentifyResult = {
   attemptErrors: Partial<Record<AiProvider, string>>;
 };
 
-/** Um disco "ainda não identificado": sem artista, ou caído no balde de não classificados. */
-function needsIdentification(item: CollectionItem): boolean {
-  const a = item.artist.trim();
-  return !a || a === UNCLASSIFIED_LABEL;
-}
-
 /**
  * Une as tags atuais com as sugeridas pela IA: ACRESCENTA as novas (dedupe sem caixa) e nunca
  * remove as que o usuário já tinha — a remoção é sempre manual (padrão das tags dos lotes).
@@ -261,7 +255,7 @@ export async function reidentifyCollection(
   while (scan < total && batch.length < max) {
     const item = work[scan]!;
     scan += 1;
-    if (onlyUnidentified && !needsIdentification(item)) continue;
+    if (onlyUnidentified && !collectionNeedsIdentification(item)) continue;
     batch.push(item);
   }
   if (!batch.length) {
@@ -364,10 +358,13 @@ export async function reidentifyCollection(
  * IA identificar: artista/álbum/ano e o descritivo. Nunca apaga com resultado vazio (se a IA não
  * devolver um campo, o valor atual é mantido). Conjuntos → "Lote" pelo título sem gastar IA.
  * Requer `ANTHROPIC_API_KEY`. Retorna `{updated}` (false quando não havia nada a mudar).
+ * `mode`: "text" (padrão) usa só artista/álbum/título atuais; "image" identifica pela CAPA (foto
+ * do disco, URL http(s)) sem usar artista/álbum atuais como pista.
  */
 export async function reidentifyCollectionItem(
   id: string,
   provider: AiProvider,
+  mode: "text" | "image" = "text",
 ): Promise<{
   updated: boolean;
   served: AiProvider | null;
@@ -383,9 +380,13 @@ export async function reidentifyCollectionItem(
   }
   const item = (await getAllCollection()).find((i) => i.id === id);
   if (!item) throw new Error("Disco não encontrado na coleção.");
+  const image = mode === "image" ? item.image : null;
+  if (mode === "image" && !(image && /^https?:\/\//i.test(image))) {
+    throw new Error("Este disco não tem uma capa acessível para a IA ler (use a opção por nome).");
+  }
 
   // Conjuntos ("lote com N discos") → categoria "Lote" pelo título, sem gastar IA.
-  if (isDiscBundle(item.title)) {
+  if (mode === "text" && isDiscBundle(item.title)) {
     if (item.artist === LOTE_LABEL)
       return { updated: false, served: null, switched: false, error: null, attemptErrors: {} };
     const { error } = await db.from("collection_items").update({ artist: LOTE_LABEL }).eq("id", id);
@@ -407,6 +408,7 @@ export async function reidentifyCollectionItem(
         artist: item.artist,
         album: item.album,
         year: item.year,
+        image,
       },
     ],
     provider,

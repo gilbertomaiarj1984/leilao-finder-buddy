@@ -135,9 +135,9 @@ input.lotId)`).
     vinculando `lot_id`) e **"Item já enviado"** (habilitado após ≥1 extra; vincula a compra ao
     último extra via `applyCollectionDecision`, sem criar outro disco).
 - **IA por TEXTO (opt-in, gasta créditos):** dois caminhos, ambos via **`identCollectionSync`**.
-  - **Em massa — botão "Identificar novos (IA)"** no header → `identifyCollection({offset, max,
+  - **Em massa — botão "Identificar novos (IA)"** (v0.115.0: abre um menu com 2 ações — **Identificar faixas**: laço no cliente chamando `fetchCollectionTracklistFn` para cada disco sem tracklist própria nem do lote (fora "Lote"/"Coletâneas"/sem artista), com progresso no botão; e **Avaliar nome do disco/artista**: o fluxo abaixo) → `identifyCollection({offset, max,
 onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda sem
-    identificação** (`needsIdentification`: artista vazio ou `UNCLASSIFIED_LABEL`), pulando os já
+    identificação** (`collectionNeedsIdentification` em `vinyl-parse.ts`, client-safe: artista vazio/`UNCLASSIFIED_LABEL` OU álbum vazio — exceto os baldes "Lote"/"Coletâneas", que nunca têm álbum único), pulando os já
     identificados **sem custo** — uso ROTINEIRO e barato (a varredura de compras acrescenta poucos
     discos por vez). O `onlyUnidentified` é sempre `true` a partir da UI; o modo completo
     (`false`, re-normaliza TODA a base) segue existindo na server fn mas **não é exposto** — o
@@ -146,7 +146,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
     identificados; assim itens que saem do filtro ao serem identificados **não deslocam o cursor**
     (nada é pulado entre rodadas). Só **preenche/melhora** (nunca apaga com resultado vazio; o
     descritivo só quando vazio).
-  - **Por disco — ícone "reprocessar" (`RotateCw`) no card** → `reprocessCollectionItem({id})` →
+  - **Por disco — ícone "reprocessar" (`RotateCw`) no card** (v0.115.0: abre um menu **1 · Na imagem da capa** / **2 · No nome do artista e do álbum**; `mode: "image"|"text"`. O modo imagem manda a capa (URL http(s)) à IA SEM as pistas de texto atuais e exige capa acessível; o texto é o fluxo de sempre) → `reprocessCollectionItem({id, mode})` →
     `reidentifyCollectionItem`. Refaz UM disco pela IA e **SOBRESCREVE** artista/álbum/ano e o
     descritivo com o que a IA devolver (nunca zera com vazio). É o "refazer" manual para corrigir
     um disco específico sem reprocessar a base toda. Estado de "girando" por-id no card.

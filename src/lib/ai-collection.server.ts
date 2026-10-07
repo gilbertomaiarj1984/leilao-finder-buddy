@@ -15,6 +15,13 @@ const COLLECTION_IDENT_SYSTEM_PROMPT =
   "brasileiro. Use seu conhecimento de música e discografia. Baseie-se APENAS no texto " +
   "informado (não há imagem). Responda SOMENTE com um objeto JSON, sem texto fora dele.";
 
+const COLLECTION_IDENT_IMAGE_SYSTEM_PROMPT =
+  "Você identifica e descreve discos de vinil de uma coleção, para um colecionador " +
+  "brasileiro. Há a imagem da CAPA do disco: leia nela o artista, o nome do álbum, a " +
+  "gravadora e a época, e use seu conhecimento de música e discografia. Se a capa não permitir " +
+  'identificar com segurança, devolva "album" vazio e confiança "baixa" — nunca invente. ' +
+  "Responda SOMENTE com um objeto JSON, sem texto fora dele.";
+
 /** Entrada da identificação da Coleção: título do lote + artista/álbum/ano atuais (pista). */
 type CollectionIdentInput = {
   id: string;
@@ -22,6 +29,8 @@ type CollectionIdentInput = {
   artist?: string;
   album?: string;
   year?: number | null;
+  /** URL http(s) da capa: quando presente, identifica PELA IMAGEM (sem as pistas de texto). */
+  image?: string | null;
 };
 
 /** Resultado: identificação + descritivo do disco + tags de gênero/estilo. */
@@ -36,12 +45,15 @@ type CollectionIdentResult = {
 
 /** Prompt de identificação+descrição de UM disco da coleção (só texto). */
 function buildCollectionIdentPrompt(input: CollectionIdentInput): string {
-  const info = {
-    titulo: input.title,
-    artista_atual: input.artist || null,
-    album_atual: input.album || null,
-    ano_atual: input.year ?? null,
-  };
+  // Pela imagem, as pistas de texto atuais seriam justamente o que se quer corrigir: não vão.
+  const info = input.image
+    ? { origem: "capa do disco (imagem anexada)" }
+    : {
+        titulo: input.title,
+        artista_atual: input.artist || null,
+        album_atual: input.album || null,
+        ano_atual: input.year ?? null,
+      };
   return (
     "Identifique e descreva EM DETALHE este disco de vinil. Devolva um objeto JSON com " +
     "EXATAMENTE estas chaves:\n" +
@@ -59,7 +71,9 @@ function buildCollectionIdentPrompt(input: CollectionIdentInput): string {
     "importância na carreira do artista e na música da época; (2) um panorama do artista; e " +
     "(3) quando souber, comentários FAIXA A FAIXA, destacando as principais músicas. Seja " +
     'informativo e específico deste álbum. "" só se realmente não conhecer o disco.\n\n' +
-    "Use os campos atuais só como pista — corrija se estiverem errados.\n" +
+    (input.image
+      ? "Identifique o disco PELA CAPA (imagem anexada).\n"
+      : "Use os campos atuais só como pista — corrija se estiverem errados.\n") +
     "Disco:\n" +
     JSON.stringify(info) +
     "\n\nResponda só com o objeto JSON."
@@ -69,12 +83,12 @@ function buildCollectionIdentPrompt(input: CollectionIdentInput): string {
 /** Requisição NEUTRA (só texto) para identificar+descrever UM disco da coleção. */
 function buildCollectionRequest(input: CollectionIdentInput): AiRequest {
   return {
-    system: COLLECTION_IDENT_SYSTEM_PROMPT,
+    system: input.image ? COLLECTION_IDENT_IMAGE_SYSTEM_PROMPT : COLLECTION_IDENT_SYSTEM_PROMPT,
     // Descritivo longo (momento histórico + panorama + faixa a faixa) precisa de folga para o
     // JSON COMPLETAR — 2000 truncava e o Gemini (modo JSON) devolvia vazio no `MAX_TOKENS`.
     maxTokens: 4096,
     text: buildCollectionIdentPrompt(input),
-    image: null,
+    image: input.image ?? null,
     json: true,
   };
 }
