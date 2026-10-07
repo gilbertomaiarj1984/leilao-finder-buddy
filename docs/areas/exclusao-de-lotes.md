@@ -49,11 +49,11 @@
      comum ("LP + DVD bônus" não basta).
   3. **Sem motivo nem indicador** → 2+ termos RAROS em comum, nunca contra lote claramente
      vinil quando o excluído não era.
-  Termos do lote novo saem do casamento quando são CONTEÚDO: artista efetivo, álbum da IA e
-  release do Discogs (`trashProfile({content})`), palavras de conteúdo (`CONTENT_WORDS`: "ao
-  vivo", "show", "sucessos", estado…) e termos COMUNS na listagem atual (usados por ≥ 20 lotes
-  e ≥ 3% dela — a própria listagem é o corpus). O `trash_keyword_denylist` (clique no badge)
-  vale para os três tipos de termo (expressão, indicador, termo raro).
+     Termos do lote novo saem do casamento quando são CONTEÚDO: artista efetivo, álbum da IA e
+     release do Discogs (`trashProfile({content})`), palavras de conteúdo (`CONTENT_WORDS`: "ao
+     vivo", "show", "sucessos", estado…) e termos COMUNS na listagem atual (usados por ≥ 20 lotes
+     e ≥ 3% dela — a própria listagem é o corpus). O `trash_keyword_denylist` (clique no badge)
+     vale para os três tipos de termo (expressão, indicador, termo raro).
 - **Calculado no CLIENTE, NÃO persistido:** `index.tsx` busca `getExcludedLotsForMatching`
   (`["excluded-lots"]`, `staleTime` 30 min) e monta `possibleTrashById` num `useMemo` a partir de
   `lots.data.lots` — mesmo padrão de `albumById`/`marketById`. Decisão deliberada: volume baixo

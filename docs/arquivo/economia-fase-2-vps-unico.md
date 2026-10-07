@@ -103,11 +103,11 @@ Alternativas avaliadas e preteridas: o **OCI NVMe 2** da mesma casa (1 vCPU / 2 
 e uma máquina de **4 vCPU / 8 GB na Europa** por US$ 6,60/mês (~R$ 36) — esta última, folgada mas
 com **222 ms** de latência.
 
-| | Ano 1 | Ano 2+ | Latência | Specs |
-|---|---|---|---|---|
+|                                     | Ano 1            | Ano 2+       | Latência  | Specs                  |
+| ----------------------------------- | ---------------- | ------------ | --------- | ---------------------- |
 | **HostGator SP NVMe 4 (escolhido)** | **R$ 37,59/mês** | R$ 78,32/mês | **13 ms** | 2 vCPU / 4 GB / 100 GB |
-| HostGator SP NVMe 2 | R$ 27,89/mês | R$ 45/mês | 13 ms | 1 vCPU / 2 GB / 50 GB |
-| VPS Europa US$ 6,60 | R$ 36/mês | R$ 36/mês | 222 ms | 4 vCPU / 8 GB / 100 GB |
+| HostGator SP NVMe 2                 | R$ 27,89/mês     | R$ 45/mês    | 13 ms     | 1 vCPU / 2 GB / 50 GB  |
+| VPS Europa US$ 6,60                 | R$ 36/mês        | R$ 36/mês    | 222 ms    | 4 vCPU / 8 GB / 100 GB |
 
 **Por que a latência ganhou dos cores.** Ela pesa duas vezes neste app: no cron, que faz centenas
 de requisições **sequenciais** a sites de leilão brasileiros, e na navegação, onde cada server
@@ -208,7 +208,7 @@ por esse número.
    usado em `src/integrations/supabase/client.server.ts`), lendo `DATABASE_URL`.
 
 2. **`src/lib/db-query.server.ts`** — o shim. Um `from(tabela)` que devolve um builder
-   encadeável e *thenable*, resolvendo para o mesmo `{ data, error }` que o código já trata.
+   encadeável e _thenable_, resolvendo para o mesmo `{ data, error }` que o código já trata.
    Cobre só os operadores acima. Semânticas que precisam bater exatamente:
    - `upsert(rows, { onConflict })` → `INSERT ... ON CONFLICT (cols) DO UPDATE SET ...`,
      **omitindo colunas ausentes**. Há um caso real em `lot-sales.server.ts` onde mandar `""` em
@@ -366,11 +366,11 @@ Supabase segue com os dados do momento do congelamento.
 
 ## Custo comparado
 
-| Cenário | Mensal | Backup | Teto de função | Egress medido |
-|---|---|---|---|---|
-| Hoje (free, estourado) | R$ 0 → bloqueio | ❌ | 60 s | 🔴 sim |
-| Ficar e pagar (Supabase Pro + Vercel Pro) | ~R$ 250 | ✅ | 60 s | sim, com folga |
-| **VPS único — HostGator SP NVMe 4, o escolhido** | **R$ 37,59** (R$ 78,32 na renovação) | ✅ (pg_dump → R2) | nenhum | ❌ não |
+| Cenário                                          | Mensal                               | Backup            | Teto de função | Egress medido  |
+| ------------------------------------------------ | ------------------------------------ | ----------------- | -------------- | -------------- |
+| Hoje (free, estourado)                           | R$ 0 → bloqueio                      | ❌                | 60 s           | 🔴 sim         |
+| Ficar e pagar (Supabase Pro + Vercel Pro)        | ~R$ 250                              | ✅                | 60 s           | sim, com folga |
+| **VPS único — HostGator SP NVMe 4, o escolhido** | **R$ 37,59** (R$ 78,32 na renovação) | ✅ (pg_dump → R2) | nenhum         | ❌ não         |
 
 Economia de ~R$ 212/mês contra ficar e pagar — e, mais relevante, sai da rota de colisão com as
 cotas sem trocar o problema de lugar. De quebra, 13 ms de latência contra os ~120 ms da Vercel
@@ -539,14 +539,14 @@ Isso gera dois arquivos: `deploy_garimpo` (chave **privada**) e `deploy_garimpo.
 No repositório, `Settings → Secrets and variables → Actions → New repository secret`,
 um de cada vez:
 
-| Secret | Valor |
-| --- | --- |
-| `VPS_HOST` | IP ou hostname do VPS (ex.: `123.45.67.89`) |
-| `VPS_USER` | `deploy` (o usuário criado no passo 1.3) |
-| `VPS_SSH_KEY` | conteúdo INTEIRO do arquivo `deploy_garimpo` (chave privada, passo 2) |
-| `VPS_DEPLOY_PATH` | `/home/deploy/garimpo` (a pasta criada no passo 1.7) |
-| `VPS_SSH_PORT` | só se o SSH não estiver na porta 22 padrão (ex.: `22022`, se você trocou a porta por segurança) — sem esse secret, o `deploy.yml` cai pra 22 |
-| `HEALTHCHECKS_PING_URL` | opcional, ver seção 6 abaixo — pode deixar para depois |
+| Secret                  | Valor                                                                                                                                        |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VPS_HOST`              | IP ou hostname do VPS (ex.: `123.45.67.89`)                                                                                                  |
+| `VPS_USER`              | `deploy` (o usuário criado no passo 1.3)                                                                                                     |
+| `VPS_SSH_KEY`           | conteúdo INTEIRO do arquivo `deploy_garimpo` (chave privada, passo 2)                                                                        |
+| `VPS_DEPLOY_PATH`       | `/home/deploy/garimpo` (a pasta criada no passo 1.7)                                                                                         |
+| `VPS_SSH_PORT`          | só se o SSH não estiver na porta 22 padrão (ex.: `22022`, se você trocou a porta por segurança) — sem esse secret, o `deploy.yml` cai pra 22 |
+| `HEALTHCHECKS_PING_URL` | opcional, ver seção 6 abaixo — pode deixar para depois                                                                                       |
 
 `APP_URL` e `CRON_TOKEN` (usados pelo `refresh.yml`) **já existem** desde antes da
 migração — não mexer neles ainda; `APP_URL` só troca no cutover (Fase 6, passo 4 abaixo).
@@ -613,14 +613,14 @@ pasta de deploy (`VPS_DEPLOY_PATH`) ANTES do primeiro deploy, porque o `docker-c
 5. O `deploy.yml` copia `supabase/setup.sql` pro VPS e o Postgres aplica sozinho **só quando
    o volume de dados nasce vazio** (mecanismo `docker-entrypoint-initdb.d` da imagem oficial).
    Se o volume já existia de uma tentativa anterior (por exemplo, você rodou `docker compose
-   up` antes deste PR existir), aplique à mão uma vez — é seguro rodar de novo, o script é
+up` antes deste PR existir), aplique à mão uma vez — é seguro rodar de novo, o script é
    idempotente (`IF NOT EXISTS`):
    ```sh
    docker compose exec -T postgres psql -U garimpo -d garimpo < supabase-init/01-setup.sql
    ```
    Confirma com `docker compose exec postgres psql -U garimpo -d garimpo -c '\dt'` — espera-se
    12 tabelas (`lots`, `collection_items`, `purchases`, etc.). Os erros `role "anon"/
-   "service_role" does not exist` e `relation "storage.buckets" does not exist` são
+"service_role" does not exist` e `relation "storage.buckets" does not exist` são
    esperados e inofensivos — resíduo do tempo do Supabase, sem efeito no Postgres próprio.
 
 ### 8. DNS + domínio
@@ -687,8 +687,8 @@ na Vercel — não rode `workflow_dispatch` do `refresh.yml` contra os dois ao m
   cutover.
 - **Backup restaurado de teste** (não pule isso): baixar o `.sql.gz` mais recente do bucket
   e restaurar num Postgres descartável (`docker run --rm -e POSTGRES_PASSWORD=x -p
-  5433:5432 postgres:17-alpine` + `gunzip -c arquivo.sql.gz | psql -h localhost -p 5433 -U
-  postgres`). Backup não testado não é backup.
+5433:5432 postgres:17-alpine` + `gunzip -c arquivo.sql.gz | psql -h localhost -p 5433 -U
+postgres`). Backup não testado não é backup.
 
 ### 12. Fase 6 — cutover (janela de ~30 min, banco de produção)
 
@@ -728,6 +728,7 @@ Só depois de tudo acima validado. Nesta ordem, sem pular etapas:
 os 2 warnings pré-existentes de shadcn).
 
 **Fase 1** — com o túnel SSH e `bun run dev` local contra o Postgres do VPS:
+
 - Vinil Analytics com os mesmos números de hoje.
 - Coleção, Wantlist e a listagem por dia → casa → artista carregam iguais.
 - `GET /api/cron?step=salesdebug&limit=5` e `step=catdebug` respondem o mesmo.
@@ -750,18 +751,18 @@ Backup não testado não é backup.
 
 ## Riscos e reversão
 
-| Risco | Mitigação |
-|---|---|
-| Regressão silenciosa na camada de dados (sem testes) | Shim mantém o nome `supabaseAdmin` e é ligado por `DATABASE_URL` — reverter é apagar uma env var. Os 15 arquivos de lógica não mudam. |
-| Semântica sutil do PostgREST mal reproduzida (upsert, count, range) | Enumerada explicitamente na Fase 1; validada pelo teste de "mesmas vendas identificadas". |
-| Perda da máquina (sem data protection do provedor) | `pg_dump` noturno para o R2 **entregue junto com a Fase 4**, restauração testada, snapshot tirado, compose versionado no repo. |
-| Máquina exposta: 1 IP público, sem rede privada, guardando senha do leiloesbr e chaves de API | Postgres sem porta publicada, UFW, SSH só por chave, fail2ban, Cloudflare na frente, chaves rotacionadas ao sair da Vercel. |
-| Arquitetura ARM inesperada quebrar o `sharp` | `uname -m` como primeira checagem pós-contratação, antes de escrever o Dockerfile. |
-| Pico de memória do `sharp` | Coberto pelos 4 GB; 1 GB de swap como margem extra. |
-| Renovação a R$ 78,32/mês | Lembrete antes do vencimento — ali vale reavaliar. Stack em `docker-compose.yml` versionado torna a troca de máquina um restore + DNS. |
-| Virar administrador de servidor | Tudo em um `docker-compose.yml` versionado, `unattended-upgrades`, e ping de healthcheck que avisa quando o cron para. |
-| Branch `vps` divergir da `main` por semanas | `git merge origin/main` na `vps` a cada fase concluída, não só no fim. Atenção a `docs/notas-desenvolvimento.md` (conflito add/add conhecido). |
-| Banco de teste do VPS envelhecer e alguém confiar nele | Regra explícita: é descartável. O que vale é o dump da Fase 6. |
+| Risco                                                                                         | Mitigação                                                                                                                                      |
+| --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Regressão silenciosa na camada de dados (sem testes)                                          | Shim mantém o nome `supabaseAdmin` e é ligado por `DATABASE_URL` — reverter é apagar uma env var. Os 15 arquivos de lógica não mudam.          |
+| Semântica sutil do PostgREST mal reproduzida (upsert, count, range)                           | Enumerada explicitamente na Fase 1; validada pelo teste de "mesmas vendas identificadas".                                                      |
+| Perda da máquina (sem data protection do provedor)                                            | `pg_dump` noturno para o R2 **entregue junto com a Fase 4**, restauração testada, snapshot tirado, compose versionado no repo.                 |
+| Máquina exposta: 1 IP público, sem rede privada, guardando senha do leiloesbr e chaves de API | Postgres sem porta publicada, UFW, SSH só por chave, fail2ban, Cloudflare na frente, chaves rotacionadas ao sair da Vercel.                    |
+| Arquitetura ARM inesperada quebrar o `sharp`                                                  | `uname -m` como primeira checagem pós-contratação, antes de escrever o Dockerfile.                                                             |
+| Pico de memória do `sharp`                                                                    | Coberto pelos 4 GB; 1 GB de swap como margem extra.                                                                                            |
+| Renovação a R$ 78,32/mês                                                                      | Lembrete antes do vencimento — ali vale reavaliar. Stack em `docker-compose.yml` versionado torna a troca de máquina um restore + DNS.         |
+| Virar administrador de servidor                                                               | Tudo em um `docker-compose.yml` versionado, `unattended-upgrades`, e ping de healthcheck que avisa quando o cron para.                         |
+| Branch `vps` divergir da `main` por semanas                                                   | `git merge origin/main` na `vps` a cada fase concluída, não só no fim. Atenção a `docs/notas-desenvolvimento.md` (conflito add/add conhecido). |
+| Banco de teste do VPS envelhecer e alguém confiar nele                                        | Regra explícita: é descartável. O que vale é o dump da Fase 6.                                                                                 |
 
 ## Lembretes do projeto (AGENTS.md)
 
@@ -803,11 +804,12 @@ que por acaso resolva pro IP do VPS. Validado localmente (`caddy validate`/`cadd
 baixado direto, sem precisar do VPS) contra tentativas de burlar (`evilpreview.<domínio>`,
 `<domínio>.evil.com`) antes de ir pra produção — sempre validar sintaxe do Caddyfile assim antes
 de mandar pro VPS, depois do incidente do `PREVIEW_DOMAIN` vazio (v0.69.5). Reavaliar pra DNS-01
-+ wildcard tradicional só se um dia migrar pra domínio próprio com volume alto o suficiente pra
-`on_demand_tls` não fazer mais sentido (tem rate limit do Let's Encrypt por trás do "ask").
-O catch-all `:443` do Caddy (qualquer SNI que não seja `{$APP_DOMAIN}`/`{$PORTAINER_DOMAIN}`)
-é quem aplica o Basic Auth e repassa pro Traefik do Dokploy — um único bloco cobre qualquer
-preview, não precisa mais de um bloco por domínio.
+
+- wildcard tradicional só se um dia migrar pra domínio próprio com volume alto o suficiente pra
+  `on_demand_tls` não fazer mais sentido (tem rate limit do Let's Encrypt por trás do "ask").
+  O catch-all `:443` do Caddy (qualquer SNI que não seja `{$APP_DOMAIN}`/`{$PORTAINER_DOMAIN}`)
+  é quem aplica o Basic Auth e repassa pro Traefik do Dokploy — um único bloco cobre qualquer
+  preview, não precisa mais de um bloco por domínio.
 
 **Dokploy exige Docker Swarm** (`docker swarm init` — não afeta os containers do
 `docker-compose.yml`, que continuam rodando como containers standalone ao lado do Swarm). O
@@ -817,6 +819,7 @@ caddy`) durante a instalação e religar depois.
 
 **Convivência com o Caddy: o Traefik do Dokploy não fica em 80/443 (essas são só do Caddy).**
 Descobertas da instalação real, nenhuma documentada oficialmente pelo Dokploy:
+
 - O Traefik do Dokploy **não é serviço Swarm nem deste compose** — é um container standalone
   (`docker run` direto, nome `dokploy-traefik`) na rede overlay `dokploy-network` (criada pelo
   instalador, `external: true`). Não existe uma opção do instalador nem um campo na UI do
@@ -853,6 +856,7 @@ garantir que a env já existe em produção** — `.env.example` agora tem um av
 sobre isso. Corrigido setando `PREVIEW_DOMAIN` no `.env` do VPS e forçando recriação do
 container (`docker compose up -d --force-recreate caddy` — um `up -d` normal NÃO recria o
 container só porque o `.env` mudou).
+
 - **Cuidado extra ao editar `.env` por `echo ... >> .env` via SSH**: se o arquivo não termina
   com quebra de linha (comum), o texto novo gruda na última linha existente, corrompendo as
   duas variáveis silenciosamente. Aconteceu de verdade nesse mesmo incidente (`DISCOGS_TOKEN`
@@ -862,6 +866,7 @@ container só porque o `.env` mudou).
 **Risco aceito, não mitigado por infra: preview aponta pro banco de produção E roda com
 credenciais reais do LeilõesBR/cron ativo** (decisão explícita — não é uma preview "somente
 leitura"). Duas consequências práticas:
+
 1. Uma ação clicada na UI da preview (lance, vigia) é uma ação **real** na conta do usuário,
    idêntica a fazer o mesmo na produção. Isso é aceito, não é bug.
 2. A sessão do leiloesbr é **por origem, cookie em memória** (ver "Scraping do LeilõesBR" em
@@ -870,16 +875,17 @@ leitura"). Duas consequências práticas:
    aponta pro domínio de preview**, só pra produção. Login/ação em preview só por clique manual.
 
 **Progresso (VPS real, `vpsbr-16094357`, IP `143.95.214.240`):**
+
 - [x] Swarm ativado, Dokploy v0.30.7 instalado, painel em `http://143.95.214.240:3000`
-  (conta admin `gilbertomaiarj@gmail.com` criada).
+      (conta admin `gilbertomaiarj@gmail.com` criada).
 - [x] Traefik do Dokploy recriado nas portas 8081/8444, Caddy religado, produção validada
-  (incidente do `PREVIEW_DOMAIN` vazio corrigido).
+      (incidente do `PREVIEW_DOMAIN` vazio corrigido).
 - [x] `docker-compose.yml`/`Caddyfile`/`.env.example` do repo atualizados pra bater com a
-  instalação real (rede `dokploy-network`, porta 8081).
+      instalação real (rede `dokploy-network`, porta 8081).
 - [x] Conectado o repo no Dokploy (GitHub App própria, "Only select repositories" só neste
-  repo), app `garimpo-preview` (tipo Compose, `./docker-compose.preview.yml`, branch `vps`).
+      repo), app `garimpo-preview` (tipo Compose, `./docker-compose.preview.yml`, branch `vps`).
 - [x] **Preview testada de ponta a ponta com sucesso**: login Google + Basic Auth funcionando,
-  dados reais da produção aparecendo (mesmo banco, `SELECT count(*) FROM lots` batendo).
+      dados reais da produção aparecendo (mesmo banco, `SELECT count(*) FROM lots` batendo).
 
 **⚠️ Achado grave durante a validação: DNS interno do Docker quebrado pra rede
 `garimpo_default`.** Depois de instalar o Dokploy (Swarm + múltiplas recriações de container),
@@ -902,43 +908,44 @@ quebrado (não do compose/rede em si) — testar com `docker exec <container> no
 "require('dns').lookup('HOST',(e,a)=>console.log(e||a))"` antes de qualquer outra
 investigação, já que `getent hosts` se mostrou pouco confiável nessas imagens (retornou vazio
 até em containers que funcionavam).
+
 - [ ] **Chaves rotacionadas**: `DISCOGS_TOKEN` (corrompido e recuperado durante o incidente do
-  `.env`) e, por precaução (apareceram em texto puro numa sessão), `ANTHROPIC_API_KEY`/
-  `GEMINI_API_KEY` — gerar novas e atualizar o `.env` do VPS. **Decisão do usuário: não fazer
-  por ora.**
+      `.env`) e, por precaução (apareceram em texto puro numa sessão), `ANTHROPIC_API_KEY`/
+      `GEMINI_API_KEY` — gerar novas e atualizar o `.env` do VPS. **Decisão do usuário: não fazer
+      por ora.**
 - [x] TLS "on-demand" no Caddy (`on_demand_tls` + endpoint `/ask-preview` interno) — validado
-  localmente (`caddy validate`/`caddy run`) e no VPS real, aceita qualquer subdomínio sob
-  `PREVIEW_DOMAIN` sem cadastrar no Caddyfile. `docker-compose.preview.yml` virou template
-  reutilizável (`PREVIEW_ROUTER_NAME` evita colisão de nome de router/service do Traefik entre
-  apps de PRs diferentes).
+      localmente (`caddy validate`/`caddy run`) e no VPS real, aceita qualquer subdomínio sob
+      `PREVIEW_DOMAIN` sem cadastrar no Caddyfile. `docker-compose.preview.yml` virou template
+      reutilizável (`PREVIEW_ROUTER_NAME` evita colisão de nome de router/service do Traefik entre
+      apps de PRs diferentes).
 - [ ] Testar dois apps de preview simultâneos (subdomínios diferentes) pra confirmar que o
-  on-demand realmente atende N previews concorrentes, não só o primeiro domínio cadastrado.
+      on-demand realmente atende N previews concorrentes, não só o primeiro domínio cadastrado.
 - [x] **Investigado e descartado, por ora: automação nativa de "um subdomínio por PR" do
-  Dokploy.** O recurso existe (aba "Preview Deployments", só em apps tipo **Application** — não
-  em "Compose", que só tem `Trigger Type` "On Push"/"On Tag"), com `Wildcard Domain` e opção de
-  anexar redes extras (`Advanced → Networks`, o mesmo mecanismo do `garimpo_default` que já
-  usamos no compose manual). **Bloqueio real, não de configuração:** cada PR ganharia um
-  subdomínio novo e imprevisível, e o **Google OAuth não aceita redirect URI com wildcard** —
-  cada domínio de callback precisa ser cadastrado manualmente no Google Cloud Console. Login
-  quebraria em toda preview nova até alguém cadastrar aquela URL específica na mão, o que anula
-  a vantagem de ser automático. **Decisão do usuário: manter o esquema atual** (um app de
-  preview fixo, `preview.143-95-214-240.sslip.io`, já com o redirect URI cadastrado e login
-  funcionando) — um preview de cada vez, redeployado manualmente ou por push, em vez de vários
-  em paralelo. Reavaliar só se um dia o app não depender mais de login Google (improvável) ou se
-  surgir um jeito de registrar redirect URIs dinamicamente via API do Google (não existe hoje
-  pra OAuth clients tipo "Web application").
+      Dokploy.** O recurso existe (aba "Preview Deployments", só em apps tipo **Application** — não
+      em "Compose", que só tem `Trigger Type` "On Push"/"On Tag"), com `Wildcard Domain` e opção de
+      anexar redes extras (`Advanced → Networks`, o mesmo mecanismo do `garimpo_default` que já
+      usamos no compose manual). **Bloqueio real, não de configuração:** cada PR ganharia um
+      subdomínio novo e imprevisível, e o **Google OAuth não aceita redirect URI com wildcard** —
+      cada domínio de callback precisa ser cadastrado manualmente no Google Cloud Console. Login
+      quebraria em toda preview nova até alguém cadastrar aquela URL específica na mão, o que anula
+      a vantagem de ser automático. **Decisão do usuário: manter o esquema atual** (um app de
+      preview fixo, `preview.143-95-214-240.sslip.io`, já com o redirect URI cadastrado e login
+      funcionando) — um preview de cada vez, redeployado manualmente ou por push, em vez de vários
+      em paralelo. Reavaliar só se um dia o app não depender mais de login Google (improvável) ou se
+      surgir um jeito de registrar redirect URIs dinamicamente via API do Google (não existe hoje
+      pra OAuth clients tipo "Web application").
 - [x] **Bug real de produção causado pelo preview (v0.69.14), achado e corrigido**: o compose de
-  preview tinha um serviço chamado `app` — o Compose registra o nome do serviço como alias de
-  rede automaticamente, e como esse compose entra de propósito tanto em `garimpo_default`
-  (produção) quanto em `dokploy-network`, e o Caddy de produção está nas duas também, o alias
-  `app` ficou duplicado — o Caddy (`reverse_proxy app:3000`) passou a resolver, de forma
-  ambígua, ora pro container de produção, ora pro de preview. Sintoma real: o cron (`refresh.yml`
-  via GitHub Actions) começou a voltar 500/503 "CRON_TOKEN não configurado" no meio de uma
-  rodada — o `.env` do preview não tem essa var. Mitigado no VPS com `docker network disconnect`
-  do container de preview das duas redes (produção confirmada voltando a 200); corrigido no
-  código renomeando o serviço pra `previewapp` em `docker-compose.preview.yml`. **Lição**: um
-  serviço de compose que entra numa rede externa COMPARTILHADA com outro ambiente nunca pode ter
-  o mesmo nome de serviço que já existe lá — o nome vira alias de rede automaticamente, e a
-  colisão é silenciosa (sem erro nenhum, só resolução de DNS ambígua/instável). Pendente: recriar
-  o container de preview no Dokploy com o compose atualizado (fica inoperante, sem rede
-  nenhuma, até lá).
+      preview tinha um serviço chamado `app` — o Compose registra o nome do serviço como alias de
+      rede automaticamente, e como esse compose entra de propósito tanto em `garimpo_default`
+      (produção) quanto em `dokploy-network`, e o Caddy de produção está nas duas também, o alias
+      `app` ficou duplicado — o Caddy (`reverse_proxy app:3000`) passou a resolver, de forma
+      ambígua, ora pro container de produção, ora pro de preview. Sintoma real: o cron (`refresh.yml`
+      via GitHub Actions) começou a voltar 500/503 "CRON_TOKEN não configurado" no meio de uma
+      rodada — o `.env` do preview não tem essa var. Mitigado no VPS com `docker network disconnect`
+      do container de preview das duas redes (produção confirmada voltando a 200); corrigido no
+      código renomeando o serviço pra `previewapp` em `docker-compose.preview.yml`. **Lição**: um
+      serviço de compose que entra numa rede externa COMPARTILHADA com outro ambiente nunca pode ter
+      o mesmo nome de serviço que já existe lá — o nome vira alias de rede automaticamente, e a
+      colisão é silenciosa (sem erro nenhum, só resolução de DNS ambígua/instável). Pendente: recriar
+      o container de preview no Dokploy com o compose atualizado (fica inoperante, sem rede
+      nenhuma, até lá).

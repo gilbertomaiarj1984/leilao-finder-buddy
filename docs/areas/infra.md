@@ -69,7 +69,7 @@ folgado (49/500 MB), mas **egress do Supabase já estourado** e **Active CPU da 
   para multi-app desde o início — rede Docker externa `proxy`, `mem_limit` por serviço),
   `Caddyfile` (TLS automático, reverse proxy pro `app`, `file_server` pro volume de
   `/collection/*`) e `.github/workflows/deploy.yml` (build → GHCR → SSH no VPS → `docker compose
-  pull && up -d`, disparado a cada push em `vps`). `version-bump.yml` passou a comparar também
+pull && up -d`, disparado a cada push em `vps`). `version-bump.yml` passou a comparar também
   contra `vps` (`branches: [main, vps]`), não só `main`. Fase 5 entrou junto: serviço `backup`
   no compose (imagem própria em `docker/backup/`, também buildada/publicada pelo
   `deploy.yml` — `pg_dump` a cada 24h para o Cloudflare R2, S3-compatible; a retenção de 14

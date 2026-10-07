@@ -25,7 +25,7 @@ import {
   LOOKOUT_CONFIDENT_MIN,
   type LookoutItem,
 } from "@/lib/lookout-match";
-import { auctionFinished, parsePrice, upcomingDayKeys } from "@/lib/vinyl-parse";
+import { parsePrice, upcomingDayKeys } from "@/lib/vinyl-parse";
 
 /**
  * Cálculo dos matches do "ficar de olho" no SERVIDOR — fonte única da página `/olho`, do
@@ -180,7 +180,6 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
 
   const upcoming: LookoutUpcoming[] = [];
   for (const lot of lots) {
-    if (lot.dayKey && lot.time && auctionFinished(lot.dayKey, lot.time)) continue;
     const market = marketById.get(lot.id);
     const identity = buildLotIdentity({
       title: lot.title,

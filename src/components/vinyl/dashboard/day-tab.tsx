@@ -39,7 +39,8 @@ import {
 import { LotCard } from "@/components/vinyl/lot-card";
 import { PresencialOrUnsoldLink } from "@/components/vinyl/presencial-or-unsold-link";
 import { DAY_PAGE, TODAY_INDEX } from "@/lib/day-bar";
-import { auctionFinished, UNCLASSIFIED_LABEL } from "@/lib/vinyl-parse";
+import { isManuallyFinished } from "@/lib/manually-finished-auctions";
+import { auctionDayPassed, UNCLASSIFIED_LABEL } from "@/lib/vinyl-parse";
 
 import type { DashboardData } from "./use-dashboard-data";
 
@@ -129,20 +130,19 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
   // valor final etc.), então continuam aparecendo na grade geral mesmo depois do
   // leilão encerrar, sem precisar abrir "Mostrar finalizados". Só o "resto" (sem
   // relação com o usuário) some por padrão.
+  // Finalizado = dia já passado ou pregão marcado como encerrado à mão (sem janela de horas).
+  const lotAuctionFinished = (lot: { dayKey: string; idLeilao: string }) =>
+    auctionDayPassed(lot.dayKey) || isManuallyFinished(lot.idLeilao, lot.dayKey);
   const isTracked = (lot: { idPeca: string; watched: boolean }) =>
     lot.watched || bidStatusById.has(lot.idPeca);
-  const finishedCount = rawDay.filter(
-    (lot) => auctionFinished(lot.dayKey, lot.time) && !isTracked(lot),
-  ).length;
+  const finishedCount = rawDay.filter((lot) => lotAuctionFinished(lot) && !isTracked(lot)).length;
   // Dia passado (histórico) já abre mostrando tudo; o botão inverte (esconde os finalizados).
   const isPastDay = index < TODAY_INDEX;
   const showFinished = isPastDay ? !showFinishedDays.has(day) : showFinishedDays.has(day);
-  // Por padrão esconde os finalizados (3h após o início); o usuário pode incluí-los.
+  // Por padrão esconde os finalizados (dia passado ou marcado encerrado); o usuário pode incluí-los.
   // A busca geral (searchNorm) filtra por título/artista/casa/nº do lote.
   const dayLots = (
-    showFinished
-      ? rawDay
-      : rawDay.filter((lot) => isTracked(lot) || !auctionFinished(lot.dayKey, lot.time))
+    showFinished ? rawDay : rawDay.filter((lot) => isTracked(lot) || !lotAuctionFinished(lot))
   ).filter(matchesSearch);
   const artists = artistOptions(dayLots);
   const globalActive = artistFilter !== "";

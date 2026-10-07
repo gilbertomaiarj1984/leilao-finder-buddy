@@ -23,8 +23,8 @@ cada chamada** para processar apenas `max` linhas (padrão 25):
 
 ```ts
 const [allSales, identRows] = await Promise.all([
-  getAllLotSales(),      // lot_sales INTEIRA, incluindo orig_text
-  getAllLotIdent(),      // lot_ident INTEIRA
+  getAllLotSales(), // lot_sales INTEIRA, incluindo orig_text
+  getAllLotIdent(), // lot_ident INTEIRA
 ]);
 ```
 
@@ -36,13 +36,14 @@ E o workflow chama isso em laço — `.github/workflows/refresh.yml:120`:
 
 ```yaml
 for i in $(seq 1 60); do
-  res="$(call "/api/cron?step=reident&max=25")"
+res="$(call "/api/cron?step=reident&max=25")"
 ```
 
 **Leitura O(tabela inteira) para O(25) de trabalho, até 60× por execução, 4×/dia.** Mesmo num dia
 sem venda nova, a primeira chamada ainda baixa tudo só para descobrir que não há o que fazer.
 
 Isso é simultaneamente:
+
 - o **egress** do Supabase (~78 MB por execução de cron);
 - o **Active CPU** da Vercel (desserializar megabytes de JSON dentro da função, dezenas de vezes).
 
@@ -159,7 +160,7 @@ que os medidores apertados são outros (egress do Supabase, já estourado; Activ
 79%). O diagnóstico de "Vercel Hobby está longe dos tetos", na v0.48.1, também estava errado.
 
 Lição: a conclusão anterior veio de ler o schema sem olhar a telemetria. Schema explica o que
-*pode* crescer; só a medição diz o que *está* doendo.
+_pode_ crescer; só a medição diz o que _está_ doendo.
 
 ## Estado da implementação (v0.48.4)
 

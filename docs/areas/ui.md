@@ -639,15 +639,18 @@ Selo `LiveLotNow` (`src/components/vinyl/live-lot-now.tsx`): "🔨 Lote 457" + m
   deduplicada com a lista principal/`/ao-vivo` quando a mesma casa aparece nos dois — nenhuma
   requisição extra.
 
-> **v0.112.2 — status do pregão só pelo acompanhamento lote a lote:** badge "Em breve/Ao vivo/
-> Encerrado" e link "lotes sem lance" NÃO usam mais a janela de 3h (`auctionFinished`), que marcava
-> pregões longos como encerrados com o leilão rolando. `useAuctionStatus`
-> (`use-auction-status.ts`) + `trackedAuctionStatus` (`vinyl-parse.ts`): início pelo horário;
-> peça < total → ao vivo; peça = total / marcação manual → encerrado; presencial que parou de
-> responder depois de visto ao vivo (guardado em `localStorage` `auctions-seen-live`, 48h) →
-> encerrado; dia anterior → encerrado; sem nenhum sinal → ao vivo (use a bandeira manual). A janela
-> de 3h continua só no servidor (`captureFinishedSales`, `watched-accum`, lookout,
-> `listTodayAuctions`) e nos filtros "esconder encerrados" da grade (`day-tab`, header).
+> **v0.112.2 — sem janela fixa de 3h (`auctionFinished` removida):** o status do pregão vem só do
+> acompanhamento lote a lote. `useAuctionStatus` (`use-auction-status.ts`) + `trackedAuctionStatus`
+> (`vinyl-parse.ts`): início pelo horário; peça < total → ao vivo; peça = total / marcação manual →
+> encerrado; presencial que parou de responder depois de visto ao vivo (`auction-seen-live.ts`,
+> `localStorage`, 48h) → encerrado; dia anterior (`auctionDayPassed`) → encerrado; sem nenhum
+> sinal → ao vivo. **Marcar/desmarcar à mão:** bandeira (marcar) e "reabrir" (desmarcar, só quando
+> marcado à mão), `useManuallyFinished`, sincronizado por evento entre componentes. Demais pontos:
+> grade "esconder finalizados"/contagem dos dias = dia passado ou marcado à mão; "Acontecendo
+> agora" some com peça = total, presencial mudo após visto ao vivo ou marcação manual; servidor
+> (`captureFinishedSales`, `debugSales`, `listTodayAuctions`) só considera encerrado dia anterior;
+> `watched-accum` poda vigia ausente só se o leilão ainda não começou; lookout não corta mais por
+> horário. As menções a "3h" nas seções abaixo são histórico.
 
 ## Lotes sem lance ao fim do pregão + saída de "Acontecendo agora" (v0.89.0)
 

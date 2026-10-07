@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { bidMatchesSearch, watchedMatchesSearch } from "@/components/vinyl/grouping";
 import { DAY_PAGE, TODAY_INDEX, TODAY_PAGE } from "@/lib/day-bar";
-import { auctionFinished } from "@/lib/vinyl-parse";
+import { isManuallyFinished } from "@/lib/manually-finished-auctions";
+import { auctionDayPassed } from "@/lib/vinyl-parse";
 import { cn } from "@/lib/utils";
 
 import type { DashboardData } from "../dashboard/use-dashboard-data";
@@ -189,7 +190,11 @@ export function MobileDashboardHeader({
                       : (lots.data?.lots.filter(
                           (lot) =>
                             lot.dayKey === dayKey &&
-                            (index < TODAY_INDEX || !auctionFinished(lot.dayKey, lot.time)) &&
+                            (index < TODAY_INDEX ||
+                              !(
+                                auctionDayPassed(lot.dayKey) ||
+                                isManuallyFinished(lot.idLeilao, lot.dayKey)
+                              )) &&
                             matchesSearch(lot),
                         ).length ?? 0);
                   return (

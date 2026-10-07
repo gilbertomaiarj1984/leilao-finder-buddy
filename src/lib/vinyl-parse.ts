@@ -735,17 +735,15 @@ export function auctionStarted(dayKey: string, time: string, now: number = Date.
 }
 
 /**
- * true quando o leilão é considerado finalizado: passou `graceHours` (padrão 3h)
- * do horário de início. O site não informa o término, então usamos essa janela.
+ * true quando o DIA do leilão já passou (data em São Paulo anterior a hoje). Único corte por
+ * calendário que sobrou — não há mais janela fixa de horas após o início: o fim de um pregão
+ * de hoje vem do acompanhamento lote a lote (`trackedAuctionStatus`) ou da marcação manual.
  */
-export function auctionFinished(
-  dayKey: string,
-  time: string,
-  now: number = Date.now(),
-  graceHours = 3,
-): boolean {
-  const start = auctionStartMs(dayKey, time);
-  return start !== null && now - start >= graceHours * 60 * 60 * 1000;
+export function auctionDayPassed(dayKey: string, now: number = Date.now()): boolean {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
+    new Date(now),
+  );
+  return Boolean(dayKey) && dayKey < today;
 }
 
 /** Sinais do acompanhamento lote a lote do pregão (ver `useAuctionStatus`). */

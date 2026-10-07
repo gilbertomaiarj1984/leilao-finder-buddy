@@ -6,8 +6,7 @@ import { getPresencialNow } from "@/lib/leiloesbr.functions";
 /**
  * Lote em pregão agora de uma casa — mesmo polling usado pela barra "peça x de y" (`LiveLotNow`,
  * `HouseInfoLine`). `isFinished` é o sinal PRECISO de que os lotes da casa acabaram (peça atual
- * chegou ao total), bem mais confiável que a janela de 3h (`auctionFinished`) usada pelo cron de
- * vendas — mas só existe quando a casa tem pregão presencial funcionando; sem dado, `isFinished`
+ * chegou ao total), a única fonte do fim de pregão (não há mais janela fixa de horas) — mas só existe quando a casa tem pregão presencial funcionando; sem dado, `isFinished`
  * fica `false` e a UI de quem chama continua com o comportamento normal (link, card ao vivo).
  */
 export function usePresencialNow(url: string | null | undefined) {

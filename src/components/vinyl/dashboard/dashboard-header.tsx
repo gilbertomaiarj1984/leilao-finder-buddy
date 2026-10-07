@@ -17,7 +17,8 @@ import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { bidMatchesSearch, dayLabel, watchedMatchesSearch } from "@/components/vinyl/grouping";
 import { BAR_PAGES, DAY_PAGE, TODAY_INDEX, TODAY_PAGE } from "@/lib/day-bar";
 import { useLookoutOverviewQuery } from "@/lib/queries";
-import { auctionFinished } from "@/lib/vinyl-parse";
+import { isManuallyFinished } from "@/lib/manually-finished-auctions";
+import { auctionDayPassed } from "@/lib/vinyl-parse";
 
 import { LotSearchBox } from "./lot-search-box";
 import type { DashboardData } from "./use-dashboard-data";
@@ -194,7 +195,11 @@ export function DashboardHeader({
                           (lot) =>
                             lot.dayKey === day &&
                             // Dias passados (histórico) contam tudo — o leilão já acabou.
-                            (index < TODAY_INDEX || !auctionFinished(lot.dayKey, lot.time)) &&
+                            (index < TODAY_INDEX ||
+                              !(
+                                auctionDayPassed(lot.dayKey) ||
+                                isManuallyFinished(lot.idLeilao, lot.dayKey)
+                              )) &&
                             matchesSearch(lot),
                         ).length ?? 0)}
                   </span>

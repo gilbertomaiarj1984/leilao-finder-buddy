@@ -1,12 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ChevronDown, Flag, Radio } from "lucide-react";
+import { ChevronDown, Flag, Radio, Undo2 } from "lucide-react";
 import { useState } from "react";
 
 import { getUnsoldLots } from "@/lib/leiloesbr.functions";
 import { lotOpenUrl } from "@/lib/vinyl-parse";
 
-import { useManuallyFinished } from "./use-manually-finished";
 import { useAuctionStatus } from "./use-auction-status";
 
 type UnsoldLotItem = {
@@ -92,8 +91,12 @@ export function PresencialOrUnsoldLink({
   dayKey: string;
   status: "upcoming" | "live" | "ended" | null;
 }) {
-  const { status } = useAuctionStatus({ status: baseStatus, presencialUrl, idLeilao, dayKey });
-  const { markFinished } = useManuallyFinished(idLeilao, dayKey);
+  const { status, manual, markFinished, unmarkFinished } = useAuctionStatus({
+    status: baseStatus,
+    presencialUrl,
+    idLeilao,
+    dayKey,
+  });
   const isFinished = status === "ended";
   const [open, setOpen] = useState(false);
   const fetchUnsold = useServerFn(getUnsoldLots);
@@ -148,6 +151,16 @@ export function PresencialOrUnsoldLink({
         <ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
         {countLabel}
       </button>
+      {manual ? (
+        <button
+          type="button"
+          onClick={unmarkFinished}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
+          title="Marcado como encerrado à mão — desmarcar (volta a seguir o acompanhamento do pregão)"
+        >
+          <Undo2 className="h-3 w-3" /> reabrir
+        </button>
+      ) : null}
       {open ? (
         <div className="basis-full">
           {query.isLoading ? (

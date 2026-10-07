@@ -2,32 +2,8 @@ import { useEffect, useState } from "react";
 
 import { useManuallyFinished } from "./use-manually-finished";
 import { usePresencialNow } from "./use-presencial-now";
+import { isSeenLive, markSeenLive } from "@/lib/auction-seen-live";
 import { trackedAuctionStatus } from "@/lib/vinyl-parse";
-
-const STORAGE_KEY = "auctions-seen-live";
-const MAX_AGE_MS = 48 * 60 * 60 * 1000;
-
-function readSeen(): Record<string, number> {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") as Record<string, number>;
-    const now = Date.now();
-    return Object.fromEntries(
-      Object.entries(parsed).filter(([, at]) => typeof at === "number" && now - at < MAX_AGE_MS),
-    );
-  } catch {
-    return {};
-  }
-}
-
-function markSeen(key: string): void {
-  try {
-    const store = readSeen();
-    store[key] = Date.now();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-  } catch {
-    // localStorage indisponível — best-effort.
-  }
-}
 
 function todaySP(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
@@ -53,15 +29,14 @@ export function useAuctionStatus(
   const { now, isFinished, inProgress } = usePresencialNow(
     base && base !== "upcoming" ? url : null,
   );
-  const { finished: manual } = useManuallyFinished(idLeilao, dayKey);
-  const seenKey = `${idLeilao}:${dayKey}`;
-  const [seenLive, setSeenLive] = useState(() => Boolean(readSeen()[seenKey]));
+  const { finished: manual, markFinished, unmarkFinished } = useManuallyFinished(idLeilao, dayKey);
+  const [seenLive, setSeenLive] = useState(() => isSeenLive(idLeilao, dayKey));
 
   useEffect(() => {
     if (!inProgress) return;
-    markSeen(seenKey);
+    markSeenLive(idLeilao, dayKey);
     setSeenLive(true);
-  }, [inProgress, seenKey, now]);
+  }, [inProgress, idLeilao, dayKey, now]);
 
   const status = trackedAuctionStatus(
     base,
@@ -69,5 +44,5 @@ export function useAuctionStatus(
     { inProgress, finished: isFinished, seenLive, manual },
     todaySP(),
   );
-  return { status, presencialFinished: isFinished, manual };
+  return { status, manual, markFinished, unmarkFinished };
 }
