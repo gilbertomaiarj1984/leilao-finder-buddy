@@ -101,22 +101,26 @@ export const identifyCollection = createServerFn({ method: "POST" })
  */
 export const reprocessCollectionItem = createServerFn({ method: "POST" })
   .middleware([requireAuth])
-  .inputValidator((input: { id?: string; provider?: string; mode?: string } | undefined) => {
-    if (!input?.id || typeof input.id !== "string") throw new Error("id obrigatório");
-    return {
-      id: input.id,
-      provider: isAiProvider(input?.provider) ? input.provider : null,
-      // "image" = identifica pela capa; "text" (padrão) = pelo nome do artista e álbum.
-      mode: input?.mode === "image" ? ("image" as const) : ("text" as const),
-    };
-  })
+  .inputValidator(
+    (input: { id?: string; provider?: string; mode?: string; hint?: string } | undefined) => {
+      if (!input?.id || typeof input.id !== "string") throw new Error("id obrigatório");
+      return {
+        id: input.id,
+        provider: isAiProvider(input?.provider) ? input.provider : null,
+        // "image" = identifica pela capa; "text" (padrão) = pelo nome do artista e álbum.
+        mode: input?.mode === "image" ? ("image" as const) : ("text" as const),
+        // Dica livre do usuário para a IA (opcional).
+        hint: typeof input?.hint === "string" ? input.hint.trim().slice(0, 600) : "",
+      };
+    },
+  )
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { getAiProvider } = await import("./app-state.server");
     const provider = data.provider ?? (await getAiProvider());
     const { reidentifyCollectionItem } = await import("./collection.server");
-    return await reidentifyCollectionItem(data.id, provider, data.mode);
+    return await reidentifyCollectionItem(data.id, provider, data.mode, data.hint);
   });
 
 /** Busca só a tracklist do disco pela IA (texto) e grava em `collection_items.tracklist`. */

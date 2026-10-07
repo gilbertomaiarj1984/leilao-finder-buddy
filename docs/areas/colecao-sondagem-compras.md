@@ -25,7 +25,7 @@
 - **Catálogo dos vinis que o usuário possui**, agrupado por artista. Página
   `_authenticated/colecao.tsx` (menu **Coleção** no header do `index.tsx`), duas visões
   (`Tabs`): **Títulos** (padrão desde a v0.114.0; lista simplificada — `CollectionTitleRow`: hover/toque
-  na linha abre o **card completo flutuante** (`Popover`; **clicar na linha trava o card** — fecha ao clicar fora/Esc/na linha de novo) com Editar/reprocessar/remover/tags/tracklist)
+  na linha abre o **card completo flutuante** (`Popover`; **só um card aberto por vez** — `activeCardId` no módulo; **clicar na linha trava o card** — fecha ao clicar fora/Esc/na linha de novo) com Editar/reprocessar/remover/tags/tracklist)
   e **Cards** (`CollectionCard`, mesmo visual dos cards de leilão). **Filtro por artista** (`ArtistFilter` reusado) + **busca** por
   artista/álbum/título (`normalizeForMatch`).
 - **Agrupamento normalizado (garante juntar o artista):** grupos e filtro usam a CHAVE
@@ -146,7 +146,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
     identificados; assim itens que saem do filtro ao serem identificados **não deslocam o cursor**
     (nada é pulado entre rodadas). Só **preenche/melhora** (nunca apaga com resultado vazio; o
     descritivo só quando vazio).
-  - **Por disco — ícone "reprocessar" (`RotateCw`) no card** (v0.115.0: abre um menu **1 · Na imagem da capa** / **2 · No nome do artista e do álbum**; `mode: "image"|"text"`. O modo imagem manda a capa (URL http(s)) à IA SEM as pistas de texto atuais e exige capa acessível; o texto é o fluxo de sempre) → `reprocessCollectionItem({id, mode})` →
+  - **Por disco — ícone "reprocessar" (`RotateCw`) no card** (v0.115.0: abre um menu **1 · Na imagem da capa** / **2 · No nome do artista e do álbum** / **3 · Com uma dica minha** (texto livre `hint` ≤600 chars, + checkbox "usar também a capa"; a dica tem prioridade máxima no prompt e dispensa o atalho "Lote"; abrir o menu trava o card flutuante); `mode: "image"|"text"`. O modo imagem manda a capa (URL http(s)) à IA SEM as pistas de texto atuais e exige capa acessível; o texto é o fluxo de sempre) → `reprocessCollectionItem({id, mode})` →
     `reidentifyCollectionItem`. Refaz UM disco pela IA e **SOBRESCREVE** artista/álbum/ano e o
     descritivo com o que a IA devolver (nunca zera com vazio). É o "refazer" manual para corrigir
     um disco específico sem reprocessar a base toda. Estado de "girando" por-id no card.

@@ -359,12 +359,14 @@ export async function reidentifyCollection(
  * devolver um campo, o valor atual é mantido). Conjuntos → "Lote" pelo título sem gastar IA.
  * Requer `ANTHROPIC_API_KEY`. Retorna `{updated}` (false quando não havia nada a mudar).
  * `mode`: "text" (padrão) usa só artista/álbum/título atuais; "image" identifica pela CAPA (foto
- * do disco, URL http(s)) sem usar artista/álbum atuais como pista.
+ * do disco, URL http(s)) sem usar artista/álbum atuais como pista. `hint` = dica livre do usuário
+ * (prioridade máxima para a IA; vale nos dois modos e dispensa o atalho "Lote" pelo título).
  */
 export async function reidentifyCollectionItem(
   id: string,
   provider: AiProvider,
   mode: "text" | "image" = "text",
+  hint = "",
 ): Promise<{
   updated: boolean;
   served: AiProvider | null;
@@ -386,7 +388,7 @@ export async function reidentifyCollectionItem(
   }
 
   // Conjuntos ("lote com N discos") → categoria "Lote" pelo título, sem gastar IA.
-  if (mode === "text" && isDiscBundle(item.title)) {
+  if (mode === "text" && !hint.trim() && isDiscBundle(item.title)) {
     if (item.artist === LOTE_LABEL)
       return { updated: false, served: null, switched: false, error: null, attemptErrors: {} };
     const { error } = await db.from("collection_items").update({ artist: LOTE_LABEL }).eq("id", id);
@@ -409,6 +411,7 @@ export async function reidentifyCollectionItem(
         album: item.album,
         year: item.year,
         image,
+        hint,
       },
     ],
     provider,

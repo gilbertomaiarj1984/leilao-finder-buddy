@@ -31,6 +31,8 @@ type CollectionIdentInput = {
   year?: number | null;
   /** URL http(s) da capa: quando presente, identifica PELA IMAGEM (sem as pistas de texto). */
   image?: string | null;
+  /** Dica livre do colecionador (ex.: "LP de 1979, selo Philips, tem a faixa X"): PRIORIDADE máxima. */
+  hint?: string | null;
 };
 
 /** Resultado: identificação + descritivo do disco + tags de gênero/estilo. */
@@ -54,6 +56,8 @@ function buildCollectionIdentPrompt(input: CollectionIdentInput): string {
         album_atual: input.album || null,
         ano_atual: input.year ?? null,
       };
+  const hint = input.hint?.trim();
+  if (hint) (info as Record<string, unknown>)["dica_do_colecionador"] = hint.slice(0, 600);
   return (
     "Identifique e descreva EM DETALHE este disco de vinil. Devolva um objeto JSON com " +
     "EXATAMENTE estas chaves:\n" +
@@ -71,6 +75,10 @@ function buildCollectionIdentPrompt(input: CollectionIdentInput): string {
     "importância na carreira do artista e na música da época; (2) um panorama do artista; e " +
     "(3) quando souber, comentários FAIXA A FAIXA, destacando as principais músicas. Seja " +
     'informativo e específico deste álbum. "" só se realmente não conhecer o disco.\n\n' +
+    (hint
+      ? "A dica_do_colecionador vem de quem tem o disco em mãos: dê PRIORIDADE a ela sobre os " +
+        "demais campos e sobre a capa, e use-a para achar o álbum certo.\n"
+      : "") +
     (input.image
       ? "Identifique o disco PELA CAPA (imagem anexada).\n"
       : "Use os campos atuais só como pista — corrija se estiverem errados.\n") +
