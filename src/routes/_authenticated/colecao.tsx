@@ -379,8 +379,12 @@ function ColecaoPage() {
 
   // Reprocessar UM disco pela IA (só texto), sobrescrevendo o atual. Estado por-id p/ o card girar.
   const reprocessMut = useMutation({
-    mutationFn: (vars: { id: string; provider: AiProvider; mode: "image" | "text" }) =>
-      reprocess({ data: vars }),
+    mutationFn: (vars: {
+      id: string;
+      provider: AiProvider;
+      mode: "image" | "text";
+      hint?: string;
+    }) => reprocess({ data: vars }),
     onSuccess: (
       res: {
         updated: boolean;
@@ -405,8 +409,8 @@ function ColecaoPage() {
     onError: (e: Error) => toast.error(e.message || "Não foi possível reprocessar"),
   });
   // Reprocessa UM disco usando o provedor selecionado no topo da página.
-  const startReprocess = (id: string, mode: "image" | "text") => {
-    reprocessMut.mutate({ id, provider: aiProvider, mode });
+  const startReprocess = (id: string, mode: "image" | "text", hint?: string) => {
+    reprocessMut.mutate({ id, provider: aiProvider, mode, hint });
   };
 
   // Edição de tags direto no card (mesmo padrão dos lotes): otimista, com rollback em erro.
@@ -445,7 +449,7 @@ function ColecaoPage() {
     tracklistLoading: tracklistMut.isPending && tracklistMut.variables?.id === item.id,
     onEdit: () => setDraft(toDraft(item)),
     onRemove: () => removeMut.mutate(item.id),
-    onReprocess: (mode: "image" | "text") => startReprocess(item.id, mode),
+    onReprocess: (mode: "image" | "text", hint?: string) => startReprocess(item.id, mode, hint),
     onTagsChange: (next: string[]) => tagsMut.mutate({ id: item.id, tags: next }),
     onPickCover: () => setCoverItem(item),
     onFetchTracklist: () => tracklistMut.mutate({ id: item.id, provider: aiProvider }),

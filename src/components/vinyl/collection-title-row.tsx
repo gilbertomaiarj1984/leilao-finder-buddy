@@ -1,4 +1,4 @@
-import { useRef, useState, type ComponentProps } from "react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { CollectionCard } from "@/components/vinyl/collection-card";
@@ -6,6 +6,10 @@ import { collectionLabel } from "@/components/vinyl/collection-utils";
 import type { CollectionItem } from "@/lib/collection.server";
 
 type CardProps = Omit<ComponentProps<typeof CollectionCard>, "item">;
+
+// Id da linha cujo card está aberto (só um por vez): enquanto houver um, passar o mouse por cima
+// de outras linhas — p.ex. a caminho do card, que cobre as linhas de baixo — NÃO abre outro.
+let activeCardId: string | null = null;
 
 /**
  * Linha da visão "Títulos". Ao parar o mouse (ou tocar, no celular) abre o CARD COMPLETO do
@@ -25,26 +29,43 @@ export function CollectionTitleRow({
   const rowRef = useRef<HTMLLIElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const openCard = () => {
+    activeCardId = item.id;
+    setOpen(true);
+  };
+  const closeCard = () => {
+    if (activeCardId === item.id) activeCardId = null;
+    setPinned(false);
+    setOpen(false);
+  };
+  // Hover: abre só se nenhum outro card estiver aberto.
   const show = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
-    setOpen(true);
+    if (activeCardId && activeCardId !== item.id) return;
+    openCard();
   };
   const hide = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     if (pinned) return;
-    closeTimer.current = setTimeout(() => setOpen(false), 150);
+    closeTimer.current = setTimeout(closeCard, 150);
   };
   const close = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
-    setPinned(false);
-    setOpen(false);
+    closeCard();
   };
+  // Clique é explícito: trava ESTE card (o aberto de outra linha fecha por clique fora).
   const togglePin = () => {
     if (pinned) return close();
     if (closeTimer.current) clearTimeout(closeTimer.current);
     setPinned(true);
-    setOpen(true);
+    openCard();
   };
+  useEffect(
+    () => () => {
+      if (activeCardId === item.id) activeCardId = null;
+    },
+    [item.id],
+  );
   const closeThen = <A extends unknown[]>(fn?: (...a: A) => void) =>
     fn
       ? (...a: A) => {
@@ -62,7 +83,7 @@ export function CollectionTitleRow({
     .join(" · ");
 
   return (
-    <Popover open={open} onOpenChange={(o) => (o ? setOpen(true) : close())}>
+    <Popover open={open} onOpenChange={(o) => (o ? openCard() : close())}>
       <PopoverAnchor asChild>
         <li
           ref={rowRef}
@@ -93,6 +114,13 @@ export function CollectionTitleRow({
           {...cardProps}
           onEdit={closeThen(cardProps.onEdit)}
           onPickCover={closeThen(cardProps.onPickCover)}
+          // Menu do reprocessar aberto: trava o card (senão sumiria ao mexer o mouse/digitar).
+          onMenuOpenChange={(o) => {
+            if (o) {
+              if (closeTimer.current) clearTimeout(closeTimer.current);
+              setPinned(true);
+            }
+          }}
         />
       </PopoverContent>
     </Popover>

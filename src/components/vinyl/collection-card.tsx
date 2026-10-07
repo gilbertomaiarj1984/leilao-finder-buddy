@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ExternalLink, ImageIcon, Pencil, RotateCw, Trash2, Type } from "lucide-react";
+import { ExternalLink, ImageIcon, Lightbulb, Pencil, RotateCw, Trash2, Type } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -20,6 +20,7 @@ export function CollectionCard({
   onPickCover,
   onFetchTracklist,
   tracklistLoading = false,
+  onMenuOpenChange,
 }: {
   item: CollectionItem;
   busy: boolean;
@@ -28,21 +29,30 @@ export function CollectionCard({
   // somente-leitura — ex.: o card exibido no painel de relação da home).
   onEdit?: () => void;
   onRemove?: () => void;
-  // Reprocessa pela IA: "image" = pela capa; "text" = pelo nome do artista e álbum.
-  onReprocess?: (mode: "image" | "text") => void;
+  // Reprocessa pela IA: "image" = pela capa; "text" = pelo nome do artista e álbum; `hint` = dica
+  // livre do usuário (prioridade máxima para a IA, vale nos dois modos).
+  onReprocess?: (mode: "image" | "text", hint?: string) => void;
   onTagsChange?: (next: string[]) => void;
   // Clicar na imagem abre o seletor de capa do Discogs (o link do leilão segue no rodapé).
   onPickCover?: () => void;
   // Sem tracklist, o botão fica clicável e busca SÓ a tracklist (IA) para este disco.
   onFetchTracklist?: () => void;
   tracklistLoading?: boolean;
+  // Avisa quando o menu do reprocessar abre/fecha (o card flutuante se mantém aberto enquanto isso).
+  onMenuOpenChange?: (open: boolean) => void;
 }) {
   const artistLine = item.artist || "(sem artista)";
   const albumLine =
     [item.album, item.year ? `(${item.year})` : ""].filter(Boolean).join(" ") ||
     item.title ||
     "(sem álbum)";
-  const [reprocessOpen, setReprocessOpen] = useState(false);
+  const [reprocessOpen, setReprocessOpenState] = useState(false);
+  const [hint, setHint] = useState("");
+  const [hintWithImage, setHintWithImage] = useState(true);
+  const setReprocessOpen = (o: boolean) => {
+    setReprocessOpenState(o);
+    onMenuOpenChange?.(o);
+  };
   const alt = [item.artist, item.album].filter(Boolean).join(" - ") || item.title || "disco";
 
   return (
@@ -177,7 +187,11 @@ export function CollectionCard({
                     <RotateCw className={`h-4 w-4 ${reprocessing ? "animate-spin" : ""}`} />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent align="end" className="w-64 space-y-1 p-2">
+                <PopoverContent
+                  align="end"
+                  collisionPadding={12}
+                  className="w-72 max-w-[calc(100vw-1.5rem)] space-y-1 p-2"
+                >
                   <p className="px-2 pb-1 text-xs font-semibold text-muted-foreground">
                     Atualizar pela IA com base…
                   </p>
@@ -207,6 +221,40 @@ export function CollectionCard({
                     <Type className="h-4 w-4 shrink-0" />
                     <span>2 · No nome do artista e do álbum</span>
                   </Button>
+                  <div className="space-y-2 border-t border-border px-2 pb-1 pt-2">
+                    <p className="flex items-center gap-2 text-sm font-medium">
+                      <Lightbulb className="h-4 w-4 shrink-0" />3 · Com uma dica minha
+                    </p>
+                    <textarea
+                      value={hint}
+                      onChange={(e) => setHint(e.target.value)}
+                      rows={3}
+                      maxLength={600}
+                      placeholder='Ex.: LP de 1979, selo Philips, tem a faixa "Sampa"…'
+                      className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    />
+                    {item.image ? (
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={hintWithImage}
+                          onChange={(e) => setHintWithImage(e.target.checked)}
+                        />
+                        Usar também a capa
+                      </label>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      className="w-full"
+                      disabled={!hint.trim()}
+                      onClick={() => {
+                        setReprocessOpen(false);
+                        onReprocess(item.image && hintWithImage ? "image" : "text", hint.trim());
+                      }}
+                    >
+                      Identificar com a dica
+                    </Button>
+                  </div>
                 </PopoverContent>
               </Popover>
             ) : null}
