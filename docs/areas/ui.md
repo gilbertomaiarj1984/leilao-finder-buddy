@@ -60,9 +60,10 @@
   recolhíveis — **vigiados** (`watchedIds`) e **restante** — sob a barra de filtros e a **barra
   de dias** (mesmo formato da home: passados âmbar, futuros azul, + "Todos"; contagem por dia
   sobre os filtros sem o dia). A visão "Por dia e casa de leilão" foi extinta. Cada linha do Top
-  tem o botão ✨ **repassar a IA** (`reevaluateLots` em `ai.functions.ts`: reavalia FORÇADO, mesmo
-  já avaliado, com o preço atual — inclui meu lance vencendo — e regrava `lot_ai`/`eval_price`;
-  máx. 10 lotes/chamada; provedor = o do seletor global, com aviso de failover). Nota à esquerda com `HoverDetails` (painel via `createPortal`,
+  tem o botão ✨ **repassar a IA** (`ReevaluateIconButton` em `ai-score.tsx`, o MESMO `reevaluateLot` do
+  "refazer consulta" do card: reavalia forçado, com o preço atual — inclui meu lance vencendo —,
+  regrava `lot_ai`/`eval_price` e atualiza o cache `lotAi` sem refetch). Dia salvo que saiu da
+  janela cai em "Todos". Nota à esquerda com `HoverDetails` (painel via `createPortal`,
   `position:fixed`, abre à esquerda/no toque, Discogs clicável); título com
   (Barra de origem do card em Vigiados "Por artista": ★ verde/vermelha ao lado da casa = casa com lance vencendo/coberto, de `houseBidFlags`.)
   (Vigiados "Por casa", catálogo multi-dia: faixa grossa no topo do card com data · hora do lote — prop `dateBar` do `LotCard`.)

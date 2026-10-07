@@ -282,60 +282,6 @@ export const setGeminiModel = createServerFn({ method: "POST" })
   });
 
 /**
- * REAVALIA lotes específicos pela IA, mesmo já avaliados (botão "repassar a IA" nos Top da
- * Análise): serve para refletir mudança de valor (lances subiram → oportunidade/nota mudam).
- * Usa o preço ATUAL enviado pelo cliente e regrava `lot_ai` (inclusive `eval_price`).
- */
-export const reevaluateLots = createServerFn({ method: "POST" })
-  .inputValidator(
-    (
-      input:
-        | {
-            lots?: {
-              id?: string;
-              title?: string;
-              price?: string;
-              house?: string;
-              image?: string | null;
-            }[];
-            provider?: string;
-          }
-        | undefined,
-    ) => {
-      const lots = (Array.isArray(input?.lots) ? input.lots : [])
-        .filter((l) => typeof l?.id === "string" && l.id && typeof l.title === "string" && l.title)
-        .slice(0, 10)
-        .map((l) => ({
-          id: l.id as string,
-          title: l.title as string,
-          price: typeof l.price === "string" ? l.price : "",
-          house: typeof l.house === "string" ? l.house : "",
-          image: typeof l.image === "string" && l.image ? l.image : null,
-        }));
-      if (!lots.length) throw new Error("Nenhum lote informado.");
-      return { lots, provider: isAiProvider(input?.provider) ? input.provider : null };
-    },
-  )
-  .middleware([requireAuth])
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { aiConfigured, evalLotsSync } = await import("./ai-eval.server");
-    if (!aiConfigured()) {
-      throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
-    }
-    const { getAiProvider } = await import("./app-state.server");
-    const provider = data.provider ?? (await getAiProvider());
-    const { upsertLotAi } = await import("./lot-ai.server");
-    const { rows, served, switched, failed, error, attemptErrors } = await evalLotsSync(
-      data.lots,
-      provider,
-    );
-    const evaluated = await upsertLotAi(rows);
-    return { evaluated, failed, served, switched, error, attemptErrors };
-  });
-
-/**
  * Análise SOB DEMANDA de um dia (e opcionalmente de UMA casa desse dia): avalia NA HORA,
  * de forma síncrona, só os lotes AINDA NÃO avaliados (reaproveita o cache por título).
  * Roda mesmo com a IA automática desligada. Processa até `max` lotes por chamada e devolve
