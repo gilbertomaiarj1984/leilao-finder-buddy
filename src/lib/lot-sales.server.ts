@@ -5,7 +5,7 @@ import { deriveAlbum } from "./analytics";
 import { type Condition, parseConditionFromText, scoreCondition } from "./grading";
 import type { LotIdentRow } from "./lot-ident.server";
 import {
-  auctionFinished,
+  auctionDayPassed,
   laterAuctionSlot,
   decodeHtmlEntities,
   extractAlbumPart,
@@ -334,7 +334,7 @@ export async function debugSales(
   const now = Date.now();
   const finished = seen
     // `num` sonda UM leilão específico (ignora o filtro de terminado); senão, os TERMINADOS.
-    .filter((a) => (num ? a.id_leilao === num : auctionFinished(a.day_key, a.start_time, now)))
+    .filter((a) => (num ? a.id_leilao === num : auctionDayPassed(a.day_key, now)))
     .map((a) => ({ row: a, ref: parseAuctionRef(a.entry_url ?? "") }))
     .filter(
       (x): x is { row: SeenAuctionRow; ref: { domain: string; idLeilao: string } } =>
@@ -641,7 +641,7 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
   const pending = seen
     .filter((a) => !captured.has(a.id_leilao))
     .map((a) => ({ ...a, ...effectiveSlot(a, lastSlotByAuction) }))
-    .filter((a) => auctionFinished(a.day_key, a.start_time, now))
+    .filter((a) => auctionDayPassed(a.day_key, now))
     .map((a) => ({ row: a, ref: parseAuctionRef(a.entry_url ?? "") }))
     .filter(
       (x): x is { row: SeenAuctionRow; ref: { domain: string; idLeilao: string } } =>

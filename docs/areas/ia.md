@@ -134,7 +134,7 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
 - **Refazer consulta por lote (v0.60.0):** botão "refazer consulta" no painel de detalhes da
   nota (`ScoreDetails`, aberto ao passar o mouse/focar o selo — `ScoreCorner` nos cards,
   `ScoreBadge` nas tabelas da Análise). Server fn `reevaluateLot({id, title, price, house,
-  image})` chama `evalLotsSync` **direto** (ignora o cache por `title_hash` — é justamente
+image})` chama `evalLotsSync` **direto** (ignora o cache por `title_hash` — é justamente
   para reavaliar com base em informação nova do lote, ex.: imagem trocada) e faz
   `upsertLotAi([row])`. Provedor: o PADRÃO do usuário (`resolveAiProvider`/`getAiProvider`).
   Self-contained em `ai-score.tsx` (`ReevaluateButton`): `useMutation` grava a linha devolvida

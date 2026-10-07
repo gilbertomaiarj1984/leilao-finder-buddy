@@ -1,7 +1,7 @@
 // Helpers puros de agrupamento/ordenação e tipos compartilhados pela listagem de
 // vinil. Sem JSX — a UI que consome isto vive nos componentes ao lado.
 import {
-  auctionFinished,
+  auctionDayPassed,
   auctionStarted,
   bidIsWinning,
   catalogUrlFromLot,
@@ -288,7 +288,7 @@ export type HouseAuctionInfo = {
 /**
  * Horário, status (em breve/ao vivo/encerrado) e link do pregão presencial de uma casa, a
  * partir de um lote do grupo (mesma casa = mesmo leilão/horário). Mesma regra de status da
- * página "Ao vivo" (`auctionStarted`/`auctionFinished`). Usada ao lado do nome da casa em
+ * página "Ao vivo" (`auctionStarted`/`auctionDayPassed`). Usada ao lado do nome da casa em
  * "Vigiados do dia" e na aba "Vigiados" (global).
  */
 export function houseAuctionInfo(
@@ -299,7 +299,7 @@ export function houseAuctionInfo(
   if (!lot) return null;
   const status: AuctionStatus | null =
     dayKey && lot.time
-      ? auctionFinished(dayKey, lot.time, now)
+      ? auctionDayPassed(dayKey, now)
         ? "ended"
         : auctionStarted(dayKey, lot.time, now)
           ? "live"
@@ -537,6 +537,6 @@ export function catalogAuctionInfo(
       .map((l) => l.time)
       .filter(Boolean)
       .sort((a, b) => timeMinutes(b) - timeMinutes(a))[0] ?? "";
-  if (lastTime && auctionFinished(lastDay, lastTime, now)) return { ...info, status: "ended" };
+  if (lastTime && auctionDayPassed(lastDay, now)) return { ...info, status: "ended" };
   return { ...info, status: auctionStarted(firstDay, catalog.time, now) ? "live" : "upcoming" };
 }

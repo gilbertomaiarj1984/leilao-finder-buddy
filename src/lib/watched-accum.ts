@@ -9,7 +9,7 @@
 // rota apagar o acumulado da outra ao navegar entre elas — foi exatamente essa divergência
 // (fix original só em `index.tsx`) que fazia os vigiados "sumirem depois de um tempo" mesmo
 // com o acumulador certo já existindo ali.
-import { auctionFinished, recentDayKeys, upcomingDayKeys } from "./vinyl-parse";
+import { auctionStarted, recentDayKeys, upcomingDayKeys } from "./vinyl-parse";
 
 // Para lances (`MyBid`), `date` é o dia em que o lance foi DADO (normalmente hoje ou um pouco
 // antes do pregão), não o dia do leilão — ao contrário de `WatchedLot`. Um lance para um leilão
@@ -79,11 +79,11 @@ export function mergeWatchedAccum<T extends { id: string; date: string; time?: s
         acc.delete(id);
         continue;
       }
-      // Ausente do fresh só remove aqui se o leilão NÃO estiver terminado: se ainda está
-      // rolando e sumiu do fresh, a vigia foi removida de fato (ex.: pelo próprio usuário no
+      // Ausente do fresh só remove aqui se o leilão AINDA NÃO começou (depois de iniciado a conta
+      // pode parar de trazer o lote ao fim do pregão e o card tem que ficar): se sumiu do fresh, a vigia foi removida de fato (ex.: pelo próprio usuário no
       // site do LeilõesBR) e o card deve sumir também aqui, sem esperar o dia virar passado —
       // do contrário o card ficava "preso" como vigiado até o dia seguinte ao leilão.
-      if (!freshIds.has(id) && !auctionFinished(dayKey, item.time)) {
+      if (!freshIds.has(id) && !auctionStarted(dayKey, item.time)) {
         acc.delete(id);
       }
     } else if (dayKey && dayKey > todayKey) {

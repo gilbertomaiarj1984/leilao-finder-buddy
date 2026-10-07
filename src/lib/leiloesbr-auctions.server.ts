@@ -1,4 +1,4 @@
-import { auctionFinished, auctionStarted, presencialUrlFrom, type VinylLot } from "./vinyl-parse";
+import { auctionDayPassed, auctionStarted, presencialUrlFrom, type VinylLot } from "./vinyl-parse";
 
 export type LiveAuction = {
   idLeilao: string;
@@ -60,7 +60,7 @@ function toAuction(row: Row): LiveAuction {
 /** `toAuction` + status derivado do horário + URL do pregão presencial. */
 function toPresencialAuction(row: Row, now: number): PresencialAuction {
   const auction = toAuction(row);
-  const finished = auctionFinished(auction.dayKey, auction.time, now);
+  const finished = auctionDayPassed(auction.dayKey, now);
   const started = auctionStarted(auction.dayKey, auction.time, now);
   const status: PresencialAuction["status"] = finished ? "ended" : started ? "live" : "upcoming";
   return { ...auction, presencialUrl: presencialUrlFrom(auction.entryUrl), status };

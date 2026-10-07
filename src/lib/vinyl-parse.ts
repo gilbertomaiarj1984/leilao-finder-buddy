@@ -735,17 +735,48 @@ export function auctionStarted(dayKey: string, time: string, now: number = Date.
 }
 
 /**
- * true quando o leilão é considerado finalizado: passou `graceHours` (padrão 3h)
- * do horário de início. O site não informa o término, então usamos essa janela.
+ * true quando o DIA do leilão já passou (data em São Paulo anterior a hoje). Único corte por
+ * calendário que sobrou — não há mais janela fixa de horas após o início: o fim de um pregão
+ * de hoje vem do acompanhamento lote a lote (`trackedAuctionStatus`) ou da marcação manual.
  */
-export function auctionFinished(
+export function auctionDayPassed(dayKey: string, now: number = Date.now()): boolean {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
+    new Date(now),
+  );
+  return Boolean(dayKey) && dayKey < today;
+}
+
+/** Sinais do acompanhamento lote a lote do pregão (ver `useAuctionStatus`). */
+type AuctionTracking = {
+  /** peça atual < total (pregão com peças pela frente). */
+  inProgress: boolean;
+  /** peça atual >= total. */
+  finished: boolean;
+  /** já vimos este pregão em andamento (`inProgress`) antes — o presencial parou de responder = acabou. */
+  seenLive: boolean;
+  /** usuário marcou "encerrado" à mão. */
+  manual: boolean;
+};
+
+/**
+ * Status do pregão pautado SÓ no acompanhamento lote a lote — sem janela fixa de horas
+ * (pregões longos, 200+ lotes, passavam de 3h e apareciam "Encerrado" com o leilão rolando).
+ * `base` é o status do horário (`houseAuctionInfo`): "upcoming"/null passam intactos (o início
+ * é fato do horário). Já iniciado: dia anterior → encerrado; fim sinalizado (peça = total ou
+ * marcação manual) → encerrado; peças pela frente → ao vivo; presencial sem resposta depois de
+ * já ter sido visto ao vivo → encerrado; sem nenhum sinal → ao vivo (não dá pra saber).
+ */
+export function trackedAuctionStatus(
+  base: "upcoming" | "live" | "ended" | null,
   dayKey: string,
-  time: string,
-  now: number = Date.now(),
-  graceHours = 3,
-): boolean {
-  const start = auctionStartMs(dayKey, time);
-  return start !== null && now - start >= graceHours * 60 * 60 * 1000;
+  tracking: AuctionTracking,
+  today: string,
+): "upcoming" | "live" | "ended" | null {
+  if (base === null || base === "upcoming") return base;
+  if (dayKey && dayKey < today) return "ended";
+  if (tracking.finished || tracking.manual) return "ended";
+  if (tracking.inProgress) return "live";
+  return tracking.seenLive ? "ended" : "live";
 }
 
 /**

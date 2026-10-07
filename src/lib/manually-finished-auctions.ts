@@ -2,9 +2,8 @@
  * "Marcar pregão como encerrado" — override manual, só no navegador (sem servidor), pra quando
  * NENHUM dos sinais automáticos de fim de pregão dispara: o sinal preciso (`getPresencialNow`,
  * peça atual = total) costuma parar de responder assim que o pregão termina de verdade (em vez
- * de ficar parado em "peça = total"), e a heurística de 3h (`auctionFinished`, usada como
- * fallback) só dispara 3h depois do horário de início — leilões mais rápidos que isso (comum)
- * ficam sem nenhum sinal até completar as 3h. Achado do usuário: casa com pregão claramente
+ * de ficar parado em "peça = total"), e não existe mais janela fixa de horas (removida na v0.112.2) — sem sinal
+ * automático, o pregão de hoje só vira "encerrado" por esta marcação (reversível: `unmarkManuallyFinished`). Achado do usuário: casa com pregão claramente
  * terminado (site já não mostra mais lotes ao vivo) continuava sem o acesso aos lotes sem
  * lance por bastante tempo.
  *
@@ -58,4 +57,22 @@ export function markManuallyFinished(idLeilao: string, dayKey: string): void {
   const store = readStore();
   store[storeKey(idLeilao, dayKey)] = Date.now();
   writeStore(store);
+}
+
+export function unmarkManuallyFinished(idLeilao: string, dayKey: string): void {
+  const store = readStore();
+  delete store[storeKey(idLeilao, dayKey)];
+  writeStore(store);
+}
+
+const CHANGE_EVENT = "manually-finished-change";
+
+/** Avisa os componentes (mesma aba) que a marcação mudou — ver `useManuallyFinished`. */
+export function notifyManuallyFinishedChange(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(CHANGE_EVENT));
+}
+
+export function subscribeManuallyFinished(callback: () => void): () => void {
+  window.addEventListener(CHANGE_EVENT, callback);
+  return () => window.removeEventListener(CHANGE_EVENT, callback);
 }

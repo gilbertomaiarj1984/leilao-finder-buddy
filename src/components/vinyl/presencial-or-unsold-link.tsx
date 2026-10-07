@@ -1,13 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ChevronDown, Flag, Radio } from "lucide-react";
+import { ChevronDown, Flag, Radio, Undo2 } from "lucide-react";
 import { useState } from "react";
 
 import { getUnsoldLots } from "@/lib/leiloesbr.functions";
 import { lotOpenUrl } from "@/lib/vinyl-parse";
 
-import { useManuallyFinished } from "./use-manually-finished";
-import { usePresencialNow } from "./use-presencial-now";
+import { useAuctionStatus } from "./use-auction-status";
 
 type UnsoldLotItem = {
   idPeca: string;
@@ -85,17 +84,20 @@ export function PresencialOrUnsoldLink({
   presencialUrl,
   idLeilao,
   dayKey,
-  status,
+  status: baseStatus,
 }: {
   presencialUrl: string;
   idLeilao: string;
   dayKey: string;
   status: "upcoming" | "live" | "ended" | null;
 }) {
-  const { isFinished: presencialFinished } = usePresencialNow(presencialUrl);
-  const { finished: manuallyFinished, markFinished } = useManuallyFinished(idLeilao, dayKey);
-  const isFinished =
-    status !== "upcoming" && (presencialFinished || status === "ended" || manuallyFinished);
+  const { status, manual, markFinished, unmarkFinished } = useAuctionStatus({
+    status: baseStatus,
+    presencialUrl,
+    idLeilao,
+    dayKey,
+  });
+  const isFinished = status === "ended";
   const [open, setOpen] = useState(false);
   const fetchUnsold = useServerFn(getUnsoldLots);
   const query = useQuery({
@@ -149,6 +151,16 @@ export function PresencialOrUnsoldLink({
         <ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
         {countLabel}
       </button>
+      {manual ? (
+        <button
+          type="button"
+          onClick={unmarkFinished}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
+          title="Marcado como encerrado à mão — desmarcar (volta a seguir o acompanhamento do pregão)"
+        >
+          <Undo2 className="h-3 w-3" /> reabrir
+        </button>
+      ) : null}
       {open ? (
         <div className="basis-full">
           {query.isLoading ? (

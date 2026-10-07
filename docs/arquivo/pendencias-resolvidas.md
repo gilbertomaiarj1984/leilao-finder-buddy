@@ -12,7 +12,7 @@
 
 - **✅ RESOLVIDO (v0.76.2) — Causa raiz do 500 em `step=aiident`/`reident` (achado v0.74.1, run
   `#160` do `refresh.yml`, 2026-09-22).** Confirmada por log direto da VPS (`docker compose
-  logs app`) numa recorrência (runs `#161`/`#162`, mesmo dia): `upsertLotIdent` explodia com
+logs app`) numa recorrência (runs `#161`/`#162`, mesmo dia): `upsertLotIdent` explodia com
   violação de FK (`lot_ident_id_fkey`, código `23503`) quando o `lot_id` não existia mais em
   `lots` (lote podado ou excluído manualmente entre a seleção do batch e a gravação). Ver
   changelog v0.76.2 para o fix.
@@ -185,9 +185,9 @@
   (`coisaantigaleiloes.com.br/catalogo.asp?Num=65152`), o leilão tem 401 itens, dos quais **319
   categorizados como "Disco de vinil"** (e 82 como "Música") pelos filtros do site DELA.
   **Ferramenta nível 2** (`findLotSearch`, `step=findlot2&idLeilao=<...>&pesquisa=<termo>&
-  lockToVinyl=0|1`): busca por texto livre (`pesquisa`, filtrado no SERVIDOR — mantém o total
+lockToVinyl=0|1`): busca por texto livre (`pesquisa`, filtrado no SERVIDOR — mantém o total
   de páginas viável mesmo sem travar categoria), rodada com `pesquisa=Ray Charles&
-  lockToVinyl=0` — **achou de primeira** (1 página só, o texto já filtra bem no servidor):
+lockToVinyl=0` — **achou de primeira** (1 página só, o texto já filtra bem no servidor):
   o item 65152/32420758 ("Os Cantores de Ray Charles") está lá, `dayKey: "2026-09-24"` (correto),
   `wouldKeep: true` (passaria no nosso filtro). **Confirma**: o item existe e está saudável na
   listagem geral da LeilõesBR, só não está marcado com `tp="Disco de vinil"` — categorização
@@ -210,7 +210,7 @@
   seção **"GALERIAS"** — checkboxes com CADA CASA que tem itens na categoria filtrada, cada
   uma com um código `ga=<n>` que filtra `busca_andamento.asp?ga=<n>&tp=<vinil>` só pra aquela
   casa. Isolando o problema: o gap é PURAMENTE de descoberta — `fetchCatalogData(domain,
-  idLeilao)` (`leiloesbr-catalog.server.ts`, já existente, usada por `enrich`/`condition`/
+idLeilao)` (`leiloesbr-catalog.server.ts`, já existente, usada por `enrich`/`condition`/
   `sales`) já busca o catálogo INTEIRO de um leilão conhecido tentando `Tipo=129` (o mesmo
   "129" que a casa usa!) e caindo pro catálogo completo se vier vazio (v0.34.0) — ou seja, uma
   vez que a gente SAIBA que o leilão 65152 existe, o pipeline de extração já funciona; só falta
@@ -268,28 +268,28 @@
     chunked como `step=chunk`/`step=enrich` (cursor `offset` no servidor), varre `count`
     galerias por chamada, persiste os lotes achados a cada bloco (`persistLots`, merge/upsert
     de sempre). Ainda não testado em produção.
-  Próximo passo: testar `step=galleryscan` isolado (via `debug-cron.yml`) contra a galeria da
-  "Coisa Antiga Leilões" (`ga=356`) especificamente, conferindo se o leilão 65152 aparece com
-  ~319 lotes e campos completos — só depois disso considerar adicionar ao `refresh.yml`.
-  ✅ **Teste isolado rodado em produção (v0.69.37)**: `step=galleryscan&offset=14&count=1`
-  (índice 14 = "Coisa Antiga Leilões", confirmado estável entre duas chamadas de
-  `step=galleries`) achou **323 lotes** dessa casa — bate com os ~319 que o usuário viu
-  marcados "Disco de vinil" no catálogo dela — com `persisted:true`. `step=findlot2` no
-  leilão 65152 (o caso original) confirma o item saudável. Descoberta por galeria validada
-  fim a fim.
-  🏁 **v0.69.40 — integrado ao `refresh.yml`**: nova seção `step=galleryscan` (chunked,
-  `offset`/`count=3`, mesmo padrão de `chunk`/`enrich`) adicionada ao `refresh.yml`, logo
-  APÓS "Varredura em blocos" e ANTES de "Preenchimento de nº de lote" — os lotes descobertos
-  por galeria entram na mesma passada de `enrich`/`sales`/`condition` que já roda depois, sem
-  lógica nova ali. Passa a rodar junto com o resto do cron. 🔄 **v0.69.41**: `workflow_dispatch`
-  completo disparado manualmente em produção pra validar o ciclo real (rodando no momento deste
-  commit) — investigação considerada **encerrada** a pedido do usuário; se essa run acusar
-  `persisted:false` em `galleryscan`, reabrir.
-  🔁 **Reaberta em v0.69.43**: usuário achou item de OUTRA categoria (miniatura de coleção, via
-  a casa "Alberto Lopes - Leiloeiro Público") entrando pelo `galleryscan` num leilão sem
-  NENHUM item de disco no catálogo da própria casa — a validação de v0.69.40 só tinha testado
-  contra uma casa DEDICADA a vinil (Coisa Antiga Leilões), nunca contra uma casa generalista
-  ("leiloeiro de tudo"), que é justamente o caso em que a falta de trava de categoria (`tp=`)
-  nesse caminho dói. Fix: `listGalleryAuctions` trocou `looksNonVinyl` (lista de bloqueio,
-  permissiva) por `isVinylTitle` (exige palavra de vinil no título) — ver linha da tabela de
-  versões (v0.69.43) para o detalhe completo do porquê.
+    Próximo passo: testar `step=galleryscan` isolado (via `debug-cron.yml`) contra a galeria da
+    "Coisa Antiga Leilões" (`ga=356`) especificamente, conferindo se o leilão 65152 aparece com
+    ~319 lotes e campos completos — só depois disso considerar adicionar ao `refresh.yml`.
+    ✅ **Teste isolado rodado em produção (v0.69.37)**: `step=galleryscan&offset=14&count=1`
+    (índice 14 = "Coisa Antiga Leilões", confirmado estável entre duas chamadas de
+    `step=galleries`) achou **323 lotes** dessa casa — bate com os ~319 que o usuário viu
+    marcados "Disco de vinil" no catálogo dela — com `persisted:true`. `step=findlot2` no
+    leilão 65152 (o caso original) confirma o item saudável. Descoberta por galeria validada
+    fim a fim.
+    🏁 **v0.69.40 — integrado ao `refresh.yml`**: nova seção `step=galleryscan` (chunked,
+    `offset`/`count=3`, mesmo padrão de `chunk`/`enrich`) adicionada ao `refresh.yml`, logo
+    APÓS "Varredura em blocos" e ANTES de "Preenchimento de nº de lote" — os lotes descobertos
+    por galeria entram na mesma passada de `enrich`/`sales`/`condition` que já roda depois, sem
+    lógica nova ali. Passa a rodar junto com o resto do cron. 🔄 **v0.69.41**: `workflow_dispatch`
+    completo disparado manualmente em produção pra validar o ciclo real (rodando no momento deste
+    commit) — investigação considerada **encerrada** a pedido do usuário; se essa run acusar
+    `persisted:false` em `galleryscan`, reabrir.
+    🔁 **Reaberta em v0.69.43**: usuário achou item de OUTRA categoria (miniatura de coleção, via
+    a casa "Alberto Lopes - Leiloeiro Público") entrando pelo `galleryscan` num leilão sem
+    NENHUM item de disco no catálogo da própria casa — a validação de v0.69.40 só tinha testado
+    contra uma casa DEDICADA a vinil (Coisa Antiga Leilões), nunca contra uma casa generalista
+    ("leiloeiro de tudo"), que é justamente o caso em que a falta de trava de categoria (`tp=`)
+    nesse caminho dói. Fix: `listGalleryAuctions` trocou `looksNonVinyl` (lista de bloqueio,
+    permissiva) por `isVinylTitle` (exige palavra de vinil no título) — ver linha da tabela de
+    versões (v0.69.43) para o detalhe completo do porquê.
