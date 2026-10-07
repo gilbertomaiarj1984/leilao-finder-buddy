@@ -56,16 +56,21 @@
   não disparar o casamento pesado da sondagem ao editar tag). `effectiveArtist` usa
   `isDiscBundle` → grupo **"Lote"** para conjuntos ("lote com N discos"), senão o artista da IA
   (`parseAiAlbum`), senão o heurístico do título. Header com links **Análise** / **Ao vivo**.
-- **`_authenticated/analise.tsx` (Análise):** **Top 100 por nota** (recolhível) + **por dia →
-  casa** ordenado por nota. Nota à esquerda com `HoverDetails` (painel via `createPortal`,
+- **`_authenticated/analise.tsx` (Análise, remodelada na v0.113.0):** dois **Top 30 por nota**
+  recolhíveis — **vigiados** (`watchedIds`) e **restante** — sob a barra de filtros e a **barra
+  de dias** (mesmo formato da home: passados âmbar, futuros azul, + "Todos"; contagem por dia
+  sobre os filtros sem o dia). A visão "Por dia e casa de leilão" foi extinta. Cada linha do Top
+  tem o botão ✨ **repassar a IA** (`reevaluateLots` em `ai.functions.ts`: reavalia FORÇADO, mesmo
+  já avaliado, com o preço atual — inclui meu lance vencendo — e regrava `lot_ai`/`eval_price`;
+  máx. 10 lotes/chamada; provedor = o do seletor global, com aviso de failover). Nota à esquerda com `HoverDetails` (painel via `createPortal`,
   `position:fixed`, abre à esquerda/no toque, Discogs clicável); título com
   (Barra de origem do card em Vigiados "Por artista": ★ verde/vermelha ao lado da casa = casa com lance vencendo/coberto, de `houseBidFlags`.)
   (Vigiados "Por casa", catálogo multi-dia: faixa grossa no topo do card com data · hora do lote — prop `dateBar` do `LotCard`.)
   (Vigiados "Por casa": lotes de um catálogo multi-dia ordenados por data crescente, depois nº do lote.)
   (Ao desvigiar, o toast "Vigia removida" fica 5 s com ação "Desfazer" que revigia o lote.)
   raridade/oportunidade/motivo/tags + faixa Discogs; botão de vigiar + borda colorida por
-  status. **Filtros** (valem p/ Top 100 e por dia): busca, dia, casa, faixa de nota, raridade,
-  "Só sondagem", "Vigiando", "Com lance". **Tags editáveis** (×/＋ no hover, `setLotTags` →
+  status. **Filtros** (valem p/ os dois Tops): busca, casa, faixa de nota, raridade,
+  "Só sondagem", "Com lance" (dia = barra de dias; "Vigiando" saiu — virou o 1º Top). **Tags editáveis** (×/＋ no hover, `setLotTags` →
   `updateLotTags`, otimista, com toast; só em lotes com linha em `lot_ai`).
 - **`_authenticated/ao-vivo.tsx` (Ao vivo):** pregão presencial das casas com vinil **do dia**
   (`America/Sao_Paulo`), **um card por casa**, badge de status derivado do horário
