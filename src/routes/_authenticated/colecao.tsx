@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CollectionCard } from "@/components/vinyl/collection-card";
@@ -37,6 +38,7 @@ import {
 } from "@/lib/collection.functions";
 import {
   COMPILATION_LABEL,
+  collectionNeedsIdentification,
   LOTE_LABEL,
   normalizeForMatch,
   pickCanonical,
@@ -46,6 +48,7 @@ import {
   useAiProviderQuery,
   useCollectionQuery,
   useGeminiModelQuery,
+  useLotAiQuery,
   queryKeys,
 } from "@/lib/queries";
 import { CoverPickerDialog } from "@/components/vinyl/cover-picker-dialog";
@@ -151,10 +154,33 @@ function ColecaoPage() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [coverItem, setCoverItem] = useState<CollectionItem | null>(null);
   const [identifying, setIdentifying] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [identifyMenuOpen, setIdentifyMenuOpen] = useState(false);
 
   const query = useCollectionQuery();
 
   const items = useMemo(() => query.data ?? [], [query.data]);
+  const lotAiQuery = useLotAiQuery();
+
+  // Alvos do menu "Identificar novos (IA)": discos sem tracklist (nem a do lote de origem) e
+  // discos sem artista/álbum. "Lote"/"Coletâneas" não têm álbum único → fora das duas listas.
+  const tracklistTargets = useMemo(() => {
+    const lotTracks = new Set(
+      (lotAiQuery.data ?? []).filter((r) => r.tracklist?.length).map((r) => r.id),
+    );
+    return items.filter((it) => {
+      if (it.tracklist?.length) return false;
+      if (it.artist === LOTE_LABEL || it.artist === COMPILATION_LABEL) return false;
+      if (!it.artist.trim() || it.artist === UNCLASSIFIED_LABEL) return false;
+      if (!(it.album.trim() || it.title.trim())) return false;
+      const lot = it.lotId ?? it.originLotId;
+      return !(lot && lotTracks.has(lot));
+    });
+  }, [items, lotAiQuery.data]);
+  const nameTargets = useMemo(
+    () => items.filter((it) => collectionNeedsIdentification(it)).length,
+    [items],
+  );
   const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.collection });
 
   // Provedor de IA PADRÃO (Claude/Gemini) + diálogo "qual IA usar?" por ação.
@@ -262,6 +288,44 @@ function ColecaoPage() {
     }
   }
 
+  // Busca a tracklist (só ela) dos discos que ainda não têm, um a um, mostrando o progresso.
+  async function runTracklists() {
+    const targets = tracklistTargets;
+    if (!targets.length) return;
+    setIdentifying(true);
+    let found = 0;
+    let notFound = 0;
+    let failed = 0;
+    let lastError: string | null = null;
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        setProgress(`Faixas ${i + 1}/${targets.length}…`);
+        try {
+          const res = (await fetchTracklist({
+            data: { id: targets[i]!.id, provider: aiProvider },
+          })) as { found: boolean };
+          if (res.found) found += 1;
+          else notFound += 1;
+        } catch (e) {
+          failed += 1;
+          lastError = e instanceof Error ? e.message : String(e);
+        }
+        if (i % 5 === 4) void invalidate();
+      }
+    } finally {
+      setProgress(null);
+      setIdentifying(false);
+      void invalidate();
+    }
+    const parts = [
+      `${found} tracklist(s) encontrada(s)`,
+      notFound ? `${notFound} que a IA não soube` : "",
+      failed ? `${failed} com erro${lastError ? ` (${lastError})` : ""}` : "",
+    ].filter(Boolean);
+    if (found > 0) toast.success(parts.join(" · "));
+    else toast.error(parts.join(" · "));
+  }
+
   const bulkMut = useMutation({
     mutationFn: (text: string) => importBulk({ data: { text } }),
     onSuccess: (res: { recognized: number; added: number; skipped: number }) => {
@@ -315,7 +379,8 @@ function ColecaoPage() {
 
   // Reprocessar UM disco pela IA (só texto), sobrescrevendo o atual. Estado por-id p/ o card girar.
   const reprocessMut = useMutation({
-    mutationFn: (vars: { id: string; provider: AiProvider }) => reprocess({ data: vars }),
+    mutationFn: (vars: { id: string; provider: AiProvider; mode: "image" | "text" }) =>
+      reprocess({ data: vars }),
     onSuccess: (
       res: {
         updated: boolean;
@@ -340,8 +405,8 @@ function ColecaoPage() {
     onError: (e: Error) => toast.error(e.message || "Não foi possível reprocessar"),
   });
   // Reprocessa UM disco usando o provedor selecionado no topo da página.
-  const startReprocess = (id: string) => {
-    reprocessMut.mutate({ id, provider: aiProvider });
+  const startReprocess = (id: string, mode: "image" | "text") => {
+    reprocessMut.mutate({ id, provider: aiProvider, mode });
   };
 
   // Edição de tags direto no card (mesmo padrão dos lotes): otimista, com rollback em erro.
@@ -380,7 +445,7 @@ function ColecaoPage() {
     tracklistLoading: tracklistMut.isPending && tracklistMut.variables?.id === item.id,
     onEdit: () => setDraft(toDraft(item)),
     onRemove: () => removeMut.mutate(item.id),
-    onReprocess: () => startReprocess(item.id),
+    onReprocess: (mode: "image" | "text") => startReprocess(item.id, mode),
     onTagsChange: (next: string[]) => tagsMut.mutate({ id: item.id, tags: next }),
     onPickCover: () => setCoverItem(item),
     onFetchTracklist: () => tracklistMut.mutate({ id: item.id, provider: aiProvider }),
@@ -458,16 +523,58 @@ function ColecaoPage() {
                   Adicionar em massa
                 </Button>
                 {items.length > 0 ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void runIdentify()}
-                    disabled={identifying}
-                    title="Identificar pela IA só os discos ainda sem artista/álbum (só texto, nunca a capa). Barato — pula os já identificados. Para refazer um disco específico, use o botão de reprocessar no card."
-                  >
-                    <Sparkles className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`} />
-                    {identifying ? "Identificando…" : "Identificar novos (IA)"}
-                  </Button>
+                  <Popover open={identifyMenuOpen} onOpenChange={setIdentifyMenuOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={identifying}
+                        title="Identificar pela IA só o que ainda falta. Escolha: faixas ou nome do disco/artista. Para refazer um disco específico, use o botão de reprocessar no card."
+                      >
+                        <Sparkles
+                          className={`mr-2 h-4 w-4 ${identifying ? "animate-pulse" : ""}`}
+                        />
+                        {identifying ? (progress ?? "Identificando…") : "Identificar novos (IA)"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-80 space-y-1 p-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto w-full flex-col items-start gap-0.5 whitespace-normal py-2 text-left"
+                        disabled={tracklistTargets.length === 0}
+                        onClick={() => {
+                          setIdentifyMenuOpen(false);
+                          void runTracklists();
+                        }}
+                      >
+                        <span className="text-sm font-medium">
+                          Identificar faixas ({tracklistTargets.length})
+                        </span>
+                        <span className="text-xs font-normal text-muted-foreground">
+                          Busca a tracklist só dos discos que ainda não têm (não altera artista nem
+                          álbum).
+                        </span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto w-full flex-col items-start gap-0.5 whitespace-normal py-2 text-left"
+                        disabled={nameTargets === 0}
+                        onClick={() => {
+                          setIdentifyMenuOpen(false);
+                          void runIdentify();
+                        }}
+                      >
+                        <span className="text-sm font-medium">
+                          Avaliar nome do disco/artista ({nameTargets})
+                        </span>
+                        <span className="text-xs font-normal text-muted-foreground">
+                          Só os discos sem artista ou sem nome do álbum (pelo texto do título).
+                        </span>
+                      </Button>
+                    </PopoverContent>
+                  </Popover>
                 ) : null}
                 <AiProviderSelect
                   value={aiProvider}

@@ -4,7 +4,9 @@ import {
   trackedAuctionStatus,
   decodeHtmlEntities,
   extractArtist,
+  collectionNeedsIdentification,
   isDiscBundle,
+  UNCLASSIFIED_LABEL,
   isVinylTitle,
   laterAuctionSlot,
   looksNonVinyl,
@@ -178,5 +180,18 @@ describe("trackedAuctionStatus", () => {
     ).toBe("ended");
     expect(trackedAuctionStatus("upcoming", "2026-10-07", none, "2026-10-07")).toBe("upcoming");
     expect(trackedAuctionStatus(null, "2026-10-07", none, "2026-10-07")).toBeNull();
+  });
+});
+
+describe("collectionNeedsIdentification", () => {
+  test("sem artista ou sem álbum precisa; baldes Lote/Coletâneas não", () => {
+    expect(collectionNeedsIdentification({ artist: "", album: "X" })).toBe(true);
+    expect(collectionNeedsIdentification({ artist: UNCLASSIFIED_LABEL, album: "X" })).toBe(true);
+    expect(collectionNeedsIdentification({ artist: "Alceu Valença", album: "" })).toBe(true);
+    expect(collectionNeedsIdentification({ artist: "Alceu Valença", album: "Molhado" })).toBe(
+      false,
+    );
+    expect(collectionNeedsIdentification({ artist: "Lote", album: "" })).toBe(false);
+    expect(collectionNeedsIdentification({ artist: "Coletâneas", album: "" })).toBe(false);
   });
 });

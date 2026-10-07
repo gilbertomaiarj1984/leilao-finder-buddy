@@ -9,7 +9,7 @@ type CardProps = Omit<ComponentProps<typeof CollectionCard>, "item">;
 
 /**
  * Linha da visão "Títulos". Ao parar o mouse (ou tocar, no celular) abre o CARD COMPLETO do
- * disco flutuando ao lado, com Editar/Reprocessar/Remover/tags/tracklist — a linha em si fica
+ * disco flutuando ao lado (clique na linha trava o card), com Editar/Reprocessar/Remover/tags/tracklist — a linha em si fica
  * enxuta. Ações que abrem outro diálogo (editar, trocar capa) fecham o card antes.
  */
 export function CollectionTitleRow({
@@ -20,6 +20,9 @@ export function CollectionTitleRow({
   cardProps: CardProps;
 }) {
   const [open, setOpen] = useState(false);
+  // Clique na linha TRAVA o card (não some ao mexer o mouse); fecha ao clicar fora, Esc ou na linha de novo.
+  const [pinned, setPinned] = useState(false);
+  const rowRef = useRef<HTMLLIElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const show = () => {
@@ -28,12 +31,24 @@ export function CollectionTitleRow({
   };
   const hide = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
+    if (pinned) return;
     closeTimer.current = setTimeout(() => setOpen(false), 150);
+  };
+  const close = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    setPinned(false);
+    setOpen(false);
+  };
+  const togglePin = () => {
+    if (pinned) return close();
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    setPinned(true);
+    setOpen(true);
   };
   const closeThen = <A extends unknown[]>(fn?: (...a: A) => void) =>
     fn
       ? (...a: A) => {
-          setOpen(false);
+          close();
           fn(...a);
         }
       : undefined;
@@ -47,13 +62,14 @@ export function CollectionTitleRow({
     .join(" · ");
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={(o) => (o ? setOpen(true) : close())}>
       <PopoverAnchor asChild>
         <li
+          ref={rowRef}
           className="cursor-pointer px-3 py-2 text-sm hover:bg-secondary/60"
           onMouseEnter={show}
           onMouseLeave={hide}
-          onClick={show}
+          onClick={togglePin}
         >
           <p className="truncate text-foreground">{collectionLabel(item)}</p>
           {details ? <p className="truncate text-xs text-muted-foreground">{details}</p> : null}
@@ -63,7 +79,11 @@ export function CollectionTitleRow({
         side="bottom"
         align="start"
         collisionPadding={12}
-        className="max-h-[85vh] w-80 overflow-y-auto p-0"
+        className="max-h-[min(85vh,var(--radix-popover-content-available-height))] w-80 max-w-[calc(100vw-1.5rem)] overflow-y-auto p-0"
+        // Clique na própria linha é tratado por `togglePin` (não conta como "fora").
+        onInteractOutside={(e) => {
+          if (rowRef.current?.contains(e.target as Node)) e.preventDefault();
+        }}
         onMouseEnter={show}
         onMouseLeave={hide}
         onOpenAutoFocus={(e) => e.preventDefault()}
