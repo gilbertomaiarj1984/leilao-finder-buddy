@@ -7,7 +7,7 @@ import { getUnsoldLots } from "@/lib/leiloesbr.functions";
 import { lotOpenUrl } from "@/lib/vinyl-parse";
 
 import { useManuallyFinished } from "./use-manually-finished";
-import { usePresencialNow } from "./use-presencial-now";
+import { useAuctionStatus } from "./use-auction-status";
 
 type UnsoldLotItem = {
   idPeca: string;
@@ -85,17 +85,16 @@ export function PresencialOrUnsoldLink({
   presencialUrl,
   idLeilao,
   dayKey,
-  status,
+  status: baseStatus,
 }: {
   presencialUrl: string;
   idLeilao: string;
   dayKey: string;
   status: "upcoming" | "live" | "ended" | null;
 }) {
-  const { isFinished: presencialFinished } = usePresencialNow(presencialUrl);
-  const { finished: manuallyFinished, markFinished } = useManuallyFinished(idLeilao, dayKey);
-  const isFinished =
-    status !== "upcoming" && (presencialFinished || status === "ended" || manuallyFinished);
+  const { status } = useAuctionStatus({ status: baseStatus, presencialUrl, idLeilao, dayKey });
+  const { markFinished } = useManuallyFinished(idLeilao, dayKey);
+  const isFinished = status === "ended";
   const [open, setOpen] = useState(false);
   const fetchUnsold = useServerFn(getUnsoldLots);
   const query = useQuery({

@@ -748,6 +748,39 @@ export function auctionFinished(
   return start !== null && now - start >= graceHours * 60 * 60 * 1000;
 }
 
+/** Sinais do acompanhamento lote a lote do pregão (ver `useAuctionStatus`). */
+type AuctionTracking = {
+  /** peça atual < total (pregão com peças pela frente). */
+  inProgress: boolean;
+  /** peça atual >= total. */
+  finished: boolean;
+  /** já vimos este pregão em andamento (`inProgress`) antes — o presencial parou de responder = acabou. */
+  seenLive: boolean;
+  /** usuário marcou "encerrado" à mão. */
+  manual: boolean;
+};
+
+/**
+ * Status do pregão pautado SÓ no acompanhamento lote a lote — sem janela fixa de horas
+ * (pregões longos, 200+ lotes, passavam de 3h e apareciam "Encerrado" com o leilão rolando).
+ * `base` é o status do horário (`houseAuctionInfo`): "upcoming"/null passam intactos (o início
+ * é fato do horário). Já iniciado: dia anterior → encerrado; fim sinalizado (peça = total ou
+ * marcação manual) → encerrado; peças pela frente → ao vivo; presencial sem resposta depois de
+ * já ter sido visto ao vivo → encerrado; sem nenhum sinal → ao vivo (não dá pra saber).
+ */
+export function trackedAuctionStatus(
+  base: "upcoming" | "live" | "ended" | null,
+  dayKey: string,
+  tracking: AuctionTracking,
+  today: string,
+): "upcoming" | "live" | "ended" | null {
+  if (base === null || base === "upcoming") return base;
+  if (dayKey && dayKey < today) return "ended";
+  if (tracking.finished || tracking.manual) return "ended";
+  if (tracking.inProgress) return "live";
+  return tracking.seenLive ? "ended" : "live";
+}
+
 /**
  * Extrai domínio da casa + idLeilao do link do lote
  * (`abre_catalogo.asp?t=1|<domínio>|<idLeilao>|<idPeca>`). Fonte única — usada tanto no

@@ -639,6 +639,16 @@ Selo `LiveLotNow` (`src/components/vinyl/live-lot-now.tsx`): "🔨 Lote 457" + m
   deduplicada com a lista principal/`/ao-vivo` quando a mesma casa aparece nos dois — nenhuma
   requisição extra.
 
+> **v0.112.2 — status do pregão só pelo acompanhamento lote a lote:** badge "Em breve/Ao vivo/
+> Encerrado" e link "lotes sem lance" NÃO usam mais a janela de 3h (`auctionFinished`), que marcava
+> pregões longos como encerrados com o leilão rolando. `useAuctionStatus`
+> (`use-auction-status.ts`) + `trackedAuctionStatus` (`vinyl-parse.ts`): início pelo horário;
+> peça < total → ao vivo; peça = total / marcação manual → encerrado; presencial que parou de
+> responder depois de visto ao vivo (guardado em `localStorage` `auctions-seen-live`, 48h) →
+> encerrado; dia anterior → encerrado; sem nenhum sinal → ao vivo (use a bandeira manual). A janela
+> de 3h continua só no servidor (`captureFinishedSales`, `watched-accum`, lookout,
+> `listTodayAuctions`) e nos filtros "esconder encerrados" da grade (`day-tab`, header).
+
 ## Lotes sem lance ao fim do pregão + saída de "Acontecendo agora" (v0.89.0)
 
 Reaproveita o mesmo dado de `getPresencialNow` (`peça atual`/`total`) como sinal PRECISO de que

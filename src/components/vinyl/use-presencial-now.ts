@@ -26,5 +26,9 @@ export function usePresencialNow(url: string | null | undefined) {
   const isFinished = Boolean(
     now && now.peca !== null && now.total !== null && now.peca >= now.total,
   );
-  return { now, isFinished };
+  // Ainda há peças pela frente: pregão rolando.
+  const inProgress = Boolean(
+    now && now.peca !== null && now.total !== null && now.peca < now.total,
+  );
+  return { now, isFinished, inProgress };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  trackedAuctionStatus,
   decodeHtmlEntities,
   extractArtist,
   isDiscBundle,
@@ -147,5 +148,35 @@ describe("lotOpenUrl", () => {
     expect(lotOpenUrl("https://casa.com.br/peca.asp?ID=1")).toBe(
       "https://casa.com.br/peca.asp?ID=1",
     );
+  });
+});
+
+describe("trackedAuctionStatus", () => {
+  const none = { inProgress: false, finished: false, seenLive: false, manual: false };
+  test("pregão longo com peças pela frente fica ao vivo (sem janela de horas)", () => {
+    expect(
+      trackedAuctionStatus("ended", "2026-10-07", { ...none, inProgress: true }, "2026-10-07"),
+    ).toBe("live");
+  });
+  test("peça = total ou marcação manual encerra", () => {
+    expect(
+      trackedAuctionStatus("live", "2026-10-07", { ...none, finished: true }, "2026-10-07"),
+    ).toBe("ended");
+    expect(
+      trackedAuctionStatus("live", "2026-10-07", { ...none, manual: true }, "2026-10-07"),
+    ).toBe("ended");
+  });
+  test("presencial parou de responder depois de visto ao vivo → encerrado; sem sinal → ao vivo", () => {
+    expect(
+      trackedAuctionStatus("live", "2026-10-07", { ...none, seenLive: true }, "2026-10-07"),
+    ).toBe("ended");
+    expect(trackedAuctionStatus("ended", "2026-10-07", none, "2026-10-07")).toBe("live");
+  });
+  test("dia anterior encerra; em breve/sem horário passam intactos", () => {
+    expect(
+      trackedAuctionStatus("ended", "2026-10-06", { ...none, inProgress: true }, "2026-10-07"),
+    ).toBe("ended");
+    expect(trackedAuctionStatus("upcoming", "2026-10-07", none, "2026-10-07")).toBe("upcoming");
+    expect(trackedAuctionStatus(null, "2026-10-07", none, "2026-10-07")).toBeNull();
   });
 });
