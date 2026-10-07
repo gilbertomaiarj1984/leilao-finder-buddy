@@ -24,7 +24,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LotTags, RarityLabel, RarityLegend, ScoreBadge } from "@/components/vinyl/ai-score";
+import {
+  LotTags,
+  RarityLabel,
+  RarityLegend,
+  ReevaluateIconButton,
+  ScoreBadge,
+} from "@/components/vinyl/ai-score";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import {
@@ -42,8 +48,7 @@ import {
   type LotMarket,
 } from "@/components/vinyl/ai-score-utils";
 import { dayLabel } from "@/components/vinyl/grouping";
-import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
-import { reevaluateLots, setLotTags, setUserInterests } from "@/lib/ai.functions";
+import { setLotTags, setUserInterests } from "@/lib/ai.functions";
 import {
   addWantlistItem,
   deleteWantlistItem,
@@ -61,7 +66,6 @@ import {
   type WantCandidate,
 } from "@/lib/wantlist-match";
 import {
-  useAiProviderQuery,
   useInterestsQuery,
   useLotAiQuery,
   useLotIdentQuery,
@@ -234,27 +238,6 @@ function WatchButton({
   );
 }
 
-/** Botão (só ícone) que repassa a IA num lote do Top — reavalia com o preço atual. */
-function ReevalButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
-  return (
-    <Button
-      size="sm"
-      variant="outline"
-      className="h-8 w-8 p-0"
-      onClick={onClick}
-      disabled={busy}
-      title="Repassar a IA neste lote (reavalia com o valor atual)"
-      aria-label="Repassar a IA neste lote"
-    >
-      {busy ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <Sparkles className="h-4 w-4 text-primary" />
-      )}
-    </Button>
-  );
-}
-
 /** Chip de filtro (liga/desliga) no mesmo formato dos botões da parte principal do site. */
 function filterChipClass(active: boolean): string {
   return active
@@ -316,7 +299,6 @@ function AnalisePage() {
   const deleteWant = useServerFn(deleteWantlistItem);
   const runToggle = useServerFn(toggleWatch);
   const saveTags = useServerFn(setLotTags);
-  const runReeval = useServerFn(reevaluateLots);
 
   // Filtros (valem para os dois Tops). O dia vem da barra de dias ("" = todos).
   const [search, setSearch] = usePersistedState("analise-search", "");
@@ -330,8 +312,6 @@ function AnalisePage() {
   const [watchedOpen, setWatchedOpen] = usePersistedState("analise-top-open", true);
   const [restOpen, setRestOpen] = usePersistedState("analise-rest-open", true);
   const [pending, setPending] = useState<string | null>(null);
-  // Lotes com "repassar a IA" em andamento (vários podem rodar ao mesmo tempo).
-  const [reevaluating, setReevaluating] = useState<ReadonlySet<string>>(new Set());
 
   const lots = useLotsQuery();
   const lotAiQuery = useLotAiQuery();
@@ -339,8 +319,6 @@ function AnalisePage() {
   const interestsQuery = useInterestsQuery();
   const lotMarketQuery = useLotMarketQuery();
   const wantlistQuery = useWantlistQuery();
-  const aiProviderQuery = useAiProviderQuery();
-  const aiProvider: AiProvider = aiProviderQuery.data ?? "anthropic";
   // Vigiados + meus lances: alimentam a divisão em dois Tops, o filtro "Com lance", a borda
   // colorida das linhas, o status do lance e o botão de vigiar (mesma mecânica da página
   // principal). MESMO acumulador local de `index.tsx` (`@/lib/watched-accum`, MESMA chave de
@@ -533,51 +511,9 @@ function AnalisePage() {
       watch: !isWatched(lot),
     });
 
-  // "Repassar a IA": reavalia UM lote do Top com o preço atual (inclui meu lance, se vencendo)
-  // e revalida `lotAi` para a nota/raridade/oportunidade novas aparecerem.
-  const reevalLot = (lot: VinylLot) => {
-    if (reevaluating.has(lot.id)) return;
-    setReevaluating((prev) => new Set(prev).add(lot.id));
-    void runReeval({
-      data: {
-        lots: [
-          {
-            id: lot.id,
-            title: lot.title,
-            price: currentPriceFor(lot),
-            house: lot.house,
-            image: lot.image,
-          },
-        ],
-        provider: aiProvider,
-      },
-    })
-      .then(async (res) => {
-        await queryClient.invalidateQueries({ queryKey: queryKeys.lotAi });
-        if (res.switched && res.served && res.served !== aiProvider) {
-          toast.warning(
-            `${AI_PROVIDER_SHORT[aiProvider]} indisponível — usei ${AI_PROVIDER_SHORT[res.served]}`,
-          );
-        }
-        if (res.evaluated) toast.success("IA reavaliou o lote");
-        else
-          toast.error(
-            `A IA não retornou avaliação${res.error ? ` (${res.error})` : ""} — verifique a chave/limite do provedor`,
-          );
-      })
-      .catch((error: unknown) =>
-        toast.error((error as Error)?.message || "Não foi possível reavaliar agora"),
-      )
-      .finally(() =>
-        setReevaluating((prev) => {
-          const next = new Set(prev);
-          next.delete(lot.id);
-          return next;
-        }),
-      );
-  };
-
-  const days = lots.data?.days ?? [];
+  const days = useMemo(() => lots.data?.days ?? [], [lots.data]);
+  // Dia salvo que saiu da janela vira "Todos" (senão a lista ficaria vazia sem aba ativa).
+  const activeDay = days.includes(dayFilter) ? dayFilter : "";
   const allLots = useMemo(() => lots.data?.lots ?? [], [lots.data]);
 
   const houses = useMemo(
@@ -651,8 +587,8 @@ function AnalisePage() {
     bidStatusById,
   ]);
   const filtered = useMemo(
-    () => (dayFilter ? filteredAnyDay.filter((l) => l.dayKey === dayFilter) : filteredAnyDay),
-    [filteredAnyDay, dayFilter],
+    () => (activeDay ? filteredAnyDay.filter((l) => l.dayKey === activeDay) : filteredAnyDay),
+    [filteredAnyDay, activeDay],
   );
 
   // Dois Tops: vigiados × demais lotes. Só lotes já avaliados, maior nota primeiro.
@@ -675,7 +611,7 @@ function AnalisePage() {
   const filtersActive = Boolean(
     search ||
     houseFilter ||
-    dayFilter ||
+    activeDay ||
     scoreMin ||
     scoreMax ||
     rarityFilter ||
@@ -700,7 +636,11 @@ function AnalisePage() {
   );
   const relDay = (d: string) =>
     Math.round((Date.parse(`${d}T00:00:00Z`) - Date.parse(`${todayKey}T00:00:00Z`)) / 86_400_000);
-  const dayCount = (d: string) => filteredAnyDay.filter((l) => l.dayKey === d).length;
+  const dayCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of filteredAnyDay) counts.set(l.dayKey, (counts.get(l.dayKey) ?? 0) + 1);
+    return counts;
+  }, [filteredAnyDay]);
 
   /** Tabela de um Top: nota, título, casa/dia, valor atual, repassar IA e vigiar. */
   const renderTop = (list: VinylLot[], emptyMsg: string) =>
@@ -782,7 +722,15 @@ function AnalisePage() {
                     ) : null}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <ReevalButton busy={reevaluating.has(lot.id)} onClick={() => reevalLot(lot)} />
+                    <ReevaluateIconButton
+                      lot={{
+                        id: lot.id,
+                        title: lot.title,
+                        price: currentPriceFor(lot),
+                        house: lot.house,
+                        image: lot.image,
+                      }}
+                    />
                   </td>
                   <td className="px-3 py-2 text-right">
                     <WatchButton
@@ -982,7 +930,7 @@ function AnalisePage() {
 
             {/* ------- Barra de dias (mesmo formato da página principal) ------- */}
             <Tabs
-              value={dayFilter && days.includes(dayFilter) ? dayFilter : "all"}
+              value={activeDay || "all"}
               onValueChange={(v) => setDayFilter(v === "all" ? "" : v)}
             >
               <TabsList className="flex h-auto flex-nowrap justify-start gap-1 overflow-x-auto bg-secondary sm:flex-wrap sm:overflow-visible">
@@ -1007,7 +955,9 @@ function AnalisePage() {
                       }
                     >
                       {dayLabel(day, rel)}
-                      <span className="ml-2 text-xs text-muted-foreground">{dayCount(day)}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {dayCounts.get(day) ?? 0}
+                      </span>
                     </TabsTrigger>
                   );
                 })}

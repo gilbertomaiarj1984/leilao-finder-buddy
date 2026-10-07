@@ -378,6 +378,27 @@ function ReevaluateButton({ lot }: { lot: ReevalLot }) {
   );
 }
 
+/** Botão só-ícone das tabelas da Análise: repassa a IA no lote (reavalia com o `price` dado). */
+export function ReevaluateIconButton({ lot }: { lot: ReevalLot }) {
+  const mutation = useReevaluate(lot);
+  return (
+    <button
+      type="button"
+      onClick={() => mutation.mutate()}
+      disabled={mutation.isPending}
+      title="Repassar a IA neste lote (reavalia com o valor atual)"
+      aria-label="Repassar a IA neste lote"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input shadow-sm hover:border-primary disabled:opacity-60"
+    >
+      {mutation.isPending ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <Sparkles className="h-4 w-4 text-primary" />
+      )}
+    </button>
+  );
+}
+
 /**
  * Botão do canto do card para lote SEM nota: avalia na hora (mesmo `reevaluateLot`, que ignora o
  * cache) e mostra o erro do provedor em toast quando falha. Ocupa o lugar do selo da nota.
