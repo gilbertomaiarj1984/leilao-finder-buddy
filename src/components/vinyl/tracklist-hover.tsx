@@ -3,6 +3,7 @@ import { ListMusic } from "lucide-react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useLotAiQuery } from "@/lib/queries";
+import { useIsMobile } from "@/lib/use-is-mobile";
 import { groupTracksBySide, type Track, type TrackFame } from "@/lib/tracklist";
 
 const FAME_DOT: Record<TrackFame, string> = {
@@ -35,6 +36,7 @@ export function TracklistHover({
   onRequest?: () => void;
   loading?: boolean;
 }) {
+  const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const has = Boolean(tracklist?.length);
@@ -77,8 +79,9 @@ export function TracklistHover({
       </PopoverTrigger>
       {has ? (
         <PopoverContent
-          side="left"
-          align="start"
+          // Celular: ao lado esquerdo não cabe (vazava da tela); embaixo o Radix desloca p/ dentro.
+          side={isMobile ? "bottom" : "left"}
+          align={isMobile ? "end" : "start"}
           collisionPadding={12}
           className="max-h-[min(70vh,var(--radix-popover-content-available-height))] w-80 max-w-[calc(100vw-1.5rem)] overflow-y-auto p-3 text-xs"
           onMouseEnter={show}
