@@ -832,3 +832,5 @@ segue existindo, usado pela home ("Atualizar tudo" — desde v0.84.0 também rod
   cabeçalhos/conteúdo atuais (já eram responsivos) + barra inferior + cartão de lote mobile onde há
   `LotCard`. O redesenho completo do protótipo (linha sticky única, folhas de filtros/ações, FAB)
   está em `docs/pendencias.md`.
+
+- **Busca da Wantlist lembrada (v0.115.1):** o campo de busca do diálogo da Sondagem usa `usePersistedState("wantlist-search")`.
