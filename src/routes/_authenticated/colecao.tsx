@@ -1,16 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import {
-  ArrowLeft,
-  ClipboardPaste,
-  Disc3,
-  Library,
-  Pencil,
-  Plus,
-  Sparkles,
-  Trash2,
-} from "lucide-react";
+import { ArrowLeft, ClipboardPaste, Disc3, Library, Plus, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
 import { toast } from "sonner";
@@ -20,7 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CollectionCard } from "@/components/vinyl/collection-card";
-import { collectionLabel, readFileAsDataUrl } from "@/components/vinyl/collection-utils";
+import { CollectionTitleRow } from "@/components/vinyl/collection-title-row";
+import { readFileAsDataUrl } from "@/components/vinyl/collection-utils";
 import { ArtistFilter } from "@/components/vinyl/filters";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
@@ -36,6 +28,7 @@ import type { CollectionItem } from "@/lib/collection.server";
 import {
   addCollectionItem,
   deleteCollectionItem,
+  fetchCollectionTracklistFn,
   identifyCollection,
   importCollectionText,
   reprocessCollectionItem,
@@ -139,7 +132,7 @@ function ColecaoPage() {
   // Esconder/mostrar o topo é MANUAL — botão `MobileTopToggle`, só no mobile.
   const [barsHidden, setBarsHidden] = usePersistedState("colecao-bars-hidden", false);
   usePersistedScroll("colecao", true);
-  const [viewTab, setViewTab] = usePersistedState("colecao-view-tab", "cards");
+  const [viewTab, setViewTab] = usePersistedState("colecao-view-tab-v2", "titles");
   const queryClient = useQueryClient();
   const addItem = useServerFn(addCollectionItem);
   const importBulk = useServerFn(importCollectionText);
@@ -150,6 +143,7 @@ function ColecaoPage() {
   const updateItem = useServerFn(updateCollectionItem);
   const removeItem = useServerFn(deleteCollectionItem);
   const uploadImage = useServerFn(uploadCollectionImage);
+  const fetchTracklist = useServerFn(fetchCollectionTracklistFn);
 
   const [artist, setArtist] = usePersistedState("colecao-artist", "");
   const [search, setSearch] = usePersistedState("colecao-search", "");
@@ -368,6 +362,30 @@ function ColecaoPage() {
     onSettled: () => void invalidate(),
   });
 
+  // Busca SÓ a tracklist do disco (IA, texto) e grava; o card passa a mostrá-la.
+  const tracklistMut = useMutation({
+    mutationFn: (vars: { id: string; provider: AiProvider }) => fetchTracklist({ data: vars }),
+    onSuccess: (res: { found: boolean }) => {
+      void invalidate();
+      if (res.found) toast.success("Tracklist encontrada.");
+      else toast.error("A IA não soube a tracklist deste disco.");
+    },
+    onError: (e: Error) => toast.error(e.message || "Não foi possível buscar a tracklist"),
+  });
+
+  // Props do card completo — o mesmo na visão Cards e no card flutuante da visão Títulos.
+  const cardProps = (item: CollectionItem) => ({
+    busy,
+    reprocessing: reprocessMut.isPending && reprocessMut.variables?.id === item.id,
+    tracklistLoading: tracklistMut.isPending && tracklistMut.variables?.id === item.id,
+    onEdit: () => setDraft(toDraft(item)),
+    onRemove: () => removeMut.mutate(item.id),
+    onReprocess: () => startReprocess(item.id),
+    onTagsChange: (next: string[]) => tagsMut.mutate({ id: item.id, tags: next }),
+    onPickCover: () => setCoverItem(item),
+    onFetchTracklist: () => tracklistMut.mutate({ id: item.id, provider: aiProvider }),
+  });
+
   const artists = useMemo(() => artistOptions(items), [items]);
   // Nomes para o combo do formulário (artistas reais + "Coletâneas"/"Lote"; sem o rótulo genérico).
   const artistNames = useMemo(
@@ -477,8 +495,8 @@ function ColecaoPage() {
               </span>
               {showViewTabs ? (
                 <TabsList>
-                  <TabsTrigger value="cards">Cards</TabsTrigger>
                   <TabsTrigger value="titles">Títulos</TabsTrigger>
+                  <TabsTrigger value="cards">Cards</TabsTrigger>
                 </TabsList>
               ) : null}
             </div>
@@ -513,19 +531,7 @@ function ColecaoPage() {
                       </h2>
                       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         {group.items.map((item) => (
-                          <CollectionCard
-                            key={item.id}
-                            item={item}
-                            busy={busy}
-                            reprocessing={
-                              reprocessMut.isPending && reprocessMut.variables?.id === item.id
-                            }
-                            onEdit={() => setDraft(toDraft(item))}
-                            onRemove={() => removeMut.mutate(item.id)}
-                            onReprocess={() => startReprocess(item.id)}
-                            onTagsChange={(next) => tagsMut.mutate({ id: item.id, tags: next })}
-                            onPickCover={() => setCoverItem(item)}
-                          />
+                          <CollectionCard key={item.id} item={item} {...cardProps(item)} />
                         ))}
                       </div>
                     </section>
@@ -546,12 +552,10 @@ function ColecaoPage() {
                       </h2>
                       <ul className="divide-y divide-border rounded-md border border-border">
                         {group.items.map((item) => (
-                          <TitleRow
+                          <CollectionTitleRow
                             key={item.id}
                             item={item}
-                            busy={busy}
-                            onEdit={() => setDraft(toDraft(item))}
-                            onRemove={() => removeMut.mutate(item.id)}
+                            cardProps={cardProps(item)}
                           />
                         ))}
                       </ul>
@@ -593,46 +597,6 @@ function ColecaoPage() {
         onClose={() => setBulkOpen(false)}
       />
     </main>
-  );
-}
-
-function TitleRow({
-  item,
-  busy,
-  onEdit,
-  onRemove,
-}: {
-  item: CollectionItem;
-  busy: boolean;
-  onEdit: () => void;
-  onRemove: () => void;
-}) {
-  const details = [
-    item.conditionMedia && `Mídia ${item.conditionMedia}`,
-    item.conditionSleeve && `Capa ${item.conditionSleeve}`,
-    item.wonPrice && `Pago ${item.wonPrice}`,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  return (
-    <li className="flex items-center gap-2 px-3 py-2 text-sm">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-foreground">{collectionLabel(item)}</p>
-        {details ? <p className="truncate text-xs text-muted-foreground">{details}</p> : null}
-      </div>
-      <Button size="sm" variant="ghost" onClick={onEdit} disabled={busy} aria-label="Editar disco">
-        <Pencil className="h-4 w-4" />
-      </Button>
-      <Button
-        size="sm"
-        variant="ghost"
-        onClick={onRemove}
-        disabled={busy}
-        aria-label="Remover disco"
-      >
-        <Trash2 className="h-4 w-4" />
-      </Button>
-    </li>
   );
 }
 

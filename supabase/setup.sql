@@ -345,6 +345,8 @@ ALTER TABLE public.collection_items ADD COLUMN IF NOT EXISTS description text NO
 -- Só rastro: `lot_id` segue único e fica com o disco principal.
 ALTER TABLE public.collection_items ADD COLUMN IF NOT EXISTS origin_lot_id text;
 CREATE INDEX IF NOT EXISTS collection_items_origin_lot_idx ON public.collection_items (origin_lot_id);
+-- Tracklist do disco (mesmo formato de lot_ai.tracklist), buscada pela IA sob demanda.
+ALTER TABLE public.collection_items ADD COLUMN IF NOT EXISTS tracklist jsonb;
 
 DROP TRIGGER IF EXISTS update_collection_items_updated_at ON public.collection_items;
 CREATE TRIGGER update_collection_items_updated_at BEFORE UPDATE ON public.collection_items

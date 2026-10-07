@@ -26,9 +26,14 @@ const FAME_LABEL: Record<TrackFame, string> = {
 export function TracklistHover({
   tracklist,
   title,
+  onRequest,
+  loading = false,
 }: {
   tracklist?: Track[] | null;
   title?: string;
+  /** Sem tracklist, torna o botão clicável: pede a tracklist (só ela) e deixa o chamador gravar. */
+  onRequest?: () => void;
+  loading?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -43,9 +48,14 @@ export function TracklistHover({
     closeTimer.current = setTimeout(() => setOpen(false), 120);
   };
 
+  const canRequest = !has && Boolean(onRequest);
   const tip = has
     ? "Tracklist do álbum (verde = mais famosas, vermelho = pouco conhecidas/lado B)"
-    : "Tracklist ainda não disponível — vem com a análise da IA";
+    : canRequest
+      ? loading
+        ? "Buscando a tracklist…"
+        : "Tracklist ainda não existe — clique para buscar (IA, só a tracklist)"
+      : "Tracklist ainda não disponível — vem com a análise da IA";
 
   return (
     <Popover open={open} onOpenChange={(o) => setOpen(o && has)}>
@@ -54,13 +64,15 @@ export function TracklistHover({
           type="button"
           onMouseEnter={show}
           onMouseLeave={hide}
+          onClick={canRequest ? onRequest : undefined}
+          disabled={canRequest && loading}
           className={`flex items-center rounded-full px-1.5 py-1 text-white shadow ${
-            has ? "bg-sky-600" : "bg-zinc-500/50"
+            has ? "bg-sky-600" : canRequest ? "bg-zinc-500 hover:bg-sky-600" : "bg-zinc-500/50"
           }`}
           title={open ? undefined : tip}
           aria-label={tip}
         >
-          <ListMusic className="h-3.5 w-3.5" />
+          <ListMusic className={`h-3.5 w-3.5 ${loading ? "animate-pulse" : ""}`} />
         </button>
       </PopoverTrigger>
       {has ? (
@@ -121,11 +133,31 @@ export function TracklistContent({ tracklist, title }: { tracklist: Track[]; tit
  * gravada na avaliação da IA do lote (`lot_ai.tracklist`), achada pelo `lotId`. Sem lote ou sem
  * avaliação (ex.: lote já podado do banco), o ícone fica apagado.
  */
-export function LotTracklistHover({ lotId, title }: { lotId?: string | null; title?: string }) {
+export function LotTracklistHover({
+  lotId,
+  title,
+  own,
+  onRequest,
+  loading,
+}: {
+  lotId?: string | null;
+  title?: string;
+  /** Tracklist própria do item (ex.: buscada na Coleção); tem prioridade sobre a do lote. */
+  own?: Track[] | null;
+  onRequest?: () => void;
+  loading?: boolean;
+}) {
   const aiQuery = useLotAiQuery();
-  const tracklist = useMemo(
+  const fromLot = useMemo(
     () => (lotId ? (aiQuery.data?.find((r) => r.id === lotId)?.tracklist ?? null) : null),
     [aiQuery.data, lotId],
   );
-  return <TracklistHover tracklist={tracklist} title={title} />;
+  return (
+    <TracklistHover
+      tracklist={own?.length ? own : fromLot}
+      title={title}
+      onRequest={onRequest}
+      loading={loading}
+    />
+  );
 }
