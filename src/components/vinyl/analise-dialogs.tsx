@@ -116,7 +116,7 @@ export function SondagemDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [importText, setImportText] = useState("");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistedState("wantlist-search", "");
   const [showAcquired, setShowAcquired] = usePersistedState("analise-show-acquired", true);
   const [edit, setEdit] = useState<EditDraft | null>(null);
 
