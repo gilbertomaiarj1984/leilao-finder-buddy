@@ -25,7 +25,7 @@
 - **Catálogo dos vinis que o usuário possui**, agrupado por artista. Página
   `_authenticated/colecao.tsx` (menu **Coleção** no header do `index.tsx`), duas visões
   (`Tabs`): **Títulos** (padrão desde a v0.114.0; lista simplificada — `CollectionTitleRow`: hover/toque
-  na linha abre o **card completo flutuante** (`Popover`) com Editar/reprocessar/remover/tags/tracklist)
+  na linha abre o **card completo flutuante** (`Popover`; **clicar na linha trava o card** — fecha ao clicar fora/Esc/na linha de novo) com Editar/reprocessar/remover/tags/tracklist)
   e **Cards** (`CollectionCard`, mesmo visual dos cards de leilão). **Filtro por artista** (`ArtistFilter` reusado) + **busca** por
   artista/álbum/título (`normalizeForMatch`).
 - **Agrupamento normalizado (garante juntar o artista):** grupos e filtro usam a CHAVE

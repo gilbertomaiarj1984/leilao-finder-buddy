@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **v0.114.1** — Coleção: clicar na linha de "Títulos" TRAVA o card flutuante (fecha ao clicar fora, Esc ou na linha de novo); popovers (card e tracklist) limitados à largura/altura disponível da tela, corrigindo a lista de faixas que vazava no celular.
 - **v0.114.0** — Coleção: abre por padrão na visão **Títulos**; ao passar o mouse (ou tocar) numa linha abre o **card completo flutuante** (com Editar, reprocessar, remover, tags); o botão de **tracklist** fica clicável quando não há tracklist e busca SÓ ela pela IA (nova coluna `collection_items.tracklist`, `fetchCollectionTracklist`).
 - **v0.113.1** — Análise: limpeza — o ✨ "repassar a IA" reaproveita `reevaluateLot` (removida a server fn duplicada `reevaluateLots`); dia salvo fora da janela não deixa mais a lista vazia (cai em "Todos"); contagem por dia memoizada.
 - **v0.113.0** — Análise remodelada: dois Top 30 (vigiados × restante) sob a barra de pesquisa e a barra de dias (formato da home); "Por dia e casa de leilão" removida; botão ✨ em cada item do Top repassa a IA (`reevaluateLots`, reavalia com o valor atual para refletir mudança de preço).

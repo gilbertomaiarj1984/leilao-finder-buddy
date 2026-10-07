@@ -79,7 +79,8 @@ export function TracklistHover({
         <PopoverContent
           side="left"
           align="start"
-          className="max-h-[70vh] w-80 overflow-y-auto p-3 text-xs"
+          collisionPadding={12}
+          className="max-h-[min(70vh,var(--radix-popover-content-available-height))] w-80 max-w-[calc(100vw-1.5rem)] overflow-y-auto p-3 text-xs"
           onMouseEnter={show}
           onMouseLeave={hide}
           onOpenAutoFocus={(e) => e.preventDefault()}
