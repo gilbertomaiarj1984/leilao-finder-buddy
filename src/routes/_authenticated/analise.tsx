@@ -15,7 +15,7 @@ import {
   Target,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
 import { toast } from "sonner";
 
@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LotTags, RarityLabel, RarityLegend, ScoreBadge } from "@/components/vinyl/ai-score";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
@@ -37,17 +37,13 @@ import {
   marketDeal,
   RARITY_LEGEND,
   rowStatusTone,
-  scoreTone,
   toLotMarket,
   type LotAi,
   type LotMarket,
 } from "@/components/vinyl/ai-score-utils";
-import {
-  groupByHouseSimple,
-  houseAnchor,
-  type SimpleHouseGroup,
-} from "@/components/vinyl/grouping";
-import { setLotTags, setUserInterests } from "@/lib/ai.functions";
+import { dayLabel } from "@/components/vinyl/grouping";
+import { AI_PROVIDER_SHORT, type AiProvider } from "@/lib/ai-provider";
+import { reevaluateLots, setLotTags, setUserInterests } from "@/lib/ai.functions";
 import {
   addWantlistItem,
   deleteWantlistItem,
@@ -56,13 +52,7 @@ import {
 } from "@/lib/wantlist.functions";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
-import {
-  bidIsWinning,
-  catalogUrlFromLot,
-  formatDayLabel,
-  normalizeForMatch,
-  type VinylLot,
-} from "@/lib/vinyl-parse";
+import { bidIsWinning, formatDayLabel, normalizeForMatch, type VinylLot } from "@/lib/vinyl-parse";
 import { saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
 import {
   bestWantForLot,
@@ -71,6 +61,7 @@ import {
   type WantCandidate,
 } from "@/lib/wantlist-match";
 import {
+  useAiProviderQuery,
   useInterestsQuery,
   useLotAiQuery,
   useLotIdentQuery,
@@ -88,9 +79,7 @@ export const Route = createFileRoute("/_authenticated/analise")({
   component: AnalisePage,
 });
 
-const TOP_N = 100;
-
-type HouseGroup = SimpleHouseGroup;
+const TOP_N = 30;
 
 const selectClass =
   "h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
@@ -245,6 +234,27 @@ function WatchButton({
   );
 }
 
+/** Botão (só ícone) que repassa a IA num lote do Top — reavalia com o preço atual. */
+function ReevalButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="h-8 w-8 p-0"
+      onClick={onClick}
+      disabled={busy}
+      title="Repassar a IA neste lote (reavalia com o valor atual)"
+      aria-label="Repassar a IA neste lote"
+    >
+      {busy ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <Sparkles className="h-4 w-4 text-primary" />
+      )}
+    </Button>
+  );
+}
+
 /** Chip de filtro (liga/desliga) no mesmo formato dos botões da parte principal do site. */
 function filterChipClass(active: boolean): string {
   return active
@@ -252,31 +262,51 @@ function filterChipClass(active: boolean): string {
     : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-50";
 }
 
+/** Seção recolhível de um Top (cabeçalho clicável + conteúdo). */
+function TopSection({
+  title,
+  open,
+  onToggle,
+  filtered,
+  children,
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  filtered: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground"
+      >
+        {open ? (
+          <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+        )}
+        <Star className="h-5 w-5 text-primary" />
+        {title}
+        {filtered ? (
+          <Badge variant="secondary" className="ml-1 font-normal">
+            filtrado
+          </Badge>
+        ) : null}
+      </button>
+      {open ? children : null}
+    </section>
+  );
+}
+
 function AnalisePage() {
-  // Esconder/mostrar o topo (header + nav sticky aninhado) é MANUAL — botão
-  // `MobileTopToggle`, só no mobile — desde que a versão anterior por scroll
-  // (`useHideOnScroll`) ficava piscando (recálculo de altura de um `sticky`
-  // durante a transição realimentava a lógica de direção do scroll).
+  // Esconder/mostrar o topo é MANUAL — botão `MobileTopToggle`, só no mobile — desde que a
+  // versão anterior por scroll (`useHideOnScroll`) ficava piscando.
   const [barsHidden, setBarsHidden] = usePersistedState("analise-bars-hidden", false);
   usePersistedScroll("analise", true);
-  // Altura real do header sticky, medida ao vivo — o nav sticky de "ir para casa" (por dia)
-  // usa esse valor como `top` para colar logo abaixo dele, em vez de ficar escondido atrás
-  // (ambos ficariam em top:0). A `ref` fica no CONTEÚDO do header (altura natural estável),
-  // não no wrapper que esconde/mostra (HideableBar) — senão o ResizeObserver mediria a
-  // própria transição de altura dele. `top: 0` no colapso combina a altura estável com
-  // `barsHidden` diretamente, em vez de esperar a medição "seguir" o colapso.
-  const headerRef = useRef<HTMLDivElement>(null);
-  const [headerHeight, setHeaderHeight] = useState(0);
-  useEffect(() => {
-    const el = headerRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry) setHeaderHeight(entry.contentRect.height);
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-  const stickyBelowHeader = { top: barsHidden ? 0 : headerHeight };
 
   const queryClient = useQueryClient();
   const saveInterests = useServerFn(setUserInterests);
@@ -286,17 +316,9 @@ function AnalisePage() {
   const deleteWant = useServerFn(deleteWantlistItem);
   const runToggle = useServerFn(toggleWatch);
   const saveTags = useServerFn(setLotTags);
+  const runReeval = useServerFn(reevaluateLots);
 
-  const [openHouses, setOpenHouses] = useState<Set<string>>(new Set());
-  const toggleHouse = (key: string) =>
-    setOpenHouses((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-
-  // Filtros (valem para o Top 100 E para a visão por dia/casa).
+  // Filtros (valem para os dois Tops). O dia vem da barra de dias ("" = todos).
   const [search, setSearch] = usePersistedState("analise-search", "");
   const [houseFilter, setHouseFilter] = usePersistedState("analise-house", "");
   const [dayFilter, setDayFilter] = usePersistedState("analise-day", "");
@@ -304,11 +326,12 @@ function AnalisePage() {
   const [scoreMax, setScoreMax] = usePersistedState("analise-score-max", "");
   const [rarityFilter, setRarityFilter] = usePersistedState("analise-rarity", "");
   const [onlyWant, setOnlyWant] = usePersistedState("analise-only-want", false);
-  const [onlyWatched, setOnlyWatched] = usePersistedState("analise-only-watched", false);
   const [onlyBid, setOnlyBid] = usePersistedState("analise-only-bid", false);
-  const [topOpen, setTopOpen] = usePersistedState("analise-top-open", true);
-  const [activeDay, setActiveDay] = usePersistedState("analise-active-day", "");
+  const [watchedOpen, setWatchedOpen] = usePersistedState("analise-top-open", true);
+  const [restOpen, setRestOpen] = usePersistedState("analise-rest-open", true);
   const [pending, setPending] = useState<string | null>(null);
+  // Lotes com "repassar a IA" em andamento (vários podem rodar ao mesmo tempo).
+  const [reevaluating, setReevaluating] = useState<ReadonlySet<string>>(new Set());
 
   const lots = useLotsQuery();
   const lotAiQuery = useLotAiQuery();
@@ -316,13 +339,15 @@ function AnalisePage() {
   const interestsQuery = useInterestsQuery();
   const lotMarketQuery = useLotMarketQuery();
   const wantlistQuery = useWantlistQuery();
-  // Vigiados + meus lances: alimentam os filtros "Vigiando"/"Com lance", a borda colorida
-  // das linhas, o status do lance e o botão de vigiar (mesma mecânica da página principal).
-  // MESMO acumulador local de `index.tsx` (`@/lib/watched-accum`, MESMA chave de `localStorage`
-  // e de query, `queryKeys.watched`/`queryKeys.bids`) — essas duas rotas compartilham o
-  // `QueryClient` do app inteiro, então um `queryFn` aqui que apenas SUBSTITUÍSSE (sem mesclar)
-  // sobrescreveria o acumulado da outra rota ao navegar entre elas, fazendo os vigiados
-  // "sumirem depois de um tempo" mesmo sem o usuário ter desvigiado nada.
+  const aiProviderQuery = useAiProviderQuery();
+  const aiProvider: AiProvider = aiProviderQuery.data ?? "anthropic";
+  // Vigiados + meus lances: alimentam a divisão em dois Tops, o filtro "Com lance", a borda
+  // colorida das linhas, o status do lance e o botão de vigiar (mesma mecânica da página
+  // principal). MESMO acumulador local de `index.tsx` (`@/lib/watched-accum`, MESMA chave de
+  // `localStorage` e de query, `queryKeys.watched`/`queryKeys.bids`) — essas duas rotas
+  // compartilham o `QueryClient` do app inteiro, então um `queryFn` aqui que apenas
+  // SUBSTITUÍSSE (sem mesclar) sobrescreveria o acumulado da outra rota ao navegar entre elas,
+  // fazendo os vigiados "sumirem depois de um tempo" mesmo sem o usuário ter desvigiado nada.
   const { query: watchedQuery, accumRef: watchedAccumRef } = useWatchedQuery();
   const { query: bidsQuery } = useBidsQuery();
 
@@ -491,8 +516,6 @@ function AnalisePage() {
     return { ...base, matchesInterests: matchesInterest(lot.title) };
   };
   const marketFor = (lot: VinylLot): LotMarket | undefined => marketById.get(lot.id);
-  // Score para ordenação: sem avaliação vai para o fim (-1).
-  const scoreOf = (lot: VinylLot) => aiById.get(lot.id)?.score ?? -1;
 
   // Estado por lote (vigia/lance) e o valor "Atual" corrigido para quem está vencendo.
   const isWatched = (lot: VinylLot) => watchedIds.has(lot.idPeca);
@@ -509,6 +532,50 @@ function AnalisePage() {
       base: lot.base,
       watch: !isWatched(lot),
     });
+
+  // "Repassar a IA": reavalia UM lote do Top com o preço atual (inclui meu lance, se vencendo)
+  // e revalida `lotAi` para a nota/raridade/oportunidade novas aparecerem.
+  const reevalLot = (lot: VinylLot) => {
+    if (reevaluating.has(lot.id)) return;
+    setReevaluating((prev) => new Set(prev).add(lot.id));
+    void runReeval({
+      data: {
+        lots: [
+          {
+            id: lot.id,
+            title: lot.title,
+            price: currentPriceFor(lot),
+            house: lot.house,
+            image: lot.image,
+          },
+        ],
+        provider: aiProvider,
+      },
+    })
+      .then(async (res) => {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.lotAi });
+        if (res.switched && res.served && res.served !== aiProvider) {
+          toast.warning(
+            `${AI_PROVIDER_SHORT[aiProvider]} indisponível — usei ${AI_PROVIDER_SHORT[res.served]}`,
+          );
+        }
+        if (res.evaluated) toast.success("IA reavaliou o lote");
+        else
+          toast.error(
+            `A IA não retornou avaliação${res.error ? ` (${res.error})` : ""} — verifique a chave/limite do provedor`,
+          );
+      })
+      .catch((error: unknown) =>
+        toast.error((error as Error)?.message || "Não foi possível reavaliar agora"),
+      )
+      .finally(() =>
+        setReevaluating((prev) => {
+          const next = new Set(prev);
+          next.delete(lot.id);
+          return next;
+        }),
+      );
+  };
 
   const days = lots.data?.days ?? [];
   const allLots = useMemo(() => lots.data?.lots ?? [], [lots.data]);
@@ -547,8 +614,9 @@ function AnalisePage() {
   }, [wantCands, allLots, albumById, marketById]);
   const wantedLot = (lot: VinylLot): WantHit | null => wantByLot.get(lot.id) ?? null;
 
-  // Aplica os filtros (busca/casa/dia/nota/sondagem) — base tanto do Top 100 quanto do por dia.
-  const filtered = useMemo(() => {
+  // Aplica os filtros (busca/casa/nota/sondagem) SEM o dia — a barra de dias mostra a
+  // contagem de cada dia sobre este conjunto.
+  const filteredAnyDay = useMemo(() => {
     const q = normalizeForMatch(search);
     const min = scoreMin.trim() ? Number(scoreMin) : null;
     const max = scoreMax.trim() ? Number(scoreMax) : null;
@@ -557,9 +625,7 @@ function AnalisePage() {
       if (q && !normalizeForMatch(`${l.title} ${albumById.get(l.id) ?? ""}`).includes(q))
         return false;
       if (houseFilter && l.house !== houseFilter) return false;
-      if (dayFilter && l.dayKey !== dayFilter) return false;
       if (onlyWant && !wantByLot.has(l.id)) return false;
-      if (onlyWatched && !watchedIds.has(l.idPeca)) return false;
       if (onlyBid && !bidStatusById.has(l.idPeca)) return false;
       if (rarityFilter && (aiById.get(l.id)?.rarity ?? null) !== rarityFilter) return false;
       if (scoreActive) {
@@ -574,9 +640,7 @@ function AnalisePage() {
     allLots,
     search,
     houseFilter,
-    dayFilter,
     onlyWant,
-    onlyWatched,
     onlyBid,
     rarityFilter,
     scoreMin,
@@ -584,20 +648,23 @@ function AnalisePage() {
     aiById,
     albumById,
     wantByLot,
-    watchedIds,
     bidStatusById,
   ]);
-
-  // Top 100: só lotes já avaliados, maior nota primeiro — dentro do conjunto filtrado.
-  const top = useMemo(
-    () =>
-      [...filtered]
-        .filter((l) => (aiById.get(l.id)?.score ?? null) !== null)
-        .sort((a, b) => scoreOf(b) - scoreOf(a))
-        .slice(0, TOP_N),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filtered, aiById],
+  const filtered = useMemo(
+    () => (dayFilter ? filteredAnyDay.filter((l) => l.dayKey === dayFilter) : filteredAnyDay),
+    [filteredAnyDay, dayFilter],
   );
+
+  // Dois Tops: vigiados × demais lotes. Só lotes já avaliados, maior nota primeiro.
+  const { topWatched, topRest } = useMemo(() => {
+    const ranked = filtered
+      .filter((l) => (aiById.get(l.id)?.score ?? null) !== null)
+      .sort((a, b) => (aiById.get(b.id)?.score ?? -1) - (aiById.get(a.id)?.score ?? -1));
+    return {
+      topWatched: ranked.filter((l) => watchedIds.has(l.idPeca)).slice(0, TOP_N),
+      topRest: ranked.filter((l) => !watchedIds.has(l.idPeca)).slice(0, TOP_N),
+    };
+  }, [filtered, aiById, watchedIds]);
 
   const evaluated = aiById.size;
   const wantCount = (wantlistQuery.data ?? []).filter((w) => !w.acquired).length;
@@ -613,7 +680,6 @@ function AnalisePage() {
     scoreMax ||
     rarityFilter ||
     onlyWant ||
-    onlyWatched ||
     onlyBid,
   );
   const resetFilters = () => {
@@ -624,23 +690,120 @@ function AnalisePage() {
     setScoreMax("");
     setRarityFilter("");
     setOnlyWant(false);
-    setOnlyWatched(false);
     setOnlyBid(false);
   };
-  const watchedCount = watchedIds.size;
   const bidCount = bidStatusById.size;
 
-  const visibleDays = dayFilter ? days.filter((d) => d === dayFilter) : days;
-  const tabValue = visibleDays.includes(activeDay) ? activeDay : (visibleDays[0] ?? "");
+  // Barra de dias no formato da home: passados em âmbar, futuros em azul, hoje neutro.
+  const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
+    new Date(),
+  );
+  const relDay = (d: string) =>
+    Math.round((Date.parse(`${d}T00:00:00Z`) - Date.parse(`${todayKey}T00:00:00Z`)) / 86_400_000);
+  const dayCount = (d: string) => filteredAnyDay.filter((l) => l.dayKey === d).length;
+
+  /** Tabela de um Top: nota, título, casa/dia, valor atual, repassar IA e vigiar. */
+  const renderTop = (list: VinylLot[], emptyMsg: string) =>
+    list.length === 0 ? (
+      <p className="rounded-md border border-border bg-card p-3 text-sm text-muted-foreground">
+        {emptyMsg}
+      </p>
+    ) : (
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table className="w-full min-w-[720px] border-collapse text-sm">
+          <thead>
+            <tr className="bg-secondary text-left text-xs uppercase tracking-wider text-muted-foreground">
+              <th className="px-3 py-2 font-medium">Nota</th>
+              <th className="px-3 py-2 font-medium">Título</th>
+              <th className="px-3 py-2 font-medium">Casa / dia</th>
+              <th className="px-3 py-2 text-right font-medium">Atual</th>
+              <th className="px-3 py-2 text-right font-medium">IA</th>
+              <th className="px-3 py-2 text-right font-medium">Vigiar</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((lot, i) => {
+              const ai = aiFor(lot)!;
+              const status = bidStatusFor(lot);
+              const watched = isWatched(lot);
+              return (
+                <tr
+                  key={lot.id}
+                  className={`border-t border-border/60 align-top ${rowStatusTone(status, watched)}`}
+                >
+                  <td className="px-3 py-2">
+                    <ScoreBadge
+                      ai={ai}
+                      market={marketFor(lot)}
+                      price={lot.price}
+                      rank={i + 1}
+                      lot={{
+                        id: lot.id,
+                        title: lot.title,
+                        price: lot.price,
+                        house: lot.house,
+                        image: lot.image,
+                      }}
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <LotTitle
+                      lot={lot}
+                      want={wantedLot(lot)}
+                      album={albumFor(lot)}
+                      marketYear={marketFor(lot)?.year ?? null}
+                    />
+                    <LotSummary
+                      ai={ai}
+                      market={marketFor(lot)}
+                      price={lot.price}
+                      onEditTags={(tags) => saveTagsMut.mutate({ id: lot.id, tags })}
+                    />
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
+                    {lot.house}
+                    <br />
+                    {formatDayLabel(lot.dayKey, days)} · {lot.time}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right">
+                    <span className="font-semibold text-primary">
+                      {currentPriceFor(lot) || "sem valor"}
+                    </span>
+                    {status ? (
+                      <div
+                        className={`mt-0.5 text-[11px] font-medium ${
+                          bidIsWinning(status)
+                            ? "text-green-600 dark:text-green-400"
+                            : "text-red-600 dark:text-red-400"
+                        }`}
+                      >
+                        {status}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <ReevalButton busy={reevaluating.has(lot.id)} onClick={() => reevalLot(lot)} />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <WatchButton
+                      watched={watched}
+                      busy={pending === lot.idPeca}
+                      onToggle={() => onToggleWatch(lot)}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
 
   return (
     <main className="min-h-screen bg-background">
       <MobileTopToggle collapsed={barsHidden} onToggle={() => setBarsHidden((c) => !c)} />
       <HideableBar hidden={barsHidden} className="top-0 z-30">
-        <header
-          ref={headerRef}
-          className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60"
-        >
+        <header className="border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:gap-4 sm:py-5">
             <div>
               <div className="flex items-center gap-3">
@@ -656,8 +819,9 @@ function AnalisePage() {
                 </h1>
               </div>
               <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
-                Lotes ranqueados por nota da IA (raridade + oportunidade). ⭐ = combina com seus
-                interesses; 🎯 = casa com a sondagem.{" "}
+                Top {TOP_N} dos vigiados e Top {TOP_N} do restante, ranqueados por nota da IA
+                (raridade + oportunidade). ⭐ = combina com seus interesses; 🎯 = casa com a
+                sondagem.{" "}
                 {evaluated ? `${evaluated} lote(s) avaliado(s).` : "Ainda sem avaliações."}
               </p>
             </div>
@@ -698,8 +862,8 @@ function AnalisePage() {
             principal para avaliar agora, sob demanda.
           </p>
         ) : (
-          <div className="space-y-8">
-            {/* ------- Filtros ------- */}
+          <div className="space-y-6">
+            {/* ------- Filtros (barra de pesquisa) ------- */}
             <section className="rounded-md border border-border bg-card/40 p-3">
               <div className="flex flex-wrap items-end gap-3">
                 <div className="flex flex-col gap-1">
@@ -712,23 +876,6 @@ function AnalisePage() {
                     placeholder="ex.: Tim Maia"
                     className="h-9 w-48"
                   />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Dia
-                  </label>
-                  <select
-                    value={dayFilter}
-                    onChange={(e) => setDayFilter(e.target.value)}
-                    className={selectClass}
-                  >
-                    <option value="">Todos</option>
-                    {days.map((d) => (
-                      <option key={d} value={d}>
-                        {formatDayLabel(d, days)}
-                      </option>
-                    ))}
-                  </select>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -790,19 +937,6 @@ function AnalisePage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setOnlyWatched((v) => !v)}
-                    disabled={watchedCount === 0}
-                    aria-pressed={onlyWatched}
-                    className={filterChipClass(onlyWatched)}
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                    Vigiando
-                    {watchedCount ? (
-                      <span className="ml-0.5 text-muted-foreground">{watchedCount}</span>
-                    ) : null}
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setOnlyBid((v) => !v)}
                     disabled={bidCount === 0}
                     aria-pressed={onlyBid}
@@ -846,360 +980,59 @@ function AnalisePage() {
               </div>
             </section>
 
-            {/* ------- Top 100 (recolhível) ------- */}
-            <section className="space-y-3">
-              <button
-                type="button"
-                onClick={() => setTopOpen((v) => !v)}
-                aria-expanded={topOpen}
-                className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground"
-              >
-                {topOpen ? (
-                  <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-                )}
-                <Star className="h-5 w-5 text-primary" />
-                Top {Math.min(TOP_N, top.length)} — melhores oportunidades
-                {filtersActive ? (
-                  <Badge variant="secondary" className="ml-1 font-normal">
-                    filtrado
-                  </Badge>
-                ) : null}
-              </button>
-              {topOpen ? (
-                top.length === 0 ? (
-                  <p className="rounded-md border border-border bg-card p-3 text-sm text-muted-foreground">
-                    Nenhum lote avaliado no filtro atual.
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto rounded-md border border-border">
-                    <table className="w-full min-w-[720px] border-collapse text-sm">
-                      <thead>
-                        <tr className="bg-secondary text-left text-xs uppercase tracking-wider text-muted-foreground">
-                          <th className="px-3 py-2 font-medium">Nota</th>
-                          <th className="px-3 py-2 font-medium">Título</th>
-                          <th className="px-3 py-2 font-medium">Casa / dia</th>
-                          <th className="px-3 py-2 text-right font-medium">Atual</th>
-                          <th className="px-3 py-2 text-right font-medium">Vigiar</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {top.map((lot, i) => {
-                          const ai = aiFor(lot)!;
-                          const status = bidStatusFor(lot);
-                          const watched = isWatched(lot);
-                          return (
-                            <tr
-                              key={lot.id}
-                              className={`border-t border-border/60 align-top ${rowStatusTone(status, watched)}`}
-                            >
-                              <td className="px-3 py-2">
-                                <ScoreBadge
-                                  ai={ai}
-                                  market={marketFor(lot)}
-                                  price={lot.price}
-                                  rank={i + 1}
-                                  lot={{
-                                    id: lot.id,
-                                    title: lot.title,
-                                    price: lot.price,
-                                    house: lot.house,
-                                    image: lot.image,
-                                  }}
-                                />
-                              </td>
-                              <td className="px-3 py-2">
-                                <LotTitle
-                                  lot={lot}
-                                  want={wantedLot(lot)}
-                                  album={albumFor(lot)}
-                                  marketYear={marketFor(lot)?.year ?? null}
-                                />
-                                <LotSummary
-                                  ai={ai}
-                                  market={marketFor(lot)}
-                                  price={lot.price}
-                                  onEditTags={(tags) => saveTagsMut.mutate({ id: lot.id, tags })}
-                                />
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
-                                {lot.house}
-                                <br />
-                                {formatDayLabel(lot.dayKey, days)} · {lot.time}
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2 text-right">
-                                <span className="font-semibold text-primary">
-                                  {currentPriceFor(lot) || "sem valor"}
-                                </span>
-                                {status ? (
-                                  <div
-                                    className={`mt-0.5 text-[11px] font-medium ${
-                                      bidIsWinning(status)
-                                        ? "text-green-600 dark:text-green-400"
-                                        : "text-red-600 dark:text-red-400"
-                                    }`}
-                                  >
-                                    {status}
-                                  </div>
-                                ) : null}
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                <WatchButton
-                                  watched={watched}
-                                  busy={pending === lot.idPeca}
-                                  onToggle={() => onToggleWatch(lot)}
-                                />
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )
-              ) : null}
-            </section>
+            {/* ------- Barra de dias (mesmo formato da página principal) ------- */}
+            <Tabs
+              value={dayFilter && days.includes(dayFilter) ? dayFilter : "all"}
+              onValueChange={(v) => setDayFilter(v === "all" ? "" : v)}
+            >
+              <TabsList className="flex h-auto flex-nowrap justify-start gap-1 overflow-x-auto bg-secondary sm:flex-wrap sm:overflow-visible">
+                <TabsTrigger value="all" className="shrink-0">
+                  Todos
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {filteredAnyDay.length}
+                  </span>
+                </TabsTrigger>
+                {days.map((day) => {
+                  const rel = relDay(day);
+                  return (
+                    <TabsTrigger
+                      key={day}
+                      value={day}
+                      className={
+                        rel < 0
+                          ? "shrink-0 bg-amber-500/10 text-amber-700 data-[state=active]:bg-amber-500/25 data-[state=active]:text-amber-800 dark:text-amber-300 dark:data-[state=active]:text-amber-200"
+                          : rel > 0
+                            ? "shrink-0 bg-sky-500/10 text-sky-700 data-[state=active]:bg-sky-500/25 data-[state=active]:text-sky-800 dark:text-sky-300 dark:data-[state=active]:text-sky-200"
+                            : "shrink-0"
+                      }
+                    >
+                      {dayLabel(day, rel)}
+                      <span className="ml-2 text-xs text-muted-foreground">{dayCount(day)}</span>
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+            </Tabs>
 
-            {/* ------- Por dia → casa (ordenado por nota) ------- */}
-            <section className="space-y-4">
-              <h2 className="text-lg font-semibold tracking-tight text-foreground">
-                Por dia e casa de leilão
-              </h2>
-              {visibleDays.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nenhum dia no filtro.</p>
-              ) : (
-                <Tabs value={tabValue} onValueChange={setActiveDay}>
-                  <TabsList className="mb-6 flex h-auto flex-wrap justify-start gap-1 bg-secondary">
-                    {visibleDays.map((day) => (
-                      <TabsTrigger key={day} value={day}>
-                        {formatDayLabel(day, days)}
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          {filtered.filter((l) => l.dayKey === day).length}
-                        </span>
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
+            {/* ------- Top 30 — vigiados ------- */}
+            <TopSection
+              title={`Top ${Math.min(TOP_N, topWatched.length)} — vigiados`}
+              open={watchedOpen}
+              onToggle={() => setWatchedOpen((v) => !v)}
+              filtered={filtersActive}
+            >
+              {renderTop(topWatched, "Nenhum vigiado avaliado no filtro atual.")}
+            </TopSection>
 
-                  {visibleDays.map((day, index) => {
-                    const dayLots = filtered.filter((l) => l.dayKey === day);
-                    const groups = groupByHouseSimple(dayLots);
-                    for (const g of groups) g.lots.sort((a, b) => scoreOf(b) - scoreOf(a));
-                    // Melhor nota da casa (para ordenar as casas).
-                    const bestScore = (g: HouseGroup) => (g.lots.length ? scoreOf(g.lots[0]!) : -1);
-                    const ordered = [...groups].sort(
-                      (a, b) =>
-                        bestScore(b) - bestScore(a) || a.house.localeCompare(b.house, "pt-BR"),
-                    );
-
-                    return (
-                      <TabsContent key={day} value={day} className="space-y-6">
-                        {ordered.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">Nenhum lote neste dia.</p>
-                        ) : (
-                          <>
-                            <HideableBar
-                              hidden={barsHidden}
-                              style={stickyBelowHeader}
-                              className="z-10 -mx-4"
-                            >
-                              <nav className="flex flex-nowrap gap-2 overflow-x-auto border-b border-border bg-background/95 px-4 py-2 backdrop-blur">
-                                {ordered.map((group) => {
-                                  const key = `${day}|${group.house}`;
-                                  const isOpen = openHouses.has(key);
-                                  const best = bestScore(group);
-                                  return (
-                                    <button
-                                      key={group.house}
-                                      type="button"
-                                      aria-expanded={isOpen}
-                                      onClick={() => {
-                                        const willOpen = !openHouses.has(key);
-                                        toggleHouse(key);
-                                        if (willOpen) {
-                                          requestAnimationFrame(() =>
-                                            document
-                                              .getElementById(houseAnchor(group.house, index))
-                                              ?.scrollIntoView({
-                                                behavior: "smooth",
-                                                block: "start",
-                                              }),
-                                          );
-                                        }
-                                      }}
-                                      className={
-                                        isOpen
-                                          ? "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
-                                          : "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:text-primary"
-                                      }
-                                    >
-                                      {isOpen ? (
-                                        <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                                      ) : (
-                                        <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                                      )}
-                                      {best >= 0 ? (
-                                        <span
-                                          className={`rounded px-1 text-[10px] font-bold ${scoreTone(best)}`}
-                                        >
-                                          {best}
-                                        </span>
-                                      ) : null}
-                                      {group.house}
-                                      <span className="text-muted-foreground">
-                                        {group.lots.length}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </nav>
-                            </HideableBar>
-
-                            {ordered.map((group) => {
-                              const key = `${day}|${group.house}`;
-                              const isOpen = openHouses.has(key);
-                              return (
-                                <section
-                                  key={group.house}
-                                  id={houseAnchor(group.house, index)}
-                                  className="scroll-mt-24 space-y-3"
-                                >
-                                  <div className="flex flex-wrap items-center gap-3 border-b border-border pb-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleHouse(key)}
-                                      aria-expanded={isOpen}
-                                      className="flex items-center gap-2 text-left"
-                                    >
-                                      {isOpen ? (
-                                        <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
-                                      ) : (
-                                        <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-                                      )}
-                                      <span className="text-lg font-semibold tracking-tight text-foreground">
-                                        {group.house}
-                                      </span>
-                                    </button>
-                                    <Badge variant="secondary">{group.lots.length} lote(s)</Badge>
-                                    {group.houseUrl && group.houseUrl !== "#" ? (
-                                      <a
-                                        className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                        href={
-                                          (group.lots[0] && catalogUrlFromLot(group.lots[0])) ??
-                                          group.houseUrl
-                                        }
-                                        target="_blank"
-                                        rel="noreferrer"
-                                      >
-                                        site da casa <ExternalLink className="h-3 w-3" />
-                                      </a>
-                                    ) : null}
-                                  </div>
-
-                                  {isOpen ? (
-                                    <div className="overflow-x-auto">
-                                      <table className="w-full min-w-[720px] border-collapse text-sm">
-                                        <thead>
-                                          <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-                                            <th className="px-2 py-2 font-medium">Nota</th>
-                                            <th className="px-2 py-2 font-medium">Lote</th>
-                                            <th className="px-2 py-2 font-medium">Título</th>
-                                            <th className="px-2 py-2 text-right font-medium">
-                                              Atual
-                                            </th>
-                                            <th className="px-2 py-2 text-right font-medium">
-                                              Vigiar
-                                            </th>
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          {group.lots.map((lot) => {
-                                            const ai = aiFor(lot);
-                                            const status = bidStatusFor(lot);
-                                            const watched = isWatched(lot);
-                                            return (
-                                              <tr
-                                                key={lot.id}
-                                                className={`border-b border-border/60 align-top ${rowStatusTone(status, watched)}`}
-                                              >
-                                                <td className="px-2 py-2">
-                                                  {ai ? (
-                                                    <ScoreBadge
-                                                      ai={ai}
-                                                      market={marketFor(lot)}
-                                                      price={lot.price}
-                                                      lot={{
-                                                        id: lot.id,
-                                                        title: lot.title,
-                                                        price: lot.price,
-                                                        house: lot.house,
-                                                        image: lot.image,
-                                                      }}
-                                                    />
-                                                  ) : (
-                                                    <span className="text-muted-foreground">—</span>
-                                                  )}
-                                                </td>
-                                                <td className="px-2 py-2 font-medium text-foreground">
-                                                  {lot.lote || "—"}
-                                                </td>
-                                                <td className="px-2 py-2">
-                                                  <LotTitle
-                                                    lot={lot}
-                                                    want={wantedLot(lot)}
-                                                    album={albumFor(lot)}
-                                                    marketYear={marketFor(lot)?.year ?? null}
-                                                  />
-                                                  <LotSummary
-                                                    ai={ai}
-                                                    market={marketFor(lot)}
-                                                    price={lot.price}
-                                                    onEditTags={(tags) =>
-                                                      saveTagsMut.mutate({ id: lot.id, tags })
-                                                    }
-                                                  />
-                                                </td>
-                                                <td className="whitespace-nowrap px-2 py-2 text-right">
-                                                  <span className="font-semibold text-primary">
-                                                    {currentPriceFor(lot) || "sem valor"}
-                                                  </span>
-                                                  {status ? (
-                                                    <div
-                                                      className={`mt-0.5 text-[11px] font-medium ${
-                                                        bidIsWinning(status)
-                                                          ? "text-green-600 dark:text-green-400"
-                                                          : "text-red-600 dark:text-red-400"
-                                                      }`}
-                                                    >
-                                                      {status}
-                                                    </div>
-                                                  ) : null}
-                                                </td>
-                                                <td className="px-2 py-2 text-right">
-                                                  <WatchButton
-                                                    watched={watched}
-                                                    busy={pending === lot.idPeca}
-                                                    onToggle={() => onToggleWatch(lot)}
-                                                  />
-                                                </td>
-                                              </tr>
-                                            );
-                                          })}
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  ) : null}
-                                </section>
-                              );
-                            })}
-                          </>
-                        )}
-                      </TabsContent>
-                    );
-                  })}
-                </Tabs>
-              )}
-            </section>
+            {/* ------- Top 30 — restante ------- */}
+            <TopSection
+              title={`Top ${Math.min(TOP_N, topRest.length)} — restante`}
+              open={restOpen}
+              onToggle={() => setRestOpen((v) => !v)}
+              filtered={filtersActive}
+            >
+              {renderTop(topRest, "Nenhum lote avaliado no filtro atual.")}
+            </TopSection>
           </div>
         )}
       </div>

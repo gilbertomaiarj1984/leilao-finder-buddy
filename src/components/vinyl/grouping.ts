@@ -64,19 +64,6 @@ function timeMinutes(value: string): number {
   return Number.isFinite(hh) && Number.isFinite(mm) ? hh * 60 + mm : Number.POSITIVE_INFINITY;
 }
 
-/** Forma enxuta do agrupamento por casa (`{house, houseUrl, lots}`), preservando a ordem. */
-export type SimpleHouseGroup = { house: string; houseUrl: string; lots: VinylLot[] };
-
-export function groupByHouseSimple(lots: VinylLot[]): SimpleHouseGroup[] {
-  const byHouse = new Map<string, SimpleHouseGroup>();
-  for (const lot of lots) {
-    const group = byHouse.get(lot.house) ?? { house: lot.house, houseUrl: lot.houseUrl, lots: [] };
-    group.lots.push(lot);
-    byHouse.set(lot.house, group);
-  }
-  return [...byHouse.values()];
-}
-
 export function groupByArtist(lots: VinylLot[]): ArtistGroup[] {
   const byArtist = new Map<string, VinylLot[]>();
   for (const lot of lots) {
