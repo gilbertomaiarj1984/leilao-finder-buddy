@@ -247,6 +247,17 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   grupos por artista (A→Z, "sem artista" por último), busca por artista (botão/Enter) e combo com
   nº de álbuns por artista. **Adquirido** = `status acquired` no item (leva todos os álbuns
   juntados) + remove a vigia real de todos os lotes dele (`acquireItem` em `olho.tsx`).
+- **Palavras para agrupar (v0.118.0):** `lookout_items.terms` (jsonb, até 20 frases de 80 caracteres). Em
+  `matchLookoutForLot`, `termScore`: lote cujo ARTISTA casa (`ownedArtistLevel`: confirmado → 0,92;
+  só citado no título → 0,8) e cujo texto normalizado contém alguma frase inteira do usuário casa com o
+  item, sem passar pelo filtro de ano de disco genérico. Vale em lotes por vir, vendas anteriores e
+  home (mesmo motor); "Juntar" soma as palavras. UI: campo "Palavras p/ agrupar" no cartão (chips com ✕).
+- **Pergunta "novo ou existente" (v0.118.0):** ao marcar o binóculos de um lote sem item idêntico,
+  `similarLookoutItems` (puro) acha itens ativos do MESMO artista com dúvida (álbum ausente, nomes que
+  se contêm/compartilham palavra, ou mesmo ano); se houver, `LookoutAskDialog` oferece "Inserir em: …"
+  (`attachLookout` → `attachLookoutLot`, vira álbum juntado) ou "Criar novo disco". Idêntico = o servidor
+  reaproveita sem perguntar. **Página `/olho`:** linhas-resumo (`LookoutSummaryRow`, arrastar sobre outra
+  junta); clicar abre o `LookoutItemCard` completo num `Dialog`.
 - **Identificar por IA (v0.110.0):** botão ✨ sob o lápis no card do item de `/olho` →
   `identifyLookout` → `identifyLookoutItem` (`lookout-ident.server.ts`, isolado): usa
   `identLotsSyncRows(…, withImage=true)` (mesmo prompt/parser da identificação dos lotes, **texto

@@ -9,6 +9,7 @@ import {
   notifyKey,
   pickNotifiable,
   priceVsCeiling,
+  similarLookoutItems,
   type LookoutItem,
   type LookoutMatch,
 } from "@/lib/lookout-match";
@@ -274,5 +275,60 @@ describe("juntar álbuns e lote de origem (v0.117.0)", () => {
     expect(matchLookoutForLot(cands, "100-1", id)).toBeNull();
     const hit = matchLookoutForLot(cands, "100-1", id, undefined, { includeOrigin: true });
     expect(hit).toMatchObject({ itemId: "it1", confirmed: true, isOrigin: true });
+  });
+});
+
+describe("palavras extras do usuário (v0.118.0)", () => {
+  const tm = (terms?: string[]) =>
+    item({ id: "tm", lotId: "1-1", artist: "Tim Maia", album: "Tim Maia", year: 1972, terms });
+  const lot = ident("LP Tim Maia 1971 Disco de ouro", "Tim Maia");
+
+  test("sem a palavra, o ano 1971 não casa com o disco de 1972", () => {
+    const hit = matchLookoutForLot(lookoutCandidates([tm()]), "9-9", lot);
+    expect(hit === null || hit.yearPending || hit.score < 0.8).toBe(true);
+  });
+
+  test("com a palavra '1971', o lote do mesmo artista casa com confiança", () => {
+    const hit = matchLookoutForLot(lookoutCandidates([tm(["1971"])]), "9-9", lot);
+    expect(hit?.itemId).toBe("tm");
+    expect(hit?.score).toBeGreaterThanOrEqual(0.8);
+    expect(hit?.yearPending).toBeFalsy();
+  });
+
+  test("a palavra sozinha não casa lote de OUTRO artista", () => {
+    const other = ident("LP Jorge Ben 1971 Força Bruta", "Jorge Ben");
+    expect(matchLookoutForLot(lookoutCandidates([tm(["1971"])]), "9-9", other)).toBeNull();
+  });
+});
+
+describe("similarLookoutItems — só pergunta quando há dúvida", () => {
+  const tm = item({ id: "tm", lotId: "1-1", artist: "Tim Maia", album: "Tim Maia", year: 1972 });
+  const input = (album: string, year: number | null) => ({
+    artist: "Tim Maia",
+    album,
+    year,
+    lotId: "9-9",
+  });
+
+  test("mesmo artista e mesmo álbum → idêntico, sem pergunta (o servidor reaproveita)", () => {
+    expect(similarLookoutItems([tm], input("Tim Maia", 1972))).toHaveLength(0);
+  });
+  test("mesmo artista, outro ano do disco homônimo / sem álbum → pergunta", () => {
+    expect(similarLookoutItems([tm], input("Tim Maia", 1971))).toHaveLength(0); // idêntico por nome
+    expect(similarLookoutItems([tm], input("", 1971))).toHaveLength(1);
+    expect(similarLookoutItems([tm], input("Tim Maia Racional", null))).toHaveLength(1);
+  });
+  test("mesmo artista, disco claramente diferente → não pergunta", () => {
+    expect(similarLookoutItems([tm], input("Nobre Vagabundo", 1980))).toHaveLength(0);
+  });
+  test("outro artista → não pergunta", () => {
+    expect(
+      similarLookoutItems([tm], {
+        artist: "Jorge Ben",
+        album: "Tim Maia",
+        year: 1972,
+        lotId: "9-9",
+      }),
+    ).toHaveLength(0);
   });
 });

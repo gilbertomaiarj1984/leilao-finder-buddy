@@ -38,6 +38,7 @@ export type LookoutPatch = {
   maxPrice?: number | null;
   note?: string;
   status?: LookoutStatus;
+  terms?: string[];
 };
 
 function brl(n: number | null | undefined): string {
@@ -113,6 +114,7 @@ export function LookoutItemCard({
 }) {
   const [editing, setEditing] = useState(false);
   const [merging, setMerging] = useState(false);
+  const [termText, setTermText] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [artist, setArtist] = useState(item.artist);
@@ -122,6 +124,14 @@ export function LookoutItemCard({
   const [note, setNote] = useState(item.note);
   const archived = item.status !== "active";
   const incomplete = !item.artist.trim() || !item.album.trim();
+
+  const terms = item.terms ?? [];
+  const addTerm = () => {
+    const t = termText.trim();
+    setTermText("");
+    if (!t || terms.some((x) => x.toLowerCase() === t.toLowerCase())) return;
+    onUpdate({ terms: [...terms, t] });
+  };
 
   const saveIdentity = () => {
     const y = Number(year);
@@ -315,6 +325,49 @@ export function LookoutItemCard({
               </div>
             </div>
           )}
+
+          {!archived ? (
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  value={termText}
+                  onChange={(e) => setTermText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addTerm();
+                    }
+                  }}
+                  placeholder="Palavras p/ agrupar (ex.: 1971, edição de luxo)"
+                  className="h-8 min-w-40 flex-1"
+                  aria-label="Palavras para ajudar no agrupamento"
+                  title="Lotes do MESMO artista que tenham estas palavras no título entram neste disco, mesmo com outro ano ou nome de álbum"
+                />
+                <Button size="sm" variant="outline" onClick={addTerm} disabled={!termText.trim()}>
+                  Adicionar
+                </Button>
+              </div>
+              {terms.length ? (
+                <ul className="flex flex-wrap gap-1 text-xs">
+                  {terms.map((t) => (
+                    <li
+                      key={t}
+                      className="flex items-center gap-1 rounded bg-fuchsia-500/15 px-1.5 py-0.5 text-fuchsia-700 dark:text-fuchsia-300"
+                    >
+                      {t}
+                      <button
+                        type="button"
+                        onClick={() => onUpdate({ terms: terms.filter((x) => x !== t) })}
+                        aria-label={`Remover a palavra ${t}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
 
           {item.merged?.length ? (
             <ul className="flex flex-wrap gap-1 text-xs text-muted-foreground">

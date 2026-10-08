@@ -6,10 +6,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { LookoutItemCard, type LookoutPatch } from "@/components/vinyl/lookout-item-card";
+import { LookoutSummaryRow } from "@/components/vinyl/lookout-summary-row";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import {
@@ -298,6 +300,8 @@ function OlhoPage() {
     return map;
   }, [overview]);
 
+  const [openId, setOpenId] = useState<string | null>(null);
+  const openItem = items.find((i) => i.id === openId) ?? null;
   const totalUpcoming = overview?.upcoming.length ?? 0;
   const newCount = overview?.newCount ?? 0;
 
@@ -430,36 +434,13 @@ function OlhoPage() {
                   </span>
                 </h2>
                 {group.items.map((item) => (
-                  <LookoutItemCard
+                  <LookoutSummaryRow
                     key={item.id}
                     item={item}
                     upcoming={upcomingByItem.get(item.id) ?? []}
-                    history={historyByItem.get(item.id) ?? []}
                     watchedIds={watchedIds}
-                    watchLoading={watched.isLoading}
-                    busyWatch={busyWatch}
-                    mergeOptions={active.filter((o) => o.id !== item.id)}
-                    onUpdate={(patch) => updateMut.mutate({ id: item.id, patch })}
-                    onAcquire={() => void acquireItem(item)}
-                    onDelete={() => deleteMut.mutate(item.id)}
+                    onOpen={() => setOpenId(item.id)}
                     onMerge={(sourceId) => mergeMut.mutate({ targetId: item.id, sourceId })}
-                    onUnmerge={(lotId) => unmergeMut.mutate({ itemId: item.id, lotId })}
-                    onIdentify={() => identifyMut.mutate(item.id)}
-                    identifying={identifyingId === item.id}
-                    onDismissPending={(lotIds) => dismissPendingMut.mutate(lotIds)}
-                    onResolveSale={(h, decision) =>
-                      resolveMut.mutate({
-                        lotId: h.lotId,
-                        value: decision === "confirm" ? item.id : false,
-                      })
-                    }
-                    onWatch={(m) => void watchLot(m)}
-                    onResolve={(m, decision) =>
-                      resolveMut.mutate({
-                        lotId: m.lotId,
-                        value: decision === "confirm" ? item.id : false,
-                      })
-                    }
                   />
                 ))}
               </div>
@@ -470,26 +451,13 @@ function OlhoPage() {
                   Arquivados ({archived.length})
                 </h2>
                 {archived.map((item) => (
-                  <LookoutItemCard
+                  <LookoutSummaryRow
                     key={item.id}
                     item={item}
                     upcoming={[]}
-                    history={[]}
                     watchedIds={watchedIds}
-                    watchLoading={false}
-                    busyWatch={busyWatch}
-                    mergeOptions={[]}
-                    onUpdate={(patch) => updateMut.mutate({ id: item.id, patch })}
-                    onAcquire={() => undefined}
-                    onDelete={() => deleteMut.mutate(item.id)}
+                    onOpen={() => setOpenId(item.id)}
                     onMerge={() => undefined}
-                    onUnmerge={() => undefined}
-                    onIdentify={() => identifyMut.mutate(item.id)}
-                    identifying={identifyingId === item.id}
-                    onDismissPending={() => undefined}
-                    onResolveSale={() => undefined}
-                    onWatch={() => undefined}
-                    onResolve={() => undefined}
                   />
                 ))}
               </div>
@@ -497,6 +465,56 @@ function OlhoPage() {
           </>
         )}
       </div>
+      <Dialog open={openItem != null} onOpenChange={(open) => (open ? undefined : setOpenId(null))}>
+        <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto p-0">
+          <DialogTitle className="sr-only">Detalhes do disco de olho</DialogTitle>
+          <DialogDescription className="sr-only">
+            Todas as informações e ações deste disco: matches por vir, histórico, teto, nota,
+            palavras de agrupamento e junção.
+          </DialogDescription>
+          {openItem ? (
+            <LookoutItemCard
+              key={openItem.id}
+              item={openItem}
+              upcoming={openItem.status === "active" ? (upcomingByItem.get(openItem.id) ?? []) : []}
+              history={openItem.status === "active" ? (historyByItem.get(openItem.id) ?? []) : []}
+              watchedIds={watchedIds}
+              watchLoading={watched.isLoading}
+              busyWatch={busyWatch}
+              mergeOptions={active.filter((o) => o.id !== openItem.id)}
+              onUpdate={(patch) => updateMut.mutate({ id: openItem.id, patch })}
+              onAcquire={() => {
+                void acquireItem(openItem);
+                setOpenId(null);
+              }}
+              onDelete={() => {
+                deleteMut.mutate(openItem.id);
+                setOpenId(null);
+              }}
+              onMerge={(sourceId) => {
+                mergeMut.mutate({ targetId: openItem.id, sourceId });
+              }}
+              onUnmerge={(lotId) => unmergeMut.mutate({ itemId: openItem.id, lotId })}
+              onIdentify={() => identifyMut.mutate(openItem.id)}
+              identifying={identifyingId === openItem.id}
+              onDismissPending={(lotIds) => dismissPendingMut.mutate(lotIds)}
+              onResolveSale={(h, decision) =>
+                resolveMut.mutate({
+                  lotId: h.lotId,
+                  value: decision === "confirm" ? openItem.id : false,
+                })
+              }
+              onWatch={(m) => void watchLot(m)}
+              onResolve={(m, decision) =>
+                resolveMut.mutate({
+                  lotId: m.lotId,
+                  value: decision === "confirm" ? openItem.id : false,
+                })
+              }
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

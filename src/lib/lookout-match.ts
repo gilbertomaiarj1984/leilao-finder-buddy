@@ -1,6 +1,7 @@
 import { parseAiAlbum } from "@/components/vinyl/ai-score-utils";
 import {
   COMPILATION_LABEL,
+  normalizeForMatch,
   isDiscBundle,
   LOTE_LABEL,
   titleCase,
@@ -9,6 +10,7 @@ import {
 import {
   lotIdentity,
   OWNED_CONFIDENT_MIN,
+  ownedArtistLevel,
   ownedCandidate,
   ownedScore,
   resolveArtistAlias,
@@ -57,6 +59,8 @@ export type LookoutItem = {
   status: LookoutStatus;
   /** Álbuns juntados a este item — cada um também vira candidato do casamento. */
   merged?: LookoutMerged[];
+  /** Palavras/frases extras do usuário: lote do mesmo artista que as contém casa com o item. */
+  terms?: string[];
 };
 
 export type LookoutStatus = "active" | "acquired" | "dismissed";
@@ -94,6 +98,25 @@ export type LookoutHit = {
 type OwnedCand = ReturnType<typeof ownedCandidate>;
 export type LookoutCandidate = { item: LookoutItem; cand: OwnedCand };
 
+/** Frases extras normalizadas (minúsculas, sem acento), sem vazias nem repetidas. */
+function normTerms(terms: readonly string[] | undefined): string[] {
+  return [...new Set((terms ?? []).map((t) => normalizeForMatch(t)).filter(Boolean))];
+}
+
+/**
+ * Casamento por PALAVRAS do usuário: o lote é do artista do candidato (confirmado ou citado no
+ * título) E o texto dele contém alguma frase extra inteira (ex.: "1971"). 0 = não casa.
+ */
+function termScore(item: LookoutItem, cand: OwnedCand, id: LotIdentity): number {
+  const terms = normTerms(item.terms);
+  if (!terms.length) return 0;
+  const level = ownedArtistLevel(cand, id);
+  if (level === "none") return 0;
+  const text = ` ${id.text} `;
+  if (!terms.some((t) => text.includes(` ${t} `))) return 0;
+  return level === "confirmed" ? 0.92 : 0.8;
+}
+
 /**
  * Disco de nome GENÉRICO: o nome do álbum é o do próprio artista (homônimo — "Caetano Veloso —
  * Caetano Veloso") ou só tem termos genéricos ("Ao Vivo", "Seus Sucessos"). O artista costuma ter
@@ -119,6 +142,50 @@ export function yearVerdict(
   if (!isGenericLookoutAlbum(c)) return "ok";
   if (item.year == null || years.size === 0) return "pending";
   return years.has(item.year) ? "ok" : "reject";
+}
+
+/** Chave "palavras normalizadas" de um texto (para comparar artista/álbum entre itens). */
+function words(text: string): string[] {
+  return normalizeForMatch(text).split(" ").filter(Boolean);
+}
+
+/**
+ * Itens de olho ATIVOS do MESMO artista que PODEM ser o mesmo disco do lote que o usuário vai
+ * marcar — para perguntar "criar novo ou inserir no existente?" só quando há dúvida. Não inclui o
+ * idêntico (mesmo artista+álbum: o servidor reaproveita sozinho). Há dúvida quando falta o álbum
+ * (de um lado), os nomes compartilham palavra distintiva ou um contém o outro, ou o ano é o mesmo.
+ */
+export function similarLookoutItems(
+  items: readonly LookoutItem[],
+  input: { artist: string; album: string; year: number | null; lotId: string },
+): LookoutItem[] {
+  const artistKey = words(input.artist).join(" ");
+  if (
+    !artistKey ||
+    [LOTE_LABEL, COMPILATION_LABEL, UNCLASSIFIED_LABEL].includes(input.artist.trim())
+  ) {
+    return [];
+  }
+  const albumWords = words(input.album);
+  const albumKey = albumWords.join(" ");
+  const out: LookoutItem[] = [];
+  for (const it of items) {
+    if (it.status !== "active") continue;
+    if (words(it.artist).join(" ") !== artistKey) continue;
+    const known = [it, ...(it.merged ?? [])];
+    if (known.some((k) => k.lotId === input.lotId)) continue;
+    if (known.some((k) => words(k.album).join(" ") === albumKey && albumKey)) continue; // idêntico
+    const doubt = known.some((k) => {
+      const kw = words(k.album);
+      if (!kw.length || !albumWords.length) return true;
+      const a = kw.join(" ");
+      if (a.includes(albumKey) || albumKey.includes(a)) return true;
+      if (kw.some((w) => w.length >= 3 && albumWords.includes(w))) return true;
+      return input.year != null && k.year === input.year;
+    });
+    if (doubt) out.push(it);
+  }
+  return out;
 }
 
 /** Rótulo curto do item ("Artista — Álbum (Ano)"). */
@@ -238,12 +305,13 @@ export function matchLookoutForLot(
       // O lote que o usuário marcou é, por definição, o próprio disco.
       return { itemId: item.id, label: lookoutLabel(item), score: 1, confirmed: true, isOrigin };
     }
-    let score = ownedScore(cand, identity);
+    const byTerm = termScore(item, cand, identity);
+    let score = Math.max(ownedScore(cand, identity), byTerm);
     if (score < LOOKOUT_MATCH_MIN) continue;
     // Disco de nome genérico: só o ano distingue. Outro ano → não é este disco; sem ano → "a
     // validar" (score limitado, nunca avisa nem conta como confirmado).
     let yearPending = false;
-    if (opts?.yearGate !== false) {
+    if (opts?.yearGate !== false && !byTerm) {
       const verdict = yearVerdict(item, cand, identity.years);
       if (verdict === "reject") continue;
       if (verdict === "pending") {
