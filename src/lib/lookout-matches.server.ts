@@ -9,6 +9,7 @@ import { getAllLotSales } from "@/lib/lot-sales.server";
 import {
   addLookoutNotified,
   getAllLookout,
+  getLookoutArtistGroups,
   getLookoutLinks,
   getLookoutNotified,
   getLookoutSeen,
@@ -23,6 +24,7 @@ import {
   notifyKey,
   pickNotifiable,
   LOOKOUT_CONFIDENT_MIN,
+  type LookoutArtistGroups,
   type LookoutItem,
 } from "@/lib/lookout-match";
 import { parsePrice, upcomingDayKeys } from "@/lib/vinyl-parse";
@@ -104,6 +106,8 @@ export type LookoutOverview = {
   history: LookoutPastSale[];
   /** Matches futuros ainda não vistos. */
   newCount: number;
+  /** Artistas juntados na página (só exibição). */
+  artistGroups: LookoutArtistGroups;
 };
 
 function asItems(rows: LookoutRow[]): LookoutItem[] {
@@ -142,9 +146,9 @@ async function confirmPendingByDescription(
  * auxiliar (aliases, mercado…) degrada o casamento, não derruba.
  */
 export async function computeLookout(withHistory = true): Promise<LookoutOverview> {
-  const items = await getAllLookout();
+  const [items, artistGroups] = await Promise.all([getAllLookout(), getLookoutArtistGroups()]);
   if (!items.some((i) => i.status === "active")) {
-    return { items, upcoming: [], history: [], newCount: 0 };
+    return { items, upcoming: [], history: [], newCount: 0, artistGroups };
   }
 
   const [fullAliases, links, seen, aiRows, identRows, marketRows] = await Promise.all([
@@ -158,7 +162,7 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
   const aliases: Record<string, string> = fullAliases.artists ?? {};
   // Os candidatos dependem dos apelidos de artista (grafias fundidas no Analytics).
   const aliased = lookoutCandidates(asItems(items), aliases);
-  if (!aliased.length) return { items, upcoming: [], history: [], newCount: 0 };
+  if (!aliased.length) return { items, upcoming: [], history: [], newCount: 0, artistGroups };
 
   const albumById = new Map<string, string>();
   for (const r of identRows) if (r.album) albumById.set(r.id, r.album);
@@ -302,7 +306,13 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
     }
   }
 
-  return { items, upcoming, history, newCount: upcoming.filter((m) => m.isNew).length };
+  return {
+    items,
+    upcoming,
+    history,
+    newCount: upcoming.filter((m) => m.isNew).length,
+    artistGroups,
+  };
 }
 
 // ---------------------------------------------------------------------------

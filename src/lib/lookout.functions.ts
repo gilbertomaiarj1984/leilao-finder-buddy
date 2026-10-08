@@ -219,6 +219,24 @@ export const attachLookout = createServerFn({ method: "POST" })
     return await attachLookoutLot(data.itemId, data.part);
   });
 
+/** Junta um artista a outro na página (o nome do `to` permanece); `to` vazio desfaz. */
+export const setLookoutArtistGroup = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { from?: string; to?: string | null } | undefined) => {
+    if (!input?.from || typeof input.from !== "string") throw new Error("from obrigatório");
+    return {
+      from: input.from,
+      to: typeof input.to === "string" && input.to.trim() ? input.to : null,
+    };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setLookoutArtistGroup: save } = await import("./lookout.server");
+    await save(data.from, data.to);
+    return { ok: true as const };
+  });
+
 /** Desfaz a junção de um álbum (ele volta a ser um disco próprio). */
 export const unmergeLookout = createServerFn({ method: "POST" })
   .middleware([requireAuth])

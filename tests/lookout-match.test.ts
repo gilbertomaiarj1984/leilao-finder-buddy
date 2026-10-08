@@ -9,6 +9,7 @@ import {
   notifyKey,
   pickNotifiable,
   priceVsCeiling,
+  resolveLookoutArtist,
   similarLookoutItems,
   type LookoutItem,
   type LookoutMatch,
@@ -330,5 +331,24 @@ describe("similarLookoutItems — só pergunta quando há dúvida", () => {
         lotId: "9-9",
       }),
     ).toHaveLength(0);
+  });
+});
+
+describe("artistas juntados na página (v0.120.0)", () => {
+  const groups = {
+    "elis regina e tom jobim": { to: "Elis Regina", label: "Elis Regina e Tom Jobim" },
+  };
+  test("o nome de quem recebe permanece", () => {
+    expect(resolveLookoutArtist("Elis Regina e Tom Jobim", groups)).toBe("Elis Regina");
+    expect(resolveLookoutArtist("Elis Regina", groups)).toBe("Elis Regina");
+  });
+  test("segue cadeias e não entra em ciclo", () => {
+    const chain = {
+      ...groups,
+      "elis regina": { to: "Elis", label: "Elis Regina" },
+      elis: { to: "Elis Regina", label: "Elis" },
+    };
+    expect(resolveLookoutArtist("Elis Regina e Tom Jobim", groups)).toBe("Elis Regina");
+    expect(() => resolveLookoutArtist("Elis", chain)).not.toThrow();
   });
 });

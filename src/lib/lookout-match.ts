@@ -188,6 +188,34 @@ export function similarLookoutItems(
   return out;
 }
 
+/**
+ * Grupos de artistas juntados na página `/olho` (arrastar um artista sobre outro): chave = nome
+ * normalizado do artista absorvido; `to` = nome que PERMANECE (o que recebeu); `label` = nome
+ * original, para exibir/desfazer. Só agrupa a exibição — o casamento segue com o artista de cada item.
+ */
+export type LookoutArtistGroups = Record<string, { to: string; label: string }>;
+
+/** Chave do artista (sem acento/pontuação/caixa) — a mesma do servidor (`lookout.server.ts`). */
+function lookoutArtistKey(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/** Nome FINAL do artista após seguir as junções (com guarda contra ciclos). */
+export function resolveLookoutArtist(name: string, groups?: LookoutArtistGroups): string {
+  let current = name;
+  for (let i = 0; i < 10 && groups; i++) {
+    const next = groups[lookoutArtistKey(current)];
+    if (!next || lookoutArtistKey(next.to) === lookoutArtistKey(current)) break;
+    current = next.to;
+  }
+  return current;
+}
+
 /** Rótulo curto do item ("Artista — Álbum (Ano)"). */
 export function lookoutLabel(item: Pick<LookoutItem, "artist" | "album" | "year">): string {
   const base = [item.artist, item.album].filter((s) => s && s.trim()).join(" — ");
