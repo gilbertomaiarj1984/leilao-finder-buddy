@@ -50,6 +50,20 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   (o padrão em `app_state`). **NÃO existe mais o diálogo "qual IA usar?"** por ação
   (`AiProviderDialog`/`useAiProviderPicker` foram removidos no v0.41.0 — a seleção por ação se
   confundia; agora só o topo decide).
+- **Caixa única de IA + modelo (v0.121.0):** `AiModelSelect` (`ai-provider-controls.tsx`)
+  substitui `AiProviderSelect` + `GeminiModelSelect` nas 3 telas (home/Coleção/Analytics).
+  Um Select agrupado por provedor, cada opção com preço (US$/1M tok in/out); escolher grava
+  provedor (`ai_provider`) + modelo daquele provedor (`gemini_model` / **`anthropic_model`**, novo,
+  em `app_state`) e o componente cuida das queries sozinho. Opções (`ai-provider.ts`):
+  Claude Haiku 5.5 $0,10/$0,50 (≤100K tok de prompt; roda com `thinking: disabled` pra não gastar
+  saída pensando) e Haiku 4.5 $1/$5 (**padrão**, env `ANTHROPIC_MODEL` ainda vale);
+  Gemini Flash-Lite 3.1 $0,25/$1,50 (**padrão**, o mais barato sem prazo de desligamento) e
+  Flash-Lite 3.5 ~$0,30/$2,50 (⚠️ id vindo de fontes públicas, **não testado** — se der 400,
+  volte pro 3.1). Saíram: `gemini-2.5-flash-lite` (desliga 16/out/2026; segue só como downgrade
+  interno de quota, e se ele falhar o erro ORIGINAL é propagado pro failover) e
+  `gemini-flash-latest` (o mais caro). Valor salvo fora da lista cai no padrão. O modelo do Claude é
+  lido por `resolveAnthropicModel` (cache de 30s) tanto no síncrono quanto nos batches. Footer
+  global sem rolagem horizontal (controles quebram linha; "Atualizado" fica junto da versão).
 - **Modelo do Gemini escolhível (v0.69.2, lista corrigida no v0.69.4):** `GeminiModelSelect`
   (`ai-provider-controls.tsx`), ao lado do `AiProviderSelect` nas mesmas 3 telas — sempre
   visível, mesmo com Claude escolhido (o failover por quota pode acabar caindo no Gemini).

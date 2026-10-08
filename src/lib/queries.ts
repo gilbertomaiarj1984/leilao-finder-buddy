@@ -17,6 +17,7 @@ import { listWatched } from "@/lib/leiloesbr-watch.functions";
 import type { WatchedLot } from "@/lib/leiloesbr-watch.server";
 import {
   getAiProvider,
+  getAnthropicModel,
   getGeminiModel,
   getLotAi,
   getLotIdent,
@@ -52,6 +53,7 @@ export const queryKeys = {
   interests: ["user-interests"],
   aiProvider: ["ai-provider"],
   geminiModel: ["gemini-model"],
+  anthropicModel: ["anthropic-model"],
   collection: ["collection"],
   collectionLinks: ["collection-links"],
   collectionFeedback: ["collection-feedback"],
@@ -220,6 +222,16 @@ export function useGeminiModelQuery() {
   return useQuery({
     queryKey: queryKeys.geminiModel,
     queryFn: () => fetchGeminiModel(),
+    staleTime: HOUR,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useAnthropicModelQuery() {
+  const fetchAnthropicModel = useServerFn(getAnthropicModel);
+  return useQuery({
+    queryKey: queryKeys.anthropicModel,
+    queryFn: () => fetchAnthropicModel(),
     staleTime: HOUR,
     refetchOnWindowFocus: false,
   });

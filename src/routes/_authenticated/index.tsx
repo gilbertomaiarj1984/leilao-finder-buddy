@@ -28,7 +28,7 @@ import { useIsMobile } from "@/lib/use-is-mobile";
 import { LiveAuctions } from "@/components/vinyl/live-auctions";
 import { OwnedPanel } from "@/components/vinyl/owned-panel";
 import { getAccessStatus } from "@/lib/leiloesbr.functions";
-import { AiProviderSelect, GeminiModelSelect } from "@/components/vinyl/ai-provider-controls";
+import { AiModelSelect } from "@/components/vinyl/ai-provider-controls";
 import { LookoutAskDialog } from "@/components/vinyl/lookout-ask-dialog";
 import { ExcludeLotDialog } from "@/components/vinyl/exclude-lot-dialog";
 import { matchedAlbumTerms, ownedCandidate } from "@/lib/wantlist-match";
@@ -178,10 +178,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     footerExtraHost,
     aiMode,
     changeAiMode,
-    aiProvider,
-    changeAiProvider,
-    geminiModel,
-    changeGeminiModel,
     refreshAll,
     refreshingCollection,
     refreshCollectionMatches,
@@ -336,7 +332,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 value={aiMode}
                 onValueChange={(value) => changeAiMode(value as "off" | "all" | "watched")}
               >
-                <SelectTrigger className="h-8 w-[176px] text-xs" aria-label="Modo da IA">
+                <SelectTrigger className="h-8 w-[170px] text-xs" aria-label="Modo da IA">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -346,8 +342,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 </SelectContent>
               </Select>
             </div>
-            <AiProviderSelect value={aiProvider} onChange={changeAiProvider} />
-            <GeminiModelSelect value={geminiModel} onChange={changeGeminiModel} />
+            <AiModelSelect />
             <Button
               variant="outline"
               size="sm"
@@ -381,7 +376,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
               Atualizar relações
             </Button>
             {lots.data?.updatedAt ? (
-              <span title="Última atualização da lista">
+              <span className="ml-auto shrink-0" title="Última atualização da lista">
                 Atualizado: {formatUpdatedAt(lots.data.updatedAt)}
               </span>
             ) : null}

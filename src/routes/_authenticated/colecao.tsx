@@ -17,14 +17,8 @@ import { readFileAsDataUrl } from "@/components/vinyl/collection-utils";
 import { ArtistFilter } from "@/components/vinyl/filters";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
-import { AiProviderSelect, GeminiModelSelect } from "@/components/vinyl/ai-provider-controls";
-import {
-  AI_PROVIDER_SHORT,
-  formatFailoverTrail,
-  type AiProvider,
-  type GeminiModel,
-} from "@/lib/ai-provider";
-import { setAiProvider, setGeminiModel } from "@/lib/ai.functions";
+import { AiModelSelect } from "@/components/vinyl/ai-provider-controls";
+import { AI_PROVIDER_SHORT, formatFailoverTrail, type AiProvider } from "@/lib/ai-provider";
 import type { CollectionItem } from "@/lib/collection.server";
 import {
   addCollectionItem,
@@ -44,13 +38,7 @@ import {
   pickCanonical,
   UNCLASSIFIED_LABEL,
 } from "@/lib/vinyl-parse";
-import {
-  useAiProviderQuery,
-  useCollectionQuery,
-  useGeminiModelQuery,
-  useLotAiQuery,
-  queryKeys,
-} from "@/lib/queries";
+import { useAiProviderQuery, useCollectionQuery, useLotAiQuery, queryKeys } from "@/lib/queries";
 import { CoverPickerDialog } from "@/components/vinyl/cover-picker-dialog";
 import { BulkImportDialog, EditDialog } from "@/components/vinyl/colecao-dialogs";
 import { Draft, EMPTY_DRAFT, toDraft } from "@/components/vinyl/colecao-draft";
@@ -141,8 +129,6 @@ function ColecaoPage() {
   const importBulk = useServerFn(importCollectionText);
   const identify = useServerFn(identifyCollection);
   const reprocess = useServerFn(reprocessCollectionItem);
-  const runSetAiProvider = useServerFn(setAiProvider);
-  const runSetGeminiModel = useServerFn(setGeminiModel);
   const updateItem = useServerFn(updateCollectionItem);
   const removeItem = useServerFn(deleteCollectionItem);
   const uploadImage = useServerFn(uploadCollectionImage);
@@ -186,31 +172,6 @@ function ColecaoPage() {
   // Provedor de IA PADRÃO (Claude/Gemini) + diálogo "qual IA usar?" por ação.
   const aiProviderQuery = useAiProviderQuery();
   const aiProvider: AiProvider = aiProviderQuery.data ?? "anthropic";
-  const changeAiProvider = (provider: AiProvider) => {
-    const prev = aiProviderQuery.data;
-    queryClient.setQueryData(queryKeys.aiProvider, provider);
-    void runSetAiProvider({ data: { provider } })
-      .then(() => toast.success(`Provedor padrão: ${AI_PROVIDER_SHORT[provider]}`))
-      .catch((e: unknown) => {
-        queryClient.setQueryData(queryKeys.aiProvider, prev);
-        toast.error((e as Error)?.message || "Não foi possível salvar o provedor de IA");
-      });
-  };
-
-  // Modelo do Gemini (Flash-Lite/Flash/Pro). Vale mesmo com Claude escolhido: o failover
-  // por falta de créditos pode acabar caindo no Gemini com esse modelo.
-  const geminiModelQuery = useGeminiModelQuery();
-  const geminiModel: GeminiModel = geminiModelQuery.data ?? "gemini-3.1-flash-lite";
-  const changeGeminiModel = (model: GeminiModel) => {
-    const prev = geminiModelQuery.data;
-    queryClient.setQueryData(queryKeys.geminiModel, model);
-    void runSetGeminiModel({ data: { model } })
-      .then(() => toast.success(`Modelo do Gemini: ${model}`))
-      .catch((e: unknown) => {
-        queryClient.setQueryData(queryKeys.geminiModel, prev);
-        toast.error((e as Error)?.message || "Não foi possível salvar o modelo do Gemini");
-      });
-  };
   // Avisa quando houve failover (o provedor pedido ficou sem créditos ou indisponível): mostra
   // o motivo de CADA provedor pulado até o que atendeu, não um "trocou" genérico.
   const notifySwitch = (
@@ -580,16 +541,7 @@ function ColecaoPage() {
                     </PopoverContent>
                   </Popover>
                 ) : null}
-                <AiProviderSelect
-                  value={aiProvider}
-                  onChange={changeAiProvider}
-                  disabled={identifying}
-                />
-                <GeminiModelSelect
-                  value={geminiModel}
-                  onChange={changeGeminiModel}
-                  disabled={identifying}
-                />
+                <AiModelSelect disabled={identifying} />
               </div>
             </div>
 

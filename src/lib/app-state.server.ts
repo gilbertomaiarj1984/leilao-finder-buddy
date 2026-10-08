@@ -18,6 +18,7 @@ const AI_IDENT_BATCH_KEY = "ai_ident_batch";
 const AI_MODE_KEY = "ai_mode";
 const AI_PROVIDER_KEY = "ai_provider";
 const GEMINI_MODEL_KEY = "gemini_model";
+const ANTHROPIC_MODEL_KEY = "anthropic_model";
 const COLLECTION_LINKS_KEY = "collection_links";
 const COLLECTION_FEEDBACK_KEY = "collection_feedback";
 const SALES_CAPTURED_KEY = "sales_captured";
@@ -719,11 +720,9 @@ export async function setAiProvider(provider: AiProvider): Promise<{ savedAt: st
  * v0.69.0, mais barato ainda, mas desliga em 16/out/2026) e `gemini-flash-latest` (padrão
  * histórico desde o v0.27.0). Precedência: `app_state` → env `GEMINI_MODEL` → padrão de fábrica.
  */
-const GEMINI_MODELS = [
-  "gemini-2.5-flash-lite",
-  "gemini-3.1-flash-lite",
-  "gemini-flash-latest",
-] as const;
+const GEMINI_MODELS = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"] as const;
+const ANTHROPIC_MODELS = ["claude-haiku-5-5", "claude-haiku-4-5"] as const;
+type AnthropicModel = (typeof ANTHROPIC_MODELS)[number];
 type GeminiModel = (typeof GEMINI_MODELS)[number];
 
 function envDefaultGeminiModel(): GeminiModel {
@@ -750,6 +749,47 @@ export async function getGeminiModel(): Promise<GeminiModel> {
     console.error("[app-state] não foi possível ler o modelo do Gemini (usando padrão)", error);
     return envDefaultGeminiModel();
   }
+}
+
+function envDefaultAnthropicModel(): AnthropicModel {
+  const env = process.env["ANTHROPIC_MODEL"];
+  return typeof env === "string" && (ANTHROPIC_MODELS as readonly string[]).includes(env)
+    ? (env as AnthropicModel)
+    : "claude-haiku-4-5";
+}
+
+export async function getAnthropicModel(): Promise<AnthropicModel> {
+  try {
+    const { data, error } = await db
+      .from("app_state")
+      .select("value")
+      .eq("key", ANTHROPIC_MODEL_KEY)
+      .maybeSingle();
+    if (error) throw error;
+    const value = data?.value;
+    if (typeof value === "string" && (ANTHROPIC_MODELS as readonly string[]).includes(value)) {
+      return value as AnthropicModel;
+    }
+    return envDefaultAnthropicModel();
+  } catch (error) {
+    console.error("[app-state] não foi possível ler o modelo do Claude (usando padrão)", error);
+    return envDefaultAnthropicModel();
+  }
+}
+
+export async function setAnthropicModel(model: AnthropicModel): Promise<{ savedAt: string }> {
+  if (!(ANTHROPIC_MODELS as readonly string[]).includes(model)) {
+    throw new Error(`Modelo do Claude inválido: ${model}`);
+  }
+  const savedAt = new Date().toISOString();
+  const { error } = await db
+    .from("app_state")
+    .upsert({ key: ANTHROPIC_MODEL_KEY, value: model, updated_at: savedAt }, { onConflict: "key" });
+  if (error) {
+    console.error("[app-state] não foi possível gravar o modelo do Claude", error);
+    throw new Error(`Não foi possível gravar o modelo do Claude: ${error.message}`);
+  }
+  return { savedAt };
 }
 
 export async function setGeminiModel(model: GeminiModel): Promise<{ savedAt: string }> {
