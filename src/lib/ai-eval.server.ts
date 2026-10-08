@@ -22,7 +22,7 @@ import type { LotAiRow } from "./lot-ai.server";
 import type { LotIdentRow } from "./lot-ident.server";
 import {
   runText,
-  providerModel,
+  resolveAnthropicModel,
   providerConfigured,
   toAnthropicMessageParams,
   anyProviderConfigured,
@@ -30,9 +30,6 @@ import {
   type AiProvider,
   type AiRequest,
 } from "./ai-provider.server";
-
-/** Modelo do Claude usado nos BATCHES (Anthropic-only). O síncrono usa o modelo do provedor. */
-const ANTHROPIC_MODEL = providerModel("anthropic");
 
 /** Teto de lotes avaliados por rodada de cron (evita batches gigantes). */
 const MAX_PER_ROUND = 800;
@@ -147,8 +144,8 @@ function buildEvalRequest(lot: EvalLot): AiRequest {
 }
 
 /** Parâmetros de mensagem (Anthropic) para um lote — usado no request de BATCH. */
-function buildLotParams(lot: EvalLot) {
-  return toAnthropicMessageParams(buildEvalRequest(lot), ANTHROPIC_MODEL);
+function buildLotParams(lot: EvalLot, model: string) {
+  return toAnthropicMessageParams(buildEvalRequest(lot), model);
 }
 
 /**
@@ -220,13 +217,14 @@ type SubmitResult = {
 /** Cria um batch com 1 request por lote (custom_id = id). Retorna id + hashes por lote. */
 export async function submitEvalBatch(lots: EvalLot[]): Promise<SubmitResult> {
   const client = await getAnthropicClient();
+  const model = await resolveAnthropicModel();
   const hashes: Record<string, string> = {};
   const prices: Record<string, number> = {};
   const requests = lots.map((lot) => {
     hashes[lot.id] = titleHash(lot.title);
     const price = parsePrice(lot.price);
     if (price != null && price > 0) prices[lot.id] = price;
-    return { custom_id: lot.id, params: buildLotParams(lot) };
+    return { custom_id: lot.id, params: buildLotParams(lot, model) };
   });
   // O SDK tipa `params` de forma estrita (MessageCreateParams); nosso builder devolve o
   // shape compatível, mas afrouxamos aqui para não duplicar os tipos do SDK.
@@ -247,6 +245,7 @@ export async function collectEvalBatch(
   prices: Record<string, number> = {},
 ): Promise<CollectResult> {
   const client = await getAnthropicClient();
+  const model = await resolveAnthropicModel();
   const batch = await client.messages.batches.retrieve(batchId);
   if (batch.processing_status !== "ended") return { done: false, rows: [] };
 
@@ -266,7 +265,7 @@ export async function collectEvalBatch(
       reason: parsed.reason,
       tags: parsed.tags,
       tracklist: parsed.tracklist,
-      model: ANTHROPIC_MODEL,
+      model,
       eval_price: prices[id] ?? null,
     });
   }
@@ -324,8 +323,8 @@ function buildIdentRequest(lot: EvalLot, withImage: boolean): AiRequest {
 }
 
 /** Parâmetros de mensagem (Anthropic) para identificar UM lote — usado no request de BATCH. */
-function buildIdentParams(lot: EvalLot, withImage: boolean) {
-  return toAnthropicMessageParams(buildIdentRequest(lot, withImage), ANTHROPIC_MODEL);
+function buildIdentParams(lot: EvalLot, withImage: boolean, model: string) {
+  return toAnthropicMessageParams(buildIdentRequest(lot, withImage), model);
 }
 
 /** Extrai {album, year, confidence} do texto devolvido. Null quando não dá para aproveitar. */
@@ -399,10 +398,11 @@ export function selectLotsToReident(
 /** Cria um batch de identificação (1 request por lote). `withImage` decide o uso da capa. */
 export async function submitIdentBatch(lots: EvalLot[], withImage: boolean): Promise<SubmitResult> {
   const client = await getAnthropicClient();
+  const model = await resolveAnthropicModel();
   const hashes: Record<string, string> = {};
   const requests = lots.map((lot) => {
     hashes[lot.id] = titleHash(lot.title);
-    return { custom_id: lot.id, params: buildIdentParams(lot, withImage) };
+    return { custom_id: lot.id, params: buildIdentParams(lot, withImage, model) };
   });
   const batch = await client.messages.batches.create({ requests: requests as never });
   return { batchId: batch.id, hashes, count: requests.length };
@@ -421,6 +421,7 @@ export async function collectIdentBatch(
   source: "title" | "image",
 ): Promise<CollectIdentResult> {
   const client = await getAnthropicClient();
+  const model = await resolveAnthropicModel();
   const batch = await client.messages.batches.retrieve(batchId);
   if (batch.processing_status !== "ended") return { done: false, rows: [] };
 
@@ -437,7 +438,7 @@ export async function collectIdentBatch(
       year: parsed.year,
       confidence: parsed.confidence,
       source,
-      model: ANTHROPIC_MODEL,
+      model,
     });
   }
   return { done: true, rows };

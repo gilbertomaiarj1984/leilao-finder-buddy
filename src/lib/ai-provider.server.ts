@@ -48,7 +48,7 @@ type RunTextResult = {
 
 // --- Configuração por provedor (chave de env + modelo, com override por env) ---------------
 
-const ANTHROPIC_DEFAULT_MODEL = "claude-haiku-4-5";
+const ANTHROPIC_DEFAULT_MODEL = "claude-haiku-5-5";
 /**
  * Modelo do Gemini padrão de fábrica: `gemini-3.1-flash-lite`, o mais barato CONFIRMADO
  * rodando de verdade (ver comentário grande em `ai-provider.ts` — `gemini-flash-lite-latest`
@@ -71,10 +71,34 @@ const GEMINI_FREE_FALLBACK_MODEL = "gemini-2.5-flash-lite";
  * `app_state.gemini_model` — ver `resolveGeminiModel` em `ai-eval.server.ts`) tem prioridade;
  * senão cai pro override por env (`GEMINI_MODEL`) e por último o padrão barato de fábrica.
  */
-export function providerModel(provider: AiProvider, geminiModel?: string): string {
+function providerModel(
+  provider: AiProvider,
+  geminiModel?: string,
+  anthropicModel?: string,
+): string {
   if (provider === "gemini")
     return geminiModel || process.env["GEMINI_MODEL"] || GEMINI_DEFAULT_MODEL;
-  return process.env["ANTHROPIC_MODEL"] || ANTHROPIC_DEFAULT_MODEL;
+  return anthropicModel || process.env["ANTHROPIC_MODEL"] || ANTHROPIC_DEFAULT_MODEL;
+}
+
+/** Modelo do Claude escolhido na UI (`app_state`), com cache curto — evita 1 query por lote. */
+let anthropicModelCache: { value: string; at: number } | null = null;
+export async function resolveAnthropicModel(): Promise<string> {
+  if (anthropicModelCache && Date.now() - anthropicModelCache.at < 30_000) {
+    return anthropicModelCache.value;
+  }
+  let value: string;
+  try {
+    const { getAnthropicModel } = await import("./app-state.server");
+    value = await getAnthropicModel();
+  } catch {
+    value = providerModel("anthropic");
+  }
+  anthropicModelCache = { value, at: Date.now() };
+  return value;
+}
+export function invalidateAnthropicModelCache(): void {
+  anthropicModelCache = null;
 }
 
 /** Nome da env com a chave de API do provedor. */
@@ -175,6 +199,9 @@ export function toAnthropicMessageParams(req: AiRequest, model: string) {
     max_tokens: req.maxTokens,
     system: req.system,
     messages: [{ role: "user" as const, content }],
+    // Haiku 5.5 pensa por padrão (adaptive) e cobra isso como saída; a tarefa é só extrair
+    // JSON, então desliga o raciocínio pra gastar menos tokens.
+    ...(model.startsWith("claude-haiku-5") ? { thinking: { type: "disabled" as const } } : {}),
   };
 }
 
@@ -303,8 +330,11 @@ async function runOne(
   provider: AiProvider,
   geminiModel?: string,
 ): Promise<{ text: string; model: string }> {
+  if (provider === "anthropic") {
+    const model = await resolveAnthropicModel();
+    return { text: await runAnthropic(req, model), model };
+  }
   const model = providerModel(provider, geminiModel);
-  if (provider === "anthropic") return { text: await runAnthropic(req, model), model };
 
   try {
     return { text: await runGemini(req, model), model };
@@ -316,10 +346,17 @@ async function runOne(
         `[ai-provider] gemini (${model}) sem quota — tentando downgrade para ${GEMINI_FREE_FALLBACK_MODEL}`,
         error,
       );
-      return {
-        text: await runGemini(req, GEMINI_FREE_FALLBACK_MODEL),
-        model: GEMINI_FREE_FALLBACK_MODEL,
-      };
+      try {
+        return {
+          text: await runGemini(req, GEMINI_FREE_FALLBACK_MODEL),
+          model: GEMINI_FREE_FALLBACK_MODEL,
+        };
+      } catch (fallbackError) {
+        // O 2.5 desliga em 16/out/2026: se o downgrade falhar, propaga o erro ORIGINAL (quota)
+        // pra o failover de provedor continuar funcionando.
+        console.error("[ai-provider] downgrade do Gemini falhou", fallbackError);
+        throw error;
+      }
     }
     throw error;
   }

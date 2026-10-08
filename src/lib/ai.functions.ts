@@ -3,7 +3,14 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { requireAuth } from "@/lib/auth-middleware";
-import { isAiProvider, isGeminiModel, type AiProvider, type GeminiModel } from "./ai-provider";
+import {
+  isAiProvider,
+  isAnthropicModel,
+  isGeminiModel,
+  type AiProvider,
+  type AnthropicModel,
+  type GeminiModel,
+} from "./ai-provider";
 
 // Identificação simplificada por IA (artista/álbum, `lot_ident`). UMA chamada só SUBMETE
 // (Claude batch) ou GRAVA na hora (Gemini síncrono) — nunca espera o batch terminar, então
@@ -279,6 +286,33 @@ export const setGeminiModel = createServerFn({ method: "POST" })
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { setGeminiModel } = await import("./app-state.server");
     return await setGeminiModel(data.model);
+  });
+
+/** Modelo do Claude escolhido (Haiku 5.5/4.5). Global. */
+export const getAnthropicModel = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .handler(async ({ context }): Promise<AnthropicModel> => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getAnthropicModel } = await import("./app-state.server");
+    return await getAnthropicModel();
+  });
+
+/** Grava o modelo do Claude escolhido (valida contra os modelos conhecidos). */
+export const setAnthropicModel = createServerFn({ method: "POST" })
+  .inputValidator((input: { model?: string } | undefined) => {
+    if (!isAnthropicModel(input?.model)) throw new Error("Modelo do Claude inválido.");
+    return { model: input.model };
+  })
+  .middleware([requireAuth])
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setAnthropicModel } = await import("./app-state.server");
+    const result = await setAnthropicModel(data.model);
+    const { invalidateAnthropicModelCache } = await import("./ai-provider.server");
+    invalidateAnthropicModelCache();
+    return result;
   });
 
 /**

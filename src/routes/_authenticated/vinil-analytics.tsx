@@ -12,14 +12,13 @@ import {
   AnalyticsView,
   type AnalyticsMutationHandlers,
 } from "@/components/vinyl/analytics-view";
-import { AI_PROVIDER_SHORT, type AiProvider, type GeminiModel } from "@/lib/ai-provider";
+import { type AiProvider } from "@/lib/ai-provider";
 import {
   type AlbumAgg,
   type AnalyticsAliases,
   type ArtistAgg,
   type SaleRow,
 } from "@/lib/analytics";
-import { setAiProvider, setGeminiModel } from "@/lib/ai.functions";
 import {
   clearAnalyticsAlias,
   getTodayPublicAnalyticsToken,
@@ -31,12 +30,7 @@ import {
   setAnalyticsExcludedSale,
   setAnalyticsSaleOverride,
 } from "@/lib/analytics.functions";
-import {
-  useAiProviderQuery,
-  useAnalyticsAliasesQuery,
-  useGeminiModelQuery,
-  queryKeys,
-} from "@/lib/queries";
+import { useAiProviderQuery, useAnalyticsAliasesQuery, queryKeys } from "@/lib/queries";
 
 export const Route = createFileRoute("/_authenticated/vinil-analytics")({
   head: () => ({ meta: [{ title: "Vinil Analytics — Garimpo de Vinil" }] }),
@@ -53,8 +47,6 @@ function VinilAnalyticsPage() {
   const queryClient = useQueryClient();
   const fetchSales = useServerFn(getVinylSales);
   const runReident = useServerFn(reidentifySales);
-  const runSetAiProvider = useServerFn(setAiProvider);
-  const runSetGeminiModel = useServerFn(setGeminiModel);
   const runSetArtistAlias = useServerFn(setAnalyticsArtistAlias);
   const runSetAlbumAlias = useServerFn(setAnalyticsAlbumAlias);
   const runClearAlias = useServerFn(clearAnalyticsAlias);
@@ -77,32 +69,6 @@ function VinilAnalyticsPage() {
   // Provedor de IA PADRÃO (o mesmo do topo da home/Coleção) — fonte da verdade no servidor.
   const aiProviderQuery = useAiProviderQuery();
   const aiProvider: AiProvider = aiProviderQuery.data ?? "anthropic";
-  const changeAiProvider = (provider: AiProvider) => {
-    const prev = aiProviderQuery.data;
-    queryClient.setQueryData(queryKeys.aiProvider, provider); // otimista
-    void runSetAiProvider({ data: { provider } })
-      .then(() => toast.success(`Provedor padrão: ${AI_PROVIDER_SHORT[provider]}`))
-      .catch((error: unknown) => {
-        queryClient.setQueryData(queryKeys.aiProvider, prev);
-        toast.error((error as Error)?.message || "Não foi possível salvar o provedor de IA");
-      });
-  };
-
-  // Modelo do Gemini (Flash-Lite/Flash/Pro) — vale mesmo com Claude escolhido: o failover
-  // por falta de créditos pode acabar caindo no Gemini com esse modelo.
-  const geminiModelQuery = useGeminiModelQuery();
-  const geminiModel: GeminiModel = geminiModelQuery.data ?? "gemini-3.1-flash-lite";
-  const changeGeminiModel = (model: GeminiModel) => {
-    const prev = geminiModelQuery.data;
-    queryClient.setQueryData(queryKeys.geminiModel, model); // otimista
-    void runSetGeminiModel({ data: { model } })
-      .then(() => toast.success(`Modelo do Gemini: ${model}`))
-      .catch((error: unknown) => {
-        queryClient.setQueryData(queryKeys.geminiModel, prev);
-        toast.error((error as Error)?.message || "Não foi possível salvar o modelo do Gemini");
-      });
-  };
-
   // Clona o cache de apelidos (com os 3 mapas) para o update otimista.
   const cloneAliases = (): AnalyticsAliases => {
     const prev = aliasesQuery.data;
@@ -334,9 +300,6 @@ function VinilAnalyticsPage() {
 
   const ai: AnalyticsAiControls = {
     provider: aiProvider,
-    geminiModel,
-    onChangeProvider: changeAiProvider,
-    onChangeGeminiModel: changeGeminiModel,
     reidentifying,
     onReidentifyAll: reidentifyAll,
   };

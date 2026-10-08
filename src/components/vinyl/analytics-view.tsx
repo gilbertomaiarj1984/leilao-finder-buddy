@@ -6,10 +6,10 @@ import { BarChart3, RefreshCw, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { AiProviderSelect, GeminiModelSelect } from "@/components/vinyl/ai-provider-controls";
+import { AiModelSelect } from "@/components/vinyl/ai-provider-controls";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
-import type { AiProvider, GeminiModel } from "@/lib/ai-provider";
+import type { AiProvider } from "@/lib/ai-provider";
 import {
   type AnalyticsAliases,
   type ArtistAgg,
@@ -51,9 +51,6 @@ export type AnalyticsMutationHandlers = {
 
 export type AnalyticsAiControls = {
   provider: AiProvider;
-  geminiModel: GeminiModel;
-  onChangeProvider: (provider: AiProvider) => void;
-  onChangeGeminiModel: (model: GeminiModel) => void;
   reidentifying: boolean;
   onReidentifyAll: () => void;
 };
@@ -177,16 +174,7 @@ export function AnalyticsView({
               ) : null}
               {canEdit && ai ? (
                 <>
-                  <AiProviderSelect
-                    value={ai.provider}
-                    onChange={ai.onChangeProvider}
-                    disabled={ai.reidentifying}
-                  />
-                  <GeminiModelSelect
-                    value={ai.geminiModel}
-                    onChange={ai.onChangeGeminiModel}
-                    disabled={ai.reidentifying}
-                  />
+                  <AiModelSelect disabled={ai.reidentifying} />
                 </>
               ) : null}
             </div>

@@ -25,8 +25,6 @@ import {
   repriceLotAi,
   runAiident,
   setAiMode,
-  setAiProvider,
-  setGeminiModel,
   setLotTags,
 } from "@/lib/ai.functions";
 import {
@@ -46,12 +44,7 @@ import {
   scrapeVinylChunk,
   setVerifiedHouses,
 } from "@/lib/leiloesbr.functions";
-import {
-  AI_PROVIDER_SHORT,
-  formatFailoverTrail,
-  type AiProvider,
-  type GeminiModel,
-} from "@/lib/ai-provider";
+import { AI_PROVIDER_SHORT, formatFailoverTrail, type AiProvider } from "@/lib/ai-provider";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { attachLookout, setLookoutLink, toggleLookout } from "@/lib/lookout.functions";
 import {
@@ -106,7 +99,6 @@ import {
   useCollectionFeedbackQuery,
   useCollectionLinksQuery,
   useCollectionQuery,
-  useGeminiModelQuery,
   useInterestsQuery,
   useLotAiQuery,
   useLotIdentQuery,
@@ -375,8 +367,6 @@ export function useDashboardData() {
   const fetchLotCondition = useServerFn(getLotCondition);
   const fetchAiMode = useServerFn(getAiMode);
   const runSetAiMode = useServerFn(setAiMode);
-  const runSetAiProvider = useServerFn(setAiProvider);
-  const runSetGeminiModel = useServerFn(setGeminiModel);
   const runAnalyze = useServerFn(analyzeOnDemand);
   const runApplyDecision = useServerFn(applyCollectionDecision);
   const runToggleLookout = useServerFn(toggleLookout);
@@ -468,31 +458,6 @@ export function useDashboardData() {
   // Provedor de IA PADRÃO (Claude/Gemini). Fonte da verdade é o servidor (`app_state`).
   const aiProviderQuery = useAiProviderQuery();
   const aiProvider: AiProvider = aiProviderQuery.data ?? "anthropic";
-  const changeAiProvider = (provider: AiProvider) => {
-    const prev = aiProviderQuery.data;
-    queryClient.setQueryData(queryKeys.aiProvider, provider); // otimista
-    void runSetAiProvider({ data: { provider } })
-      .then(() => toast.success(`Provedor padrão: ${AI_PROVIDER_SHORT[provider]}`))
-      .catch((error: unknown) => {
-        queryClient.setQueryData(queryKeys.aiProvider, prev);
-        toast.error((error as Error)?.message || "Não foi possível salvar o provedor de IA");
-      });
-  };
-
-  // Modelo do Gemini (Flash-Lite/Flash/Pro). Vale mesmo com Claude escolhido: o failover
-  // por falta de créditos pode acabar caindo no Gemini com esse modelo.
-  const geminiModelQuery = useGeminiModelQuery();
-  const geminiModel: GeminiModel = geminiModelQuery.data ?? "gemini-3.1-flash-lite";
-  const changeGeminiModel = (model: GeminiModel) => {
-    const prev = geminiModelQuery.data;
-    queryClient.setQueryData(queryKeys.geminiModel, model); // otimista
-    void runSetGeminiModel({ data: { model } })
-      .then(() => toast.success(`Modelo do Gemini: ${model}`))
-      .catch((error: unknown) => {
-        queryClient.setQueryData(queryKeys.geminiModel, prev);
-        toast.error((error as Error)?.message || "Não foi possível salvar o modelo do Gemini");
-      });
-  };
   // Análise SOB DEMANDA (botões por dia/casa). `analyzing` guarda a chave em execução:
   // o dia (`day`) ou a casa (`${day}|${casa}`). Roda em laço até esgotar os não avaliados
   // (ou parar de progredir), depois revalida o cache queryKeys.lotAi para as notas aparecerem.
@@ -1947,9 +1912,6 @@ export function useDashboardData() {
     aiMode,
     changeAiMode,
     aiProvider,
-    changeAiProvider,
-    geminiModel,
-    changeGeminiModel,
     refreshAll,
     refreshingAll,
     refreshPct,
