@@ -234,6 +234,19 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   ainda olha o descritivo completo (`lot_sales.orig_text`, só dos pendentes, até 300) e confirma
   se ele cita o ano do item (nunca rejeita por aí). No Analytics o ano é conferido venda a venda
   (o álbum agregado junta vários anos). Vale também para lotes futuros ("?" + dica no tooltip).
+- **Sem repetição e "Juntar" (v0.117.0):** `addLookoutFromLot` reaproveita o item existente quando o lote
+  (de origem de um item/álbum juntado) ou o artista+álbum normalizado já está cadastrado
+  (`lookoutIdentityKey`; reativa se estava arquivado). **Juntar** (`mergeLookout` →
+  `mergeLookoutItems`): o item absorvido vira snapshot em `lookout_items.merged` (jsonb) do destino
+  e é apagado; `lookoutCandidates` expande cada álbum juntado em candidato extra com o MESMO id do
+  item (casa com qualquer um dos nomes). UI: arrastar o cartão sobre outro ou botão "Juntar"
+  (seletor); ✕ no chip "Juntado com" separa (`unmergeLookout`). **Binóculos na home:** `lookout.on` =
+  lote de origem (inclui os dos álbuns juntados) OU casamento confiante; desmarcar um lote que só
+  casa = "não é este disco" (`lookout_links`). **Por vir inclui o lote de origem**
+  (`includeOrigin` → `isOrigin`: score 1, selo "origem", nunca "novo" nem aviso ntfy). **Página:**
+  grupos por artista (A→Z, "sem artista" por último), busca por artista (botão/Enter) e combo com
+  nº de álbuns por artista. **Adquirido** = `status acquired` no item (leva todos os álbuns
+  juntados) + remove a vigia real de todos os lotes dele (`acquireItem` em `olho.tsx`).
 - **Identificar por IA (v0.110.0):** botão ✨ sob o lápis no card do item de `/olho` →
   `identifyLookout` → `identifyLookoutItem` (`lookout-ident.server.ts`, isolado): usa
   `identLotsSyncRows(…, withImage=true)` (mesmo prompt/parser da identificação dos lotes, **texto

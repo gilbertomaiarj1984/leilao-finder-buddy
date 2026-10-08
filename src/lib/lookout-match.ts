@@ -25,6 +25,19 @@ import {
  * coleção" é o snapshot do item de olho.
  */
 
+/** Álbum juntado a um item (mesmo disco com outro nome/edição): snapshot do lote de origem dele. */
+export type LookoutMerged = {
+  lotId: string;
+  artist: string;
+  album: string;
+  year: number | null;
+  title: string;
+  house: string;
+  image: string | null;
+  url: string;
+  dayKey: string;
+};
+
 /** Item de olho como a UI consome (espelha `lookout_items`). */
 export type LookoutItem = {
   id: string;
@@ -42,6 +55,8 @@ export type LookoutItem = {
   maxPrice: number | null;
   note: string;
   status: LookoutStatus;
+  /** Álbuns juntados a este item — cada um também vira candidato do casamento. */
+  merged?: LookoutMerged[];
 };
 
 export type LookoutStatus = "active" | "acquired" | "dismissed";
@@ -72,6 +87,8 @@ export type LookoutHit = {
    * fica "a validar" pelo usuário (score limitado a 0,7). Ver `yearVerdict`.
    */
   yearPending?: boolean;
+  /** O lote é a ORIGEM do item (o que o usuário marcou) — só com `includeOrigin`. */
+  isOrigin?: boolean;
 };
 
 type OwnedCand = ReturnType<typeof ownedCandidate>;
@@ -135,6 +152,21 @@ export function lookoutCandidates(
         year: item.year,
       }),
     });
+    // Álbuns juntados: candidatos extras com o MESMO id do item (o resultado aponta para ele),
+    // mas identidade e lote de origem próprios.
+    for (const m of item.merged ?? []) {
+      const mArtist = m.artist.trim();
+      if (!mArtist || !m.album.trim()) continue;
+      out.push({
+        item: { ...item, lotId: m.lotId, artist: m.artist, album: m.album, year: m.year },
+        cand: ownedCandidate({
+          id: item.id,
+          artist: resolveArtistAlias(mArtist, aliases),
+          album: m.album,
+          year: m.year,
+        }),
+      });
+    }
   }
   return out;
 }
@@ -182,24 +214,30 @@ export function matchLookoutForLot(
   lotId: string,
   identity: LotIdentity,
   links?: LookoutLinks,
-  opts?: { yearGate?: boolean },
+  opts?: { yearGate?: boolean; includeOrigin?: boolean },
 ): LookoutHit | null {
   const link = links?.[lotId];
   if (link === false) return null;
   if (typeof link === "string") {
     const forced = cands.find((c) => c.item.id === link);
-    if (forced && forced.item.lotId !== lotId) {
+    if (forced && (opts?.includeOrigin || forced.item.lotId !== lotId)) {
       return {
         itemId: forced.item.id,
         label: lookoutLabel(forced.item),
         score: 1,
         confirmed: true,
+        isOrigin: forced.item.lotId === lotId,
       };
     }
   }
   let best: LookoutHit | null = null;
   for (const { item, cand } of cands) {
-    if (item.lotId === lotId) continue;
+    const isOrigin = item.lotId === lotId;
+    if (isOrigin && !opts?.includeOrigin) continue;
+    if (isOrigin) {
+      // O lote que o usuário marcou é, por definição, o próprio disco.
+      return { itemId: item.id, label: lookoutLabel(item), score: 1, confirmed: true, isOrigin };
+    }
     let score = ownedScore(cand, identity);
     if (score < LOOKOUT_MATCH_MIN) continue;
     // Disco de nome genérico: só o ano distingue. Outro ano → não é este disco; sem ano → "a
@@ -214,7 +252,14 @@ export function matchLookoutForLot(
       }
     }
     if (!best || score > best.score) {
-      best = { itemId: item.id, label: lookoutLabel(item), score, confirmed: false, yearPending };
+      best = {
+        itemId: item.id,
+        label: lookoutLabel(item),
+        score,
+        confirmed: false,
+        yearPending,
+        isOrigin,
+      };
     }
   }
   return best;

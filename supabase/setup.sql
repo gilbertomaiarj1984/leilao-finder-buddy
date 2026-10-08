@@ -434,6 +434,9 @@ CREATE TABLE IF NOT EXISTS public.lookout_items (
   updated_at   timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS lookout_items_status_idx ON public.lookout_items (status, created_at DESC);
+-- Álbuns "juntados" a este item (mesmo disco com outro nome/edição): lista de snapshots
+-- [{lotId, artist, album, year, title, house, image, url, dayKey}] (v0.117.0).
+ALTER TABLE public.lookout_items ADD COLUMN IF NOT EXISTS merged jsonb NOT NULL DEFAULT '[]'::jsonb;
 
 DROP TRIGGER IF EXISTS update_lookout_items_updated_at ON public.lookout_items;
 CREATE TRIGGER update_lookout_items_updated_at BEFORE UPDATE ON public.lookout_items

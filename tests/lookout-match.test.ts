@@ -231,3 +231,48 @@ describe("disco de nome genérico (homônimo do artista) — validação por ano
     expect(byId).toEqual({ s86: false, sem: true, ident: false });
   });
 });
+
+describe("juntar álbuns e lote de origem (v0.117.0)", () => {
+  test("álbum juntado vira candidato do MESMO item", () => {
+    const base = item({
+      id: "tm",
+      lotId: "1-1",
+      artist: "Tim Maia",
+      album: "Tim Maia",
+      year: 1971,
+      merged: [
+        {
+          lotId: "2-2",
+          artist: "Tim Maia",
+          album: "Racional",
+          year: 1975,
+          title: "LP Tim Maia Racional",
+          house: "Casa B",
+          image: null,
+          url: "",
+          dayKey: "2026-10-02",
+        },
+      ],
+    });
+    const cands = lookoutCandidates([base]);
+    expect(cands).toHaveLength(2);
+    const hit = matchLookoutForLot(
+      cands,
+      "9-9",
+      ident("LP Tim Maia Racional 1975", "Tim Maia", "Tim Maia - Racional"),
+    );
+    expect(hit?.itemId).toBe("tm");
+  });
+
+  test("includeOrigin: o lote marcado casa com o próprio item (confirmado, isOrigin)", () => {
+    const cands = lookoutCandidates([item()]);
+    const id = ident(
+      "LP Chico Buarque Construção 1971",
+      "Chico Buarque",
+      "Chico Buarque - Construção",
+    );
+    expect(matchLookoutForLot(cands, "100-1", id)).toBeNull();
+    const hit = matchLookoutForLot(cands, "100-1", id, undefined, { includeOrigin: true });
+    expect(hit).toMatchObject({ itemId: "it1", confirmed: true, isOrigin: true });
+  });
+});
