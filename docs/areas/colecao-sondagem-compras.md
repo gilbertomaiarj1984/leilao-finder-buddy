@@ -258,6 +258,10 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   (`attachLookout` → `attachLookoutLot`, vira álbum juntado) ou "Criar novo disco". Idêntico = o servidor
   reaproveita sem perguntar. **Página `/olho`:** linhas-resumo (`LookoutSummaryRow`, arrastar sobre outra
   junta); clicar abre o `LookoutItemCard` completo num `Dialog`.
+- **Modos da página e cartão do lote (v0.119.0):** `/olho` tem **Compacto** (`LookoutSummaryRow`, abre o
+  `LookoutItemCard` num `Dialog`) e **Expandido** (cartões inline), persistido em `olho-view`. Clicar num
+  lote "por vir" abre `LookoutLotDialog`: o `LotCard` da home alimentado pelas mesmas queries
+  (`lot_ai`/`lot_ident`/`lot_market`/`lot-condition`), binóculos marcado e teto do item.
 - **Identificar por IA (v0.110.0):** botão ✨ sob o lápis no card do item de `/olho` →
   `identifyLookout` → `identifyLookoutItem` (`lookout-ident.server.ts`, isolado): usa
   `identLotsSyncRows(…, withImage=true)` (mesmo prompt/parser da identificação dos lotes, **texto

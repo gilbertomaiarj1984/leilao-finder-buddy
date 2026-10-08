@@ -78,6 +78,7 @@ export function LookoutItemCard({
   onMerge,
   onUnmerge,
   onWatch,
+  onOpenLot,
   onResolve,
   onResolveSale,
   onDismissPending,
@@ -103,6 +104,8 @@ export function LookoutItemCard({
   /** Separa um álbum juntado (volta a ser um disco próprio). */
   onUnmerge: (lotId: string) => void;
   onWatch: (m: LookoutUpcoming) => void;
+  /** Abre o cartão completo do lote (clicar na linha do lote por vir). */
+  onOpenLot: (m: LookoutUpcoming) => void;
   onResolve: (m: LookoutUpcoming, decision: "confirm" | "dismiss") => void;
   /** Valida (✓ é este disco) ou descarta (✕) uma aparição anterior "a validar". */
   onResolveSale: (h: LookoutPastSale, decision: "confirm" | "dismiss") => void;
@@ -518,7 +521,13 @@ export function LookoutItemCard({
                 return (
                   <li
                     key={m.lotId}
-                    className="flex flex-wrap items-center gap-3 rounded border border-border bg-background p-2"
+                    onClick={(e) => {
+                      // Clicar no lote (fora dos botões/links) abre o cartão completo dele.
+                      if ((e.target as HTMLElement).closest("button, a")) return;
+                      onOpenLot(m);
+                    }}
+                    className="flex cursor-pointer flex-wrap items-center gap-3 rounded border border-border bg-background p-2 hover:bg-accent/30"
+                    title="Clique para abrir o cartão completo do lote"
                   >
                     {m.image ? (
                       <img

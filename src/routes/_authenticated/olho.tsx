@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Binoculars, RefreshCw, Search } from "lucide-react";
+import { ArrowLeft, Binoculars, LayoutList, RefreshCw, Rows3, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { LookoutItemCard, type LookoutPatch } from "@/components/vinyl/lookout-item-card";
+import { LookoutLotDialog } from "@/components/vinyl/lookout-lot-dialog";
 import { LookoutSummaryRow } from "@/components/vinyl/lookout-summary-row";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
@@ -71,6 +72,9 @@ export const Route = createFileRoute("/_authenticated/olho")({
 
 function OlhoPage() {
   const [barsHidden, setBarsHidden] = usePersistedState("olho-bars-hidden", false);
+  // Modo de exibição: "compact" = linhas-resumo (clicar abre o cartão no diálogo); "expanded" =
+  // cartões completos na própria lista.
+  const [view, setView] = usePersistedState<"compact" | "expanded">("olho-view", "compact");
   usePersistedScroll("olho", true);
   const queryClient = useQueryClient();
   const runUpdate = useServerFn(updateLookout);
@@ -300,7 +304,56 @@ function OlhoPage() {
     return map;
   }, [overview]);
 
+  // Cartão completo de um disco — usado inline (modo expandido) e no diálogo (modo compacto).
+  const renderCard = (it: LookoutItem) => {
+    return (
+      <LookoutItemCard
+        key={it.id}
+        item={it}
+        upcoming={it.status === "active" ? (upcomingByItem.get(it.id) ?? []) : []}
+        history={it.status === "active" ? (historyByItem.get(it.id) ?? []) : []}
+        watchedIds={watchedIds}
+        watchLoading={watched.isLoading}
+        busyWatch={busyWatch}
+        mergeOptions={active.filter((o) => o.id !== it.id)}
+        onUpdate={(patch) => updateMut.mutate({ id: it.id, patch })}
+        onAcquire={() => {
+          void acquireItem(it);
+          setOpenId(null);
+        }}
+        onDelete={() => {
+          deleteMut.mutate(it.id);
+          setOpenId(null);
+        }}
+        onMerge={(sourceId) => {
+          mergeMut.mutate({ targetId: it.id, sourceId });
+        }}
+        onUnmerge={(lotId) => unmergeMut.mutate({ itemId: it.id, lotId })}
+        onIdentify={() => identifyMut.mutate(it.id)}
+        identifying={identifyingId === it.id}
+        onDismissPending={(lotIds) => dismissPendingMut.mutate(lotIds)}
+        onResolveSale={(h, decision) =>
+          resolveMut.mutate({
+            lotId: h.lotId,
+            value: decision === "confirm" ? it.id : false,
+          })
+        }
+        onWatch={(m) => void watchLot(m)}
+        onOpenLot={(m) => setOpenLotId(m.lotId)}
+        onResolve={(m, decision) =>
+          resolveMut.mutate({
+            lotId: m.lotId,
+            value: decision === "confirm" ? it.id : false,
+          })
+        }
+      />
+    );
+  };
+
   const [openId, setOpenId] = useState<string | null>(null);
+  // Lote "por vir" aberto no cartão completo (o mesmo da home), por cima do cartão do disco.
+  const [openLotId, setOpenLotId] = useState<string | null>(null);
+  const openLot = (overview?.upcoming ?? []).find((m) => m.lotId === openLotId) ?? null;
   const openItem = items.find((i) => i.id === openId) ?? null;
   const totalUpcoming = overview?.upcoming.length ?? 0;
   const newCount = overview?.newCount ?? 0;
@@ -420,6 +473,30 @@ function OlhoPage() {
                     </option>
                   ))}
                 </select>
+                <div className="flex items-center gap-1" role="group" aria-label="Modo de exibição">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={view === "compact" ? "secondary" : "ghost"}
+                    aria-pressed={view === "compact"}
+                    onClick={() => setView("compact")}
+                    title="Linhas compactas — clique numa para abrir o cartão completo"
+                  >
+                    <Rows3 className="mr-1 h-4 w-4" />
+                    Compacto
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={view === "expanded" ? "secondary" : "ghost"}
+                    aria-pressed={view === "expanded"}
+                    onClick={() => setView("expanded")}
+                    title="Cartões completos na lista"
+                  >
+                    <LayoutList className="mr-1 h-4 w-4" />
+                    Expandido
+                  </Button>
+                </div>
               </div>
             ) : null}
             {active.length && !visibleGroups.length ? (
@@ -433,16 +510,20 @@ function OlhoPage() {
                     ({group.items.length} álbum{group.items.length === 1 ? "" : "ns"})
                   </span>
                 </h2>
-                {group.items.map((item) => (
-                  <LookoutSummaryRow
-                    key={item.id}
-                    item={item}
-                    upcoming={upcomingByItem.get(item.id) ?? []}
-                    watchedIds={watchedIds}
-                    onOpen={() => setOpenId(item.id)}
-                    onMerge={(sourceId) => mergeMut.mutate({ targetId: item.id, sourceId })}
-                  />
-                ))}
+                {group.items.map((item) =>
+                  view === "expanded" ? (
+                    renderCard(item)
+                  ) : (
+                    <LookoutSummaryRow
+                      key={item.id}
+                      item={item}
+                      upcoming={upcomingByItem.get(item.id) ?? []}
+                      watchedIds={watchedIds}
+                      onOpen={() => setOpenId(item.id)}
+                      onMerge={(sourceId) => mergeMut.mutate({ targetId: item.id, sourceId })}
+                    />
+                  ),
+                )}
               </div>
             ))}
             {archived.length ? (
@@ -450,16 +531,20 @@ function OlhoPage() {
                 <h2 className="text-sm font-semibold text-muted-foreground">
                   Arquivados ({archived.length})
                 </h2>
-                {archived.map((item) => (
-                  <LookoutSummaryRow
-                    key={item.id}
-                    item={item}
-                    upcoming={[]}
-                    watchedIds={watchedIds}
-                    onOpen={() => setOpenId(item.id)}
-                    onMerge={() => undefined}
-                  />
-                ))}
+                {archived.map((item) =>
+                  view === "expanded" ? (
+                    renderCard(item)
+                  ) : (
+                    <LookoutSummaryRow
+                      key={item.id}
+                      item={item}
+                      upcoming={[]}
+                      watchedIds={watchedIds}
+                      onOpen={() => setOpenId(item.id)}
+                      onMerge={() => undefined}
+                    />
+                  ),
+                )}
               </div>
             ) : null}
           </>
@@ -472,49 +557,17 @@ function OlhoPage() {
             Todas as informações e ações deste disco: matches por vir, histórico, teto, nota,
             palavras de agrupamento e junção.
           </DialogDescription>
-          {openItem ? (
-            <LookoutItemCard
-              key={openItem.id}
-              item={openItem}
-              upcoming={openItem.status === "active" ? (upcomingByItem.get(openItem.id) ?? []) : []}
-              history={openItem.status === "active" ? (historyByItem.get(openItem.id) ?? []) : []}
-              watchedIds={watchedIds}
-              watchLoading={watched.isLoading}
-              busyWatch={busyWatch}
-              mergeOptions={active.filter((o) => o.id !== openItem.id)}
-              onUpdate={(patch) => updateMut.mutate({ id: openItem.id, patch })}
-              onAcquire={() => {
-                void acquireItem(openItem);
-                setOpenId(null);
-              }}
-              onDelete={() => {
-                deleteMut.mutate(openItem.id);
-                setOpenId(null);
-              }}
-              onMerge={(sourceId) => {
-                mergeMut.mutate({ targetId: openItem.id, sourceId });
-              }}
-              onUnmerge={(lotId) => unmergeMut.mutate({ itemId: openItem.id, lotId })}
-              onIdentify={() => identifyMut.mutate(openItem.id)}
-              identifying={identifyingId === openItem.id}
-              onDismissPending={(lotIds) => dismissPendingMut.mutate(lotIds)}
-              onResolveSale={(h, decision) =>
-                resolveMut.mutate({
-                  lotId: h.lotId,
-                  value: decision === "confirm" ? openItem.id : false,
-                })
-              }
-              onWatch={(m) => void watchLot(m)}
-              onResolve={(m, decision) =>
-                resolveMut.mutate({
-                  lotId: m.lotId,
-                  value: decision === "confirm" ? openItem.id : false,
-                })
-              }
-            />
-          ) : null}
+          {openItem ? renderCard(openItem) : null}
         </DialogContent>
       </Dialog>
+      <LookoutLotDialog
+        lot={openLot}
+        item={openLot ? (items.find((i) => i.id === openLot.itemId) ?? null) : null}
+        watching={openLot ? watchedIds.has(openLot.idPeca) : false}
+        busy={openLot ? busyWatch === openLot.lotId : false}
+        onWatch={(m) => void watchLot(m)}
+        onClose={() => setOpenLotId(null)}
+      />
     </main>
   );
 }
