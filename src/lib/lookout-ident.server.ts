@@ -28,7 +28,8 @@ export async function identifyLookoutItem(id: string): Promise<{
   const provider = await resolveAiProvider();
   const lot = {
     id: item.lotId,
-    title: item.title,
+    // Itens criados por lista/texto não têm lote de origem (título vazio): usa artista + álbum.
+    title: item.title || [item.artist, item.album].filter(Boolean).join(" - "),
     price: "",
     house: item.house,
     image: item.image,

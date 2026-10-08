@@ -336,3 +336,21 @@ export const setLookoutLinksBatch = createServerFn({ method: "POST" })
     await setLookoutLinks(data.lotIds, data.value);
     return { ok: true as const };
   });
+
+/**
+ * Cria um "de olho" a partir de UMA linha de texto livre (artista/álbum): a IA resolve
+ * artista/álbum/ano e o item nasce sem lote de origem. A interface chama linha a linha.
+ */
+export const addLookoutByText = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { text?: string; year?: number | null } | undefined) => {
+    const text = str(input?.text).trim().slice(0, 200);
+    if (!text) throw new Error("texto obrigatório");
+    return { text, year: yearOrNull(input?.year) };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { addLookoutFromText } = await import("./lookout-bulk.server");
+    return await addLookoutFromText(data.text, data.year);
+  });

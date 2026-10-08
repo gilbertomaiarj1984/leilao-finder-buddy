@@ -59,3 +59,10 @@ aderente é **acrescentar provedores à camada plugável que já existe** (`runT
   4. **Menções honrosas:** DeepSeek (barato, JSON, off-peak; visão fraca na API principal → mais
      texto), Together AI (muitos modelos open + visão + batch), Cloudflare Workers AI (free tier,
      visão via LLaVA, REST).
+
+## Reaproveitar a resolução por IA de texto livre (achado na v0.122.0)
+
+`addLookoutFromText` (`lookout-bulk.server.ts`) resolve uma linha livre em artista/álbum/ano + capa do
+Discogs. A Sondagem (`wantlist-parse.ts`) e a importação de compras para a Coleção poderiam usar o
+mesmo resolvedor (hoje cada uma tem o seu parse/busca de capa). Extrair para um módulo comum se
+valer a pena.
