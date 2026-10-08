@@ -48,7 +48,7 @@ type RunTextResult = {
 
 // --- Configuração por provedor (chave de env + modelo, com override por env) ---------------
 
-const ANTHROPIC_DEFAULT_MODEL = "claude-haiku-4-5";
+const ANTHROPIC_DEFAULT_MODEL = "claude-haiku-5-5";
 /**
  * Modelo do Gemini padrão de fábrica: `gemini-3.1-flash-lite`, o mais barato CONFIRMADO
  * rodando de verdade (ver comentário grande em `ai-provider.ts` — `gemini-flash-lite-latest`

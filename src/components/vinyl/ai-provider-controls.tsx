@@ -53,7 +53,7 @@ export function AiModelSelect({ disabled, className }: { disabled?: boolean; cla
   const model =
     provider === "gemini"
       ? (geminiQuery.data ?? "gemini-3.1-flash-lite")
-      : (anthropicQuery.data ?? "claude-haiku-4-5");
+      : (anthropicQuery.data ?? "claude-haiku-5-5");
 
   const onChange = (value: string) => {
     const [p, m] = value.split("|") as [AiProvider, string];

@@ -54,20 +54,15 @@ const GEMINI_MODEL_LABELS: Record<GeminiModel, string> = {
 };
 
 /**
- * Modelos do Claude selecionáveis, do MAIS BARATO pro mais caro — só a linha Haiku (a mais
- * barata e a que menos gasta tokens). O Haiku 5.5 cobra $0,10/$0,50 até 100K tokens de prompt
+ * Modelos do Claude selecionáveis, do MAIS BARATO pro mais caro — só o Haiku 5.5, por custo (o 4.5 custa 10× mais e foi removido). O Haiku 5.5 cobra $0,10/$0,50 até 100K tokens de prompt
  * (acima disso $0,50/$2,50); rodamos com o raciocínio desligado pra não gastar saída à toa.
  */
-export type AnthropicModel = "claude-haiku-5-5" | "claude-haiku-4-5";
+export type AnthropicModel = "claude-haiku-5-5";
 
-const ANTHROPIC_MODELS: readonly AnthropicModel[] = [
-  "claude-haiku-5-5",
-  "claude-haiku-4-5",
-] as const;
+const ANTHROPIC_MODELS: readonly AnthropicModel[] = ["claude-haiku-5-5"] as const;
 
 const ANTHROPIC_MODEL_LABELS: Record<AnthropicModel, string> = {
   "claude-haiku-5-5": "Haiku 5.5 · $0,10/$0,50",
-  "claude-haiku-4-5": "Haiku 4.5 · $1/$5",
 };
 
 /** true quando o valor é um modelo do Claude conhecido (validação de entrada client/server). */

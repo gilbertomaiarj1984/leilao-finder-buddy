@@ -7,7 +7,7 @@
 
 **Multi-provedor (v0.27.0):** o app usa **Claude (Anthropic)** OU **Gemini (Google)** — camada
 plugável em **`ai-provider.server.ts`** (+ metadados client-safe em `ai-provider.ts`). Modelos
-baratos por padrão: **`claude-haiku-4-5`** (`ANTHROPIC_API_KEY`, override `ANTHROPIC_MODEL`) e
+baratos por padrão: **`claude-haiku-5-5`** (`ANTHROPIC_API_KEY`, override `ANTHROPIC_MODEL`) e
 **`gemini-3.1-flash-lite`** (`GEMINI_API_KEY`, override `GEMINI_MODEL`, mas a UI tem
 precedência — ver bullet do seletor de modelo abaixo). **Opcional:** sem NENHUMA
 chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer provedor").
@@ -55,8 +55,8 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   Um Select agrupado por provedor, cada opção com preço (US$/1M tok in/out); escolher grava
   provedor (`ai_provider`) + modelo daquele provedor (`gemini_model` / **`anthropic_model`**, novo,
   em `app_state`) e o componente cuida das queries sozinho. Opções (`ai-provider.ts`):
-  Claude Haiku 5.5 $0,10/$0,50 (≤100K tok de prompt; roda com `thinking: disabled` pra não gastar
-  saída pensando) e Haiku 4.5 $1/$5 (**padrão**, env `ANTHROPIC_MODEL` ainda vale);
+  Claude **só Haiku 5.5** $0,10/$0,50 (≤100K tok de prompt; **padrão**; roda com `thinking:
+  disabled` pra não gastar saída pensando) — o Haiku 4.5 ($1/$5) foi removido por custo (v0.121.1), valor salvo/env de 4.5 cai no 5.5;
   Gemini Flash-Lite 3.1 $0,25/$1,50 (**padrão**, o mais barato sem prazo de desligamento) e
   Flash-Lite 3.5 ~$0,30/$2,50 (⚠️ id vindo de fontes públicas, **não testado** — se der 400,
   volte pro 3.1). Saíram: `gemini-2.5-flash-lite` (desliga 16/out/2026; segue só como downgrade

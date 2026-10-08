@@ -721,7 +721,7 @@ export async function setAiProvider(provider: AiProvider): Promise<{ savedAt: st
  * histórico desde o v0.27.0). Precedência: `app_state` → env `GEMINI_MODEL` → padrão de fábrica.
  */
 const GEMINI_MODELS = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"] as const;
-const ANTHROPIC_MODELS = ["claude-haiku-5-5", "claude-haiku-4-5"] as const;
+const ANTHROPIC_MODELS = ["claude-haiku-5-5"] as const;
 type AnthropicModel = (typeof ANTHROPIC_MODELS)[number];
 type GeminiModel = (typeof GEMINI_MODELS)[number];
 
@@ -755,7 +755,7 @@ function envDefaultAnthropicModel(): AnthropicModel {
   const env = process.env["ANTHROPIC_MODEL"];
   return typeof env === "string" && (ANTHROPIC_MODELS as readonly string[]).includes(env)
     ? (env as AnthropicModel)
-    : "claude-haiku-4-5";
+    : "claude-haiku-5-5";
 }
 
 export async function getAnthropicModel(): Promise<AnthropicModel> {
