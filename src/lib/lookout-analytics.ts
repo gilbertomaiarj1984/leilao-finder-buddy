@@ -45,7 +45,13 @@ export function analyticsHistoryForItems(input: {
 }): AnalyticsHistoryHit[] {
   const { sales, aliases, cands, links, yearOf } = input;
   if (!cands.length || !sales.length) return [];
-  const originByItem = new Map(cands.map((c) => [c.item.id, c.item.lotId]));
+  // Lotes de origem por item (um item "juntado" tem vários: o principal e os dos álbuns juntados).
+  const originsByItem = new Map<string, Set<string>>();
+  for (const c of cands) {
+    const set = originsByItem.get(c.item.id) ?? new Set<string>();
+    set.add(c.item.lotId);
+    originsByItem.set(c.item.id, set);
+  }
   const candByItem = new Map(cands.map((c) => [c.item.id, c]));
   const out: AnalyticsHistoryHit[] = [];
   for (const artist of buildAnalytics(sales, aliases)) {
@@ -61,10 +67,10 @@ export function analyticsHistoryForItems(input: {
       // venda a venda logo abaixo (disco de nome genérico, ex.: homônimo do artista).
       const hit = matchLookoutForLot(cands, "", identity, undefined, { yearGate: false });
       if (!hit || hit.score < LOOKOUT_CONFIDENT_MIN) continue;
-      const origin = originByItem.get(hit.itemId);
+      const origins = originsByItem.get(hit.itemId);
       const cand = candByItem.get(hit.itemId);
       for (const sale of album.sales) {
-        if (sale.lot_id === origin) continue; // o próprio lote marcado não é "aparição anterior"
+        if (origins?.has(sale.lot_id)) continue; // o próprio lote marcado não é "aparição anterior"
         const link = links?.[sale.lot_id];
         if (link === false) continue; // descartado pelo usuário
         let pending = false;

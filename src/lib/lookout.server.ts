@@ -9,6 +9,19 @@ import { db } from "@/lib/db-client.server";
  * Tipos definidos localmente (mesma forma de `LookoutItem` em `lookout-match`) para o módulo do
  * SERVIDOR não depender de um módulo client-safe — ver a lição no `docs/notas-desenvolvimento.md`.
  */
+/** Álbum juntado a um item (snapshot do lote de origem dele). Espelha `LookoutMerged`. */
+export type LookoutMergedRow = {
+  lotId: string;
+  artist: string;
+  album: string;
+  year: number | null;
+  title: string;
+  house: string;
+  image: string | null;
+  url: string;
+  dayKey: string;
+};
+
 export type LookoutRow = {
   id: string;
   lotId: string;
@@ -23,6 +36,7 @@ export type LookoutRow = {
   maxPrice: number | null;
   note: string;
   status: "active" | "acquired" | "dismissed";
+  merged: LookoutMergedRow[];
 };
 
 type DbRow = {
@@ -39,10 +53,49 @@ type DbRow = {
   max_price: string | number | null;
   note: string | null;
   status: string | null;
+  merged: unknown;
 };
 
 const COLS =
-  "id, lot_id, artist, album, year, title, house, image, url, day_key, max_price, note, status";
+  "id, lot_id, artist, album, year, title, house, image, url, day_key, max_price, note, status, merged";
+
+function toMerged(v: unknown): LookoutMergedRow[] {
+  if (!Array.isArray(v)) return [];
+  const out: LookoutMergedRow[] = [];
+  for (const raw of v) {
+    if (!raw || typeof raw !== "object") continue;
+    const m = raw as Record<string, unknown>;
+    if (typeof m["lotId"] !== "string" || !m["lotId"]) continue;
+    const s = (k: string) => (typeof m[k] === "string" ? (m[k] as string) : "");
+    const year = Number(m["year"]);
+    out.push({
+      lotId: m["lotId"],
+      artist: s("artist"),
+      album: s("album"),
+      year: Number.isFinite(year) && year > 0 ? Math.trunc(year) : null,
+      title: s("title"),
+      house: s("house"),
+      image: typeof m["image"] === "string" && m["image"] ? (m["image"] as string) : null,
+      url: s("url"),
+      dayKey: s("dayKey"),
+    });
+  }
+  return out;
+}
+
+/** Chave de identidade "artista + álbum" (sem acento/pontuação/caixa) para impedir duplicatas. */
+function lookoutIdentityKey(artist: string, album: string): string {
+  const norm = (t: string) =>
+    t
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  const a = norm(artist);
+  const b = norm(album);
+  return a && b ? `${a}|${b}` : "";
+}
 
 function toStatus(v: string | null): LookoutRow["status"] {
   return v === "acquired" || v === "dismissed" ? v : "active";
@@ -70,6 +123,7 @@ function toRow(r: DbRow): LookoutRow {
     maxPrice: toPrice(r.max_price),
     note: r.note ?? "",
     status: toStatus(r.status),
+    merged: toMerged(r.merged),
   };
 }
 
@@ -100,19 +154,25 @@ type AddLookoutInput = {
  * (um item `dismissed`/`acquired` volta a `active`) sem sobrescrever teto/nota do usuário.
  */
 export async function addLookoutFromLot(input: AddLookoutInput): Promise<LookoutRow> {
-  const existing = await db
-    .from("lookout_items")
-    .select(COLS)
-    .eq("lot_id", input.lotId)
-    .maybeSingle();
-  if (existing.error) throw existing.error;
-  if (existing.data) {
-    const row = existing.data as DbRow;
-    if (toStatus(row.status) === "active") return toRow(row);
+  // Sem repetição: o mesmo lote (de origem de um item ou de um álbum juntado) OU o mesmo
+  // artista+álbum já cadastrado reaproveita o item existente (reativando-o, se preciso).
+  const all = await getAllLookout();
+  const key = lookoutIdentityKey(input.artist, input.album);
+  const found =
+    all.find((i) => i.lotId === input.lotId || i.merged.some((m) => m.lotId === input.lotId)) ??
+    (key
+      ? all.find(
+          (i) =>
+            lookoutIdentityKey(i.artist, i.album) === key ||
+            i.merged.some((m) => lookoutIdentityKey(m.artist, m.album) === key),
+        )
+      : undefined);
+  if (found) {
+    if (found.status === "active") return found;
     const { data, error } = await db
       .from("lookout_items")
       .update({ status: "active" })
-      .eq("id", row.id)
+      .eq("id", found.id)
       .select(COLS)
       .single();
     if (error) throw new Error(`Não foi possível reativar o item: ${error.message}`);
@@ -171,6 +231,83 @@ export async function updateLookoutItem(input: UpdateLookoutInput): Promise<Look
     throw new Error(`Não foi possível atualizar o item: ${error.message}`);
   }
   return toRow(data as DbRow);
+}
+
+/** Snapshot de um item como álbum juntado (o principal vira "merged" do destino). */
+function asMerged(r: LookoutRow): LookoutMergedRow {
+  return {
+    lotId: r.lotId,
+    artist: r.artist,
+    album: r.album,
+    year: r.year,
+    title: r.title,
+    house: r.house,
+    image: r.image,
+    url: r.url,
+    dayKey: r.dayKey,
+  };
+}
+
+/**
+ * Junta o item `sourceId` ao `targetId` (mesmo disco com outro nome/edição): o destino passa a
+ * casar também com a identidade do álbum absorvido (e com os que ele já tinha juntado) e o
+ * absorvido deixa de existir como item. Teto/nota do destino prevalecem (o do absorvido só
+ * preenche se o destino estiver vazio).
+ */
+export async function mergeLookoutItems(targetId: string, sourceId: string): Promise<LookoutRow> {
+  if (targetId === sourceId) throw new Error("Escolha dois discos diferentes para juntar");
+  const all = await getAllLookout();
+  const target = all.find((i) => i.id === targetId);
+  const source = all.find((i) => i.id === sourceId);
+  if (!target || !source) throw new Error("Disco não encontrado");
+  const known = new Set([target.lotId, ...target.merged.map((m) => m.lotId)]);
+  const merged = [...target.merged];
+  for (const m of [asMerged(source), ...source.merged]) {
+    if (known.has(m.lotId)) continue;
+    known.add(m.lotId);
+    merged.push(m);
+  }
+  const patch: Record<string, unknown> = { merged };
+  if (target.maxPrice == null && source.maxPrice != null) patch["max_price"] = source.maxPrice;
+  if (!target.note && source.note) patch["note"] = source.note;
+  const { data, error } = await db
+    .from("lookout_items")
+    .update(patch)
+    .eq("id", target.id)
+    .select(COLS)
+    .single();
+  if (error) {
+    console.error("[lookout] falha ao juntar", error);
+    throw new Error(`Não foi possível juntar os discos: ${error.message}`);
+  }
+  await deleteLookoutItem(source.id);
+  return toRow(data as DbRow);
+}
+
+/** Desfaz a junção de UM álbum: ele volta a ser um item próprio (ativo). */
+export async function unmergeLookoutItem(itemId: string, lotId: string): Promise<void> {
+  const all = await getAllLookout();
+  const item = all.find((i) => i.id === itemId);
+  const part = item?.merged.find((m) => m.lotId === lotId);
+  if (!item || !part) return;
+  const { error } = await db.from("lookout_items").insert({
+    lot_id: part.lotId,
+    artist: part.artist,
+    album: part.album,
+    year: part.year,
+    title: part.title,
+    house: part.house,
+    image: part.image,
+    url: part.url,
+    day_key: part.dayKey,
+    status: "active",
+  });
+  if (error) throw new Error(`Não foi possível separar o álbum: ${error.message}`);
+  const { error: upError } = await db
+    .from("lookout_items")
+    .update({ merged: item.merged.filter((m) => m.lotId !== lotId) })
+    .eq("id", item.id);
+  if (upError) throw new Error(`Não foi possível separar o álbum: ${upError.message}`);
 }
 
 /** Remove um item (desmarca o "ficar de olho"). */

@@ -56,6 +56,7 @@ import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { setLookoutLink, toggleLookout } from "@/lib/lookout.functions";
 import {
   lookoutCandidates,
+  LOOKOUT_CONFIDENT_MIN,
   matchLookoutForLot,
   type LookoutHit,
   type LookoutLinks,
@@ -956,7 +957,12 @@ export function useDashboardData() {
   // Itens ATIVOS por lote de origem (o lote marcado) e por id (para o teto do selo).
   const lookoutByOrigin = useMemo(() => {
     const map = new Map<string, (typeof lookoutCands)[number]["item"]>();
-    for (const it of lookoutQuery.data ?? []) if (it.status === "active") map.set(it.lotId, it);
+    for (const it of lookoutQuery.data ?? []) {
+      if (it.status !== "active") continue;
+      map.set(it.lotId, it);
+      // Álbuns juntados também têm o lote de origem marcado.
+      for (const m of it.merged ?? []) map.set(m.lotId, it);
+    }
     return map;
   }, [lookoutQuery.data]);
   const lookoutItemById = useMemo(
@@ -986,11 +992,21 @@ export function useDashboardData() {
     const maxPrice = hit
       ? (lookoutItemById.get(hit.itemId)?.maxPrice ?? null)
       : (origin?.maxPrice ?? null);
-    return { on: Boolean(origin), hit, maxPrice };
+    // Binóculos marcado: o lote de origem OU qualquer lote que casa com confiança com um disco
+    // de olho (o mesmo critério do selo "De olho · NN%").
+    const sureHit = Boolean(hit && (hit.confirmed || hit.score >= LOOKOUT_CONFIDENT_MIN));
+    return { on: Boolean(origin) || sureHit, hit, maxPrice };
   };
   const toggleLookoutMutation = useMutation({
     mutationFn: async (lot: LookoutLot) => {
       const origin = lookoutByOrigin.get(lot.id) ?? null;
+      const lotHit = lookoutFor(lot).hit;
+      if (!origin && lotHit && (lotHit.confirmed || lotHit.score >= LOOKOUT_CONFIDENT_MIN)) {
+        // Lote que só CASA com um disco de olho (binóculos marcado pelo casamento): desmarcar =
+        // "não é este disco" — o disco continua de olho para os demais lotes.
+        resolveLookout(lot.id, "dismiss", lotHit);
+        return { added: false, item: null, artist: "", dismissed: true as const };
+      }
       const ai = parseAiAlbum(albumById.get(lot.id) ?? null);
       const market = marketById.get(lot.id);
       const artist = effectiveArtist({ id: lot.id, artist: lot.artist ?? "", title: lot.title });
@@ -1009,12 +1025,14 @@ export function useDashboardData() {
           dayKey: lot.dayKey ?? "",
         },
       });
-      return { added: !origin, item: res.item, artist };
+      return { added: !origin, item: res.item, artist, dismissed: false as const };
     },
-    onSuccess: ({ added, item, artist }) => {
+    onSuccess: ({ added, item, artist, dismissed }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.lookout });
       void queryClient.invalidateQueries({ queryKey: queryKeys.lookoutOverview });
-      if (!added) {
+      if (dismissed) {
+        toast.success("Lote desvinculado do disco de olho (não é este disco)");
+      } else if (!added) {
         toast.success("Deixou de ficar de olho");
       } else if (!item?.album || !artist || artist === LOTE_LABEL) {
         toast.warning(

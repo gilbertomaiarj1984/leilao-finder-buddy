@@ -5,7 +5,9 @@ import {
   ChevronUp,
   ExternalLink,
   Eye,
+  GripVertical,
   Loader2,
+  Merge,
   Pencil,
   Sparkles,
   Trash2,
@@ -24,6 +26,9 @@ import {
 } from "@/lib/lookout-match";
 import type { LookoutPastSale, LookoutUpcoming } from "@/lib/lookout-matches.server";
 import { lotOpenUrl } from "@/lib/vinyl-parse";
+
+/** Tipo de arrastar do cartão de um disco (juntar um álbum a outro). */
+const ITEM_DRAG_TYPE = "application/x-lookout-item";
 
 /** Patch enviado ao servidor ao editar um item (teto/nota/identidade/status). */
 export type LookoutPatch = {
@@ -65,8 +70,12 @@ export function LookoutItemCard({
   watchedIds,
   watchLoading,
   busyWatch,
+  mergeOptions,
   onUpdate,
+  onAcquire,
   onDelete,
+  onMerge,
+  onUnmerge,
   onWatch,
   onResolve,
   onResolveSale,
@@ -82,8 +91,16 @@ export function LookoutItemCard({
   /** Lista de vigiados ainda carregando: o botão espera, para não mostrar "Vigiar" errado. */
   watchLoading: boolean;
   busyWatch: string | null;
+  /** Outros discos ativos que podem ser juntados a este (botão "Juntar"). */
+  mergeOptions: readonly LookoutItem[];
   onUpdate: (patch: LookoutPatch) => void;
+  /** "Adquirido": tira todos os álbuns do De olho e para de vigiar os lotes. */
+  onAcquire: () => void;
   onDelete: () => void;
+  /** Junta o disco `sourceId` a este (arrastar-e-soltar ou seletor). */
+  onMerge: (sourceId: string) => void;
+  /** Separa um álbum juntado (volta a ser um disco próprio). */
+  onUnmerge: (lotId: string) => void;
   onWatch: (m: LookoutUpcoming) => void;
   onResolve: (m: LookoutUpcoming, decision: "confirm" | "dismiss") => void;
   /** Valida (✓ é este disco) ou descarta (✕) uma aparição anterior "a validar". */
@@ -95,6 +112,8 @@ export function LookoutItemCard({
   identifying: boolean;
 }) {
   const [editing, setEditing] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [artist, setArtist] = useState(item.artist);
   const [album, setAlbum] = useState(item.album);
@@ -179,7 +198,29 @@ export function LookoutItemCard({
 
   return (
     <section
-      className={`rounded-md border bg-card ${archived ? "border-border opacity-70" : "border-fuchsia-500/60"}`}
+      draggable={!archived && !editing}
+      onDragStart={(e) => {
+        // Só o cartão em si arrasta (não campos de texto selecionados dentro dele).
+        if (e.target !== e.currentTarget) return;
+        e.dataTransfer.setData(ITEM_DRAG_TYPE, item.id);
+        e.dataTransfer.setData("text/plain", lookoutLabel(item));
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onDragOver={(e) => {
+        if (archived || !e.dataTransfer.types.includes(ITEM_DRAG_TYPE)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        setDragOver(false);
+        const sourceId = e.dataTransfer.getData(ITEM_DRAG_TYPE);
+        if (archived || !sourceId || sourceId === item.id) return;
+        e.preventDefault();
+        onMerge(sourceId);
+      }}
+      className={`rounded-md border bg-card ${archived ? "border-border opacity-70" : "border-fuchsia-500/60"} ${dragOver ? "ring-2 ring-fuchsia-500" : ""}`}
     >
       <div className="flex flex-wrap gap-3 p-3 sm:flex-nowrap sm:p-4">
         {item.image ? (
@@ -233,6 +274,10 @@ export function LookoutItemCard({
                   {lookoutLabel(item) || item.title || "Disco sem identificação"}
                 </h2>
                 <p className="truncate text-xs text-muted-foreground" title={item.title}>
+                  <GripVertical
+                    className="mr-0.5 inline h-3 w-3 align-text-bottom"
+                    aria-hidden="true"
+                  />
                   Marcado em {item.house || "—"}
                   {item.dayKey ? ` · ${shortDay(item.dayKey)}` : ""} — {item.title}
                 </p>
@@ -270,6 +315,29 @@ export function LookoutItemCard({
               </div>
             </div>
           )}
+
+          {item.merged?.length ? (
+            <ul className="flex flex-wrap gap-1 text-xs text-muted-foreground">
+              <li className="py-0.5">Juntado com:</li>
+              {item.merged.map((m) => (
+                <li
+                  key={m.lotId}
+                  className="flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5"
+                  title={m.title}
+                >
+                  {lookoutLabel(m) || m.title}
+                  <button
+                    type="button"
+                    onClick={() => onUnmerge(m.lotId)}
+                    aria-label="Separar este álbum"
+                    title="Separar — volta a ser um disco próprio"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
 
           {incomplete && !editing ? (
             <p className="rounded bg-orange-500/15 px-2 py-1 text-xs text-orange-700 dark:text-orange-300">
@@ -312,8 +380,8 @@ export function LookoutItemCard({
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => onUpdate({ status: "acquired" })}
-                  title="Já comprei — para de procurar"
+                  onClick={onAcquire}
+                  title="Já comprei — tira todos os álbuns deste disco do De olho e para de vigiar os lotes"
                 >
                   <Check className="mr-1 h-4 w-4" />
                   Adquirido
@@ -326,6 +394,17 @@ export function LookoutItemCard({
                 >
                   Desistir
                 </Button>
+                {mergeOptions.length ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setMerging((v) => !v)}
+                    title="Juntar outro álbum a este (ou arraste um cartão para cima deste)"
+                  >
+                    <Merge className="mr-1 h-4 w-4" />
+                    Juntar
+                  </Button>
+                ) : null}
               </>
             ) : (
               <Button size="sm" variant="outline" onClick={() => onUpdate({ status: "active" })}>
@@ -342,6 +421,25 @@ export function LookoutItemCard({
               <Trash2 className="h-4 w-4 text-muted-foreground" />
             </Button>
           </div>
+          {merging ? (
+            <select
+              value=""
+              onChange={(e) => {
+                if (!e.target.value) return;
+                setMerging(false);
+                onMerge(e.target.value);
+              }}
+              aria-label="Juntar este disco com…"
+              className="h-8 max-w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
+            >
+              <option value="">Juntar a este disco o álbum…</option>
+              {mergeOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {lookoutLabel(o) || o.title}
+                </option>
+              ))}
+            </select>
+          ) : null}
         </div>
       </div>
 
@@ -379,6 +477,14 @@ export function LookoutItemCard({
                     ) : null}
                     <div className="min-w-0 flex-1 text-xs">
                       <p className="line-clamp-2 text-sm text-foreground" title={m.title}>
+                        {m.isOrigin ? (
+                          <span
+                            className="mr-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-bold uppercase text-muted-foreground"
+                            title="Foi este lote que você marcou"
+                          >
+                            origem
+                          </span>
+                        ) : null}
                         {m.isNew ? (
                           <span className="mr-1 rounded bg-fuchsia-500 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">
                             novo
@@ -421,7 +527,7 @@ export function LookoutItemCard({
                       {Math.round(m.score * 100)}%
                     </span>
                     <div className="flex items-center gap-1">
-                      {!sure ? (
+                      {!sure && !m.isOrigin ? (
                         <Button
                           size="sm"
                           variant="ghost"
@@ -432,15 +538,17 @@ export function LookoutItemCard({
                           <Check className="h-4 w-4" />
                         </Button>
                       ) : null}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => onResolve(m, "dismiss")}
-                        aria-label="Não é este disco"
-                        title="Não é este disco"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
+                      {!m.isOrigin ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => onResolve(m, "dismiss")}
+                          aria-label="Não é este disco"
+                          title="Não é este disco"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      ) : null}
                       <Button
                         size="sm"
                         variant={watching ? "default" : "outline"}

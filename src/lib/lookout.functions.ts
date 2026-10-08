@@ -149,6 +149,42 @@ export const updateLookout = createServerFn({ method: "POST" })
     return await updateLookoutItem(data);
   });
 
+/**
+ * Junta o disco `sourceId` ao `targetId` (mesmo álbum com outro nome/edição): o destino passa a
+ * reconhecer também o álbum absorvido. Usado pelo arrastar-e-soltar e pelo botão "Juntar".
+ */
+export const mergeLookout = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { targetId?: string; sourceId?: string } | undefined) => {
+    if (!input?.targetId || typeof input.targetId !== "string")
+      throw new Error("targetId obrigatório");
+    if (!input.sourceId || typeof input.sourceId !== "string")
+      throw new Error("sourceId obrigatório");
+    return { targetId: input.targetId, sourceId: input.sourceId };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { mergeLookoutItems } = await import("./lookout.server");
+    return await mergeLookoutItems(data.targetId, data.sourceId);
+  });
+
+/** Desfaz a junção de um álbum (ele volta a ser um disco próprio). */
+export const unmergeLookout = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { itemId?: string; lotId?: string } | undefined) => {
+    if (!input?.itemId || typeof input.itemId !== "string") throw new Error("itemId obrigatório");
+    if (!input.lotId || typeof input.lotId !== "string") throw new Error("lotId obrigatório");
+    return { itemId: input.itemId, lotId: input.lotId };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { unmergeLookoutItem } = await import("./lookout.server");
+    await unmergeLookoutItem(data.itemId, data.lotId);
+    return { ok: true as const };
+  });
+
 /** Remove um item de olho. */
 export const deleteLookout = createServerFn({ method: "POST" })
   .middleware([requireAuth])

@@ -64,6 +64,8 @@ export type LookoutUpcoming = {
   marketHighBr: number | null;
   /** Disco de nome genérico cujo ano não deu para validar (usuário valida com ✓/✕). */
   yearPending?: boolean;
+  /** É o lote que o usuário marcou (origem do disco): aparece em "por vir", sem aviso nem "novo". */
+  isOrigin?: boolean;
 };
 
 /**
@@ -190,14 +192,16 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
       knownYear: identYearById.get(lot.id) ?? null,
       aliases,
     });
-    const hit = matchLookoutForLot(aliased, lot.id, identity, links);
+    const hit = matchLookoutForLot(aliased, lot.id, identity, links, {
+      includeOrigin: true,
+    });
     if (!hit) continue;
     upcoming.push({
       lotId: lot.id,
       itemId: hit.itemId,
       score: hit.score,
       confirmed: hit.confirmed,
-      isNew: !seenSet.has(notifyKey({ lotId: lot.id, itemId: hit.itemId })),
+      isNew: !hit.isOrigin && !seenSet.has(notifyKey({ lotId: lot.id, itemId: hit.itemId })),
       idPeca: lot.idPeca,
       idLeilao: lot.idLeilao,
       base: lot.base,
@@ -216,6 +220,7 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
       marketLowBr: market?.priceLowBr ?? null,
       marketHighBr: market?.priceHighBr ?? null,
       yearPending: hit.yearPending || undefined,
+      isOrigin: hit.isOrigin || undefined,
     });
   }
   upcoming.sort(
@@ -356,7 +361,11 @@ export async function notifyLookoutMatches(): Promise<{
   if (!process.env["NTFY_TOPIC"]) return { enabled: false, matches: 0, notified: 0, failed: 0 };
   const overview = await computeLookout(false);
   const notifiedSet = new Set(await getLookoutNotified());
-  const fresh = pickNotifiable(overview.upcoming, notifiedSet);
+  // O lote que o próprio usuário marcou (origem) nunca gera aviso.
+  const fresh = pickNotifiable(
+    overview.upcoming.filter((m) => !m.isOrigin),
+    notifiedSet,
+  );
   if (!fresh.length) return { enabled: true, matches: 0, notified: 0, failed: 0 };
 
   const itemById = new Map(overview.items.map((i) => [i.id, i]));

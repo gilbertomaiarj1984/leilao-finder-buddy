@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **v0.117.0** — De olho: sem repetição (mesmo artista+álbum ou mesmo lote reaproveita o item) e função **Juntar** (arrastar um cartão sobre outro, ou botão Juntar; `lookout_items.merged`, Desfazer pelo ✕ no chip); lotes que casam com um disco de olho também mostram os binóculos marcados na home; "por vir" inclui o lote de origem (selo "origem", sem aviso ntfy); página agrupada por artista em ordem alfabética, com busca por artista (botão Buscar) e combo de artistas com nº de álbuns; **Adquirido** tira o disco com todos os álbuns juntados e para de vigiar todos os lotes dele.
 - **v0.116.0** — Coleção: só UM card flutuante por vez (passar o mouse em outras linhas não abre outro enquanto há um aberto); o reprocessar do card ganhou a opção **3 · Com uma dica minha** (texto livre, com opção de usar também a capa) — a dica tem prioridade máxima para a IA identificar o álbum (`hint`).
 - **v0.115.2** — Coleção/tracklist no celular: o popover da tracklist abre para BAIXO (alinhado à direita) em vez de ao lado esquerdo, que ainda vazava da tela; no desktop segue à esquerda.
 - **v0.115.1** — Sondagem: a busca do diálogo da Wantlist passa a ser lembrada (`wantlist-search`, `usePersistedState`); resto da antiga PR #298 já estava no `main`.
