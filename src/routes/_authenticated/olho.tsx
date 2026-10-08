@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Binoculars, RefreshCw, Search } from "lucide-react";
+import { ArrowLeft, Binoculars, LayoutList, RefreshCw, Rows3, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { LookoutItemCard, type LookoutPatch } from "@/components/vinyl/lookout-item-card";
+import { LookoutLotDialog } from "@/components/vinyl/lookout-lot-dialog";
 import { LookoutSummaryRow } from "@/components/vinyl/lookout-summary-row";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
@@ -20,17 +21,25 @@ import {
   markLookoutSeen,
   mergeLookout,
   setLookoutLink,
+  setLookoutArtistGroup,
   setLookoutLinksBatch,
   unmergeLookout,
   updateLookout,
 } from "@/lib/lookout.functions";
 import { formatFailoverTrail } from "@/lib/ai-provider";
-import { lookoutLabel, notifyKey, type LookoutItem } from "@/lib/lookout-match";
+import {
+  lookoutLabel,
+  notifyKey,
+  resolveLookoutArtist,
+  type LookoutArtistGroups,
+  type LookoutItem,
+} from "@/lib/lookout-match";
 import type { LookoutUpcoming } from "@/lib/lookout-matches.server";
 import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
 import { queryKeys, useLookoutOverviewQuery, useWatchedQuery } from "@/lib/queries";
 import { saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
 
+const ARTIST_DRAG_TYPE = "application/x-lookout-artist";
 const NO_ARTIST = "Sem artista identificado";
 
 /** Minúsculas, sem acento e sem pontuação — para ordenar/buscar artistas. */
@@ -46,10 +55,11 @@ function normName(t: string): string {
 type ArtistGroup = { key: string; artist: string; items: LookoutItem[] };
 
 /** Agrupa por artista (ordem alfabética; "sem artista" por último); discos por álbum. */
-function groupByArtist(items: LookoutItem[]): ArtistGroup[] {
+function groupByArtist(items: LookoutItem[], joined?: LookoutArtistGroups): ArtistGroup[] {
   const map = new Map<string, ArtistGroup>();
   for (const it of items) {
-    const name = it.artist.trim();
+    // Artistas juntados arrastando: o grupo leva o nome de quem recebeu.
+    const name = resolveLookoutArtist(it.artist.trim(), joined);
     const key = normName(name) || "~";
     const g = map.get(key) ?? { key, artist: name || NO_ARTIST, items: [] };
     g.items.push(it);
@@ -71,6 +81,9 @@ export const Route = createFileRoute("/_authenticated/olho")({
 
 function OlhoPage() {
   const [barsHidden, setBarsHidden] = usePersistedState("olho-bars-hidden", false);
+  // Modo de exibição: "compact" = linhas-resumo (clicar abre o cartão no diálogo); "expanded" =
+  // cartões completos na própria lista.
+  const [view, setView] = usePersistedState<"compact" | "expanded">("olho-view", "compact");
   usePersistedScroll("olho", true);
   const queryClient = useQueryClient();
   const runUpdate = useServerFn(updateLookout);
@@ -82,6 +95,7 @@ function OlhoPage() {
   const runLinksBatch = useServerFn(setLookoutLinksBatch);
   const runMerge = useServerFn(mergeLookout);
   const runUnmerge = useServerFn(unmergeLookout);
+  const runArtistGroup = useServerFn(setLookoutArtistGroup);
 
   const query = useLookoutOverviewQuery({ history: true });
   const overview = query.data;
@@ -93,7 +107,8 @@ function OlhoPage() {
   const [searchText, setSearchText] = useState("");
   const [searchApplied, setSearchApplied] = useState("");
   const [artistPick, setArtistPick] = useState("");
-  const groups = useMemo(() => groupByArtist(active), [active]);
+  const artistJoins = useMemo(() => overview?.artistGroups ?? {}, [overview]);
+  const groups = useMemo(() => groupByArtist(active, artistJoins), [active, artistJoins]);
   const visibleGroups = useMemo(() => {
     const q = normName(searchApplied);
     return groups.filter(
@@ -180,6 +195,18 @@ function OlhoPage() {
     onError: (error: unknown) =>
       toast.error((error as Error)?.message || "Não foi possível juntar"),
   });
+  // Juntar artistas (arrastar o título de um grupo sobre outro): `to` null desfaz a junção.
+  const artistMut = useMutation({
+    mutationFn: async (vars: { from: string; to: string | null }) =>
+      await runArtistGroup({ data: vars }),
+    onSuccess: (_r, vars) => {
+      toast.success(vars.to ? `Artistas juntados em "${vars.to}"` : "Artista separado");
+      refresh();
+    },
+    onError: (error: unknown) =>
+      toast.error((error as Error)?.message || "Não foi possível juntar os artistas"),
+  });
+  const [artistDropKey, setArtistDropKey] = useState<string | null>(null);
   const unmergeMut = useMutation({
     mutationFn: async (vars: { itemId: string; lotId: string }) => await runUnmerge({ data: vars }),
     onSuccess: () => {
@@ -300,7 +327,56 @@ function OlhoPage() {
     return map;
   }, [overview]);
 
+  // Cartão completo de um disco — usado inline (modo expandido) e no diálogo (modo compacto).
+  const renderCard = (it: LookoutItem) => {
+    return (
+      <LookoutItemCard
+        key={it.id}
+        item={it}
+        upcoming={it.status === "active" ? (upcomingByItem.get(it.id) ?? []) : []}
+        history={it.status === "active" ? (historyByItem.get(it.id) ?? []) : []}
+        watchedIds={watchedIds}
+        watchLoading={watched.isLoading}
+        busyWatch={busyWatch}
+        mergeOptions={active.filter((o) => o.id !== it.id)}
+        onUpdate={(patch) => updateMut.mutate({ id: it.id, patch })}
+        onAcquire={() => {
+          void acquireItem(it);
+          setOpenId(null);
+        }}
+        onDelete={() => {
+          deleteMut.mutate(it.id);
+          setOpenId(null);
+        }}
+        onMerge={(sourceId) => {
+          mergeMut.mutate({ targetId: it.id, sourceId });
+        }}
+        onUnmerge={(lotId) => unmergeMut.mutate({ itemId: it.id, lotId })}
+        onIdentify={() => identifyMut.mutate(it.id)}
+        identifying={identifyingId === it.id}
+        onDismissPending={(lotIds) => dismissPendingMut.mutate(lotIds)}
+        onResolveSale={(h, decision) =>
+          resolveMut.mutate({
+            lotId: h.lotId,
+            value: decision === "confirm" ? it.id : false,
+          })
+        }
+        onWatch={(m) => void watchLot(m)}
+        onOpenLot={(m) => setOpenLotId(m.lotId)}
+        onResolve={(m, decision) =>
+          resolveMut.mutate({
+            lotId: m.lotId,
+            value: decision === "confirm" ? it.id : false,
+          })
+        }
+      />
+    );
+  };
+
   const [openId, setOpenId] = useState<string | null>(null);
+  // Lote "por vir" aberto no cartão completo (o mesmo da home), por cima do cartão do disco.
+  const [openLotId, setOpenLotId] = useState<string | null>(null);
+  const openLot = (overview?.upcoming ?? []).find((m) => m.lotId === openLotId) ?? null;
   const openItem = items.find((i) => i.id === openId) ?? null;
   const totalUpcoming = overview?.upcoming.length ?? 0;
   const newCount = overview?.newCount ?? 0;
@@ -420,6 +496,30 @@ function OlhoPage() {
                     </option>
                   ))}
                 </select>
+                <div className="flex items-center gap-1" role="group" aria-label="Modo de exibição">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={view === "compact" ? "secondary" : "ghost"}
+                    aria-pressed={view === "compact"}
+                    onClick={() => setView("compact")}
+                    title="Linhas compactas — clique numa para abrir o cartão completo"
+                  >
+                    <Rows3 className="mr-1 h-4 w-4" />
+                    Compacto
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={view === "expanded" ? "secondary" : "ghost"}
+                    aria-pressed={view === "expanded"}
+                    onClick={() => setView("expanded")}
+                    title="Cartões completos na lista"
+                  >
+                    <LayoutList className="mr-1 h-4 w-4" />
+                    Expandido
+                  </Button>
+                </div>
               </div>
             ) : null}
             {active.length && !visibleGroups.length ? (
@@ -427,22 +527,77 @@ function OlhoPage() {
             ) : null}
             {visibleGroups.map((group) => (
               <div key={group.key} className="space-y-3">
-                <h2 className="border-b border-border pb-1 text-sm font-semibold text-foreground">
-                  {group.artist}{" "}
-                  <span className="font-normal text-muted-foreground">
-                    ({group.items.length} álbum{group.items.length === 1 ? "" : "ns"})
-                  </span>
-                </h2>
-                {group.items.map((item) => (
-                  <LookoutSummaryRow
-                    key={item.id}
-                    item={item}
-                    upcoming={upcomingByItem.get(item.id) ?? []}
-                    watchedIds={watchedIds}
-                    onOpen={() => setOpenId(item.id)}
-                    onMerge={(sourceId) => mergeMut.mutate({ targetId: item.id, sourceId })}
-                  />
-                ))}
+                <div
+                  draggable={group.key !== "~"}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData(ARTIST_DRAG_TYPE, group.artist);
+                    e.dataTransfer.setData("text/plain", group.artist);
+                    e.dataTransfer.effectAllowed = "move";
+                  }}
+                  onDragOver={(e) => {
+                    if (group.key === "~" || !e.dataTransfer.types.includes(ARTIST_DRAG_TYPE))
+                      return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setArtistDropKey(group.key);
+                  }}
+                  onDragLeave={() => setArtistDropKey(null)}
+                  onDrop={(e) => {
+                    setArtistDropKey(null);
+                    const from = e.dataTransfer.getData(ARTIST_DRAG_TYPE);
+                    if (!from || group.key === "~" || normName(from) === group.key) return;
+                    e.preventDefault();
+                    artistMut.mutate({ from, to: group.artist });
+                  }}
+                  title="Arraste este artista sobre outro para juntar (o nome de quem recebe permanece)"
+                  className={`rounded border-b border-border pb-1 ${artistDropKey === group.key ? "bg-fuchsia-500/10 ring-2 ring-fuchsia-500" : ""}`}
+                >
+                  <h2 className="text-sm font-semibold text-foreground">
+                    {group.artist}{" "}
+                    <span className="font-normal text-muted-foreground">
+                      ({group.items.length} álbum{group.items.length === 1 ? "" : "ns"})
+                    </span>
+                  </h2>
+                  {Object.values(artistJoins).filter(
+                    (j) => resolveLookoutArtist(j.label, artistJoins) === group.artist,
+                  ).length ? (
+                    <ul className="mt-1 flex flex-wrap gap-1 text-xs text-muted-foreground">
+                      <li className="py-0.5">Juntado com:</li>
+                      {Object.values(artistJoins)
+                        .filter((j) => resolveLookoutArtist(j.label, artistJoins) === group.artist)
+                        .map((j) => (
+                          <li
+                            key={j.label}
+                            className="flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5"
+                          >
+                            {j.label}
+                            <button
+                              type="button"
+                              onClick={() => artistMut.mutate({ from: j.label, to: null })}
+                              aria-label={`Separar ${j.label}`}
+                              title="Separar — volta a ser um artista próprio"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </li>
+                        ))}
+                    </ul>
+                  ) : null}
+                </div>
+                {group.items.map((item) =>
+                  view === "expanded" ? (
+                    renderCard(item)
+                  ) : (
+                    <LookoutSummaryRow
+                      key={item.id}
+                      item={item}
+                      upcoming={upcomingByItem.get(item.id) ?? []}
+                      watchedIds={watchedIds}
+                      onOpen={() => setOpenId(item.id)}
+                      onMerge={(sourceId) => mergeMut.mutate({ targetId: item.id, sourceId })}
+                    />
+                  ),
+                )}
               </div>
             ))}
             {archived.length ? (
@@ -450,16 +605,20 @@ function OlhoPage() {
                 <h2 className="text-sm font-semibold text-muted-foreground">
                   Arquivados ({archived.length})
                 </h2>
-                {archived.map((item) => (
-                  <LookoutSummaryRow
-                    key={item.id}
-                    item={item}
-                    upcoming={[]}
-                    watchedIds={watchedIds}
-                    onOpen={() => setOpenId(item.id)}
-                    onMerge={() => undefined}
-                  />
-                ))}
+                {archived.map((item) =>
+                  view === "expanded" ? (
+                    renderCard(item)
+                  ) : (
+                    <LookoutSummaryRow
+                      key={item.id}
+                      item={item}
+                      upcoming={[]}
+                      watchedIds={watchedIds}
+                      onOpen={() => setOpenId(item.id)}
+                      onMerge={() => undefined}
+                    />
+                  ),
+                )}
               </div>
             ) : null}
           </>
@@ -472,49 +631,17 @@ function OlhoPage() {
             Todas as informações e ações deste disco: matches por vir, histórico, teto, nota,
             palavras de agrupamento e junção.
           </DialogDescription>
-          {openItem ? (
-            <LookoutItemCard
-              key={openItem.id}
-              item={openItem}
-              upcoming={openItem.status === "active" ? (upcomingByItem.get(openItem.id) ?? []) : []}
-              history={openItem.status === "active" ? (historyByItem.get(openItem.id) ?? []) : []}
-              watchedIds={watchedIds}
-              watchLoading={watched.isLoading}
-              busyWatch={busyWatch}
-              mergeOptions={active.filter((o) => o.id !== openItem.id)}
-              onUpdate={(patch) => updateMut.mutate({ id: openItem.id, patch })}
-              onAcquire={() => {
-                void acquireItem(openItem);
-                setOpenId(null);
-              }}
-              onDelete={() => {
-                deleteMut.mutate(openItem.id);
-                setOpenId(null);
-              }}
-              onMerge={(sourceId) => {
-                mergeMut.mutate({ targetId: openItem.id, sourceId });
-              }}
-              onUnmerge={(lotId) => unmergeMut.mutate({ itemId: openItem.id, lotId })}
-              onIdentify={() => identifyMut.mutate(openItem.id)}
-              identifying={identifyingId === openItem.id}
-              onDismissPending={(lotIds) => dismissPendingMut.mutate(lotIds)}
-              onResolveSale={(h, decision) =>
-                resolveMut.mutate({
-                  lotId: h.lotId,
-                  value: decision === "confirm" ? openItem.id : false,
-                })
-              }
-              onWatch={(m) => void watchLot(m)}
-              onResolve={(m, decision) =>
-                resolveMut.mutate({
-                  lotId: m.lotId,
-                  value: decision === "confirm" ? openItem.id : false,
-                })
-              }
-            />
-          ) : null}
+          {openItem ? renderCard(openItem) : null}
         </DialogContent>
       </Dialog>
+      <LookoutLotDialog
+        lot={openLot}
+        item={openLot ? (items.find((i) => i.id === openLot.itemId) ?? null) : null}
+        watching={openLot ? watchedIds.has(openLot.idPeca) : false}
+        busy={openLot ? busyWatch === openLot.lotId : false}
+        onWatch={(m) => void watchLot(m)}
+        onClose={() => setOpenLotId(null)}
+      />
     </main>
   );
 }

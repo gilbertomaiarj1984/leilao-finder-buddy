@@ -258,6 +258,14 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   (`attachLookout` → `attachLookoutLot`, vira álbum juntado) ou "Criar novo disco". Idêntico = o servidor
   reaproveita sem perguntar. **Página `/olho`:** linhas-resumo (`LookoutSummaryRow`, arrastar sobre outra
   junta); clicar abre o `LookoutItemCard` completo num `Dialog`.
+- **Modos da página e cartão do lote (v0.119.0):** `/olho` tem **Compacto** (`LookoutSummaryRow`, abre o
+  `LookoutItemCard` num `Dialog`) e **Expandido** (cartões inline), persistido em `olho-view`. Clicar num
+  lote "por vir" abre `LookoutLotDialog`: o `LotCard` da home alimentado pelas mesmas queries
+  (`lot_ai`/`lot_ident`/`lot_market`/`lot-condition`), binóculos marcado e teto do item.
+- **Juntar artistas (v0.120.0):** arrastar o título de um grupo de artista sobre outro grava em
+  `app_state.lookout_artist_groups` (`chave normalizada → {to, label}`, `setLookoutArtistGroup`); a página
+  resolve o nome final com `resolveLookoutArtist` (segue cadeias, guarda contra ciclo) e o grupo leva o nome
+  de quem recebeu. É só exibição: `lookout_items.artist` e o casamento não mudam. ✕ no chip desfaz.
 - **Identificar por IA (v0.110.0):** botão ✨ sob o lápis no card do item de `/olho` →
   `identifyLookout` → `identifyLookoutItem` (`lookout-ident.server.ts`, isolado): usa
   `identLotsSyncRows(…, withImage=true)` (mesmo prompt/parser da identificação dos lotes, **texto

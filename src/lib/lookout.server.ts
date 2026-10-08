@@ -99,16 +99,18 @@ function toMerged(v: unknown): LookoutMergedRow[] {
 }
 
 /** Chave de identidade "artista + álbum" (sem acento/pontuação/caixa) para impedir duplicatas. */
+function lookoutArtistKey(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function lookoutIdentityKey(artist: string, album: string): string {
-  const norm = (t: string) =>
-    t
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, " ")
-      .trim();
-  const a = norm(artist);
-  const b = norm(album);
+  const a = lookoutArtistKey(artist);
+  const b = lookoutArtistKey(album);
   return a && b ? `${a}|${b}` : "";
 }
 
@@ -367,6 +369,7 @@ export async function deleteLookoutItem(id: string): Promise<{ ok: true }> {
 // ---------------------------------------------------------------------------
 
 const LINKS_KEY = "lookout_links";
+const ARTIST_GROUPS_KEY = "lookout_artist_groups";
 const SEEN_KEY = "lookout_seen";
 const NOTIFIED_KEY = "lookout_notified";
 /** Teto de entradas das listas de dedupe (as mais recentes ficam) — o registro não cresce sem fim. */
@@ -422,6 +425,41 @@ export async function setLookoutLinks(lotIds: string[], value: string | false): 
   const links = await getLookoutLinks();
   for (const id of lotIds) links[id] = value;
   await writeValue(LINKS_KEY, links);
+}
+
+type ArtistGroups = Record<string, { to: string; label: string }>;
+
+/** Artistas juntados na página (chave normalizada → nome que permanece). Best-effort: {}. */
+export async function getLookoutArtistGroups(): Promise<ArtistGroups> {
+  try {
+    const value = await readValue(ARTIST_GROUPS_KEY);
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    const out: ArtistGroups = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      const g = v as { to?: unknown; label?: unknown } | null;
+      if (g && typeof g.to === "string" && g.to && typeof g.label === "string") {
+        out[k] = { to: g.to, label: g.label };
+      }
+    }
+    return out;
+  } catch (error) {
+    console.error("[lookout] não foi possível ler os artistas juntados (usando vazio)", error);
+    return {};
+  }
+}
+
+/** Junta o artista `from` ao `to` (o nome de `to` permanece); `to` null desfaz a junção de `from`. */
+export async function setLookoutArtistGroup(from: string, to: string | null): Promise<void> {
+  const key = lookoutArtistKey(from);
+  if (!key) return;
+  const groups = await getLookoutArtistGroups();
+  if (to === null) delete groups[key];
+  else {
+    const target = to.trim();
+    if (!target || lookoutArtistKey(target) === key) return;
+    groups[key] = { to: target, label: from.trim() };
+  }
+  await writeValue(ARTIST_GROUPS_KEY, groups);
 }
 
 /** Chaves (`lotId|itemId`) de matches que o usuário já viu na página `/olho`. */
