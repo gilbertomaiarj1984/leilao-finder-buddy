@@ -682,6 +682,14 @@ function artistEvidence(
   return { level: others.length ? "title" : "none", spans };
 }
 
+/** Só o ARTISTA do candidato × lote: "confirmed" | "title" (citado no título) | "none". */
+export function ownedArtistLevel(
+  c: OwnedCandidate,
+  id: LotIdentity,
+): "confirmed" | "title" | "none" {
+  return artistEvidence(c.artistTokens, id, c.artistKeys).level;
+}
+
 /**
  * Nome do disco da coleção × nome de disco ESTRUTURADO do lote (IA/Discogs), nos dois
  * sentidos: `match` (mesmo disco, nomes aproximados porém bem relacionados), `partial` (um nome

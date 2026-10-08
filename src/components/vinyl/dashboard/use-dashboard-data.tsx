@@ -53,12 +53,14 @@ import {
   type GeminiModel,
 } from "@/lib/ai-provider";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
-import { setLookoutLink, toggleLookout } from "@/lib/lookout.functions";
+import { attachLookout, setLookoutLink, toggleLookout } from "@/lib/lookout.functions";
 import {
   lookoutCandidates,
   LOOKOUT_CONFIDENT_MIN,
   matchLookoutForLot,
+  similarLookoutItems,
   type LookoutHit,
+  type LookoutItem,
   type LookoutLinks,
 } from "@/lib/lookout-match";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
@@ -379,6 +381,7 @@ export function useDashboardData() {
   const runApplyDecision = useServerFn(applyCollectionDecision);
   const runToggleLookout = useServerFn(toggleLookout);
   const runSetLookoutLink = useServerFn(setLookoutLink);
+  const runAttachLookout = useServerFn(attachLookout);
   const fetchCollectionKeywordDenylist = useServerFn(getCollectionKeywordDenylist);
   const runDismissCollectionMatch = useServerFn(dismissCollectionMatchTerms);
   const runExcludeLot = useServerFn(excludeLot);
@@ -997,6 +1000,38 @@ export function useDashboardData() {
     const sureHit = Boolean(hit && (hit.confirmed || hit.score >= LOOKOUT_CONFIDENT_MIN));
     return { on: Boolean(origin) || sureHit, hit, maxPrice };
   };
+  // Dados do lote para criar/inserir no "de olho" (artista efetivo, álbum e ano já identificados).
+  const lookoutDraft = (lot: LookoutLot) => {
+    const ai = parseAiAlbum(albumById.get(lot.id) ?? null);
+    const market = marketById.get(lot.id);
+    return {
+      lotId: lot.id,
+      artist: effectiveArtist({ id: lot.id, artist: lot.artist ?? "", title: lot.title }),
+      album: ai.album ?? "",
+      year: ai.year ?? market?.year ?? null,
+      title: lot.title,
+      house: lot.house,
+      image: lot.image,
+      url: lot.url,
+      dayKey: lot.dayKey ?? "",
+    };
+  };
+  // Pergunta "criar novo ou inserir no existente?" — só quando há dúvida (disco parecido).
+  const [lookoutAsk, setLookoutAsk] = useState<{
+    lot: LookoutLot;
+    candidates: LookoutItem[];
+  } | null>(null);
+  const attachLookoutMutation = useMutation({
+    mutationFn: async (vars: { itemId: string; lot: LookoutLot }) =>
+      await runAttachLookout({ data: { itemId: vars.itemId, ...lookoutDraft(vars.lot) } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lookout });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lookoutOverview });
+      toast.success("Inserido no disco que já estava de olho");
+    },
+    onError: (error: unknown) =>
+      toast.error((error as Error)?.message || "Não foi possível inserir no disco existente"),
+  });
   const toggleLookoutMutation = useMutation({
     mutationFn: async (lot: LookoutLot) => {
       const origin = lookoutByOrigin.get(lot.id) ?? null;
@@ -1007,23 +1042,10 @@ export function useDashboardData() {
         resolveLookout(lot.id, "dismiss", lotHit);
         return { added: false, item: null, artist: "", dismissed: true as const };
       }
-      const ai = parseAiAlbum(albumById.get(lot.id) ?? null);
-      const market = marketById.get(lot.id);
-      const artist = effectiveArtist({ id: lot.id, artist: lot.artist ?? "", title: lot.title });
+      const draft = lookoutDraft(lot);
+      const artist = draft.artist;
       const res = await runToggleLookout({
-        data: {
-          lotId: lot.id,
-          on: !origin,
-          itemId: origin?.id,
-          artist,
-          album: ai.album ?? "",
-          year: ai.year ?? market?.year ?? null,
-          title: lot.title,
-          house: lot.house,
-          image: lot.image,
-          url: lot.url,
-          dayKey: lot.dayKey ?? "",
-        },
+        data: { ...draft, on: !origin, itemId: origin?.id },
       });
       return { added: !origin, item: res.item, artist, dismissed: false as const };
     },
@@ -1063,12 +1085,30 @@ export function useDashboardData() {
         void queryClient.invalidateQueries({ queryKey: queryKeys.lookoutOverview });
       });
   };
+  const answerLookoutAsk = (choice: "new" | string) => {
+    const ask = lookoutAsk;
+    setLookoutAsk(null);
+    if (!ask) return;
+    if (choice === "new") toggleLookoutMutation.mutate(ask.lot);
+    else attachLookoutMutation.mutate({ itemId: choice, lot: ask.lot });
+  };
   /** Props do `LotCard` para o "ficar de olho" (espalhar no card: `{...lookoutProps(lot)}`). */
   const lookoutProps = (lot: LookoutLot) => {
     const lookout = lookoutFor(lot);
     return {
       lookout,
-      onToggleLookout: () => toggleLookoutMutation.mutate(lot),
+      onToggleLookout: () => {
+        // Marcando um disco novo: se há item parecido, pergunta antes de criar.
+        if (!lookoutFor(lot).on) {
+          const d = lookoutDraft(lot);
+          const candidates = similarLookoutItems(lookoutQuery.data ?? [], d);
+          if (candidates.length) {
+            setLookoutAsk({ lot, candidates });
+            return;
+          }
+        }
+        toggleLookoutMutation.mutate(lot);
+      },
       onResolveLookout: (decision: "confirm" | "dismiss") => {
         if (lookout.hit) resolveLookout(lot.id, decision, lookout.hit);
       },
@@ -1864,6 +1904,9 @@ export function useDashboardData() {
     demandFor,
     ownedFor,
     lookoutProps,
+    lookoutAsk,
+    setLookoutAsk,
+    answerLookoutAsk,
     setOwnedPanelLot,
     editTags,
     soldById,

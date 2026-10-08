@@ -29,6 +29,7 @@ import { LiveAuctions } from "@/components/vinyl/live-auctions";
 import { OwnedPanel } from "@/components/vinyl/owned-panel";
 import { getAccessStatus } from "@/lib/leiloesbr.functions";
 import { AiProviderSelect, GeminiModelSelect } from "@/components/vinyl/ai-provider-controls";
+import { LookoutAskDialog } from "@/components/vinyl/lookout-ask-dialog";
 import { ExcludeLotDialog } from "@/components/vinyl/exclude-lot-dialog";
 import { matchedAlbumTerms, ownedCandidate } from "@/lib/wantlist-match";
 
@@ -309,6 +310,12 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
             );
           })()
         : null}
+      <LookoutAskDialog
+        label={d.lookoutAsk ? d.lookoutAsk.lot.title : null}
+        candidates={d.lookoutAsk?.candidates ?? []}
+        onChoose={d.answerLookoutAsk}
+        onCancel={() => d.setLookoutAsk(null)}
+      />
       <ExcludeLotDialog
         target={excludeTarget}
         busy={excludeMutation.isPending}

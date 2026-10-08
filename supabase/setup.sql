@@ -437,6 +437,9 @@ CREATE INDEX IF NOT EXISTS lookout_items_status_idx ON public.lookout_items (sta
 -- Álbuns "juntados" a este item (mesmo disco com outro nome/edição): lista de snapshots
 -- [{lotId, artist, album, year, title, house, image, url, dayKey}] (v0.117.0).
 ALTER TABLE public.lookout_items ADD COLUMN IF NOT EXISTS merged jsonb NOT NULL DEFAULT '[]'::jsonb;
+-- Palavras/frases extras do usuário ("1971", "edição de luxo"): um lote do MESMO artista que as
+-- contém casa com o item, mesmo com álbum/ano diferentes (v0.118.0).
+ALTER TABLE public.lookout_items ADD COLUMN IF NOT EXISTS terms jsonb NOT NULL DEFAULT '[]'::jsonb;
 
 DROP TRIGGER IF EXISTS update_lookout_items_updated_at ON public.lookout_items;
 CREATE TRIGGER update_lookout_items_updated_at BEFORE UPDATE ON public.lookout_items

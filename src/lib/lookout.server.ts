@@ -37,6 +37,8 @@ export type LookoutRow = {
   note: string;
   status: "active" | "acquired" | "dismissed";
   merged: LookoutMergedRow[];
+  /** Palavras/frases extras do usuário para o casamento (ex.: "1971"). */
+  terms: string[];
 };
 
 type DbRow = {
@@ -54,10 +56,23 @@ type DbRow = {
   note: string | null;
   status: string | null;
   merged: unknown;
+  terms: unknown;
 };
 
 const COLS =
-  "id, lot_id, artist, album, year, title, house, image, url, day_key, max_price, note, status, merged";
+  "id, lot_id, artist, album, year, title, house, image, url, day_key, max_price, note, status, merged, terms";
+
+/** Lista de frases limpa: strings não vazias, sem repetição, até 20. */
+function cleanTerms(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  const out: string[] = [];
+  for (const t of v) {
+    if (typeof t !== "string") continue;
+    const clean = t.trim().replace(/\s+/g, " ").slice(0, 80);
+    if (clean && !out.some((o) => o.toLowerCase() === clean.toLowerCase())) out.push(clean);
+  }
+  return out.slice(0, 20);
+}
 
 function toMerged(v: unknown): LookoutMergedRow[] {
   if (!Array.isArray(v)) return [];
@@ -124,6 +139,7 @@ function toRow(r: DbRow): LookoutRow {
     note: r.note ?? "",
     status: toStatus(r.status),
     merged: toMerged(r.merged),
+    terms: cleanTerms(r.terms),
   };
 }
 
@@ -209,6 +225,7 @@ type UpdateLookoutInput = {
   maxPrice?: number | null;
   note?: string;
   status?: LookoutRow["status"];
+  terms?: string[];
 };
 
 /** Atualiza identidade (artista/álbum/ano), teto, nota ou status de um item. */
@@ -220,6 +237,7 @@ export async function updateLookoutItem(input: UpdateLookoutInput): Promise<Look
   if (input.maxPrice !== undefined) patch["max_price"] = input.maxPrice;
   if (typeof input.note === "string") patch["note"] = input.note.trim();
   if (input.status) patch["status"] = input.status;
+  if (input.terms) patch["terms"] = cleanTerms(input.terms);
   const { data, error } = await db
     .from("lookout_items")
     .update(patch)
@@ -267,7 +285,10 @@ export async function mergeLookoutItems(targetId: string, sourceId: string): Pro
     known.add(m.lotId);
     merged.push(m);
   }
-  const patch: Record<string, unknown> = { merged };
+  const patch: Record<string, unknown> = {
+    merged,
+    terms: cleanTerms([...target.terms, ...source.terms]),
+  };
   if (target.maxPrice == null && source.maxPrice != null) patch["max_price"] = source.maxPrice;
   if (!target.note && source.note) patch["note"] = source.note;
   const { data, error } = await db
@@ -281,6 +302,27 @@ export async function mergeLookoutItems(targetId: string, sourceId: string): Pro
     throw new Error(`Não foi possível juntar os discos: ${error.message}`);
   }
   await deleteLookoutItem(source.id);
+  return toRow(data as DbRow);
+}
+
+/** Insere um lote (snapshot) como álbum juntado a um item existente — resposta "inserir no existente". */
+export async function attachLookoutLot(
+  itemId: string,
+  part: LookoutMergedRow,
+): Promise<LookoutRow> {
+  const all = await getAllLookout();
+  const item = all.find((i) => i.id === itemId);
+  if (!item) throw new Error("Disco não encontrado");
+  const known = new Set([item.lotId, ...item.merged.map((m) => m.lotId)]);
+  const patch: Record<string, unknown> = { status: "active" };
+  if (!known.has(part.lotId)) patch["merged"] = [...item.merged, part];
+  const { data, error } = await db
+    .from("lookout_items")
+    .update(patch)
+    .eq("id", itemId)
+    .select(COLS)
+    .single();
+  if (error) throw new Error(`Não foi possível inserir no disco existente: ${error.message}`);
   return toRow(data as DbRow);
 }
 

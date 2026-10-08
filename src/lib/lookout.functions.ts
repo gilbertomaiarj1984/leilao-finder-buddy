@@ -115,6 +115,7 @@ export const updateLookout = createServerFn({ method: "POST" })
             maxPrice?: number | null;
             note?: string;
             status?: string;
+            terms?: string[];
           }
         | undefined,
     ) => {
@@ -127,6 +128,7 @@ export const updateLookout = createServerFn({ method: "POST" })
         maxPrice?: number | null;
         note?: string;
         status?: (typeof STATUSES)[number];
+        terms?: string[];
       } = { id: input.id };
       if (typeof input.artist === "string") patch.artist = input.artist;
       if (typeof input.album === "string") patch.album = input.album;
@@ -136,6 +138,9 @@ export const updateLookout = createServerFn({ method: "POST" })
         patch.maxPrice = input.maxPrice === null || !(n > 0) ? null : n;
       }
       if (typeof input.note === "string") patch.note = input.note;
+      if (Array.isArray(input.terms)) {
+        patch.terms = input.terms.filter((t): t is string => typeof t === "string").slice(0, 20);
+      }
       if (STATUSES.includes(input.status as (typeof STATUSES)[number])) {
         patch.status = input.status as (typeof STATUSES)[number];
       }
@@ -167,6 +172,51 @@ export const mergeLookout = createServerFn({ method: "POST" })
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { mergeLookoutItems } = await import("./lookout.server");
     return await mergeLookoutItems(data.targetId, data.sourceId);
+  });
+
+/** Insere o lote como álbum de um disco de olho existente (em vez de criar um item novo). */
+export const attachLookout = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator(
+    (
+      input:
+        | {
+            itemId?: string;
+            lotId?: string;
+            artist?: string;
+            album?: string;
+            year?: number | null;
+            title?: string;
+            house?: string;
+            image?: string | null;
+            url?: string;
+            dayKey?: string;
+          }
+        | undefined,
+    ) => {
+      if (!input?.itemId || typeof input.itemId !== "string") throw new Error("itemId obrigatório");
+      if (!input.lotId || typeof input.lotId !== "string") throw new Error("lotId obrigatório");
+      return {
+        itemId: input.itemId,
+        part: {
+          lotId: input.lotId,
+          artist: str(input.artist),
+          album: str(input.album),
+          year: yearOrNull(input.year),
+          title: str(input.title),
+          house: str(input.house),
+          image: typeof input.image === "string" && input.image ? input.image : null,
+          url: str(input.url),
+          dayKey: str(input.dayKey),
+        },
+      };
+    },
+  )
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { attachLookoutLot } = await import("./lookout.server");
+    return await attachLookoutLot(data.itemId, data.part);
   });
 
 /** Desfaz a junção de um álbum (ele volta a ser um disco próprio). */
