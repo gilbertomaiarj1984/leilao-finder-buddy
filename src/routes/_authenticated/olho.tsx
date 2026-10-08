@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Binoculars, LayoutList, RefreshCw, Rows3, Search, X } from "lucide-react";
+import { ArrowLeft, Binoculars, LayoutList, Plus, RefreshCw, Rows3, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
+import { LookoutBulkDialog } from "@/components/vinyl/lookout-bulk-dialog";
 import { LookoutItemCard, type LookoutPatch } from "@/components/vinyl/lookout-item-card";
 import { LookoutLotDialog } from "@/components/vinyl/lookout-lot-dialog";
 import { LookoutSummaryRow } from "@/components/vinyl/lookout-summary-row";
@@ -373,6 +374,7 @@ function OlhoPage() {
     );
   };
 
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   // Lote "por vir" aberto no cartão completo (o mesmo da home), por cima do cartão do disco.
   const [openLotId, setOpenLotId] = useState<string | null>(null);
@@ -412,6 +414,15 @@ function OlhoPage() {
               <Button
                 size="sm"
                 variant="outline"
+                onClick={() => setBulkOpen(true)}
+                title="Adicionar por lista ou digitando artista / álbum (a IA identifica)"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Adicionar
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
                 onClick={() => void query.refetch()}
                 disabled={query.isFetching}
                 title="Recalcular os matches com os lotes mais recentes"
@@ -424,6 +435,7 @@ function OlhoPage() {
         </div>
       </HideableBar>
 
+      <LookoutBulkDialog open={bulkOpen} onOpenChange={setBulkOpen} onDone={refresh} />
       <div className="mx-auto max-w-6xl space-y-4 px-4 py-6">
         {query.isLoading ? (
           <>
@@ -441,10 +453,10 @@ function OlhoPage() {
           <div className="rounded-md border border-dashed border-border p-8 text-center">
             <Binoculars className="mx-auto h-8 w-8 text-muted-foreground/50" />
             <p className="mt-2 text-sm text-muted-foreground">
-              Nenhum disco de olho ainda. Na lista de lotes, toque no ícone de binóculos
-              (&quot;Ficar de olho&quot;) num disco que você quer muito — quando ele reaparecer, o
-              card é destacado aqui e na home, e você recebe um aviso (se o ntfy estiver
-              configurado).
+              Nenhum disco de olho ainda. Use &quot;Adicionar&quot; para subir uma lista ou digitar
+              artista / álbum, ou, na lista de lotes, toque no ícone de binóculos (&quot;Ficar de
+              olho&quot;) num disco que você quer muito — quando ele reaparecer, o card é destacado
+              aqui e na home, e você recebe um aviso (se o ntfy estiver configurado).
             </p>
           </div>
         ) : (

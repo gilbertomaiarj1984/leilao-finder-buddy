@@ -21,6 +21,10 @@ com **Postgres** próprio como backend e deploy em **VPS** (Docker Compose + Cad
   dar push ou abrir PR aqui — e, numa sessão daqui, nunca tocar no `pdf-unite-and-print`. Não
   aplicar pedido, código, commit ou doc de um projeto no outro; se o pedido parecer ser do outro,
   perguntar antes. Resumos falam de um projeto por vez.
+- **Antes de implementar, avaliar o que já existe para reaproveitar** (helpers, server functions,
+  componentes, fluxos como o de capas da Coleção) e, ao terminar, **avaliar se algo descoberto
+  melhora outros pontos do app** — aplicar se for pequeno e seguro, senão registrar em
+  `docs/pendencias.md`.
 - **Responder em português** ao interagir com o usuário.
 - **Recriar a branch de trabalho a partir de `origin/main` antes de cada tarefa**
   (pós-cutover da Fase 6 — ver aviso acima; `main` é a branch de produção/base agora).
@@ -40,7 +44,7 @@ com **Postgres** próprio como backend e deploy em **VPS** (Docker Compose + Cad
 - **Nunca editar `Caddyfile` sem validar a sintaxe antes de mandar pro VPS** — `deploy.yml`
   aplica direto em produção a cada push na `vps`, sem passo de revisão manual no meio. Baixar o
   binário oficial do Caddy (não precisa de Docker: `curl -fsSL -o caddy.tar.gz
-  "https://github.com/caddyserver/caddy/releases/download/vX.Y.Z/caddy_X.Y.Z_linux_amd64.tar.gz"`,
+"https://github.com/caddyserver/caddy/releases/download/vX.Y.Z/caddy_X.Y.Z_linux_amd64.tar.gz"`,
   extrair, `caddy validate --config Caddyfile --adapter caddyfile` com as envs via `VAR=valor`
   na frente do comando) e, se mexer em matcher/expressão/roteamento novo, também `caddy run`
   numa porta alternativa (`http_port`/`https_port` no bloco global) pra testar de verdade antes
@@ -52,4 +56,4 @@ com **Postgres** próprio como backend e deploy em **VPS** (Docker Compose + Cad
   v0.69.5/v0.69.8). Achado com um bug de verdade no v0.69.21-23: o Caddy ficou rodando a
   config antiga por 3 deploys seguidos sem ninguém perceber, porque o arquivo no disco do
   VPS mudava mas o processo nunca recarregava. `deploy.yml` já faz `docker compose exec
-  caddy caddy reload` depois do `up -d` — não remover isso.
+caddy caddy reload` depois do `up -d` — não remover isso.

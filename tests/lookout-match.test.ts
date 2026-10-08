@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { SaleRow } from "@/lib/analytics";
 import { analyticsHistoryForItems } from "@/lib/lookout-analytics";
+import { parseLookoutBulk } from "@/lib/lookout-bulk";
 import {
   buildLotIdentity,
   lookoutCandidates,
@@ -350,5 +351,20 @@ describe("artistas juntados na página (v0.120.0)", () => {
     };
     expect(resolveLookoutArtist("Elis Regina e Tom Jobim", groups)).toBe("Elis Regina");
     expect(() => resolveLookoutArtist("Elis", chain)).not.toThrow();
+  });
+});
+
+describe("parseLookoutBulk", () => {
+  test("numeração é opcional e o ano vira pista", () => {
+    const r = parseLookoutBulk(
+      "\\01. The Dark Side of the Moon (1973) - Pink Floyd\nAbbey Road (1969) - The Beatles\n\n- Tim Maia Racional\n02) Abbey Road (1969) - The Beatles",
+    );
+    expect(r.map((e) => e.text)).toEqual([
+      "The Dark Side of the Moon (1973) - Pink Floyd",
+      "Abbey Road (1969) - The Beatles",
+      "Tim Maia Racional",
+    ]);
+    expect(r[0]!.year).toBe(1973);
+    expect(r[2]!.year).toBeNull();
   });
 });

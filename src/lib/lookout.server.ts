@@ -219,6 +219,51 @@ export async function addLookoutFromLot(input: AddLookoutInput): Promise<Lookout
   return toRow(data as DbRow);
 }
 
+/**
+ * Cria um item "de olho" SEM lote de origem (lista colada / digitada). `lot_id` sintético
+ * (`manual-<uuid>`) — nunca casa com lote real. Sem repetição: mesmo artista+álbum já cadastrado
+ * (inclusive juntado) reaproveita o item (reativando-o).
+ */
+export async function addLookoutManual(input: {
+  artist: string;
+  album: string;
+  year: number | null;
+}): Promise<{ item: LookoutRow; created: boolean }> {
+  const all = await getAllLookout();
+  const key = lookoutIdentityKey(input.artist, input.album);
+  const found = key
+    ? all.find(
+        (i) =>
+          lookoutIdentityKey(i.artist, i.album) === key ||
+          i.merged.some((m) => lookoutIdentityKey(m.artist, m.album) === key),
+      )
+    : undefined;
+  if (found) {
+    if (found.status === "active") return { item: found, created: false };
+    const { data, error } = await db
+      .from("lookout_items")
+      .update({ status: "active" })
+      .eq("id", found.id)
+      .select(COLS)
+      .single();
+    if (error) throw new Error(`Não foi possível reativar o item: ${error.message}`);
+    return { item: toRow(data as DbRow), created: false };
+  }
+  const { data, error } = await db
+    .from("lookout_items")
+    .insert({
+      lot_id: `manual-${crypto.randomUUID()}`,
+      artist: input.artist.trim(),
+      album: input.album.trim(),
+      year: input.year,
+      status: "active",
+    })
+    .select(COLS)
+    .single();
+  if (error) throw new Error(`Não foi possível ficar de olho: ${error.message}`);
+  return { item: toRow(data as DbRow), created: true };
+}
+
 type UpdateLookoutInput = {
   id: string;
   artist?: string;
@@ -228,6 +273,7 @@ type UpdateLookoutInput = {
   note?: string;
   status?: LookoutRow["status"];
   terms?: string[];
+  image?: string | null;
 };
 
 /** Atualiza identidade (artista/álbum/ano), teto, nota ou status de um item. */
@@ -240,6 +286,7 @@ export async function updateLookoutItem(input: UpdateLookoutInput): Promise<Look
   if (typeof input.note === "string") patch["note"] = input.note.trim();
   if (input.status) patch["status"] = input.status;
   if (input.terms) patch["terms"] = cleanTerms(input.terms);
+  if (input.image !== undefined) patch["image"] = input.image;
   const { data, error } = await db
     .from("lookout_items")
     .update(patch)

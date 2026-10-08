@@ -273,6 +273,15 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   falhar (casa bloqueando a foto), repete só com o texto. Só preenche/melhora artista/álbum/ano
   (nunca apaga com resultado vazio); depois os matches são recalculados. Gasta créditos de IA —
   só sob demanda. O toast mostra o resultado, a confiança e se houve troca de provedor.
+- **Adicionar por lista/texto (v0.122.0):** botão **Adicionar** em `/olho` → `LookoutBulkDialog`
+  (cola, digita ou envia `.txt`/`.csv`; uma obra por linha; numeração e ano opcionais —
+  `parseLookoutBulk`, `lookout-bulk.ts`). A interface chama `addLookoutByText` linha a linha
+  (progresso, falha isolada por linha, máx. 200): `addLookoutFromText` (`lookout-bulk.server.ts`)
+  pede à IA (SÓ TEXTO, provedor padrão com failover) artista + álbum canônicos (+ ano); sem
+  artista E álbum → "não identificado" (não cria). Cria via `addLookoutManual` — `lot_id`
+  sintético `manual-<uuid>`, sem lote de origem, sem repetição (mesmo artista+álbum reaproveita/
+  reativa). Depois busca a capa no Discogs (`searchCoverOptions`, prefere o mesmo ano) e grava
+  como na Coleção (`importCollectionCover`: comprime em webp na pasta da coleção) — best-effort. O ✨ Identificar usa artista+álbum quando o item não tem título de lote.
 - **Aviso externo (ntfy.sh):** `step=lookoutnotify` do cron (`refresh.yml`, depois de
   aiident/market, antes da faxina, via `call_soft` — falha não reprova a run) →
   `notifyLookoutMatches`: para cada match confiante ainda não avisado (`pickNotifiable`, dedupe
