@@ -18,6 +18,7 @@ import { ScoreDetails } from "@/components/vinyl/ai-score";
 import { formatAiAlbum, scoreTone } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import { TracklistContent } from "@/components/vinyl/tracklist-hover";
+import { useLotTracklistRefresh } from "@/components/vinyl/tracklist-refresh";
 import { LOOKOUT_CONFIDENT_MIN, priceVsCeiling } from "@/lib/lookout-match";
 import { decodeHtmlEntities, lotOpenUrl, parsePrice } from "@/lib/vinyl-parse";
 import { OWNED_CONFIDENT_MIN } from "@/lib/wantlist-match";
@@ -170,6 +171,7 @@ export function LotDetailSheet(
     lookoutActive: Boolean(lookout && (lookout.on || lookout.hit)),
   });
   const tracks = ai?.tracklist ?? null;
+  const tracklistRefresh = useLotTracklistRefresh(lot.id);
   const hit = lookout?.hit ?? null;
   const hitSure = hit ? hit.confirmed || hit.score >= LOOKOUT_CONFIDENT_MIN : false;
   const vs = hit
@@ -459,7 +461,11 @@ export function LotDetailSheet(
           tracks?.length ? (
             <Box>
               <div className="text-sm">
-                <TracklistContent tracklist={tracks} title={aiLabel || undefined} />
+                <TracklistContent
+                  tracklist={tracks}
+                  title={aiLabel || undefined}
+                  refresh={tracklistRefresh}
+                />
               </div>
             </Box>
           ) : (

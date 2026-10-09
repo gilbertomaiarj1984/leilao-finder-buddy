@@ -248,3 +248,55 @@ export async function runFameBackfill(max = 20): Promise<{
   const remaining = Math.max(pending.length - updated, 0);
   return { updated, failed, remaining, done: remaining === 0 || updated === 0 };
 }
+
+/**
+ * Refresh manual de UM lote: re-busca as faixas no Discogs (ignora o que já está gravado) e só
+ * depois pede a fama à IA. Fama já conhecida de uma faixa de mesmo título é preservada; sem IA
+ * (ou se ela falhar) as faixas novas ficam com a fama anterior ou sem fama.
+ */
+export async function refreshLotTracklist(
+  lotId: string,
+  provider: AiProvider,
+  useAi: boolean,
+): Promise<{ tracklist: Track[]; rated: boolean }> {
+  if (!discogsConfigured()) {
+    throw new Error("O Discogs não está configurado (DISCOGS_TOKEN ausente no servidor).");
+  }
+  const { data: row, error } = await db
+    .from<{ id: string; album: string | null; tracklist: unknown }>("lot_ai")
+    .select("id, album, tracklist")
+    .eq("id", lotId)
+    .maybeSingle();
+  if (error) throw error;
+  const album = row?.album?.trim();
+  if (!row || !album) throw new Error("Este lote ainda não tem álbum identificado pela IA.");
+
+  const { data: mk } = await db
+    .from<{ release_id: number | null; matched: boolean }>("lot_market")
+    .select("release_id, matched")
+    .eq("id", lotId)
+    .maybeSingle();
+  const fresh = await buildTracklist(album, mk?.matched ? (mk.release_id ?? null) : null);
+  if (!fresh) throw new Error("O Discogs não encontrou as faixas deste disco.");
+
+  // Preserva a fama já conhecida (por título) para a lista nova.
+  const known = new Map(
+    (normalizeTracklist(row.tracklist) ?? [])
+      .filter((t) => t.fame)
+      .map((t) => [t.title.toLowerCase(), t.fame] as const),
+  );
+  let tracklist = fresh.map((t) => ({ ...t, fame: known.get(t.title.toLowerCase()) ?? null }));
+  let rated = false;
+  if (useAi) {
+    const r = await rateFame(album, fresh, provider, await resolveGeminiModel());
+    if (r) {
+      tracklist = r;
+      rated = true;
+    }
+  }
+  const { error: upErr } = await db.from("lot_ai").update({ tracklist }).eq("id", lotId);
+  if (upErr) throw new Error(`Não foi possível gravar a tracklist: ${upErr.message}`);
+  const { invalidateLotAiCache } = await import("./lot-ai.server");
+  invalidateLotAiCache();
+  return { tracklist, rated };
+}

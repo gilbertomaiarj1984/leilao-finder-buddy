@@ -84,6 +84,11 @@ export function CollectionCard({
           own={item.tracklist}
           onRequest={onFetchTracklist}
           loading={tracklistLoading}
+          refresh={
+            item.tracklist?.length && onFetchTracklist
+              ? { onClick: onFetchTracklist, pending: tracklistLoading }
+              : undefined
+          }
         />
       </div>
 

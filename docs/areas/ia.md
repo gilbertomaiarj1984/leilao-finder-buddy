@@ -121,7 +121,11 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   A avaliação completa **não pede mais tracklist** (`maxTokens` 1200→600) e `upsertLotAi` não zera
   a existente. **Migração única** (`app_state.tracklist_discogs_migrated`): as tracklists antigas
   (geradas pela IA, erradas) de `lot_ai` e `collection_items` foram zeradas para refazer pelo Discogs.
-  Normalização/agrupamento puros em `tracklist.ts`; UI em `tracklist-hover.tsx`.
+  **Refresh manual** (botão "atualizar" no topo da visão das faixas — hover do card e aba Faixas do
+  mobile; `refreshLotTracklistFn` → `refreshLotTracklist`): re-puxa as faixas do Discogs (ignora o
+  gravado) e só depois força a fama pela IA; preserva a fama de faixas de mesmo título se a IA faltar/
+  falhar; na Coleção, o mesmo botão reexecuta `fetchCollectionTracklist`. Independe do `ai_mode`.
+  Normalização/agrupamento puros em `tracklist.ts`; UI em `tracklist-hover.tsx`/`tracklist-refresh.ts`.
 - **Lote sem nota (v0.112.0):** o `LotCard` mostra `EvaluateCornerButton` (✨, onde ficaria o selo) que chama `reevaluateLot`; resposta ilegível da IA conta como `failed` em `evalLotsSync` e o toast de `analyzeOnDemand` distingue escopo vazio (login) de "tudo já avaliado".
 - **Modo automático — chave `ai_mode`** (`getAiMode`/`setAiMode`): `"off" | "all" | "watched"`,
   **padrão `"watched"`** (econômico). No `step=aieval`: `off` não coleta/submete; `all` = todos

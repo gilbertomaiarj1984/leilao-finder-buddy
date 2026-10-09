@@ -140,6 +140,25 @@ export const reevaluateLot = createServerFn({ method: "POST" })
   });
 
 /**
+ * Refresh manual da tracklist de UM lote (botão na visão das faixas): primeiro re-puxa as faixas
+ * do Discogs e depois força a fama pela IA (se houver provedor). Devolve a lista gravada.
+ */
+export const refreshLotTracklistFn = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { id?: string } | undefined) => {
+    if (!input?.id || typeof input.id !== "string") throw new Error("Lote inválido.");
+    return { id: input.id };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { aiConfigured } = await import("./ai-eval.server");
+    const { getAiProvider } = await import("./app-state.server");
+    const { refreshLotTracklist } = await import("./tracklist-step.server");
+    return await refreshLotTracklist(data.id, await getAiProvider(), aiConfigured());
+  });
+
+/**
  * Reavalia a nota da IA de vigiados/lances cujo preço ATUAL (ao vivo, do `peca.asp`) subiu o
  * bastante desde a avaliação (`priceRoseSinceEval`, ver `ai-reprice.ts`) — a nota mistura
  * raridade + oportunidade, então fica otimista demais quando os lances sobem. Disparado pelo
