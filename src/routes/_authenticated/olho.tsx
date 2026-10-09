@@ -635,20 +635,23 @@ function OlhoPage() {
                     </ul>
                   ) : null}
                 </div>
-                {group.items.map((item) =>
-                  view === "expanded" ? (
+                {group.items.map((item) => {
+                  const itemUpcoming = upcomingByItem.get(item.id) ?? [];
+                  // Visão expandida: álbum sem lote por vir fica numa linha mínima (artista — álbum).
+                  return view === "expanded" && itemUpcoming.length > 0 ? (
                     renderCard(item)
                   ) : (
                     <LookoutSummaryRow
                       key={item.id}
                       item={item}
-                      upcoming={upcomingByItem.get(item.id) ?? []}
+                      upcoming={itemUpcoming}
                       watchedIds={watchedIds}
+                      compact={view === "expanded"}
                       onOpen={() => setOpenId(item.id)}
                       onMerge={(sourceId) => mergeMut.mutate({ targetId: item.id, sourceId })}
                     />
-                  ),
-                )}
+                  );
+                })}
               </div>
             ))}
             {archived.length ? (
