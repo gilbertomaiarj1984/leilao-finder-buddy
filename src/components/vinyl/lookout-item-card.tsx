@@ -1,4 +1,6 @@
 import {
+  ArrowDown,
+  ArrowUp,
   Binoculars,
   Check,
   ChevronDown,
@@ -560,12 +562,29 @@ export function LookoutItemCard({
                           {m.time ? ` ${m.time}` : ""}
                           {m.uf ? ` · ${m.uf}` : ""}
                         </span>
-                        <span className="font-semibold text-primary">Atual {m.price || "—"}</span>
-                        {vs === "under" ? (
-                          <span className="text-green-600 dark:text-green-400">abaixo do teto</span>
-                        ) : vs === "over" ? (
-                          <span className="text-red-600 dark:text-red-400">acima do teto</span>
-                        ) : null}
+                        <span
+                          className={`inline-flex items-center gap-0.5 font-semibold ${
+                            vs === "over"
+                              ? "text-red-600 dark:text-red-400"
+                              : vs === "under"
+                                ? "text-green-600 dark:text-green-400"
+                                : "text-primary"
+                          }`}
+                          title={
+                            vs === "over"
+                              ? "Acima do teto"
+                              : vs === "under"
+                                ? "Abaixo do teto"
+                                : undefined
+                          }
+                        >
+                          Atual {m.price || "—"}
+                          {vs === "over" ? (
+                            <ArrowUp className="h-3.5 w-3.5" aria-label="acima do teto" />
+                          ) : vs === "under" ? (
+                            <ArrowDown className="h-3.5 w-3.5" aria-label="abaixo do teto" />
+                          ) : null}
+                        </span>
                         {m.marketLowBr != null ? (
                           <span title="Faixa no mercado BR (Discogs, com frete)">
                             Discogs BR {brl(m.marketLowBr)}

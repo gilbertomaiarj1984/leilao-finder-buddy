@@ -4,7 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
-- **0.126.0** — De olho (visão Expandida): álbum sem lote por vir fica numa linha mínima (artista — álbum), clicar abre o cartão completo.
+- **0.126.0** — De olho: álbum sem lote por vir fica numa linha mínima (artista — álbum) na visão Expandida; o teto agora marca o preço dos lotes por vir: vermelho + seta ↑ acima do teto, verde + seta ↓ abaixo.
 - **0.125.0** — Botão de passar a IA num lote (sem nota/sem faixas): depois da nota, roda também as faixas do Discogs + a fama.
 - **0.124.1** — Vigia: vigiar/desvigiar pela aba Lances atualiza na hora o botão do card (`bid.watched`) e inclui o lote em Vigiados mesmo fora da varredura geral (antes só aparecia após recarregar a página).
 - **0.124.0** — Tracklist: faixas e ordem vêm do Discogs (`/releases/{id}`); a IA só classifica a fama (`step=fame`, independente), faixa sem fama fica cinza. Tracklists antigas (da IA) zeradas e refeitas pelo Discogs. Botão "atualizar" na visão das faixas: re-puxa do Discogs e depois força a fama pela IA, sob demanda.
