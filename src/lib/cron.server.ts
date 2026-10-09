@@ -217,6 +217,16 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await runTracklistBackfill(max));
     }
 
+    // Fama das faixas (alta/media/baixa) pela IA, nas tracklists que o Discogs já trouxe.
+    // Independente do `step=tracklist`; no-op sem provedor de IA.
+    if (step === "fame") {
+      const { aiConfigured } = await import("./ai-eval.server");
+      if (!aiConfigured()) return json({ skipped: "nenhum provedor de IA configurado" });
+      const { runFameBackfill } = await import("./tracklist-step.server");
+      const max = Number(url.searchParams.get("max")) || 20;
+      return json(await runFameBackfill(max));
+    }
+
     if (step === "aiident") {
       const { runAiIdentStep } = await import("./ai-ident-step.server");
       const max = url.searchParams.get("max") ? Number(url.searchParams.get("max")) : undefined;

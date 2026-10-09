@@ -1,18 +1,20 @@
 /**
- * Tracklist do álbum devolvida pela IA junto com a avaliação do lote (`lot_ai.tracklist`).
- * Módulo puro/client-safe: tipo, normalização do JSON da IA e agrupamento por lado.
+ * Tracklist do álbum (`lot_ai.tracklist`): faixas e ordem vêm do **Discogs**
+ * (`parseDiscogsTracklist`); a IA só classifica a fama de cada faixa (`buildFamePrompt` /
+ * `applyFame`). Módulo puro/client-safe: tipo, normalização, parsing e agrupamento por lado.
  *
- * `fame` = quão conhecida é a faixa: "alta" (verde, maiores sucessos), "media" (amarelo,
+ * `fame` = quão conhecida é a faixa (ou `null` enquanto a IA não classificou): "alta" (verde, maiores sucessos), "media" (amarelo,
  * conhecidas) e "baixa" (vermelho, pouco conhecidas e/ou lado B).
  */
 export const TRACK_FAMES = ["alta", "media", "baixa"] as const;
 export type TrackFame = (typeof TRACK_FAMES)[number];
 
 export type Track = {
-  /** Lado do disco ("A", "B", ...); null quando a IA não informou. */
+  /** Lado do disco ("A", "B", ...); null quando a fonte não informou. */
   side: string | null;
   title: string;
-  fame: TrackFame;
+  /** Fama pela IA; `null` = ainda não classificada (as faixas vêm do Discogs antes da IA). */
+  fame: TrackFame | null;
 };
 
 const MAX_TRACKS = 40;
@@ -31,7 +33,7 @@ export function normalizeTracklist(value: unknown): Track[] | null {
     const fameRaw = typeof o["fame"] === "string" ? o["fame"].toLowerCase().trim() : "";
     const fame = (TRACK_FAMES as readonly string[]).includes(fameRaw)
       ? (fameRaw as TrackFame)
-      : "baixa";
+      : null;
     out.push({ side, title: title.slice(0, 120), fame });
     if (out.length >= MAX_TRACKS) break;
   }
@@ -49,36 +51,83 @@ export function groupTracksBySide(tracks: Track[]): { side: string | null; track
   return groups;
 }
 
-/** Extrai a tracklist do texto devolvido pelo modelo (objeto `{tracklist:[...]}` ou array). */
-export function parseTracklistText(text: string): Track[] | null {
-  if (!text) return null;
-  const objStart = text.indexOf("{");
-  const arrStart = text.indexOf("[");
-  try {
-    if (objStart >= 0 && (arrStart < 0 || objStart < arrStart)) {
-      const obj = JSON.parse(text.slice(objStart, text.lastIndexOf("}") + 1)) as Record<
-        string,
-        unknown
-      >;
-      return normalizeTracklist(obj["tracklist"]);
+/** Faixa sem fama — o que o Discogs informa (a fama vem da IA). */
+export type RawTrack = Omit<Track, "fame">;
+
+/**
+ * Converte o `tracklist` de `GET /releases/{id}` do Discogs em faixas (ordem do disco).
+ * Só entram itens `type_: "track"` (ignora `heading`); itens `index` (faixa composta, ex.: um
+ * medley) são expandidos pelas `sub_tracks`. O lado sai da `position` ("A1"→"A", "B"→"B",
+ * "2-C3"→"C"); posição numérica ("1", "2") ou vazia fica sem lado.
+ */
+export function parseDiscogsTracklist(value: unknown): RawTrack[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: RawTrack[] = [];
+  const visit = (item: unknown) => {
+    if (!item || typeof item !== "object") return;
+    const o = item as Record<string, unknown>;
+    const type = typeof o["type_"] === "string" ? o["type_"] : "track";
+    if (type === "heading") return;
+    if (type === "index" && Array.isArray(o["sub_tracks"])) {
+      for (const sub of o["sub_tracks"]) visit(sub);
+      return;
     }
-    if (arrStart >= 0) {
-      return normalizeTracklist(JSON.parse(text.slice(arrStart, text.lastIndexOf("]") + 1)));
-    }
-  } catch {
-    return null;
+    const title = typeof o["title"] === "string" ? o["title"].replace(/\s+/g, " ").trim() : "";
+    if (!title) return;
+    const position = typeof o["position"] === "string" ? o["position"].trim().toUpperCase() : "";
+    const m = position.match(/^(?:\d+\s*[-.]\s*)?([A-Z]{1,2})(?=\d|$)/);
+    out.push({ side: m ? m[1] : null, title: title.slice(0, 120) });
+  };
+  for (const item of value) {
+    visit(item);
+    if (out.length >= MAX_TRACKS) break;
   }
-  return null;
+  return out.length ? out.slice(0, MAX_TRACKS) : null;
 }
 
-/** Prompt (só texto) que pede a tracklist de um álbum JÁ identificado — usado no retroativo. */
-export function buildTracklistPrompt(album: string): string {
+/** Prompt (só texto) que pede a fama de cada faixa JÁ conhecida do álbum. */
+export function buildFamePrompt(album: string, tracks: RawTrack[]): string {
   return (
     `Álbum de vinil: ${JSON.stringify(album)}.\n` +
-    'Devolva um objeto JSON com a chave "tracklist": faixas do álbum na ordem do disco, como ' +
-    'array de {"side":"A","title":"Nome da faixa","fame":"alta|media|baixa"}. "side" é o lado ' +
-    'do vinil ("A", "B"...). "fame": "alta" = maiores sucessos do álbum, "media" = ' +
-    'conhecidas, "baixa" = pouco conhecidas e/ou de lado B. Só responda se tiver CERTEZA do ' +
-    "álbum e de suas faixas — nunca invente; use [] quando não souber. Responda só com o JSON."
+    `Faixas (na ordem do disco): ${JSON.stringify(tracks.map((t) => t.title))}.\n` +
+    'Devolva um objeto JSON {"fame":[...]} com EXATAMENTE uma entrada por faixa, na mesma ' +
+    'ordem, cada uma "alta" (maiores sucessos do álbum), "media" (conhecidas) ou "baixa" ' +
+    "(pouco conhecidas e/ou de lado B). Não adicione, remova nem renomeie faixas. Se não " +
+    'conhecer o álbum, use "baixa" em todas. Responda só com o JSON.'
   );
+}
+
+/** Lê o texto da IA e devolve a fama por posição (`null` onde faltou/veio inválido). */
+export function parseFameText(text: string, count: number): (TrackFame | null)[] {
+  const none = Array.from({ length: count }, () => null);
+  if (!text) return none;
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return none;
+  try {
+    const obj = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
+    const arr = obj["fame"];
+    if (!Array.isArray(arr)) return none;
+    return none.map((_, i) => {
+      const raw = typeof arr[i] === "string" ? arr[i].toLowerCase().trim() : "";
+      return (TRACK_FAMES as readonly string[]).includes(raw) ? (raw as TrackFame) : null;
+    });
+  } catch {
+    return none;
+  }
+}
+
+/** Faixas do Discogs sem fama ainda (a IA classifica depois, em passo próprio). */
+export function withoutFame(tracks: RawTrack[]): Track[] {
+  return tracks.map((t) => ({ ...t, fame: null }));
+}
+
+/** A lista tem faixa sem fama (precisa passar pela IA)? */
+export function needsFame(tracks: Track[] | null): boolean {
+  return Boolean(tracks?.length && tracks.some((t) => t.fame === null));
+}
+
+/** Aplica a fama da IA (por posição) numa tracklist já existente; sem fama válida mantém `null`. */
+export function applyFame(tracks: Track[], fames: (TrackFame | null)[]): Track[] {
+  return tracks.map((t, i) => ({ ...t, fame: fames[i] ?? t.fame }));
 }

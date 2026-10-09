@@ -18,12 +18,7 @@ import {
 } from "@/lib/vinyl-parse";
 
 import type { AiProvider } from "./ai-provider";
-import {
-  buildTracklistPrompt,
-  normalizeTracklist,
-  parseTracklistText,
-  type Track,
-} from "./tracklist";
+import { normalizeTracklist, type Track } from "./tracklist";
 
 /**
  * Um disco da coleção do usuário, como a UI consome (camelCase; espelha as colunas
@@ -439,38 +434,33 @@ export async function reidentifyCollectionItem(
 }
 
 /**
- * Busca SÓ a tracklist de um disco da coleção (por texto, mesmo prompt do retroativo dos lotes —
- * `buildTracklistPrompt`) e grava em `collection_items.tracklist`. Não mexe em artista/álbum/ano.
- * Quando a IA não sabe, não grava nada (`found: false`) para o botão poder tentar de novo.
+ * Busca SÓ a tracklist de um disco da coleção e grava em `collection_items.tracklist`: faixas e
+ * ordem do Discogs (`buildTracklist`); a fama pela IA é aplicada se houver provedor (opcional). Não mexe em artista/álbum/ano.
+ * Quando o Discogs não acha o disco, não grava nada (`found: false`) para o botão poder tentar de novo.
  */
 export async function fetchCollectionTracklist(
   id: string,
   provider: AiProvider,
 ): Promise<{ found: boolean; tracklist: Track[] | null }> {
   const { aiConfigured, resolveGeminiModel } = await import("./ai-eval.server");
-  const { runText } = await import("./ai-provider.server");
-  const { TRACKLIST_SYSTEM } = await import("./tracklist-step.server");
-  if (!aiConfigured()) {
-    throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
+  const { discogsConfigured } = await import("./discogs.server");
+  const { buildTracklist, rateFame } = await import("./tracklist-step.server");
+  if (!discogsConfigured()) {
+    throw new Error("O Discogs não está configurado (DISCOGS_TOKEN ausente no servidor).");
   }
   const item = (await getAllCollection()).find((i) => i.id === id);
   if (!item) throw new Error("Disco não encontrado na coleção.");
-  const name = [item.artist, item.album || item.title].filter(Boolean).join(" — ");
+  const name = [item.artist, item.album || item.title].filter(Boolean).join(" - ");
   if (!name.trim()) throw new Error("Disco sem artista/álbum para buscar a tracklist.");
 
-  const r = await runText(
-    {
-      system: TRACKLIST_SYSTEM,
-      maxTokens: 1000,
-      text: buildTracklistPrompt(item.year ? `${name} (${item.year})` : name),
-      image: null,
-      json: true,
-    },
-    provider,
-    await resolveGeminiModel(),
-  );
-  const tracklist = parseTracklistText(r.text);
+  const album = item.year ? `${name} (${item.year})` : name;
+  let tracklist = await buildTracklist(album, null);
   if (!tracklist) return { found: false, tracklist: null };
+  // A fama (IA) é opcional: se a IA não estiver disponível/falhar, as faixas ficam sem fama.
+  if (aiConfigured()) {
+    tracklist =
+      (await rateFame(album, tracklist, provider, await resolveGeminiModel())) ?? tracklist;
+  }
   const { error } = await db.from("collection_items").update({ tracklist }).eq("id", id);
   if (error) throw new Error(`Não foi possível gravar a tracklist: ${error.message}`);
   return { found: true, tracklist };

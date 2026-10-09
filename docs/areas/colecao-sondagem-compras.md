@@ -82,9 +82,10 @@
   mostra faixa de mercado nem casa de leilão. A visão **Títulos** (`collectionLabel`) segue como estava.
 - **Tracklist (v0.114.0):** o ícone do card mostra `collection_items.tracklist` (jsonb, formato de
   `lot_ai.tracklist`) ou, na falta, a do lote de origem. Sem nenhuma, o botão fica **clicável** →
-  `fetchCollectionTracklistFn` → `fetchCollectionTracklist` (`collection.server.ts`): pede à IA SÓ a
-  tracklist (`buildTracklistPrompt`, texto, sem tocar em artista/álbum/ano) e grava; se a IA não soube,
-  não grava (dá para tentar de novo).
+  `fetchCollectionTracklistFn` → `fetchCollectionTracklist` (`collection.server.ts`): busca as faixas no
+  **Discogs** (v0.124.0, `buildTracklist`, sem tocar em artista/álbum/ano) e, se houver IA, aplica a fama
+  (`rateFame`; opcional — sem IA as faixas ficam sem fama); se o Discogs não achou, não grava (dá para
+  tentar de novo). As tracklists antigas (da IA) foram zeradas na migração única (ver `ia.md`).
 - **Descritivo da IA (`buildCollectionIdentPrompt`, `ai-eval.server.ts`):** prompt pede um texto
   RICO/LONGO baseado **principalmente no nome do álbum** (+ artista): momento histórico do álbum,
   panorama do artista e **faixa a faixa** quando souber; `max_tokens=2000`, slice do descritivo até

@@ -1,7 +1,11 @@
 import { useMemo, useRef, useState } from "react";
-import { ListMusic } from "lucide-react";
+import { ListMusic, Loader2, RefreshCw } from "lucide-react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  useLotTracklistRefresh,
+  type TracklistRefresh,
+} from "@/components/vinyl/tracklist-refresh";
 import { useLotAiQuery } from "@/lib/queries";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { groupTracksBySide, type Track, type TrackFame } from "@/lib/tracklist";
@@ -11,6 +15,8 @@ const FAME_DOT: Record<TrackFame, string> = {
   media: "bg-yellow-400",
   baixa: "bg-red-500",
 };
+// Faixa ainda sem fama (a IA não classificou): bolinha neutra.
+const UNRATED_DOT = "bg-muted-foreground/30";
 
 const FAME_LABEL: Record<TrackFame, string> = {
   alta: "Maiores sucessos",
@@ -19,7 +25,7 @@ const FAME_LABEL: Record<TrackFame, string> = {
 };
 
 /**
- * Ícone de TRACKLIST do álbum (dados da IA, `lot_ai.tracklist`). Ao parar o mouse em cima
+ * Ícone de TRACKLIST do álbum (faixas do Discogs + fama da IA, `lot_ai.tracklist`). Ao parar o mouse em cima
  * abre a lista por lado, com bolinha verde (mais famosas), amarela (menos) ou vermelha
  * (desconhecidas e/ou lado B). Toque/clique também abre (mobile). Sem tracklist, o ícone
  * fica apagado e explica que ela vem com a análise da IA.
@@ -29,14 +35,22 @@ export function TracklistHover({
   title,
   onRequest,
   loading = false,
+  lotId,
+  refresh: refreshProp,
 }: {
   tracklist?: Track[] | null;
   title?: string;
+  /** Lote cuja tracklist pode ser atualizada manualmente (botão "atualizar" na lista). */
+  lotId?: string | null;
+  /** Refresh customizado (ex.: item da Coleção); tem prioridade sobre `lotId`. */
+  refresh?: TracklistRefresh;
   /** Sem tracklist, torna o botão clicável: pede a tracklist (só ela) e deixa o chamador gravar. */
   onRequest?: () => void;
   loading?: boolean;
 }) {
   const isMobile = useIsMobile();
+  const lotRefresh = useLotTracklistRefresh(refreshProp ? null : lotId);
+  const refresh = refreshProp ?? lotRefresh;
   const [open, setOpen] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const has = Boolean(tracklist?.length);
@@ -88,7 +102,7 @@ export function TracklistHover({
           onMouseLeave={hide}
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
-          <TracklistContent tracklist={tracklist ?? []} title={title} />
+          <TracklistContent tracklist={tracklist ?? []} title={title} refresh={refresh} />
         </PopoverContent>
       ) : null}
     </Popover>
@@ -96,10 +110,40 @@ export function TracklistHover({
 }
 
 /** Corpo da tracklist (lados + bolinhas de fama + legenda): popover do desktop e cartão aberto do celular. */
-export function TracklistContent({ tracklist, title }: { tracklist: Track[]; title?: string }) {
+export function TracklistContent({
+  tracklist,
+  title,
+  refresh,
+}: {
+  tracklist: Track[];
+  title?: string;
+  /** Botão "atualizar": re-puxa as faixas do Discogs e depois força a fama pela IA. */
+  refresh?: TracklistRefresh;
+}) {
   return (
     <>
-      {title ? <p className="mb-2 text-sm font-semibold leading-snug">{title}</p> : null}
+      {title || refresh ? (
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <p className="text-sm font-semibold leading-snug">{title}</p>
+          {refresh ? (
+            <button
+              type="button"
+              onClick={refresh.onClick}
+              disabled={refresh.pending}
+              title="Atualizar: puxa as faixas do Discogs de novo e depois a fama pela IA"
+              aria-label="Atualizar faixas e fama"
+              className="inline-flex shrink-0 items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-60"
+            >
+              {refresh.pending ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3 w-3" />
+              )}
+              atualizar
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="space-y-2">
         {groupTracksBySide(tracklist).map((g, gi) => (
           <div key={`${g.side ?? "-"}-${gi}`}>
@@ -110,8 +154,8 @@ export function TracklistContent({ tracklist, title }: { tracklist: Track[]; tit
               {g.tracks.map((t, i) => (
                 <li key={`${t.title}-${i}`} className="flex items-start gap-2">
                   <span
-                    className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${FAME_DOT[t.fame]}`}
-                    title={FAME_LABEL[t.fame]}
+                    className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${t.fame ? FAME_DOT[t.fame] : UNRATED_DOT}`}
+                    title={t.fame ? FAME_LABEL[t.fame] : "Fama ainda não avaliada pela IA"}
                   />
                   <span className="leading-snug">{t.title}</span>
                 </li>
@@ -143,9 +187,12 @@ export function LotTracklistHover({
   own,
   onRequest,
   loading,
+  refresh,
 }: {
   lotId?: string | null;
   title?: string;
+  /** Refresh da tracklist própria (Coleção); sem ela, atualiza a do lote (`lot_ai`). */
+  refresh?: TracklistRefresh;
   /** Tracklist própria do item (ex.: buscada na Coleção); tem prioridade sobre a do lote. */
   own?: Track[] | null;
   onRequest?: () => void;
@@ -160,6 +207,8 @@ export function LotTracklistHover({
     <TracklistHover
       tracklist={own?.length ? own : fromLot}
       title={title}
+      lotId={own?.length ? null : lotId}
+      refresh={refresh}
       onRequest={onRequest}
       loading={loading}
     />
