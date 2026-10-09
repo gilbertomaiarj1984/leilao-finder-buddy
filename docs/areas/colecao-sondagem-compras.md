@@ -208,7 +208,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   `watched-tab.tsx`; a seção de lances não recebe). Borda **fúcsia**; precedência
   **lance > vigia > de olho**. Selo "De olho · NN%" (+ "abaixo/acima do teto" vs. valor atual).
   O lote marcado também fica fúcsia, com o botão preenchido.
-- **Página `/olho`:** `getLookoutOverview` → `computeLookout` (`lookout-matches.server.ts`, fonte
+- **Visão Expandida:** disco ativo sem lote por vir usa `LookoutSummaryRow compact` (uma linha, só artista — álbum). **Página `/olho`:** `getLookoutOverview` → `computeLookout` (`lookout-matches.server.ts`, fonte
   única da página, do contador e do aviso): lotes de hoje até +14 dias (retenção de `lots`) que
   ainda não terminaram, com IA/Discogs; por item mostra teto/nota editáveis, matches **por vir**
   (Vigiar via `toggleWatch`, abrir, ✓/✕, "novo") e **aparições anteriores** = vendas arquivadas

@@ -15,12 +15,15 @@ export function LookoutSummaryRow({
   item,
   upcoming,
   watchedIds,
+  compact = false,
   onOpen,
   onMerge,
 }: {
   item: LookoutItem;
   upcoming: LookoutUpcoming[];
   watchedIds: ReadonlySet<string>;
+  /** Linha mínima (só artista — álbum), p/ disco sem lote por vir na visão expandida. */
+  compact?: boolean;
   onOpen: () => void;
   onMerge: (sourceId: string) => void;
 }) {
@@ -29,6 +32,7 @@ export function LookoutSummaryRow({
   const news = upcoming.filter((m) => m.isNew).length;
   const watching = upcoming.filter((m) => watchedIds.has(m.idPeca)).length;
   const terms = item.terms ?? [];
+  const label = lookoutLabel(item) || item.title || "Disco sem identificação";
   return (
     <div
       role="button"
@@ -60,12 +64,19 @@ export function LookoutSummaryRow({
         e.preventDefault();
         onMerge(sourceId);
       }}
-      className={`flex cursor-pointer items-center gap-3 rounded-md border bg-card p-2 text-left transition-colors hover:bg-accent/40 ${
+      className={`flex cursor-pointer items-center rounded-md border bg-card text-left transition-colors hover:bg-accent/40 ${
+        compact ? "gap-2 px-2 py-1" : "gap-3 p-2"
+      } ${
         archived ? "border-border opacity-70" : "border-fuchsia-500/60"
       } ${dragOver ? "ring-2 ring-fuchsia-500" : ""}`}
       title="Clique para abrir o cartão detalhado (arraste sobre outro para juntar)"
     >
-      {item.image ? (
+      {compact ? (
+        <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={label}>
+          <span className="font-semibold text-foreground">{label}</span>
+          <span> · sem lote por vir</span>
+        </p>
+      ) : item.image ? (
         <img
           src={item.image}
           alt=""
@@ -77,27 +88,27 @@ export function LookoutSummaryRow({
           <Binoculars className="h-5 w-5 text-muted-foreground/50" />
         </div>
       )}
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-foreground">
-          {lookoutLabel(item) || item.title || "Disco sem identificação"}
-        </p>
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-          {archived ? (
-            <span>{item.status === "acquired" ? "Adquirido" : "Desistido"}</span>
-          ) : (
-            <span>
-              {upcoming.length} por vir
-              {news ? ` (${news} novo${news === 1 ? "" : "s"})` : ""}
-            </span>
-          )}
-          {watching ? <span>{watching} vigiando</span> : null}
-          {item.merged?.length ? <span>+{item.merged.length} juntado(s)</span> : null}
-          {terms.length ? <span>palavras: {terms.join(", ")}</span> : null}
-          {item.maxPrice != null ? (
-            <span>teto R$ {item.maxPrice.toFixed(2).replace(".", ",")}</span>
-          ) : null}
-        </p>
-      </div>
+      {compact ? null : (
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-foreground">{label}</p>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+            {archived ? (
+              <span>{item.status === "acquired" ? "Adquirido" : "Desistido"}</span>
+            ) : (
+              <span>
+                {upcoming.length} por vir
+                {news ? ` (${news} novo${news === 1 ? "" : "s"})` : ""}
+              </span>
+            )}
+            {watching ? <span>{watching} vigiando</span> : null}
+            {item.merged?.length ? <span>+{item.merged.length} juntado(s)</span> : null}
+            {terms.length ? <span>palavras: {terms.join(", ")}</span> : null}
+            {item.maxPrice != null ? (
+              <span>teto R$ {item.maxPrice.toFixed(2).replace(".", ",")}</span>
+            ) : null}
+          </p>
+        </div>
+      )}
       {!archived ? (
         <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden="true" />
       ) : null}
