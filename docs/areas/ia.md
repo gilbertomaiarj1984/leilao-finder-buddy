@@ -125,6 +125,7 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   mobile; `refreshLotTracklistFn` → `refreshLotTracklist`): re-puxa as faixas do Discogs (ignora o
   gravado) e só depois força a fama pela IA; preserva a fama de faixas de mesmo título se a IA faltar/
   falhar; na Coleção, o mesmo botão reexecuta `fetchCollectionTracklist`. Independe do `ai_mode`.
+  **Reavaliar um lote** (`reevaluateLot`: ✨ do lote sem nota, "refazer consulta", ícone da Análise) também roda `refreshLotTracklist` depois da nota (best-effort, só com `DISCOGS_TOKEN` e álbum identificado) — o lote sai com nota, faixas e fama.
   Normalização/agrupamento puros em `tracklist.ts`; UI em `tracklist-hover.tsx`/`tracklist-refresh.ts`.
 - **Lote sem nota (v0.112.0):** o `LotCard` mostra `EvaluateCornerButton` (✨, onde ficaria o selo) que chama `reevaluateLot`; resposta ilegível da IA conta como `failed` em `evalLotsSync` e o toast de `analyzeOnDemand` distingue escopo vazio (login) de "tudo já avaliado".
 - **Modo automático — chave `ai_mode`** (`getAiMode`/`setAiMode`): `"off" | "all" | "watched"`,

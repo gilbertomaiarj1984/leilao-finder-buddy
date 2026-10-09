@@ -100,8 +100,8 @@ export const setLotTags = createServerFn({ method: "POST" })
  * Refaz a avaliação da IA de UM lote sob demanda (botão no painel de detalhes da nota).
  * Ignora o cache por título (sempre consulta de novo, mesmo sem mudança no título) — é
  * justamente para atualizar com base em informações novas do lote (imagem, texto). Usa o
- * provedor de IA PADRÃO do usuário. Devolve a linha gravada para o cliente atualizar o
- * cache local sem precisar reler tudo.
+ * provedor de IA PADRÃO do usuário. Depois da nota, roda a rotina da tracklist (faixas do
+ * Discogs + fama). Devolve a linha gravada para o cliente atualizar o cache local sem reler tudo.
  */
 export const reevaluateLot = createServerFn({ method: "POST" })
   .middleware([requireAuth])
@@ -136,6 +136,20 @@ export const reevaluateLot = createServerFn({ method: "POST" })
     const row = rows[0];
     if (!row) throw new Error(error || "A IA não conseguiu reavaliar este lote.");
     await upsertLotAi([row]);
+    // Lote recém-avaliado (ex.: sem nota e sem faixas): completa com a rotina da tracklist —
+    // faixas do Discogs + fama pela IA. Best-effort: falha aqui não derruba a reavaliação.
+    if (row.album) {
+      try {
+        const { discogsConfigured } = await import("./discogs.server");
+        if (discogsConfigured()) {
+          const { refreshLotTracklist } = await import("./tracklist-step.server");
+          const r = await refreshLotTracklist(row.id, provider, true);
+          return { row: { ...row, tracklist: r.tracklist } };
+        }
+      } catch (error) {
+        console.error(`[reevaluateLot] tracklist de ${row.id} falhou`, error);
+      }
+    }
     return { row };
   });
 
