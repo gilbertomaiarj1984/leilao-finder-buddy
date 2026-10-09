@@ -6,6 +6,7 @@ import { parseLookoutBulk } from "@/lib/lookout-bulk";
 import {
   buildLotIdentity,
   lookoutCandidates,
+  lookoutOwnedInCollection,
   matchLookoutForLot,
   notifyKey,
   pickNotifiable,
@@ -366,5 +367,31 @@ describe("parseLookoutBulk", () => {
     ]);
     expect(r[0]!.year).toBe(1973);
     expect(r[2]!.year).toBeNull();
+  });
+});
+
+describe("lookoutOwnedInCollection", () => {
+  const mk = (id: string, artist: string, album: string, year: number | null) =>
+    item({ id, lotId: `manual-${id}`, artist, album, year, status: "active" });
+  const col = [
+    { id: "c1", artist: "The Beatles", album: "Abbey Road", year: 1969 },
+    { id: "c2", artist: "Pink Floyd", album: "The Wall", year: 1979 },
+  ];
+  test("acha o disco que já está na Coleção e ignora outro álbum do mesmo artista", () => {
+    const hits = lookoutOwnedInCollection(
+      [
+        mk("a", "The Beatles", "Abbey Road", 1969),
+        mk("b", "The Beatles", "Let It Be", 1970),
+        mk("c", "Radiohead", "OK Computer", 1997),
+      ],
+      col,
+    );
+    expect(hits.map((h) => h.itemId)).toEqual(["a"]);
+    expect(hits[0]!.owned.id).toBe("c1");
+    expect(hits[0]!.confident).toBe(true);
+  });
+  test("ignora itens que não estão ativos", () => {
+    const arch = { ...mk("a", "The Beatles", "Abbey Road", 1969), status: "acquired" as const };
+    expect(lookoutOwnedInCollection([arch], col)).toEqual([]);
   });
 });
