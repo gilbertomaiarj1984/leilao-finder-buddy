@@ -9,6 +9,7 @@
  */
 import { parse } from "node-html-parser";
 
+import { parseDiscogsTracklist, type RawTrack } from "./tracklist";
 import { normalizeForMatch } from "./vinyl-parse";
 
 const BASE = "https://api.discogs.com";
@@ -373,26 +374,13 @@ async function searchReleases(qs: string): Promise<SearchHit[]> {
   return res?.results ?? [];
 }
 
-export async function fetchMarket(album: string | null, title: string): Promise<MarketData> {
-  const empty: MarketData = {
-    matched: false,
-    releaseId: null,
-    releaseTitle: null,
-    year: null,
-    numForSale: null,
-    lowestPrice: null,
-    currency: null,
-    suggestedPrice: null,
-    suggestedCondition: null,
-    have: null,
-    want: null,
-    priceLowBr: null,
-    priceHighBr: null,
-    numForSaleBr: null,
-  };
-
+/**
+ * Acha o release do Discogs para o álbum/título (busca estruturada artista+álbum+vinil, depois
+ * texto livre; sempre pontuada por `pickBestRelease`). `null` quando não casa com segurança.
+ */
+async function findRelease(album: string | null, title: string): Promise<SearchHit | null> {
   const query = buildQuery(album, title);
-  if (!query) return empty;
+  if (!query) return null;
 
   // Alvo (artista/álbum/ano) para casar com precisão. Sem album da IA, usa a query como
   // título e tenta o ano do próprio texto do lote.
@@ -415,6 +403,44 @@ export async function fetchMarket(album: string | null, title: string): Promise<
     const qs = `type=release&per_page=25&q=${encodeURIComponent(query)}`;
     hit = pickBestRelease(target, await searchReleases(qs));
   }
+  return hit?.id ? hit : null;
+}
+
+/**
+ * Faixas (e lado) de um release do Discogs, na ordem do disco — fonte da `tracklist` do app.
+ * Usa o `releaseId` já conhecido (`lot_market`) ou busca pelo álbum. `null` = sem token, sem
+ * match ou release sem faixas.
+ */
+export async function fetchDiscogsTracklist(
+  album: string,
+  releaseId: number | null = null,
+): Promise<RawTrack[] | null> {
+  let id = releaseId;
+  if (!id) id = (await findRelease(album, album))?.id ?? null;
+  if (!id) return null;
+  const rel = (await discogsGet(`/releases/${id}`)) as { tracklist?: unknown } | null;
+  return parseDiscogsTracklist(rel?.tracklist);
+}
+
+export async function fetchMarket(album: string | null, title: string): Promise<MarketData> {
+  const empty: MarketData = {
+    matched: false,
+    releaseId: null,
+    releaseTitle: null,
+    year: null,
+    numForSale: null,
+    lowestPrice: null,
+    currency: null,
+    suggestedPrice: null,
+    suggestedCondition: null,
+    have: null,
+    want: null,
+    priceLowBr: null,
+    priceHighBr: null,
+    numForSaleBr: null,
+  };
+
+  const hit = await findRelease(album, title);
   if (!hit?.id) return empty;
 
   const releaseId = hit.id;

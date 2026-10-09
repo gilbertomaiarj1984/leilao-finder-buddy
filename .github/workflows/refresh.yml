@@ -147,7 +147,7 @@ jobs:
             sleep 60
           done
 
-          echo "== Tracklist retroativa (lotes de hoje em diante já avaliados) =="
+          echo "== Tracklist retroativa (Discogs; lotes de hoje em diante já avaliados) =="
           for i in $(seq 1 10); do
             if ! res="$(call_soft "/api/cron?step=tracklist&max=20")"; then
               echo "tracklist $i: falhou — $res"
@@ -155,6 +155,18 @@ jobs:
               break
             fi
             echo "tracklist $i: $res"
+            if echo "$res" | jq -e '.skipped' >/dev/null 2>&1; then break; fi
+            if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
+          done
+
+          echo "== Fama das faixas (IA, sobre as tracklists do Discogs) =="
+          for i in $(seq 1 10); do
+            if ! res="$(call_soft "/api/cron?step=fame&max=20")"; then
+              echo "fame $i: falhou — $res"
+              soft_failed=1
+              break
+            fi
+            echo "fame $i: $res"
             if echo "$res" | jq -e '.skipped' >/dev/null 2>&1; then break; fi
             if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
           done

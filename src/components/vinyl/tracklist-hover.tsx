@@ -11,6 +11,8 @@ const FAME_DOT: Record<TrackFame, string> = {
   media: "bg-yellow-400",
   baixa: "bg-red-500",
 };
+// Faixa ainda sem fama (a IA não classificou): bolinha neutra.
+const UNRATED_DOT = "bg-muted-foreground/30";
 
 const FAME_LABEL: Record<TrackFame, string> = {
   alta: "Maiores sucessos",
@@ -19,7 +21,7 @@ const FAME_LABEL: Record<TrackFame, string> = {
 };
 
 /**
- * Ícone de TRACKLIST do álbum (dados da IA, `lot_ai.tracklist`). Ao parar o mouse em cima
+ * Ícone de TRACKLIST do álbum (faixas do Discogs + fama da IA, `lot_ai.tracklist`). Ao parar o mouse em cima
  * abre a lista por lado, com bolinha verde (mais famosas), amarela (menos) ou vermelha
  * (desconhecidas e/ou lado B). Toque/clique também abre (mobile). Sem tracklist, o ícone
  * fica apagado e explica que ela vem com a análise da IA.
@@ -110,8 +112,8 @@ export function TracklistContent({ tracklist, title }: { tracklist: Track[]; tit
               {g.tracks.map((t, i) => (
                 <li key={`${t.title}-${i}`} className="flex items-start gap-2">
                   <span
-                    className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${FAME_DOT[t.fame]}`}
-                    title={FAME_LABEL[t.fame]}
+                    className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${t.fame ? FAME_DOT[t.fame] : UNRATED_DOT}`}
+                    title={t.fame ? FAME_LABEL[t.fame] : "Fama ainda não avaliada pela IA"}
                   />
                   <span className="leading-snug">{t.title}</span>
                 </li>

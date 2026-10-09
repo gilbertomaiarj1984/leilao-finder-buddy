@@ -127,7 +127,8 @@ export async function upsertLotAi(rows: LotAiRow[]): Promise<number> {
     tags: r.tags,
     model: r.model,
     eval_price: r.eval_price,
-    tracklist: r.tracklist,
+    // Reavaliar não apaga a tracklist (vem do Discogs, preenchida por step=tracklist).
+    ...(r.tracklist ? { tracklist: r.tracklist } : {}),
     evaluated_at: evaluatedAt,
   }));
   const { error } = await db.from("lot_ai").upsert(payload, { onConflict: "id" });

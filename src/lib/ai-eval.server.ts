@@ -17,7 +17,6 @@
  */
 import { parsePrice, type VinylLot } from "./vinyl-parse";
 import { priceRoseSinceEval } from "./ai-reprice";
-import { normalizeTracklist } from "./tracklist";
 import type { LotAiRow } from "./lot-ai.server";
 import type { LotIdentRow } from "./lot-ident.server";
 import {
@@ -120,12 +119,7 @@ function buildUserPrompt(lot: EvalLot): string {
     '"indefinido" quando não houver preço)\n' +
     '- "album": artista e álbum que você identificou (da capa, se houver; "" se não souber)\n' +
     '- "reason": 1 frase curta em português justificando a nota\n' +
-    '- "tags": array curto de gênero/estilo/época/selo (ex.: ["mpb","1972","odeon"])\n' +
-    '- "tracklist": faixas do álbum, na ordem do disco, como array de ' +
-    '{"side":"A","title":"Nome da faixa","fame":"alta|media|baixa"}. "side" é o lado do ' +
-    'vinil ("A", "B"...). "fame": "alta" = os maiores sucessos do álbum, "media" = ' +
-    'conhecidas, "baixa" = pouco conhecidas e/ou de lado B. Só inclua se tiver CERTEZA do ' +
-    "álbum e de suas faixas — nunca invente; use [] quando não souber.\n\n" +
+    '- "tags": array curto de gênero/estilo/época/selo (ex.: ["mpb","1972","odeon"])\n\n' +
     "Disco:\n" +
     JSON.stringify(info) +
     "\n\nResponda só com o objeto JSON."
@@ -136,7 +130,7 @@ function buildUserPrompt(lot: EvalLot): string {
 function buildEvalRequest(lot: EvalLot): AiRequest {
   return {
     system: SYSTEM_PROMPT,
-    maxTokens: 1200,
+    maxTokens: 600,
     text: buildUserPrompt(lot),
     image: usableImage(lot.image),
     json: true,
@@ -187,9 +181,8 @@ function parseEvalObject(
         .map((t) => t.slice(0, 40))
         .slice(0, 8)
     : [];
-  const tracklist = normalizeTracklist(obj["tracklist"]);
   if (score === null && !rarity && !deal && !album && !reason && tags.length === 0) return null;
-  return { score, rarity, deal, album, reason, tags, tracklist };
+  return { score, rarity, deal, album, reason, tags, tracklist: null };
 }
 
 /** Extrai o texto concatenado dos blocos `text` de uma mensagem de resposta. */

@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.124.0** — Tracklist: faixas e ordem vêm do Discogs (`/releases/{id}`); a IA só classifica a fama (`step=fame`, independente), faixa sem fama fica cinza. Tracklists antigas (da IA) zeradas e refeitas pelo Discogs.
 - **0.123.0** — De olho: botão "Já tenho" detecta discos que já estão na Coleção e os tira da lista (arquivados como adquiridos), com confirmação.
 - **0.122.0** — De olho: botão Adicionar para subir uma lista ou digitar artista/álbum; a IA identifica um a um, busca a capa no Discogs e cria o item sem precisar de lote em leilão.
 - **0.121.1** — IA: Claude restrito ao Haiku 5.5 (único e padrão, por custo); Haiku 4.5 removido.
