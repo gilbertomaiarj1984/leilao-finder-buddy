@@ -65,11 +65,12 @@ import {
   getTrashKeywordDenylist,
 } from "@/lib/lot-exclusion.functions";
 import { buildTrashModel, matchPossibleTrash, trashProfile } from "@/lib/lot-exclusion";
-import { saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
+import { BIDS_ACCUM_STORAGE_KEY, saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
 import {
   bidIsCovered,
   bidIsWinning,
   COMPILATION_LABEL,
+  extractArtist,
   isDiscBundle,
   LOTE_LABEL,
   normalizeForMatch,
@@ -420,7 +421,7 @@ export function useDashboardData() {
   // ela usa esta MESMA função, senão a versão dela (sem mesclar) sobrescreve o acumulado
   // desta rota ao navegar entre as duas.
   const { query: watched, accumRef: watchedAccumRef } = useWatchedQuery();
-  const { query: bids } = useBidsQuery();
+  const { query: bids, accumRef: bidsAccumRef } = useBidsQuery();
   // Avaliações da IA (score/raridade/oportunidade) e interesses do usuário: alimentam o
   // badge de nota no canto do card. Best-effort — sem avaliação, o card fica como hoje.
   const lotAiQuery = useLotAiQuery();
@@ -1411,6 +1412,34 @@ export function useDashboardData() {
         watchedAccumRef.current!.delete(key);
       } else {
         const src = lots.data?.lots.find((item) => item.idPeca === lot.idPeca);
+        // Lote fora da varredura geral (ex.: lance dado em casa/dia fora da janela): sem `src` o
+        // vigiado não entrava na aba Vigiados até recarregar a página. Cai nos dados do lance.
+        const bid = src ? undefined : bidsAccumRef.current!.get(key);
+        if (!src && bid) {
+          const [bd, bm, by] = bid.date.split("/");
+          const bidDay = bd && bm && by ? `${by}-${bm}-${bd}` : "";
+          const [ty, tm, td] = (todayKey ?? "").split("-");
+          // `date` de vigiado é o dia do LEILÃO; a do lance pode ser anterior (seria podada na hora).
+          const date = bidDay && todayKey && bidDay >= todayKey ? bid.date : `${td}/${tm}/${ty}`;
+          watchedAccumRef.current!.set(key, {
+            id: key,
+            idPeca: lot.idPeca,
+            idLeilao: lot.idLeilao,
+            base: lot.base,
+            lote: bid.lote,
+            title: bid.title,
+            url: bid.url,
+            image: bid.image,
+            price: "",
+            date,
+            time: "",
+            house: bid.house,
+            houseUrl: "",
+            uf: bid.uf,
+            artist: extractArtist(bid.title),
+            watched: true,
+          });
+        }
         if (src) {
           const [yyyy, mm, dd] = src.dayKey.split("-");
           watchedAccumRef.current!.set(key, {
@@ -1434,6 +1463,14 @@ export function useDashboardData() {
         }
       }
       saveAccum(WATCHED_ACCUM_STORAGE_KEY, watchedAccumRef.current!);
+      // O card da aba Lances lê `bid.watched` (foto da página de lances), não `watchedIds`: sem
+      // atualizar o acumulador/cache de lances o botão ficava em "Vigiar" até recarregar a página.
+      if (bidsAccumRef.current!.has(key)) {
+        const b = bidsAccumRef.current!.get(key)!;
+        bidsAccumRef.current!.set(key, { ...b, watched: result.watched });
+        saveAccum(BIDS_ACCUM_STORAGE_KEY, bidsAccumRef.current!);
+        queryClient.setQueryData(queryKeys.bids, [...bidsAccumRef.current!.values()]);
+      }
       // NÃO invalida queryKeys.watched aqui: a conta do LeilõesBR pode demorar a refletir o
       // toggle que acabou de ser confirmado (ver `toggleWatchOnSite`), e um refetch imediato
       // trazia a lista "atrasada" (sem o lote recém-vigiado, ou ainda com o recém-desvigiado) —
