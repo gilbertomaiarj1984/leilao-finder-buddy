@@ -72,14 +72,82 @@ describe("parseDiscogsTracklist", () => {
       { side: "B", title: "Três" },
       { side: "C", title: "Quatro" },
       { side: null, title: "Cinco" },
-      { side: "B", title: "Parte a" },
-      { side: "B", title: "Parte b" },
+      { side: "B", title: "Medley" },
+      { side: "B", title: "Parte a", sub: true },
+      { side: "B", title: "Parte b", sub: true },
     ]);
   });
 
   test("vazio/inválido vira null", () => {
     expect(parseDiscogsTracklist(undefined)).toBeNull();
     expect(parseDiscogsTracklist([{ type_: "heading", title: "x" }])).toBeNull();
+  });
+});
+
+describe("medley (sub)", () => {
+  test("normalizeTracklist preserva sub", () => {
+    expect(
+      normalizeTracklist([
+        { side: "B", title: "Medley", fame: "alta" },
+        { side: "B", title: "Parte", fame: "baixa", sub: true },
+      ]),
+    ).toEqual([
+      { side: "B", title: "Medley", fame: "alta" },
+      { side: "B", title: "Parte", fame: "baixa", sub: true },
+    ]);
+  });
+
+  test("sub sem posição herda o lado da faixa-mãe", () => {
+    const r = parseDiscogsTracklist([
+      {
+        position: "A3",
+        type_: "index",
+        title: "Pot-pourri",
+        sub_tracks: [{ position: "", type_: "track", title: "X" }],
+      },
+    ]);
+    expect(r).toEqual([
+      { side: "A", title: "Pot-pourri" },
+      { side: "A", title: "X", sub: true },
+    ]);
+  });
+});
+
+describe("medley com posições planas (A2.1…)", () => {
+  test("sintetiza a faixa-mãe e indenta as partes; A9 idem", () => {
+    const t = (position: string, title: string) => ({ position, type_: "track", title });
+    const r = parseDiscogsTracklist([
+      t("A1", "Maria Bethânia"),
+      t("A2.1", "O Que É O Que É?"),
+      t("A2.2", "Eterno Começo"),
+      t("A3", "Nossos Momentos"),
+      t("A9.1", "Anda Luzia"),
+      t("A9.2", "Mal-Me-Quer"),
+      t("B1.1", "Baila Comigo"),
+    ]);
+    expect(r).toEqual([
+      { side: "A", title: "Maria Bethânia" },
+      { side: "A", title: "Medley" },
+      { side: "A", title: "O Que É O Que É?", sub: true },
+      { side: "A", title: "Eterno Começo", sub: true },
+      { side: "A", title: "Nossos Momentos" },
+      { side: "A", title: "Medley" },
+      { side: "A", title: "Anda Luzia", sub: true },
+      { side: "A", title: "Mal-Me-Quer", sub: true },
+      { side: "B", title: "Medley" },
+      { side: "B", title: "Baila Comigo", sub: true },
+    ]);
+  });
+
+  test("mãe real (A2) não é duplicada", () => {
+    const r = parseDiscogsTracklist([
+      { position: "A2", type_: "track", title: "Pot-pourri" },
+      { position: "A2.1", type_: "track", title: "Parte" },
+    ]);
+    expect(r).toEqual([
+      { side: "A", title: "Pot-pourri" },
+      { side: "A", title: "Parte", sub: true },
+    ]);
   });
 });
 

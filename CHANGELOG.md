@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.127.0** — Faixas: ícone sem tracklist agora é clicável em qualquer lote (busca Discogs + fama pela IA; na aba Faixas do celular, botão "Buscar faixas"); faixas de medley (índice do Discogs ou posições "A2.1") aparecem indentadas (↳) sob a faixa-mãe ("Medley" quando o Discogs não dá título).
 - **0.126.0** — De olho: álbum sem lote por vir fica numa linha mínima (artista — álbum) na visão Expandida; o teto agora marca o preço dos lotes por vir: vermelho + seta ↑ acima do teto, verde + seta ↓ abaixo.
 - **0.125.0** — Botão de passar a IA num lote (sem nota/sem faixas): depois da nota, roda também as faixas do Discogs + a fama.
 - **0.124.1** — Vigia: vigiar/desvigiar pela aba Lances atualiza na hora o botão do card (`bid.watched`) e inclui o lote em Vigiados mesmo fora da varredura geral (antes só aparecia após recarregar a página).
