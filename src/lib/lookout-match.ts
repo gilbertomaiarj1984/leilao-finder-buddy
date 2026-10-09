@@ -395,3 +395,54 @@ export function priceVsCeiling(
   if (currentPrice == null || currentPrice <= 0 || maxPrice == null || maxPrice <= 0) return null;
   return currentPrice <= maxPrice ? "under" : "over";
 }
+
+/** Disco da Coleção que corresponde a um item de olho (o usuário já possui). */
+export type LookoutOwnedHit = {
+  itemId: string;
+  owned: { id: string; artist: string; album: string; year: number | null };
+  score: number;
+  /** score ≥ `LOOKOUT_CONFIDENT_MIN`: vem pré-marcado na confirmação. */
+  confident: boolean;
+};
+
+/**
+ * Itens de olho ATIVOS cujo disco (ou um álbum juntado) já está na Coleção. Reusa o mesmo motor
+ * do casamento de lotes: cada disco da Coleção vira uma "identidade de lote" (artista + álbum +
+ * ano) e é pontuado contra o candidato do item. Melhor disco da Coleção por item; score ≥
+ * `LOOKOUT_MATCH_MIN`.
+ */
+export function lookoutOwnedInCollection(
+  items: readonly LookoutItem[],
+  collection: readonly { id: string; artist: string; album: string; year: number | null }[],
+  aliases?: Readonly<Record<string, string>>,
+): LookoutOwnedHit[] {
+  const cands = lookoutCandidates(items, aliases);
+  const owned = collection
+    .filter((c) => c.artist.trim() && c.album.trim())
+    .map((c) => ({
+      c,
+      identity: buildLotIdentity({
+        title: `${c.artist} ${c.album}`,
+        artist: c.artist,
+        album: `${c.artist} - ${c.album}`,
+        knownYear: c.year,
+        aliases,
+      }),
+    }));
+  const best = new Map<string, LookoutOwnedHit>();
+  for (const { item, cand } of cands) {
+    for (const { c, identity } of owned) {
+      const score = ownedScore(cand, identity);
+      if (score < LOOKOUT_MATCH_MIN) continue;
+      const prev = best.get(item.id);
+      if (prev && prev.score >= score) continue;
+      best.set(item.id, {
+        itemId: item.id,
+        owned: { id: c.id, artist: c.artist, album: c.album, year: c.year },
+        score,
+        confident: score >= LOOKOUT_CONFIDENT_MIN,
+      });
+    }
+  }
+  return [...best.values()].sort((a, b) => b.score - a.score);
+}

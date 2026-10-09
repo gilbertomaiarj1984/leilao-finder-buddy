@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
+import { LookoutOwnedDialog } from "@/components/vinyl/lookout-owned-dialog";
 import { LookoutBulkDialog } from "@/components/vinyl/lookout-bulk-dialog";
 import { LookoutItemCard, type LookoutPatch } from "@/components/vinyl/lookout-item-card";
 import { LookoutLotDialog } from "@/components/vinyl/lookout-lot-dialog";
@@ -30,6 +31,7 @@ import {
 import { formatFailoverTrail } from "@/lib/ai-provider";
 import {
   lookoutLabel,
+  lookoutOwnedInCollection,
   notifyKey,
   resolveLookoutArtist,
   type LookoutArtistGroups,
@@ -37,7 +39,13 @@ import {
 } from "@/lib/lookout-match";
 import type { LookoutUpcoming } from "@/lib/lookout-matches.server";
 import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
-import { queryKeys, useLookoutOverviewQuery, useWatchedQuery } from "@/lib/queries";
+import {
+  queryKeys,
+  useAnalyticsAliasesQuery,
+  useCollectionQuery,
+  useLookoutOverviewQuery,
+  useWatchedQuery,
+} from "@/lib/queries";
 import { saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
 
 const ARTIST_DRAG_TYPE = "application/x-lookout-artist";
@@ -375,6 +383,14 @@ function OlhoPage() {
   };
 
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [ownedOpen, setOwnedOpen] = useState(false);
+  // Discos de olho que já estão na Coleção (mesmo motor de casamento dos lotes).
+  const collection = useCollectionQuery();
+  const aliasesQuery = useAnalyticsAliasesQuery();
+  const ownedHits = useMemo(
+    () => lookoutOwnedInCollection(active, collection.data ?? [], aliasesQuery.data?.artists),
+    [active, collection.data, aliasesQuery.data],
+  );
   const [openId, setOpenId] = useState<string | null>(null);
   // Lote "por vir" aberto no cartão completo (o mesmo da home), por cima do cartão do disco.
   const [openLotId, setOpenLotId] = useState<string | null>(null);
@@ -411,6 +427,16 @@ function OlhoPage() {
                 {active.length} disco(s) · {totalUpcoming} match(es) por vir
                 {newCount ? ` (${newCount} novo${newCount === 1 ? "" : "s"})` : ""}
               </span>
+              {ownedHits.length ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setOwnedOpen(true)}
+                  title="Discos de olho que já estão na sua Coleção"
+                >
+                  Já tenho ({ownedHits.length})
+                </Button>
+              ) : null}
               <Button
                 size="sm"
                 variant="outline"
@@ -435,6 +461,19 @@ function OlhoPage() {
         </div>
       </HideableBar>
 
+      <LookoutOwnedDialog
+        open={ownedOpen}
+        onOpenChange={setOwnedOpen}
+        hits={ownedHits}
+        items={active}
+        onConfirm={async (ids) => {
+          for (const id of ids) {
+            const it = active.find((i) => i.id === id);
+            if (it) await acquireItem(it);
+          }
+          toast.success(`${ids.length} disco(s) tirado(s) da lista`);
+        }}
+      />
       <LookoutBulkDialog open={bulkOpen} onOpenChange={setBulkOpen} onDone={refresh} />
       <div className="mx-auto max-w-6xl space-y-4 px-4 py-6">
         {query.isLoading ? (

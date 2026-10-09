@@ -282,6 +282,13 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   sintético `manual-<uuid>`, sem lote de origem, sem repetição (mesmo artista+álbum reaproveita/
   reativa). Depois busca a capa no Discogs (`searchCoverOptions`, prefere o mesmo ano) e grava
   como na Coleção (`importCollectionCover`: comprime em webp na pasta da coleção) — best-effort. O ✨ Identificar usa artista+álbum quando o item não tem título de lote.
+- **"Já tenho" — tirar o que já está na Coleção (v0.123.0):** botão **Já tenho (N)** em `/olho`
+  (aparece só com N>0) → `LookoutOwnedDialog`. `lookoutOwnedInCollection` (`lookout-match.ts`,
+  puro) reaproveita o motor do casamento de lotes: cada disco da Coleção vira uma identidade de
+  lote (`buildLotIdentity`) pontuada por `ownedScore` contra os candidatos dos itens ativos
+  (inclui álbuns juntados e apelidos de artista); melhor disco por item, score ≥ 0,6; ≥ 0,8 vem
+  pré-marcado, o incerto fica desmarcado. Confirmar reusa `acquireItem` (status `acquired` →
+  "Arquivados" + remove as vigias dos lotes) — reversível, nada é apagado.
 - **Aviso externo (ntfy.sh):** `step=lookoutnotify` do cron (`refresh.yml`, depois de
   aiident/market, antes da faxina, via `call_soft` — falha não reprova a run) →
   `notifyLookoutMatches`: para cada match confiante ainda não avisado (`pickNotifiable`, dedupe
