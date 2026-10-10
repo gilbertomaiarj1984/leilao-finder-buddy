@@ -37,6 +37,20 @@ describe("vinil x não-vinil", () => {
     expect(isVinylTitle("Relógio de pulso | Fabricação: Suíça | Ano: 1970")).toBe(false);
     expect(isVinylTitle("Fita K7 Legião | Capa: MB / Mídia: MB")).toBe(false);
   });
+  test("ficha Álbum/Código (Abreu, Vinil 11) sem LP/vinil/disco; CD e LD seguem fora", () => {
+    expect(
+      isVinylTitle("Álbum: Cartola | Código: 33295-1 | Artista(s): [`Cartola`] | Ano: 2017"),
+    ).toBe(true);
+    expect(
+      isVinylTitle("Álbum duplo : Fascinação | Código: 836 844-1 | Artista(s): Elis Regina"),
+    ).toBe(true);
+    expect(
+      isVinylTitle("Álbum: Deita & Rola | Código: CD 8045-2 | Artista(s): [`Deita & Rola`]"),
+    ).toBe(false);
+    expect(
+      isVinylTitle("Álbum: Heitor Villa-Lobos | Código: LD 5813 | Artista(s): [`Heitor`]"),
+    ).toBe(false);
+  });
   test("títulos que não são disco", () => {
     expect(looksNonVinyl("CD Caetano Veloso - Transa")).toBe(true);
     expect(looksNonVinyl("Vitrola antiga Philips")).toBe(true);

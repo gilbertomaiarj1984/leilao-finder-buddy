@@ -94,6 +94,13 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   "Álbum | Fabricação | Ano | Capa | Mídia" sem a palavra vinil (`RECORD_SPEC_RE`).
   Na UI, `splitRecordSpec` mostra só o nome no card e deixa a ficha no tooltip (título guardado inteiro).
 
+- **`galleryscan` em duas passadas por galeria (v0.128.1):** (1) COM `tp=` da categoria vinil
+  travado + `looksNonVinyl` (permissivo, igual ao filtro do site — traz casas generalistas cujos
+  títulos não citam LP/vinil/disco); (2) SEM `tp=` + `isVinylTitle` (estrito — itens que a casa
+  vende como disco mas a LeilõesBR não categoriza). Achado: no dia 13 o banco tinha 0 lotes de
+  Alberto Lopes (246 no site), Das Antigas (359) e Charisma, e 1 da Abreu (90). `isVinylTitle`
+  também aceita a ficha "Álbum: … | Código: …" (CD/LD seguem fora).
+
 ## Regra: nunca bloquear casa (v0.112.1)
 
 - **Nenhuma casa é bloqueada ou tratada à parte** — vale para todas. Casas generalistas podem ter

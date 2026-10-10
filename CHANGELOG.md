@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.128.1** — Casas generalistas (Alberto Lopes, Das Antigas, Charisma…) e Abreu sumiam da grade: `galleryscan` agora varre cada galeria também COM a categoria "Disco de Vinil" travada (filtro permissivo `looksNonVinyl`, como o site), além da passada sem categoria (estrita); `isVinylTitle` reconhece a ficha "Álbum: … | Código: …".
 - **0.128.0** — De olho: itens novos destacados na visita (cabeçalho do artista fúcsia com selo "N novos", contagem "(N novos)" do disco e lotes "por vir" novos com fundo/contorno), sem alterar a ordem; faixa no topo com "Marcar como vistos" apaga o destaque.
 - **0.127.2** — Card do lote: título de casas com ficha ("Fabricação | Ano | Capa | Mídia") mostra só "Artista - Álbum"; a ficha vai no tooltip (título guardado segue inteiro).
 - **0.127.1** — Casas dedicadas a vinil (ex.: Disco de Vinil) sumiam da grade: títulos só com a ficha "Fabricação | Ano | Capa | Mídia" (sem LP/vinil/disco) eram descartados pelo `isVinylTitle` no `galleryscan`; agora a ficha conta como sinal de disco.

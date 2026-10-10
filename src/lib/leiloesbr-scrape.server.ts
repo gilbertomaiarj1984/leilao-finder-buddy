@@ -367,48 +367,64 @@ async function listGalleryAuctions(
   const windowStart = days[0]!;
   const windowEnd = days[days.length - 1]!;
 
-  const firstHtml = await fetchPageSearch(1, "", null, galleryCode);
-  const total = lastPage(firstHtml);
   const byId = new Map<string, VinylLot>();
   const failedPages: string[] = [];
   const emptyPages: number[] = [];
+  let pages = 0;
   let cards = 0;
   let scanned = 0;
-  // Sem `tp=` travado, uma galeria generalista pode ter dezenas de páginas — e com o
-  // intervalo obrigatório entre requisições (`listingFetch`, v0.85.2) cada uma custa ~3-4s.
-  // A listagem vem do dia mais distante (página 1) pro mais próximo (última), e varremos da
-  // última pra trás: depois de 2 páginas SEGUIDAS inteiras além da janela, o resto (páginas
-  // menores, datas ainda mais distantes) não interessa. `deadline` corta de vez se o
-  // orçamento do bloco (`scanGalleries`) estourar.
-  let beyondStreak = 0;
   let truncated = false;
-  for (let page = total; page >= 1 && scanned < MAX_PAGES; page -= 1) {
-    if (page < total && Date.now() > deadline) {
-      truncated = true;
-      break;
-    }
-    scanned += 1;
-    let html: string;
-    try {
-      html = page === 1 ? firstHtml : await fetchPageSearch(page, "", null, galleryCode);
-    } catch (error) {
-      failedPages.push(`${page}: ${(error as Error)?.message ?? "falha"}`);
-      continue;
-    }
-    const lots = parseCards(html);
-    if (!lots.length) emptyPages.push(page);
-    cards += lots.length;
-    beyondStreak = lots.length && lots.every((l) => l.dayKey > windowEnd) ? beyondStreak + 1 : 0;
-    if (beyondStreak >= 2) break;
-    for (const lot of lots) {
-      if (lot.dayKey < windowStart || lot.dayKey > windowEnd) continue;
-      if (!isVinylTitle(lot.title)) continue;
-      byId.set(lot.id, lot);
+
+  // Duas passadas por galeria (v0.128.1):
+  //  1. COM `tp=` da categoria "Disco de Vinil" travado — é o que o filtro do site mostra, então
+  //     todo lote já é vinil e só descartamos CD/DVD/K7 (`looksNonVinyl`, permissivo). Cobre casas
+  //     generalistas (Alberto Lopes, Das Antigas…) cujos títulos não citam LP/vinil/disco e
+  //     eram descartados pelo filtro estrito (centenas de lotes sumiam).
+  //  2. SEM `tp=` (como antes) com `isVinylTitle` (estrito) — pega o que a casa vende como disco
+  //     mas a LeilõesBR não categoriza como "Disco de Vinil" (ex.: Abreu Colecionismo).
+  // Sem `tp=` uma galeria generalista pode ter dezenas de páginas e, com o intervalo obrigatório
+  // entre requisições (`listingFetch`), cada uma custa ~3-4s. A listagem vem do dia mais distante
+  // (página 1) pro mais próximo (última), e varremos da última pra trás: depois de 2 páginas
+  // SEGUIDAS inteiras além da janela, o resto não interessa. `deadline` corta de vez se o
+  // orçamento do bloco (`scanGalleries`) estourar — a passada 1 (a que importa) roda primeiro.
+  const passes: { tp: string | null; accept: (title: string) => boolean }[] = [
+    { tp: VINYL_CATEGORY, accept: (title) => !looksNonVinyl(title) },
+    { tp: null, accept: isVinylTitle },
+  ];
+  for (const pass of passes) {
+    if (truncated) break;
+    const firstHtml = await fetchPageSearch(1, "", pass.tp, galleryCode);
+    const total = lastPage(firstHtml);
+    pages = Math.max(pages, total);
+    let beyondStreak = 0;
+    for (let page = total, done = 0; page >= 1 && done < MAX_PAGES; page -= 1, done += 1) {
+      if (page < total && Date.now() > deadline) {
+        truncated = true;
+        break;
+      }
+      scanned += 1;
+      let html: string;
+      try {
+        html = page === 1 ? firstHtml : await fetchPageSearch(page, "", pass.tp, galleryCode);
+      } catch (error) {
+        failedPages.push(`${page}: ${(error as Error)?.message ?? "falha"}`);
+        continue;
+      }
+      const lots = parseCards(html);
+      if (!lots.length) emptyPages.push(page);
+      cards += lots.length;
+      beyondStreak = lots.length && lots.every((l) => l.dayKey > windowEnd) ? beyondStreak + 1 : 0;
+      if (beyondStreak >= 2) break;
+      for (const lot of lots) {
+        if (lot.dayKey < windowStart || lot.dayKey > windowEnd) continue;
+        if (!pass.accept(lot.title)) continue;
+        byId.set(lot.id, lot);
+      }
     }
   }
   return {
     lots: [...byId.values()],
-    stats: { pages: total, scanned, truncated, cards, kept: byId.size, failedPages, emptyPages },
+    stats: { pages, scanned, truncated, cards, kept: byId.size, failedPages, emptyPages },
   };
 }
 
