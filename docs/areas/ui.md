@@ -192,6 +192,11 @@
   Precedência: **lance vence vigia**. **Fúcsia** = "De olho" (v0.107.0: o lote marcado ou um lote
   futuro que casa com um disco marcado — ver `colecao-sondagem-compras.md`); perde para lance e
   vigia. O ícone `Binoculars` fica na linha de ações do card, ao lado de Vigiar.
+- **Destaque de novos no "De olho" (v0.128.0):** em `/olho`, enquanto houver lote `isNew`
+  (visto só na próxima visita; o contador do menu já zera ao abrir), aparece uma faixa no topo
+  ("N artistas com lotes novos", botão "Marcar como vistos" = `showNew=false`, só local), o
+  cabeçalho do artista ganha fundo/linha fúcsia + selo "N novos", a contagem do disco fica em
+  negrito fúcsia e cada lote novo no cartão ganha fundo/contorno fúcsia. Ordem nunca muda.
 - **Tarja diagonal "Vendido" (v0.50.0):** lote **vigiado ou com lance** cujo leilão já
   terminou com venda confirmada em `lot_sales` (mesma tabela do Vinil Analytics, preenchida pelo
   cron `step=sales`/`captureFinishedSales` após cada leilão terminar — cobre TODO lote de vinil
