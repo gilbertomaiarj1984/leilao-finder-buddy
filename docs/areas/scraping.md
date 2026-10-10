@@ -89,6 +89,10 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   (mapa `loteById`).
 - Diagnóstico: `GET /api/cron?step=catdebug` (sonda os catálogos das casas sem número).
 
+- **`isVinylTitle` e a ficha de disco (v0.127.1):** além de LP/vinil/disco, o título passa quando traz
+  a ficha "Capa: X / Mídia: Y" (ou "Fabricação: … | Ano: …") — casas como Disco de Vinil listam
+  "Álbum | Fabricação | Ano | Capa | Mídia" sem a palavra vinil (`RECORD_SPEC_RE`).
+
 ## Regra: nunca bloquear casa (v0.112.1)
 
 - **Nenhuma casa é bloqueada ou tratada à parte** — vale para todas. Casas generalistas podem ter

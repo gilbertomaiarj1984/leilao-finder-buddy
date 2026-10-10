@@ -22,6 +22,20 @@ describe("vinil x não-vinil", () => {
     expect(isVinylTitle("Compacto Beatles - Help")).toBe(true);
     expect(isVinylTitle("Disco de Vinil Raul Seixas - Krig-ha, Bandolo!")).toBe(true);
   });
+  test("ficha Fabricação/Ano/Capa/Mídia sem LP/vinil no título (Disco de Vinil)", () => {
+    expect(
+      isVinylTitle(
+        "California Jam 2 | Fabricação: Estados Unidos | Ano: 1978 | Capa: MB / Mídia: ...",
+      ),
+    ).toBe(true);
+    expect(
+      isVinylTitle(
+        "Camisa De Vênus - Viva | Fabricação: Brasil | Ano: 1986 | Capa: MB / Mídia: MB",
+      ),
+    ).toBe(true);
+    expect(isVinylTitle("Relógio de pulso | Fabricação: Suíça | Ano: 1970")).toBe(false);
+    expect(isVinylTitle("Fita K7 Legião | Capa: MB / Mídia: MB")).toBe(false);
+  });
   test("títulos que não são disco", () => {
     expect(looksNonVinyl("CD Caetano Veloso - Transa")).toBe(true);
     expect(looksNonVinyl("Vitrola antiga Philips")).toBe(true);

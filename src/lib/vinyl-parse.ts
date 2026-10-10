@@ -117,10 +117,17 @@ function isNonRecordObject(title: string): boolean {
 
 const DVD_BLURAY_RE = /\b(?:dvds?|blu[-\s]?ray|lds?|laser\s*-?\s*discs?|laserdiscs?)\b/;
 
+// Ficha de disco usada por casas dedicadas a vinil (ex.: Disco de Vinil, discodevinil.com):
+// "Título | Fabricação: Brasil | Ano: 1986 | Capa: MB / Mídia: MB …" — sem LP/vinil/disco no
+// título. Estado de capa E de mídia juntos (ou Fabricação + Ano) só aparecem em disco.
+const RECORD_SPEC_RE =
+  /\bcapa\s*:[^|]*\bmidia\s*:|\bmidia\s*:[^|]*\bcapa\s*:|\bfabricacao\s*:[^|]*\|\s*ano\s*:/;
+
 export function isVinylTitle(title: string): boolean {
   if (isNonRecordObject(title)) return false;
   const t = ` ${normalize(title)} `;
   if (DVD_BLURAY_RE.test(t) && !VINYL_STRONG_RE.test(t)) return false;
+  if (RECORD_SPEC_RE.test(t) && !NON_VINYL_HINTS.some((hint) => t.includes(hint))) return true;
   const hasVinyl = VINYL_HINTS.some((hint) =>
     hint.length <= 3 ? new RegExp(`\\b${hint}\\b`).test(t) : t.includes(hint),
   );
