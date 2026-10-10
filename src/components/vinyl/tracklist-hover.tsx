@@ -64,13 +64,17 @@ export function TracklistHover({
     closeTimer.current = setTimeout(() => setOpen(false), 120);
   };
 
-  const canRequest = !has && Boolean(onRequest);
+  // Sem tracklist, o clique busca: `onRequest` (Coleção) ou, num lote, o refresh (faixas do
+  // Discogs + fama pela IA).
+  const request = onRequest ?? refresh?.onClick;
+  const canRequest = !has && Boolean(request);
+  const busy = loading || Boolean(refresh?.pending);
   const tip = has
     ? "Tracklist do álbum (verde = mais famosas, vermelho = pouco conhecidas/lado B)"
     : canRequest
-      ? loading
+      ? busy
         ? "Buscando a tracklist…"
-        : "Tracklist ainda não existe — clique para buscar (IA, só a tracklist)"
+        : "Tracklist ainda não existe — clique para buscar (faixas do Discogs + fama pela IA)"
       : "Tracklist ainda não disponível — vem com a análise da IA";
 
   return (
@@ -80,15 +84,15 @@ export function TracklistHover({
           type="button"
           onMouseEnter={show}
           onMouseLeave={hide}
-          onClick={canRequest ? onRequest : undefined}
-          disabled={canRequest && loading}
+          onClick={canRequest ? request : undefined}
+          disabled={canRequest && busy}
           className={`flex items-center rounded-full px-1.5 py-1 text-white shadow ${
             has ? "bg-sky-600" : canRequest ? "bg-zinc-500 hover:bg-sky-600" : "bg-zinc-500/50"
           }`}
           title={open ? undefined : tip}
           aria-label={tip}
         >
-          <ListMusic className={`h-3.5 w-3.5 ${loading ? "animate-pulse" : ""}`} />
+          <ListMusic className={`h-3.5 w-3.5 ${busy ? "animate-pulse" : ""}`} />
         </button>
       </PopoverTrigger>
       {has ? (
@@ -152,12 +156,18 @@ export function TracklistContent({
             ) : null}
             <ul className="space-y-1">
               {g.tracks.map((t, i) => (
-                <li key={`${t.title}-${i}`} className="flex items-start gap-2">
+                <li
+                  key={`${t.title}-${i}`}
+                  className={`flex items-start gap-2 ${t.sub ? "ml-4 text-muted-foreground" : ""}`}
+                >
                   <span
                     className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${t.fame ? FAME_DOT[t.fame] : UNRATED_DOT}`}
                     title={t.fame ? FAME_LABEL[t.fame] : "Fama ainda não avaliada pela IA"}
                   />
-                  <span className="leading-snug">{t.title}</span>
+                  <span className="leading-snug">
+                    {t.sub ? "↳ " : ""}
+                    {t.title}
+                  </span>
                 </li>
               ))}
             </ul>

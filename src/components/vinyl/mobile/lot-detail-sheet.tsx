@@ -470,9 +470,19 @@ export function LotDetailSheet(
             </Box>
           ) : (
             <Box>
-              <p className="text-sm text-muted-foreground">
-                Tracklist ainda não disponível. Vem com a análise da IA.
-              </p>
+              <p className="text-sm text-muted-foreground">Tracklist ainda não disponível.</p>
+              {tracklistRefresh ? (
+                <button
+                  type="button"
+                  onClick={tracklistRefresh.onClick}
+                  disabled={tracklistRefresh.pending}
+                  className="mt-2 inline-flex items-center gap-1 rounded border border-dashed border-border px-2 py-1 text-xs text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-60"
+                >
+                  {tracklistRefresh.pending
+                    ? "Buscando…"
+                    : "Buscar faixas (Discogs + fama pela IA)"}
+                </button>
+              ) : null}
             </Box>
           )
         ) : null}

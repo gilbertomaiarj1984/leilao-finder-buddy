@@ -15,9 +15,11 @@ export type Track = {
   title: string;
   /** Fama pela IA; `null` = ainda não classificada (as faixas vêm do Discogs antes da IA). */
   fame: TrackFame | null;
+  /** Faixa de dentro de um medley (indentada sob a faixa-mãe, que vem logo antes na lista). */
+  sub?: boolean;
 };
 
-const MAX_TRACKS = 40;
+const MAX_TRACKS = 80;
 
 /** Normaliza o valor cru (JSON da IA ou jsonb do banco) numa lista válida; `null` se vazia. */
 export function normalizeTracklist(value: unknown): Track[] | null {
@@ -34,7 +36,12 @@ export function normalizeTracklist(value: unknown): Track[] | null {
     const fame = (TRACK_FAMES as readonly string[]).includes(fameRaw)
       ? (fameRaw as TrackFame)
       : null;
-    out.push({ side, title: title.slice(0, 120), fame });
+    out.push({
+      side,
+      title: title.slice(0, 120),
+      fame,
+      ...(o["sub"] === true ? { sub: true } : {}),
+    });
     if (out.length >= MAX_TRACKS) break;
   }
   return out.length ? out : null;
@@ -63,23 +70,62 @@ export type RawTrack = Omit<Track, "fame">;
 export function parseDiscogsTracklist(value: unknown): RawTrack[] | null {
   if (!Array.isArray(value)) return null;
   const out: RawTrack[] = [];
-  const visit = (item: unknown) => {
+  const positionOf = (o: Record<string, unknown>) =>
+    typeof o["position"] === "string" ? o["position"].trim().toUpperCase() : "";
+  const sideOf = (o: Record<string, unknown>): string | null => {
+    const m = positionOf(o).match(/^(?:\d+\s*[-.]\s*)?([A-Z]{1,2})(?=\d|$)/);
+    return m ? m[1] : null;
+  };
+  const titleOf = (o: Record<string, unknown>) =>
+    typeof o["title"] === "string" ? o["title"].replace(/\s+/g, " ").trim().slice(0, 120) : "";
+  // "A2.1"/"A2.5"/"A9a" → faixa-base "A2"/"A9" (parte de um medley); posição normal → null.
+  const subBase = (position: string): string | null => {
+    const m = position.match(/^((?:\d+\s*[-.]\s*)?[A-Z]{1,2}\d+)(?:\s*\.\s*\d+|[A-Z])$/);
+    return m ? m[1] : null;
+  };
+  // Medley sem faixa-mãe com título (comum no Discogs): a mãe é sintetizada para ter sob o quê indentar.
+  const MEDLEY = "Medley";
+  let flatGroup: string | null = null; // faixa-base cujo grupo de partes planas está aberto
+  let lastTop = ""; // posição da última faixa de nível 1 gravada
+
+  const visit = (item: unknown, parent: { side: string | null } | null) => {
     if (!item || typeof item !== "object") return;
     const o = item as Record<string, unknown>;
     const type = typeof o["type_"] === "string" ? o["type_"] : "track";
     if (type === "heading") return;
-    if (type === "index" && Array.isArray(o["sub_tracks"])) {
-      for (const sub of o["sub_tracks"]) visit(sub);
+    const subs = Array.isArray(o["sub_tracks"]) ? (o["sub_tracks"] as unknown[]) : [];
+    if (type === "index" && subs.length) {
+      // Medley: a faixa-mãe entra na lista e as partes vêm logo depois, marcadas `sub`.
+      const firstSub = subs.find((x) => x && typeof x === "object") as
+        Record<string, unknown> | undefined;
+      const side = sideOf(o) ?? (firstSub ? sideOf(firstSub) : null);
+      out.push({ side, title: titleOf(o) || MEDLEY });
+      lastTop = positionOf(o);
+      flatGroup = null;
+      for (const sub of subs) visit(sub, { side });
       return;
     }
-    const title = typeof o["title"] === "string" ? o["title"].replace(/\s+/g, " ").trim() : "";
+    const title = titleOf(o);
     if (!title) return;
-    const position = typeof o["position"] === "string" ? o["position"].trim().toUpperCase() : "";
-    const m = position.match(/^(?:\d+\s*[-.]\s*)?([A-Z]{1,2})(?=\d|$)/);
-    out.push({ side: m ? m[1] : null, title: title.slice(0, 120) });
+    if (parent) {
+      out.push({ side: sideOf(o) ?? parent.side, title, sub: true });
+      return;
+    }
+    const base = subBase(positionOf(o));
+    if (base) {
+      if (flatGroup !== base && lastTop !== base) {
+        out.push({ side: sideOf(o), title: MEDLEY });
+      }
+      flatGroup = base;
+      out.push({ side: sideOf(o), title, sub: true });
+      return;
+    }
+    flatGroup = null;
+    lastTop = positionOf(o);
+    out.push({ side: sideOf(o), title });
   };
   for (const item of value) {
-    visit(item);
+    visit(item, null);
     if (out.length >= MAX_TRACKS) break;
   }
   return out.length ? out.slice(0, MAX_TRACKS) : null;
