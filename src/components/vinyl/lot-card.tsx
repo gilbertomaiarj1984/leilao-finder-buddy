@@ -23,6 +23,7 @@ import {
   bidIsSold,
   bidIsWinning,
   decodeHtmlEntities,
+  splitRecordSpec,
   lotOpenUrl,
   parsePrice,
 } from "@/lib/vinyl-parse";
@@ -146,7 +147,7 @@ function LotCardDesktop({
   // Decodifica entidades HTML no MOMENTO DE RENDERIZAR: lotes já gravados no banco ANTES do
   // fix de decode na varredura ainda trazem `&#34;`/`&amp;` literais no título — decodificar
   // aqui conserta a exibição sem depender de re-scrape. Idempotente em texto já limpo.
-  const title = decodeHtmlEntities(lot.title);
+  const { name: title, spec: titleSpec } = splitRecordSpec(decodeHtmlEntities(lot.title));
   // Linha padrão de identificação da IA (Artista — Álbum (Ano)), quando houver.
   const aiLabel = album ? formatAiAlbum(decodeHtmlEntities(album), market?.year) : "";
   // Cores (mesma regra do painel): meu lance ganhando = verde; meu lance coberto = vermelho;
@@ -365,12 +366,20 @@ function LotCardDesktop({
               {/* Título original: alguns leiloeiros colocam a descrição INTEIRA do lote aqui (o
                 site guarda o texto completo no atributo de tooltip do card) — em vez de cortar
                 com reticências, damos 2 linhas de altura e deixamos rolar para ler o resto. */}
-              <div className="h-8 overflow-y-auto text-xs leading-snug text-muted-foreground">
+              <div
+                className="h-8 overflow-y-auto text-xs leading-snug text-muted-foreground"
+                title={titleSpec || undefined}
+              >
                 {title}
               </div>
             </div>
           ) : (
-            <div className="h-10 overflow-y-auto text-sm leading-snug text-foreground">{title}</div>
+            <div
+              className="h-10 overflow-y-auto text-sm leading-snug text-foreground"
+              title={titleSpec || undefined}
+            >
+              {title}
+            </div>
           )}
           {ai?.tags?.length ? <LotTags tags={ai.tags} onEdit={onEditTags} /> : null}
           <div className="mt-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
