@@ -119,9 +119,10 @@ const DVD_BLURAY_RE = /\b(?:dvds?|blu[-\s]?ray|lds?|laser\s*-?\s*discs?|laserdis
 
 // Ficha de disco usada por casas dedicadas a vinil (ex.: Disco de Vinil, discodevinil.com):
 // "Título | Fabricação: Brasil | Ano: 1986 | Capa: MB / Mídia: MB …" — sem LP/vinil/disco no
-// título. Estado de capa E de mídia juntos (ou Fabricação + Ano) só aparecem em disco.
+// título. Estado de capa E de mídia juntos (ou Fabricação + Ano) só aparecem em disco; o mesmo vale
+// para a ficha "Álbum: … | Código: …" (Abreu Colecionismo, Vinil 11).
 const RECORD_SPEC_RE =
-  /\bcapa\s*:[^|]*\bmidia\s*:|\bmidia\s*:[^|]*\bcapa\s*:|\bfabricacao\s*:[^|]*\|\s*ano\s*:/;
+  /\bcapa\s*:[^|]*\bmidia\s*:|\bmidia\s*:[^|]*\bcapa\s*:|\bfabricacao\s*:[^|]*\|\s*ano\s*:|\balbum(?:\s+duplo)?\s*:[^|]*\|\s*codigo\s*:/;
 
 /**
  * Separa o nome ("Artista - Álbum") da ficha técnica ("Fabricação: … | Ano: … | Capa: … /
