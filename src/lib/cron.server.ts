@@ -242,8 +242,14 @@ export async function handleCron(request: Request): Promise<Response | null> {
       const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
       const { getAllLotAi } = await import("./lot-ai.server");
       const { getAllLotIdent } = await import("./lot-ident.server");
-      const { getAllLotMarket, upsertLotMarket, selectLotsForMarket, marketBasis } =
-        await import("./lot-market.server");
+      const {
+        getAllLotMarket,
+        upsertLotMarket,
+        selectLotsForMarket,
+        marketBasis,
+        resetUnmatchedMarketOnce,
+      } = await import("./lot-market.server");
+      await resetUnmatchedMarketOnce();
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 12, 1), 40);
       const [snapshot, aiRows, identRows, marketRows] = await Promise.all([
         scrapeVinylLots(false),

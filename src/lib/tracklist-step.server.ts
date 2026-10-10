@@ -277,7 +277,7 @@ export async function refreshLotTracklist(
     .eq("id", lotId)
     .maybeSingle();
   const fresh = await buildTracklist(album, mk?.matched ? (mk.release_id ?? null) : null);
-  if (!fresh) throw new Error("O Discogs não encontrou as faixas deste disco.");
+  if (!fresh) throw new Error(`O Discogs não encontrou as faixas de "${album}".`);
 
   // Preserva a fama já conhecida (por título) para a lista nova.
   const known = new Map(

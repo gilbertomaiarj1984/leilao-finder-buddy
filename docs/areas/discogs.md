@@ -23,6 +23,7 @@
   `price_low_br`/`price_high_br`/`num_for_sale_br`; `getAllLotMarket`/`upsertLotMarket`
   **toleram coluna ausente** (`isMissingColumn`, código `42703`/`PGRST204`) e caem para as
   colunas base. Cron `step=market`.
+- **Migração única (v0.127.1):** `resetUnmatchedMarketOnce` (chamada no início do `step=market`, flag `app_state.market_unmatched_reset_v1`) apaga os `lot_market` com `matched=false` — antes do fix do `parseAlbum` (parênteses finais "(1974, Odeon)" entravam no título e derrubavam a cobertura mínima de 0,6 do `pickBestRelease`) esses lotes nunca casavam e o `basis` impedia nova tentativa. As faixas (`fetchDiscogsTracklist`) usam a mesma busca.
 - **Reprocessar:** o `basis` não muda, então matches errados já gravados **não** são
   reconsultados sozinhos → `DELETE FROM lot_market` (ou só os suspeitos) e rodar o `refresh.yml`.
 

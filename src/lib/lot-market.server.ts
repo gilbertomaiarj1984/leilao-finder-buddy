@@ -98,3 +98,31 @@ export function selectLotsForMarket(
   }
   return out;
 }
+
+const UNMATCHED_RESET_KEY = "market_unmatched_reset_v1";
+
+/**
+ * Migração única (v0.127.1): apaga as linhas `matched=false` de `lot_market` para o `step=market`
+ * reconsultar o Discogs. Antes do fix do `parseAlbum` (parênteses finais "(1974, Odeon)"), álbuns
+ * assim nunca casavam e o `basis` impedia nova tentativa. Marca em `app_state` só se apagar sem erro.
+ */
+export async function resetUnmatchedMarketOnce(): Promise<void> {
+  const { db } = await import("@/lib/db-client.server");
+  const { data } = await db
+    .from("app_state")
+    .select("value")
+    .eq("key", UNMATCHED_RESET_KEY)
+    .maybeSingle();
+  if (data?.value) return;
+  const { error } = await db.from("lot_market").delete().eq("matched", false);
+  if (error) {
+    console.error("[lot-market] reset dos não casados falhou", error);
+    return;
+  }
+  await db
+    .from("app_state")
+    .upsert(
+      { key: UNMATCHED_RESET_KEY, value: true, updated_at: new Date().toISOString() },
+      { onConflict: "key" },
+    );
+}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { isDiscogsImageUrl, toCoverOptions } from "../src/lib/discogs.server";
+import { isDiscogsImageUrl, parseAlbum, toCoverOptions } from "../src/lib/discogs.server";
 
 describe("discogs — capas", () => {
   test("isDiscogsImageUrl só aceita https em *.discogs.com", () => {
@@ -26,5 +26,27 @@ describe("discogs — capas", () => {
     ]);
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ id: 1, year: 1970, thumb: "https://i.discogs.com/t.jpg" });
+  });
+});
+
+describe("discogs — parseAlbum", () => {
+  test("remove parênteses finais com ano/selo", () => {
+    expect(parseAlbum("Clara Nunes - Alvorecer (1974, Odeon)")).toEqual({
+      artist: "Clara Nunes",
+      title: "Alvorecer",
+      year: 1974,
+    });
+    expect(parseAlbum("Maria Bethânia - Romance (Elenco, 1983)")).toEqual({
+      artist: "Maria Bethânia",
+      title: "Romance",
+      year: 1983,
+    });
+    expect(parseAlbum("Chico Buarque — Francisco (1987)").title).toBe("Francisco");
+  });
+
+  test("título entre parênteses no começo é mantido", () => {
+    expect(parseAlbum("Oasis - (What's the Story) Morning Glory?").title).toBe(
+      "(What's the Story) Morning Glory?",
+    );
   });
 });
