@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.127.2** — Card do lote: título de casas com ficha ("Fabricação | Ano | Capa | Mídia") mostra só "Artista - Álbum"; a ficha vai no tooltip (título guardado segue inteiro).
 - **0.127.1** — Casas dedicadas a vinil (ex.: Disco de Vinil) sumiam da grade: títulos só com a ficha "Fabricação | Ano | Capa | Mídia" (sem LP/vinil/disco) eram descartados pelo `isVinylTitle` no `galleryscan`; agora a ficha conta como sinal de disco.
 - **0.127.0** — Faixas: ícone sem tracklist agora é clicável em qualquer lote (busca Discogs + fama pela IA; na aba Faixas do celular, botão "Buscar faixas"); faixas de medley (índice do Discogs ou posições "A2.1") aparecem indentadas (↳) sob a faixa-mãe ("Medley" quando o Discogs não dá título).
 - **0.126.0** — De olho: álbum sem lote por vir fica numa linha mínima (artista — álbum) na visão Expandida; o teto agora marca o preço dos lotes por vir: vermelho + seta ↑ acima do teto, verde + seta ↓ abaixo.

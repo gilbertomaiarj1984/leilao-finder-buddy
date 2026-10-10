@@ -8,6 +8,7 @@ import {
   isDiscBundle,
   UNCLASSIFIED_LABEL,
   isVinylTitle,
+  splitRecordSpec,
   laterAuctionSlot,
   looksNonVinyl,
   lotOpenUrl,
@@ -207,5 +208,24 @@ describe("collectionNeedsIdentification", () => {
     );
     expect(collectionNeedsIdentification({ artist: "Lote", album: "" })).toBe(false);
     expect(collectionNeedsIdentification({ artist: "Coletâneas", album: "" })).toBe(false);
+  });
+});
+
+describe("splitRecordSpec", () => {
+  test("separa nome e ficha", () => {
+    expect(
+      splitRecordSpec(
+        "Traffic - On The Road | Fabricação: Espanha | Ano: 1980 | Capa: MB / Mídia: MB",
+      ),
+    ).toEqual({
+      name: "Traffic - On The Road",
+      spec: "Fabricação: Espanha | Ano: 1980 | Capa: MB / Mídia: MB",
+    });
+  });
+  test("sem ficha devolve o título", () => {
+    expect(splitRecordSpec("LP Cher - Heart of Stone")).toEqual({
+      name: "LP Cher - Heart of Stone",
+      spec: "",
+    });
   });
 });
