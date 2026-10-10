@@ -528,7 +528,11 @@ export function LookoutItemCard({
                       if ((e.target as HTMLElement).closest("button, a")) return;
                       onOpenLot(m);
                     }}
-                    className="flex cursor-pointer flex-wrap items-center gap-3 rounded border border-border bg-background p-2 hover:bg-accent/30"
+                    className={`flex cursor-pointer flex-wrap items-center gap-3 rounded border p-2 ${
+                      m.isNew
+                        ? "border-fuchsia-500 bg-fuchsia-500/10 ring-1 ring-fuchsia-500 hover:bg-fuchsia-500/20"
+                        : "border-border bg-background hover:bg-accent/30"
+                    }`}
                     title="Clique para abrir o cartão completo do lote"
                   >
                     {m.image ? (

@@ -97,7 +97,11 @@ export function LookoutSummaryRow({
             ) : (
               <span>
                 {upcoming.length} por vir
-                {news ? ` (${news} novo${news === 1 ? "" : "s"})` : ""}
+                {news ? (
+                  <b className="font-bold text-fuchsia-700 dark:text-fuchsia-300">
+                    {` (${news} novo${news === 1 ? "" : "s"})`}
+                  </b>
+                ) : null}
               </span>
             )}
             {watching ? <span>{watching} vigiando</span> : null}

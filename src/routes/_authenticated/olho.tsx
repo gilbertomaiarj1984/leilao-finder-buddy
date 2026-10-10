@@ -88,6 +88,12 @@ export const Route = createFileRoute("/_authenticated/olho")({
   component: OlhoPage,
 });
 
+function groupNewCount(items: LookoutItem[], byItem: Map<string, LookoutUpcoming[]>): number {
+  let n = 0;
+  for (const it of items) n += (byItem.get(it.id) ?? []).filter((m) => m.isNew).length;
+  return n;
+}
+
 function OlhoPage() {
   const [barsHidden, setBarsHidden] = usePersistedState("olho-bars-hidden", false);
   // Modo de exibição: "compact" = linhas-resumo (clicar abre o cartão no diálogo); "expanded" =
@@ -317,15 +323,21 @@ function OlhoPage() {
     }
   };
 
+  // Destaque dos itens novos (artista, disco e lote) só nesta visita: "Marcar como vistos" o apaga.
+  const [showNew, setShowNew] = useState(true);
+  const upcomingList = useMemo(
+    () => (overview?.upcoming ?? []).map((m) => (showNew || !m.isNew ? m : { ...m, isNew: false })),
+    [overview, showNew],
+  );
   const upcomingByItem = useMemo(() => {
     const map = new Map<string, LookoutUpcoming[]>();
-    for (const m of overview?.upcoming ?? []) {
+    for (const m of upcomingList) {
       const list = map.get(m.itemId) ?? [];
       list.push(m);
       map.set(m.itemId, list);
     }
     return map;
-  }, [overview]);
+  }, [upcomingList]);
   const historyByItem = useMemo(() => {
     const map = new Map<string, NonNullable<typeof overview>["history"]>();
     for (const h of overview?.history ?? []) {
@@ -397,7 +409,8 @@ function OlhoPage() {
   const openLot = (overview?.upcoming ?? []).find((m) => m.lotId === openLotId) ?? null;
   const openItem = items.find((i) => i.id === openId) ?? null;
   const totalUpcoming = overview?.upcoming.length ?? 0;
-  const newCount = overview?.newCount ?? 0;
+  const newCount = upcomingList.filter((m) => m.isNew).length;
+  const newArtists = visibleGroups.filter((g) => groupNewCount(g.items, upcomingByItem) > 0).length;
 
   return (
     <main className="min-h-screen bg-background">
@@ -476,6 +489,22 @@ function OlhoPage() {
       />
       <LookoutBulkDialog open={bulkOpen} onOpenChange={setBulkOpen} onDone={refresh} />
       <div className="mx-auto max-w-6xl space-y-4 px-4 py-6">
+        {newCount > 0 ? (
+          <div
+            role="status"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-fuchsia-500/60 bg-fuchsia-500/10 px-3 py-2 text-sm"
+          >
+            <span>
+              <b className="text-fuchsia-700 dark:text-fuchsia-300">
+                {newArtists} artista{newArtists === 1 ? "" : "s"} com lotes novos
+              </b>{" "}
+              desde a sua última visita. A ordem da lista não muda.
+            </span>
+            <Button size="sm" variant="outline" onClick={() => setShowNew(false)}>
+              Marcar como vistos
+            </Button>
+          </div>
+        ) : null}
         {query.isLoading ? (
           <>
             <Skeleton className="h-48 w-full" />
@@ -601,13 +630,31 @@ function OlhoPage() {
                     artistMut.mutate({ from, to: group.artist });
                   }}
                   title="Arraste este artista sobre outro para juntar (o nome de quem recebe permanece)"
-                  className={`rounded border-b border-border pb-1 ${artistDropKey === group.key ? "bg-fuchsia-500/10 ring-2 ring-fuchsia-500" : ""}`}
+                  className={`rounded border-b px-1.5 pb-1 ${
+                    groupNewCount(group.items, upcomingByItem) > 0
+                      ? "border-b-2 border-fuchsia-500 bg-fuchsia-500/10"
+                      : "border-border"
+                  } ${artistDropKey === group.key ? "bg-fuchsia-500/10 ring-2 ring-fuchsia-500" : ""}`}
                 >
-                  <h2 className="text-sm font-semibold text-foreground">
-                    {group.artist}{" "}
+                  <h2 className="flex flex-wrap items-center gap-x-1 text-sm font-semibold text-foreground">
+                    <span
+                      className={
+                        groupNewCount(group.items, upcomingByItem) > 0
+                          ? "text-fuchsia-700 dark:text-fuchsia-300"
+                          : undefined
+                      }
+                    >
+                      {group.artist}
+                    </span>
                     <span className="font-normal text-muted-foreground">
                       ({group.items.length} álbum{group.items.length === 1 ? "" : "ns"})
                     </span>
+                    {groupNewCount(group.items, upcomingByItem) > 0 ? (
+                      <span className="ml-auto rounded-full bg-fuchsia-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                        {groupNewCount(group.items, upcomingByItem)} novo
+                        {groupNewCount(group.items, upcomingByItem) === 1 ? "" : "s"}
+                      </span>
+                    ) : null}
                   </h2>
                   {Object.values(artistJoins).filter(
                     (j) => resolveLookoutArtist(j.label, artistJoins) === group.artist,
