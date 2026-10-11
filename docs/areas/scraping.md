@@ -199,4 +199,4 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
 - **`step=lookoutnotify` (v0.107.0):** aviso push (ntfy.sh) de lotes novos que casam com um disco "De olho" — roda no `refresh.yml` depois de aiident/market e antes de `prune`, com `call_soft` (não reprova a run). No-op sem `NTFY_TOPIC`. Mecânica em `colecao-sondagem-compras.md`.
 
 
-- **Chamariz de casa ≠ lote (v0.128.2):** `isDiscBundle` descarta antes da detecção "ALERTA RARIDADE", "lote especial/extra (de fechamento/encerramento)" e tudo após "Classificação técnica" (ficha de estado); `extractArtist` remove esses prefixos e trata "|" como separador.
+- **Chamariz de casa ≠ lote (v0.129.1):** `isDiscBundle` descarta antes da detecção "ALERTA RARIDADE", "lote especial/extra (de fechamento/encerramento)" e tudo após "Classificação técnica" (ficha de estado); `extractArtist` remove esses prefixos e trata "|" como separador.

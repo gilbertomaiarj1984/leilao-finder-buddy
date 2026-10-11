@@ -67,7 +67,7 @@ export function LookoutSummaryRow({
       className={`flex cursor-pointer items-center rounded-md border bg-card text-left transition-colors hover:bg-accent/40 ${
         compact ? "gap-2 px-2 py-1" : "gap-3 p-2"
       } ${
-        archived ? "border-border opacity-70" : "border-fuchsia-500/60"
+        archived ? "border-border opacity-70" : news ? "border-fuchsia-500/60" : "border-border"
       } ${dragOver ? "ring-2 ring-fuchsia-500" : ""}`}
       title="Clique para abrir o cartão detalhado (arraste sobre outro para juntar)"
     >
