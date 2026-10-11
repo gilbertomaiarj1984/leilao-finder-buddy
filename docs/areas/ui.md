@@ -197,7 +197,7 @@
   ("N artistas com lotes novos", botão "Marcar como vistos" = `showNew=false`, só local), o
   cabeçalho do artista ganha fundo/linha fúcsia + selo "N novos", a contagem do disco fica em
   negrito fúcsia e cada lote novo no cartão ganha fundo/contorno fúcsia. Ordem nunca muda.
-- **v0.129.0:** `/olho` ordena em dois blocos (artistas com lote por vir; depois "sem lote por vir"; álbuns com lote primeiro dentro do artista). Arquivados ficam ocultos atrás de botão. A faixa de novos lista cada lote (`olho-item-<id>` é o alvo do scroll). Borda fúcsia só no disco com lote `isNew`; sem novo, `border-border`.
+- **v0.129.0:** `/olho` ordena em dois blocos (artistas com lote por vir; depois "sem lote por vir"; álbuns com lote primeiro dentro do artista). Arquivados ficam ocultos atrás de botão. A faixa de novos lista cada lote (`olho-item-<id>` é o alvo do scroll). Borda fúcsia só no disco com lote `isNew`; sem novo, `border-border`. Cabeçalho do artista: inicial em círculo + nome em negrito + linha grossa; álbuns recuados (`ml-11`) abaixo.
 - **Tarja diagonal "Vendido" (v0.50.0):** lote **vigiado ou com lance** cujo leilão já
   terminou com venda confirmada em `lot_sales` (mesma tabela do Vinil Analytics, preenchida pelo
   cron `step=sales`/`captureFinishedSales` após cada leilão terminar — cobre TODO lote de vinil

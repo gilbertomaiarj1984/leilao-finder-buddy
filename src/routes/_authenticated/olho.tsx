@@ -688,13 +688,23 @@ function OlhoPage() {
                           artistMut.mutate({ from, to: group.artist });
                         }}
                         title="Arraste este artista sobre outro para juntar (o nome de quem recebe permanece)"
-                        className={`rounded border-b px-1.5 pb-1 ${
+                        className={`rounded border-b-2 px-1.5 pb-1.5 ${
                           groupNewCount(group.items, upcomingByItem) > 0
-                            ? "border-b-2 border-fuchsia-500 bg-fuchsia-500/10"
-                            : "border-border"
+                            ? "border-fuchsia-500 bg-fuchsia-500/10"
+                            : "border-foreground"
                         } ${artistDropKey === group.key ? "bg-fuchsia-500/10 ring-2 ring-fuchsia-500" : ""}`}
                       >
-                        <h2 className="flex flex-wrap items-center gap-x-1 text-sm font-semibold text-foreground">
+                        <h2 className="flex flex-wrap items-center gap-x-2 text-base font-bold text-foreground">
+                          <span
+                            aria-hidden="true"
+                            className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm ${
+                              groupNewCount(group.items, upcomingByItem) > 0
+                                ? "bg-fuchsia-500 text-white"
+                                : "bg-foreground text-background"
+                            }`}
+                          >
+                            {group.key === "~" ? "?" : group.artist.charAt(0).toUpperCase()}
+                          </span>
                           <span
                             className={
                               groupNewCount(group.items, upcomingByItem) > 0
@@ -704,7 +714,7 @@ function OlhoPage() {
                           >
                             {group.artist}
                           </span>
-                          <span className="font-normal text-muted-foreground">
+                          <span className="text-xs font-normal text-muted-foreground">
                             ({group.items.length} álbum{group.items.length === 1 ? "" : "ns"})
                           </span>
                           {groupNewCount(group.items, upcomingByItem) > 0 ? (
@@ -742,32 +752,34 @@ function OlhoPage() {
                           </ul>
                         ) : null}
                       </div>
-                      {group.items.map((item) => {
-                        const itemUpcoming = upcomingByItem.get(item.id) ?? [];
-                        // Visão expandida: álbum sem lote por vir fica numa linha mínima (artista — álbum).
-                        return (
-                          <div
-                            key={item.id}
-                            id={`olho-item-${item.id}`}
-                            className="scroll-mt-24 rounded-md"
-                          >
-                            {view === "expanded" && itemUpcoming.length > 0 ? (
-                              renderCard(item)
-                            ) : (
-                              <LookoutSummaryRow
-                                item={item}
-                                upcoming={itemUpcoming}
-                                watchedIds={watchedIds}
-                                compact={view === "expanded"}
-                                onOpen={() => setOpenId(item.id)}
-                                onMerge={(sourceId) =>
-                                  mergeMut.mutate({ targetId: item.id, sourceId })
-                                }
-                              />
-                            )}
-                          </div>
-                        );
-                      })}
+                      <div className="ml-11 space-y-1.5">
+                        {group.items.map((item) => {
+                          const itemUpcoming = upcomingByItem.get(item.id) ?? [];
+                          // Visão expandida: álbum sem lote por vir fica numa linha mínima (artista — álbum).
+                          return (
+                            <div
+                              key={item.id}
+                              id={`olho-item-${item.id}`}
+                              className="scroll-mt-24 rounded-md"
+                            >
+                              {view === "expanded" && itemUpcoming.length > 0 ? (
+                                renderCard(item)
+                              ) : (
+                                <LookoutSummaryRow
+                                  item={item}
+                                  upcoming={itemUpcoming}
+                                  watchedIds={watchedIds}
+                                  compact={view === "expanded"}
+                                  onOpen={() => setOpenId(item.id)}
+                                  onMerge={(sourceId) =>
+                                    mergeMut.mutate({ targetId: item.id, sourceId })
+                                  }
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   ))}
                 </div>
