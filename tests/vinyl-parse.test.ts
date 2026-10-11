@@ -79,9 +79,13 @@ describe("isDiscBundle", () => {
     const t =
       "ALERTA RARIDADE LOTE ESPECIAL DE FECHAMENTO Lp Trajeto Vitor Assis Brasil |Em bom estado.| Classificação técnica: capa vg+/ disco nm";
     expect(isDiscBundle(t)).toBe(false);
-    expect(extractArtist("ALERTA RARIDADE Lp Adoniram Barbosa |Em bom estado.|")).toBe("Adoniram Barbosa");
+    expect(extractArtist("ALERTA RARIDADE Lp Adoniram Barbosa |Em bom estado.|")).toBe(
+      "Adoniram Barbosa",
+    );
     expect(
-      isDiscBundle("ALERTA RARIDADE Lp Batatinha |Em bom estado.| Classificação técnica: lote de discos"),
+      isDiscBundle(
+        "ALERTA RARIDADE Lp Batatinha |Em bom estado.| Classificação técnica: lote de discos",
+      ),
     ).toBe(false);
     expect(isDiscBundle("ALERTA RARIDADE Lote com 10 LPs")).toBe(true);
   });
