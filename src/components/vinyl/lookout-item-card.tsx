@@ -235,7 +235,7 @@ export function LookoutItemCard({
         e.preventDefault();
         onMerge(sourceId);
       }}
-      className={`rounded-md border bg-card ${archived ? "border-border opacity-70" : "border-fuchsia-500/60"} ${dragOver ? "ring-2 ring-fuchsia-500" : ""}`}
+      className={`rounded-md border bg-card ${archived ? "border-border opacity-70" : upcoming.some((m) => m.isNew) ? "border-fuchsia-500/60" : "border-border"} ${dragOver ? "ring-2 ring-fuchsia-500" : ""}`}
     >
       <div className="flex flex-wrap gap-3 p-3 sm:flex-nowrap sm:p-4">
         {item.image ? (

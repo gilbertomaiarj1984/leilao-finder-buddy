@@ -124,7 +124,7 @@ function OlhoPage() {
   const [artistPick, setArtistPick] = useState("");
   const artistJoins = useMemo(() => overview?.artistGroups ?? {}, [overview]);
   const groups = useMemo(() => groupByArtist(active, artistJoins), [active, artistJoins]);
-  const visibleGroups = useMemo(() => {
+  const filteredGroups = useMemo(() => {
     const q = normName(searchApplied);
     return groups.filter(
       (g) => (!artistPick || g.key === artistPick) && (!q || normName(g.artist).includes(q)),
@@ -410,7 +410,32 @@ function OlhoPage() {
   const openItem = items.find((i) => i.id === openId) ?? null;
   const totalUpcoming = overview?.upcoming.length ?? 0;
   const newCount = upcomingList.filter((m) => m.isNew).length;
+  // Com lote por vir no topo (álbuns com lote primeiro dentro do artista), depois os "sem lote
+  // por vir"; a ordem alfabética é mantida dentro de cada bloco.
+  const { withUpcoming, withoutUpcoming } = useMemo(() => {
+    const hasUpcoming = (it: LookoutItem) => (upcomingByItem.get(it.id)?.length ?? 0) > 0;
+    const withU: ArtistGroup[] = [];
+    const without: ArtistGroup[] = [];
+    for (const g of filteredGroups) {
+      const sorted = [...g.items].sort((a, b) => Number(hasUpcoming(b)) - Number(hasUpcoming(a)));
+      (sorted.some(hasUpcoming) ? withU : without).push({ ...g, items: sorted });
+    }
+    return { withUpcoming: withU, withoutUpcoming: without };
+  }, [filteredGroups, upcomingByItem]);
+  const visibleGroups = useMemo(
+    () => [...withUpcoming, ...withoutUpcoming],
+    [withUpcoming, withoutUpcoming],
+  );
   const newArtists = visibleGroups.filter((g) => groupNewCount(g.items, upcomingByItem) > 0).length;
+  const newMatches = upcomingList.filter((m) => m.isNew);
+  const [showArchived, setShowArchived] = useState(false);
+  const goToItem = (itemId: string) => {
+    const el = document.getElementById(`olho-item-${itemId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("ring-2", "ring-fuchsia-500");
+    window.setTimeout(() => el.classList.remove("ring-2", "ring-fuchsia-500"), 2000);
+  };
 
   return (
     <main className="min-h-screen bg-background">
@@ -494,12 +519,35 @@ function OlhoPage() {
             role="status"
             className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-fuchsia-500/60 bg-fuchsia-500/10 px-3 py-2 text-sm"
           >
-            <span>
+            <div className="min-w-0 flex-1">
               <b className="text-fuchsia-700 dark:text-fuchsia-300">
-                {newArtists} artista{newArtists === 1 ? "" : "s"} com lotes novos
+                {newArtists} artista{newArtists === 1 ? "" : "s"} com {newCount} lote
+                {newCount === 1 ? "" : "s"} novo{newCount === 1 ? "" : "s"}
               </b>{" "}
-              desde a sua última visita. A ordem da lista não muda.
-            </span>
+              desde a sua última visita:
+              <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto text-xs">
+                {newMatches.map((m) => {
+                  const it = items.find((i) => i.id === m.itemId);
+                  return (
+                    <li key={m.lotId}>
+                      <button
+                        type="button"
+                        onClick={() => goToItem(m.itemId)}
+                        className="text-left underline-offset-2 hover:underline"
+                        title="Descer até este disco na lista"
+                      >
+                        <span className="font-semibold">
+                          {it ? lookoutLabel(it) || m.title : m.title}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {` · lote ${m.lote || "—"} · ${m.house} · ${m.dayKey.split("-").reverse().join("/")} · ${m.price} ↓`}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
             <Button size="sm" variant="outline" onClick={() => setShowNew(false)}>
               Marcar como vistos
             </Button>
@@ -605,108 +653,150 @@ function OlhoPage() {
             {active.length && !visibleGroups.length ? (
               <p className="text-sm text-muted-foreground">Nenhum artista encontrado.</p>
             ) : null}
-            {visibleGroups.map((group) => (
-              <div key={group.key} className="space-y-3">
-                <div
-                  draggable={group.key !== "~"}
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData(ARTIST_DRAG_TYPE, group.artist);
-                    e.dataTransfer.setData("text/plain", group.artist);
-                    e.dataTransfer.effectAllowed = "move";
-                  }}
-                  onDragOver={(e) => {
-                    if (group.key === "~" || !e.dataTransfer.types.includes(ARTIST_DRAG_TYPE))
-                      return;
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = "move";
-                    setArtistDropKey(group.key);
-                  }}
-                  onDragLeave={() => setArtistDropKey(null)}
-                  onDrop={(e) => {
-                    setArtistDropKey(null);
-                    const from = e.dataTransfer.getData(ARTIST_DRAG_TYPE);
-                    if (!from || group.key === "~" || normName(from) === group.key) return;
-                    e.preventDefault();
-                    artistMut.mutate({ from, to: group.artist });
-                  }}
-                  title="Arraste este artista sobre outro para juntar (o nome de quem recebe permanece)"
-                  className={`rounded border-b px-1.5 pb-1 ${
-                    groupNewCount(group.items, upcomingByItem) > 0
-                      ? "border-b-2 border-fuchsia-500 bg-fuchsia-500/10"
-                      : "border-border"
-                  } ${artistDropKey === group.key ? "bg-fuchsia-500/10 ring-2 ring-fuchsia-500" : ""}`}
-                >
-                  <h2 className="flex flex-wrap items-center gap-x-1 text-sm font-semibold text-foreground">
-                    <span
-                      className={
-                        groupNewCount(group.items, upcomingByItem) > 0
-                          ? "text-fuchsia-700 dark:text-fuchsia-300"
-                          : undefined
-                      }
-                    >
-                      {group.artist}
-                    </span>
-                    <span className="font-normal text-muted-foreground">
-                      ({group.items.length} álbum{group.items.length === 1 ? "" : "ns"})
-                    </span>
-                    {groupNewCount(group.items, upcomingByItem) > 0 ? (
-                      <span className="ml-auto rounded-full bg-fuchsia-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                        {groupNewCount(group.items, upcomingByItem)} novo
-                        {groupNewCount(group.items, upcomingByItem) === 1 ? "" : "s"}
-                      </span>
-                    ) : null}
+            {[
+              { key: "with", title: "Com lote por vir", list: withUpcoming },
+              { key: "without", title: "Sem lote por vir", list: withoutUpcoming },
+            ].map((section) =>
+              section.list.length ? (
+                <div key={section.key} className="space-y-4">
+                  <h2 className="border-b border-border pb-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                    {section.title} ({section.list.length} artista
+                    {section.list.length === 1 ? "" : "s"})
                   </h2>
-                  {Object.values(artistJoins).filter(
-                    (j) => resolveLookoutArtist(j.label, artistJoins) === group.artist,
-                  ).length ? (
-                    <ul className="mt-1 flex flex-wrap gap-1 text-xs text-muted-foreground">
-                      <li className="py-0.5">Juntado com:</li>
-                      {Object.values(artistJoins)
-                        .filter((j) => resolveLookoutArtist(j.label, artistJoins) === group.artist)
-                        .map((j) => (
-                          <li
-                            key={j.label}
-                            className="flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5"
+                  {section.list.map((group) => (
+                    <div key={group.key} className="space-y-3">
+                      <div
+                        draggable={group.key !== "~"}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData(ARTIST_DRAG_TYPE, group.artist);
+                          e.dataTransfer.setData("text/plain", group.artist);
+                          e.dataTransfer.effectAllowed = "move";
+                        }}
+                        onDragOver={(e) => {
+                          if (group.key === "~" || !e.dataTransfer.types.includes(ARTIST_DRAG_TYPE))
+                            return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          setArtistDropKey(group.key);
+                        }}
+                        onDragLeave={() => setArtistDropKey(null)}
+                        onDrop={(e) => {
+                          setArtistDropKey(null);
+                          const from = e.dataTransfer.getData(ARTIST_DRAG_TYPE);
+                          if (!from || group.key === "~" || normName(from) === group.key) return;
+                          e.preventDefault();
+                          artistMut.mutate({ from, to: group.artist });
+                        }}
+                        title="Arraste este artista sobre outro para juntar (o nome de quem recebe permanece)"
+                        className={`rounded border-b-2 px-1.5 pb-1.5 ${
+                          groupNewCount(group.items, upcomingByItem) > 0
+                            ? "border-fuchsia-500 bg-fuchsia-500/10"
+                            : "border-foreground"
+                        } ${artistDropKey === group.key ? "bg-fuchsia-500/10 ring-2 ring-fuchsia-500" : ""}`}
+                      >
+                        <h2 className="flex flex-wrap items-center gap-x-2 text-base font-bold text-foreground">
+                          <span
+                            aria-hidden="true"
+                            className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm ${
+                              groupNewCount(group.items, upcomingByItem) > 0
+                                ? "bg-fuchsia-500 text-white"
+                                : "bg-foreground text-background"
+                            }`}
                           >
-                            {j.label}
-                            <button
-                              type="button"
-                              onClick={() => artistMut.mutate({ from: j.label, to: null })}
-                              aria-label={`Separar ${j.label}`}
-                              title="Separar — volta a ser um artista próprio"
+                            {group.key === "~" ? "?" : group.artist.charAt(0).toUpperCase()}
+                          </span>
+                          <span
+                            className={
+                              groupNewCount(group.items, upcomingByItem) > 0
+                                ? "text-fuchsia-700 dark:text-fuchsia-300"
+                                : undefined
+                            }
+                          >
+                            {group.artist}
+                          </span>
+                          <span className="text-xs font-normal text-muted-foreground">
+                            ({group.items.length} álbum{group.items.length === 1 ? "" : "ns"})
+                          </span>
+                          {groupNewCount(group.items, upcomingByItem) > 0 ? (
+                            <span className="ml-auto rounded-full bg-fuchsia-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                              {groupNewCount(group.items, upcomingByItem)} novo
+                              {groupNewCount(group.items, upcomingByItem) === 1 ? "" : "s"}
+                            </span>
+                          ) : null}
+                        </h2>
+                        {Object.values(artistJoins).filter(
+                          (j) => resolveLookoutArtist(j.label, artistJoins) === group.artist,
+                        ).length ? (
+                          <ul className="mt-1 flex flex-wrap gap-1 text-xs text-muted-foreground">
+                            <li className="py-0.5">Juntado com:</li>
+                            {Object.values(artistJoins)
+                              .filter(
+                                (j) => resolveLookoutArtist(j.label, artistJoins) === group.artist,
+                              )
+                              .map((j) => (
+                                <li
+                                  key={j.label}
+                                  className="flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5"
+                                >
+                                  {j.label}
+                                  <button
+                                    type="button"
+                                    onClick={() => artistMut.mutate({ from: j.label, to: null })}
+                                    aria-label={`Separar ${j.label}`}
+                                    title="Separar — volta a ser um artista próprio"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </li>
+                              ))}
+                          </ul>
+                        ) : null}
+                      </div>
+                      <div className="ml-11 space-y-1.5">
+                        {group.items.map((item) => {
+                          const itemUpcoming = upcomingByItem.get(item.id) ?? [];
+                          // Visão expandida: álbum sem lote por vir fica numa linha mínima (artista — álbum).
+                          return (
+                            <div
+                              key={item.id}
+                              id={`olho-item-${item.id}`}
+                              className="scroll-mt-24 rounded-md"
                             >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </li>
-                        ))}
-                    </ul>
-                  ) : null}
+                              {view === "expanded" && itemUpcoming.length > 0 ? (
+                                renderCard(item)
+                              ) : (
+                                <LookoutSummaryRow
+                                  item={item}
+                                  upcoming={itemUpcoming}
+                                  watchedIds={watchedIds}
+                                  compact={view === "expanded"}
+                                  onOpen={() => setOpenId(item.id)}
+                                  onMerge={(sourceId) =>
+                                    mergeMut.mutate({ targetId: item.id, sourceId })
+                                  }
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                {group.items.map((item) => {
-                  const itemUpcoming = upcomingByItem.get(item.id) ?? [];
-                  // Visão expandida: álbum sem lote por vir fica numa linha mínima (artista — álbum).
-                  return view === "expanded" && itemUpcoming.length > 0 ? (
-                    renderCard(item)
-                  ) : (
-                    <LookoutSummaryRow
-                      key={item.id}
-                      item={item}
-                      upcoming={itemUpcoming}
-                      watchedIds={watchedIds}
-                      compact={view === "expanded"}
-                      onOpen={() => setOpenId(item.id)}
-                      onMerge={(sourceId) => mergeMut.mutate({ targetId: item.id, sourceId })}
-                    />
-                  );
-                })}
-              </div>
-            ))}
+              ) : null,
+            )}
             {archived.length ? (
               <div className="space-y-3 pt-2">
-                <h2 className="text-sm font-semibold text-muted-foreground">
-                  Arquivados ({archived.length})
-                </h2>
-                {archived.map((item) =>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-expanded={showArchived}
+                  onClick={() => setShowArchived((v) => !v)}
+                >
+                  {showArchived ? "Ocultar" : "Mostrar"} arquivados ({archived.length})
+                </Button>
+                {(showArchived ? archived : []).map((item) =>
                   view === "expanded" ? (
                     renderCard(item)
                   ) : (
