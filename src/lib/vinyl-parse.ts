@@ -283,6 +283,9 @@ const UNCLASSIFIED_HINTS = [
 const LABEL_WORDS = new Set(["artista", "album", "albuns", "titulo", "faixa", "faixas"]);
 
 const PREFIX_PATTERNS: RegExp[] = [
+  /^alerta\s+raridade\b\s*[-:–,.]?\s*/i,
+  /^lote\s+(?:especial|extra)(?:\s+de\s+(?:fechamento|encerramento))?\b\s*[-:–,.]?\s*/i,
+  /^lote\s+de\s+(?:fechamento|encerramento)\b\s*[-:–,.]?\s*/i,
   /^lote\s*(n?[ºo°]?\s*\d+)?\s*[-:–]?\s*/i,
   /^\d+\s*(lps?|discos?|vinis|compactos?)\b\s*[-:–]?\s*/i,
   /^(belissimo|belíssimo|belo|raro|rarissimo|raríssimo|antigo|otimo|ótimo|excelente)\s+/i,
@@ -410,6 +413,15 @@ const NUM_WORD_RE = Object.keys(NUM_WORDS).join("|");
 // lote colado no formato) com um lote de VÁRIOS discos.
 const LOTE_NUMBER_PREFIX = /^lote\s*(?:n?[ºo°]?\s*\d+\s*[-:–,.]?|[-:–,.])\s*/;
 
+// Chamariz/boilerplate de casas (ex.: Escafandro: "ALERTA RARIDADE LOTE ESPECIAL DE FECHAMENTO Lp
+// X |Em bom estado.| Classificação técnica: ...") — "lote especial/de fechamento" é só o nome da
+// promoção de UM disco, não um conjunto; e o que vem DEPOIS de "Classificação técnica" é a ficha
+// de estado (pode citar "lote"/"discos" em frases de frete/condições). Ambos saem antes da
+// detecção, senão praticamente todo disco dessas casas caía no balaio "Lote".
+const LOTE_PROMO_RE =
+  /\b(?:alerta\s+raridade|lote\s+(?:especial|extra)(?:\s+de\s+(?:fechamento|encerramento))?|lote\s+de\s+(?:fechamento|encerramento)|lote\s+final)\b/g;
+const CONDITION_SHEET_RE = /\bclassificacao\s+tecnica\b.*$/;
+
 /**
  * true quando o título representa um LOTE de discos (conjunto de vários discos vendidos
  * juntos), e não um álbum específico. Sinais: "lote com/de/composto por/formado por/contendo
@@ -426,7 +438,12 @@ export function isDiscBundle(title: string): boolean {
   // ("vinil") e o padrão de QUANTIDADE abaixo interpreta erroneamente "09 vinil" como "9 vinis"
   // — um item de UM disco só virava lote por coincidência de o nº do lote vir logo antes do
   // formato. A partir daqui `t` nunca mais vê esse número/rótulo.
-  const t = raw.replace(LOTE_NUMBER_PREFIX, "");
+  const t = raw
+    .replace(CONDITION_SHEET_RE, "")
+    .replace(LOTE_PROMO_RE, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(LOTE_NUMBER_PREFIX, "");
   if (/\b(lote|kit)\s+(com|de|composto\s+(de|por)|formado\s+(de|por)|contendo)\b/.test(t))
     return true;
   if (/\bcolecao de\b/.test(t) && DISC_WORD.test(t)) return true;
@@ -544,7 +561,7 @@ export function extractArtist(title: string): string {
   // aqui; a checagem de coletânea roda só no CANDIDATO final (abaixo), que é o nome isolado,
   // não a frase toda. Só falha quando não sobra um nome específico (ex.: "Grandes Sucessos"
   // sozinho, "Trilha Sonora Novela Tieta" sem artista).
-  const parts = rest.split(/\s[-–—:]\s|[-–—:](?=\s)|\s[-–—](?=\S)|\s*\/\/+\s*/);
+  const parts = rest.split(/\s*\|\s*|\s[-–—:]\s|[-–—:](?=\s)|\s[-–—](?=\S)|\s*\/\/+\s*/);
   let candidate = (parts[0] ?? "").trim();
 
   // Cut trailing sentences / album names / parentheses: "Artista. Produto original..."
