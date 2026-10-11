@@ -75,6 +75,20 @@ describe("isDiscBundle", () => {
     expect(isDiscBundle("2 LPs Pink Floyd The Wall")).toBe(false);
     expect(isDiscBundle("Lote 09 vinil único Chico")).toBe(false);
   });
+  test("chamariz/ficha de estado de casa não faz o disco virar lote", () => {
+    const t =
+      "ALERTA RARIDADE LOTE ESPECIAL DE FECHAMENTO Lp Trajeto Vitor Assis Brasil |Em bom estado.| Classificação técnica: capa vg+/ disco nm";
+    expect(isDiscBundle(t)).toBe(false);
+    expect(extractArtist("ALERTA RARIDADE Lp Adoniram Barbosa |Em bom estado.|")).toBe(
+      "Adoniram Barbosa",
+    );
+    expect(
+      isDiscBundle(
+        "ALERTA RARIDADE Lp Batatinha |Em bom estado.| Classificação técnica: lote de discos",
+      ),
+    ).toBe(false);
+    expect(isDiscBundle("ALERTA RARIDADE Lote com 10 LPs")).toBe(true);
+  });
   test("ano colado no formato não é quantidade", () => {
     expect(isDiscBundle("LP Vinil Chico Buarque - Construção 1971 Disco VG+ Capa VG")).toBe(false);
   });
