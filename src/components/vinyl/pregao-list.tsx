@@ -33,6 +33,7 @@ import {
   groupByPregao,
   guardDays,
   previewShipment,
+  spendingByPeriod,
   summarizeByStatus,
   totalsByHouse,
   type AuctionStatus,
@@ -191,6 +192,7 @@ export function PregaoView({
           />
           <Total label="Recebidos" value={String(summary.recebido.discs)} sub="discos já comigo" />
           <HouseTotalsTable data={houseTotals} />
+          <SpendingHistory groups={groups} />
         </section>
       ) : null}
 
@@ -252,7 +254,7 @@ export function PregaoView({
       )}
 
       {chosen.length > 0 ? (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-violet-500 bg-card px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-violet-500 sm:bottom-[2.1rem] bg-card px-4 py-3 pb-3 max-sm:pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
             <p className="text-sm">
               <strong>
@@ -325,6 +327,77 @@ function HouseTotalsTable({ data }: { data: ReturnType<typeof totalsByHouse> }) 
             <td className="py-1 pr-2 text-right">{brl(data.grand.subtotal)}</td>
             <td className="py-1 pr-2 text-right">{brl(data.grand.fee)}</td>
             <td className="py-1 text-right">{brl(data.grand.total)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+function periodLabel(key: string): string {
+  if (!key) return "Sem data";
+  if (key.length === 4) return key;
+  const [y, m] = key.split("-");
+  return `${MONTHS[Number(m) - 1] ?? m}/${y}`;
+}
+
+/** Quanto foi gasto por mês ou por ano (todas as compras, qualquer status) + histórico geral. */
+function SpendingHistory({ groups }: { groups: PregaoGroup<Purchase>[] }) {
+  const [by, setBy] = usePersistedState<"month" | "year">("compras-gasto-periodo", "month");
+  const { rows, overall } = useMemo(() => spendingByPeriod(groups, by), [groups, by]);
+  const rate = `${Math.round(AUCTIONEER_FEE_RATE * 100)}%`;
+  return (
+    <div className="col-span-full overflow-x-auto rounded-md border border-border bg-card px-3 py-2">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Quanto gastei · todas as compras · taxa do leiloeiro {rate}
+        </p>
+        <div className="flex gap-1.5" role="group" aria-label="Período">
+          <FilterChip
+            label="Por mês"
+            count={by === "month" ? rows.length : 0}
+            active={by === "month"}
+            onClick={() => setBy("month")}
+          />
+          <FilterChip
+            label="Por ano"
+            count={by === "year" ? rows.length : 0}
+            active={by === "year"}
+            onClick={() => setBy("year")}
+          />
+        </div>
+      </div>
+      <table className="w-full text-sm">
+        <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+          <tr>
+            <th className="py-1 pr-2">{by === "month" ? "Mês" : "Ano"}</th>
+            <th className="py-1 pr-2 text-right">Pregões</th>
+            <th className="py-1 pr-2 text-right">Discos</th>
+            <th className="py-1 pr-2 text-right">Arrematado</th>
+            <th className="py-1 pr-2 text-right">Taxa {rate}</th>
+            <th className="py-1 text-right">Total</th>
+          </tr>
+        </thead>
+        <tbody className="tabular-nums">
+          {rows.map((r) => (
+            <tr key={r.key || "sem-data"} className="border-t border-border">
+              <td className="py-1 pr-2">{periodLabel(r.key)}</td>
+              <td className="py-1 pr-2 text-right">{r.auctions}</td>
+              <td className="py-1 pr-2 text-right">{r.discs}</td>
+              <td className="py-1 pr-2 text-right">{brl(r.subtotal)}</td>
+              <td className="py-1 pr-2 text-right">{brl(r.fee)}</td>
+              <td className="py-1 text-right font-medium">{brl(r.total)}</td>
+            </tr>
+          ))}
+          <tr className="border-t-2 border-border font-semibold">
+            <td className="py-1 pr-2">Histórico geral</td>
+            <td className="py-1 pr-2 text-right">{overall.auctions}</td>
+            <td className="py-1 pr-2 text-right">{overall.discs}</td>
+            <td className="py-1 pr-2 text-right">{brl(overall.subtotal)}</td>
+            <td className="py-1 pr-2 text-right">{brl(overall.fee)}</td>
+            <td className="py-1 text-right">{brl(overall.total)}</td>
           </tr>
         </tbody>
       </table>

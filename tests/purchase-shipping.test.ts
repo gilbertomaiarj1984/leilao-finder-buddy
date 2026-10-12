@@ -8,6 +8,7 @@ import {
   groupByHouse,
   guardDays,
   previewShipment,
+  spendingByPeriod,
   summarizeByStatus,
   totalsByHouse,
   type AuctionState,
@@ -123,5 +124,29 @@ describe("totais por casa e agrupamento", () => {
     const g = groupByHouse(groups);
     expect(g.map((x) => x.house)).toEqual(["Alfa", "Beta"]);
     expect(g[1]!.groups.map((x) => x.idLeilao)).toEqual(["20", "10"]);
+  });
+});
+
+describe("gasto por período", () => {
+  const groups = groupByPregao(
+    [
+      ...purchases,
+      p("40", "Beta", "2025-12-20", "R$ 200,00"),
+      p("41", "Beta", "2026-09-02", "R$ 100,00"),
+    ],
+    { auctions: [], shipments: [] },
+  );
+  test("por ano, mais recente primeiro, com sem data no fim e histórico geral", () => {
+    const { rows, overall } = spendingByPeriod(groups, "year");
+    expect(rows.map((r) => r.key)).toEqual(["2026", "2025", ""]);
+    expect(rows[0]!.subtotal).toBeCloseTo(1440.5);
+    expect(rows[1]!.total).toBeCloseTo(210);
+    expect(overall.subtotal).toBeCloseTo(1640.5);
+    expect(overall.auctions).toBe(6);
+  });
+  test("por mês", () => {
+    const { rows } = spendingByPeriod(groups, "month");
+    expect(rows.map((r) => r.key)).toEqual(["2026-10", "2026-09", "2025-12", ""]);
+    expect(rows[0]!.subtotal).toBeCloseTo(1340.5);
   });
 });
