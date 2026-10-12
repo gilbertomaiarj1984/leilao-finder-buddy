@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronUp,
   List,
+  Package,
   RefreshCw,
   ShoppingBag,
   Plus,
@@ -36,6 +37,7 @@ import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import { groupWatchedByHouse } from "@/components/vinyl/grouping";
 import { OwnedPanel } from "@/components/vinyl/owned-panel";
+import { PregaoView } from "@/components/vinyl/pregao-list";
 import { PurchaseCard } from "@/components/vinyl/purchase-card";
 import { AI_PROVIDER_SHORT, formatFailoverTrail, type AiProvider } from "@/lib/ai-provider";
 import {
@@ -45,7 +47,13 @@ import {
   uploadCollectionImage,
 } from "@/lib/collection.functions";
 import type { Purchase } from "@/lib/purchases.server";
-import { getPurchases, scanPurchases, scanPurchasesFull } from "@/lib/purchases.functions";
+import {
+  getPurchases,
+  getPurchaseShipping,
+  scanPurchases,
+  scanPurchasesFull,
+} from "@/lib/purchases.functions";
+import type { ShippingData } from "@/lib/purchase-shipping";
 import { extractArtist, titleCase, UNCLASSIFIED_LABEL } from "@/lib/vinyl-parse";
 import {
   lotIdentity,
@@ -68,7 +76,7 @@ export const Route = createFileRoute("/_authenticated/compras")({
   component: ComprasPage,
 });
 
-type ViewMode = "flat" | "day" | "house";
+type ViewMode = "pregao" | "flat" | "day" | "house";
 
 // --- "Enviar para a coleção": edita e cria um disco novo a partir de uma compra ---
 type SendDraft = {
@@ -168,7 +176,7 @@ function groupPurchasesByHouse(purchases: Purchase[]) {
 function ComprasPage() {
   const [barsHidden, setBarsHidden] = usePersistedState("compras-bars-hidden", false);
   usePersistedScroll("compras", true);
-  const [viewMode, setViewMode] = usePersistedState<ViewMode>("compras-view-mode", "flat");
+  const [viewMode, setViewMode] = usePersistedState<ViewMode>("compras-view", "pregao");
   const queryClient = useQueryClient();
   const fetchPurchases = useServerFn(getPurchases);
   const scan = useServerFn(scanPurchases);
@@ -180,6 +188,20 @@ function ComprasPage() {
     staleTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
+
+  const fetchShipping = useServerFn(getPurchaseShipping);
+  const shippingQuery = useQuery<ShippingData>({
+    queryKey: ["purchase-shipping"] as const,
+    queryFn: () => fetchShipping() as Promise<ShippingData>,
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const shipping = useMemo<ShippingData>(
+    () => shippingQuery.data ?? { auctions: [], shipments: [] },
+    [shippingQuery.data],
+  );
+  const invalidateShipping = () =>
+    queryClient.invalidateQueries({ queryKey: ["purchase-shipping"] });
 
   const purchases = useMemo(() => query.data ?? [], [query.data]);
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["purchases"] });
@@ -472,7 +494,7 @@ function ComprasPage() {
                 </h1>
               </div>
               <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
-                Vinis arrematados ("Minhas compras"), mais recentes primeiro.
+                Vinis arrematados ("Minhas compras") por pregão, mais recentes primeiro.
               </p>
             </div>
             <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:overflow-visible sm:pb-0">
@@ -501,6 +523,12 @@ function ComprasPage() {
           </div>
 
           <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-1.5 px-4 pb-2 sm:gap-2 sm:pb-3">
+            <ViewToggle
+              icon={Package}
+              label="Pregões"
+              active={viewMode === "pregao"}
+              onClick={() => setViewMode("pregao")}
+            />
             <ViewToggle
               icon={List}
               label="Mais recentes"
@@ -533,6 +561,15 @@ function ComprasPage() {
           </div>
         ) : purchases.length === 0 ? (
           <EmptyState onScan={() => scanMut.mutate()} scanning={scanMut.isPending} />
+        ) : viewMode === "pregao" ? (
+          <PregaoView
+            purchases={purchases}
+            shipping={shipping}
+            ownedLabelFor={ownedLabelFor}
+            onOpenOwned={setOwnedPanelPurchase}
+            onSend={(p) => setSendDraft(draftFromPurchase(p))}
+            onChanged={() => void invalidateShipping()}
+          />
         ) : viewMode === "flat" ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {purchases.map((p) => (

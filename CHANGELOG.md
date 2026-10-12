@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.130.0** — Compras por pregão: nova visão "Pregões" (padrão, mais recente primeiro) com status Em aberto / Pago · a enviar / Na guarda / Em trânsito / Recebido, data de pagamento automática, observação, aviso de guarda após 15 dias, totais ocultos por padrão, e remessa que junta pregões "na guarda" da mesma casa (preview com frete, rastreio e economia estimada antes de aprovar). Tabelas novas `purchase_auctions` e `shipments`.
 - **0.129.1** — Casas como Escafandro tinham quase todos os discos no grupo "Lote": o chamariz "ALERTA RARIDADE / LOTE ESPECIAL (DE FECHAMENTO)" e a ficha após "Classificação técnica" não contam mais como sinal de conjunto em `isDiscBundle`, e `extractArtist` tira esses prefixos e corta em "|".
 - **0.129.0** — De olho: arquivados ocultos (botão "Mostrar arquivados"); lista em dois blocos ("Com lote por vir" no topo, depois "Sem lote por vir"); aviso de novos detalha cada disco/lote com link que desce até ele; borda roxa só nos discos com lote novo.
 - **0.128.1** — Casas generalistas (Alberto Lopes, Das Antigas, Charisma…) e Abreu sumiam da grade: `galleryscan` agora varre cada galeria também COM a categoria "Disco de Vinil" travada (filtro permissivo `looksNonVinyl`, como o site), além da passada sem categoria (estrita); `isVinylTitle` reconhece a ficha "Álbum: … | Código: …".
