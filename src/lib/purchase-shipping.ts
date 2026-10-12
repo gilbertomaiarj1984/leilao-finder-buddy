@@ -237,3 +237,50 @@ export function groupByHouse<P extends PurchaseLike>(
     .map(([house, list]) => ({ house, groups: list }))
     .sort((a, b) => a.house.localeCompare(b.house, "pt-BR"));
 }
+
+type SpendingRow = {
+  /** "2026" (ano), "2026-10" (mês) ou "" (sem data). */
+  key: string;
+  auctions: number;
+  discs: number;
+  subtotal: number;
+  fee: number;
+  total: number;
+};
+
+/**
+ * Quanto foi gasto por ano ou por mês (data do pregão), do mais recente ao mais antigo, com a
+ * taxa do leiloeiro somada, mais o histórico geral. Considera TODOS os pregões (qualquer status).
+ */
+export function spendingByPeriod<P extends PurchaseLike>(
+  groups: PregaoGroup<P>[],
+  by: "year" | "month",
+  feeRate = AUCTIONEER_FEE_RATE,
+): { rows: SpendingRow[]; overall: SpendingRow } {
+  const len = by === "year" ? 4 : 7;
+  const map = new Map<string, SpendingRow>();
+  for (const g of groups) {
+    const key = g.date ? g.date.slice(0, len) : "";
+    const row = map.get(key) ?? { key, auctions: 0, discs: 0, subtotal: 0, fee: 0, total: 0 };
+    row.auctions += 1;
+    row.discs += g.purchases.length;
+    row.subtotal += g.total;
+    map.set(key, row);
+  }
+  const finish = (r: SpendingRow): SpendingRow => {
+    const subtotal = cents(r.subtotal);
+    const fee = cents(subtotal * feeRate);
+    return { ...r, subtotal, fee, total: cents(subtotal + fee) };
+  };
+  const rows = [...map.values()].map(finish).sort((a, b) => b.key.localeCompare(a.key));
+  const sum = (f: (r: SpendingRow) => number) => cents(rows.reduce((n, r) => n + f(r), 0));
+  const overall: SpendingRow = {
+    key: "geral",
+    auctions: rows.reduce((n, r) => n + r.auctions, 0),
+    discs: rows.reduce((n, r) => n + r.discs, 0),
+    subtotal: sum((r) => r.subtotal),
+    fee: sum((r) => r.fee),
+    total: sum((r) => r.total),
+  };
+  return { rows, overall };
+}
