@@ -970,6 +970,7 @@ function feedbackMatches(fb: OwnedFeedback, id: LotIdentity): boolean {
 /**
  * Resolve o estado de um lote combinando: override explícito (vence), casamento
  * automático e aprendizado (só SUGERE — "?"; nunca confirma sozinho nem esconde).
+ * `candidateOf` (opcional) devolve o candidato da Coleção por id, para validar sugestões.
  */
 export function resolveOwned(
   lotId: string,
@@ -977,6 +978,7 @@ export function resolveOwned(
   autoHit: OwnedHit | null,
   feedback: OwnedFeedback[],
   id: LotIdentity,
+  candidateOf?: (itemId: string) => OwnedCandidate | undefined,
 ): OwnedResolution {
   const ov = links[lotId];
   if (ov === false) return { kind: "rejected" };
@@ -994,7 +996,15 @@ export function resolveOwned(
   }
 
   // Aprendizado POSITIVO: o automático não pegou, mas já confirmaram algo parecido → sugere "?".
-  const pos = feedback.find((f) => f.verdict === "pos" && feedbackMatches(f, id));
+  // Salvaguarda: o disco SUGERIDO precisa ter o próprio artista no lote — a assinatura gravada
+  // pode ser de outro lote/artista (decisão antiga, vínculo errado) e sugerir um disco sem
+  // nenhuma relação (ex.: Gilberto Gil num lote de Paulinho da Viola). Sem o candidato, não sugere.
+  const pos = feedback.find((f) => {
+    if (f.verdict !== "pos" || !feedbackMatches(f, id)) return false;
+    if (!candidateOf) return true;
+    const cand = candidateOf(f.itemId);
+    return Boolean(cand) && ownedArtistLevel(cand!, id) !== "none";
+  });
   if (pos) return { kind: "suggested", itemId: pos.itemId, score: 0.7 };
 
   return { kind: "none" };
