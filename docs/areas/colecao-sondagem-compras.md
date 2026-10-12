@@ -378,3 +378,28 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
     já digitadas, via `mergeTagsText`, sem duplicar) para o usuário revisar/ajustar antes de
     "Enviar" — mesmo aviso de failover de provedor (`formatFailoverTrail`) das outras telas de IA.
     Usa sempre o provedor padrão do `app_state` (sem seletor próprio no diálogo).
+
+## Pagamento e envio por pregão (v0.130.0)
+
+- **Visão "Pregões" (padrão de `/compras`)**: `PregaoView` (`components/vinyl/pregao-list.tsx`)
+  agrupa as compras por `id_leilao` (`groupByPregao`, `purchase-shipping.ts`, puro/testado em
+  `tests/purchase-shipping.test.ts`), mais recente primeiro. As visões antigas (recentes / por dia
+  / por casa) seguem disponíveis; a preferência agora usa a chave `compras-view`.
+- **Status por pregão** (não por disco): `aberto` (padrão) → `pago` (a enviar) → `guarda` (pago, parado
+  no vendedor) → `transito` → `recebido`. Persistido em `purchase_auctions` (linha só existe depois que
+  o usuário mexe; ausência = aberto), **separada de `purchases`** para a sync nunca sobrescrever.
+  `paid_at` é preenchido sozinho ao sair de "aberto" (data de Brasília), `received_at` ao virar
+  "recebido"; voltar a "aberto" limpa pagamento e remessa. Observação livre (500 chars) por pregão.
+- **Remessa** (`shipments`: casa, frete, rastreio): só pregões "na guarda" da MESMA casa. Marcar os
+  checkboxes → barra "Montar remessa" → diálogo de preview (tabela, conteúdo da caixa, frete,
+  rastreio opcional, economia estimada = envios evitados × `REFERENCE_FREIGHT` R$ 38) → "Aprovar" leva
+  todos a "em trânsito" (`createShipment` revalida status e casa no servidor). Rastreio pode ser
+  editado depois no pregão; "Marcar remessa como recebida" (`markShipmentReceived`) recebe todos de
+  uma vez. Sair de "em trânsito" desvincula e apaga a remessa órfã.
+- **Avisos/totais**: pregão na guarda há ≥ `GUARD_ALERT_DAYS` (15) dias mostra aviso de prazo. Os cards
+  de totais (a pagar, a enviar, guarda, trânsito, discos recebidos) ficam **ocultos por padrão**
+  (botão "Mostrar totais", lembrado em `compras-totais`). Filtros por status com contagem.
+- Server functions em `purchases.functions.ts` (`getPurchaseShipping`, `setPregaoStatus`,
+  `setPregaoNote`, `approveShipment`, `editShipment`, `receiveShipment`); lógica em
+  `purchase-shipping.server.ts`. Não testável contra o site daqui (só funções puras).
+
