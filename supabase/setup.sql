@@ -406,13 +406,18 @@ CREATE TABLE IF NOT EXISTS public.shipments (
 CREATE TABLE IF NOT EXISTS public.purchase_auctions (
   id_leilao    text PRIMARY KEY,
   status       text NOT NULL DEFAULT 'aberto'
-               CHECK (status IN ('aberto','pago','guarda','transito','recebido')),
+               CHECK (status IN ('aberto','frete','pago','guarda','transito','recebido')),
   paid_at      date,
   received_at  date,
   note         text NOT NULL DEFAULT '',
   shipment_id  uuid REFERENCES public.shipments(id) ON DELETE SET NULL,
   updated_at   timestamptz NOT NULL DEFAULT now()
 );
+-- v0.131.0: novo status "frete" (em aberto, aguardando retorno do frete). O CHECK inline do
+-- CREATE TABLE acima só vale em banco novo; recria-o aqui para bancos que já têm a tabela.
+ALTER TABLE public.purchase_auctions DROP CONSTRAINT IF EXISTS purchase_auctions_status_check;
+ALTER TABLE public.purchase_auctions ADD CONSTRAINT purchase_auctions_status_check
+  CHECK (status IN ('aberto','frete','pago','guarda','transito','recebido'));
 CREATE INDEX IF NOT EXISTS purchase_auctions_shipment_idx ON public.purchase_auctions (shipment_id);
 
 DROP TRIGGER IF EXISTS update_shipments_updated_at ON public.shipments;

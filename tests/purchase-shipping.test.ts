@@ -2,11 +2,14 @@ import { describe, expect, test } from "bun:test";
 
 import {
   canBundle,
+  isUnpaid,
   daysBetween,
   groupByPregao,
+  groupByHouse,
   guardDays,
   previewShipment,
   summarizeByStatus,
+  totalsByHouse,
   type AuctionState,
 } from "../src/lib/purchase-shipping";
 
@@ -81,5 +84,44 @@ describe("guarda e remessa", () => {
     const pv = previewShipment(groups, 40);
     expect(pv).toMatchObject({ auctions: 2, discs: 3, savedShipments: 1, estimatedSaving: 40 });
     expect(pv.total).toBeCloseTo(1250.5);
+  });
+});
+
+describe("status em aberto", () => {
+  test("novo e aguardando frete contam como não pagos", () => {
+    expect(isUnpaid("aberto")).toBe(true);
+    expect(isUnpaid("frete")).toBe(true);
+    expect(isUnpaid("pago")).toBe(false);
+    expect(isUnpaid("recebido")).toBe(false);
+  });
+  test("resumo separa novo de aguardando frete", () => {
+    const groups = groupByPregao(purchases, {
+      auctions: [st("30", "frete"), st("20", "recebido", "2026-10-09")],
+      shipments: [],
+    });
+    const s = summarizeByStatus(groups);
+    expect(s.frete.auctions).toBe(1);
+    expect(s.aberto.auctions).toBe(2);
+    expect(s.recebido.auctions).toBe(1);
+  });
+});
+
+describe("totais por casa e agrupamento", () => {
+  const groups = groupByPregao(purchases, { auctions: [], shipments: [] });
+  test("soma taxa de 5% por casa e total geral", () => {
+    const { houses, grand } = totalsByHouse(groups);
+    expect(houses.map((h) => h.house)).toEqual(["Alfa", "Beta"]);
+    const beta = houses.find((h) => h.house === "Beta")!;
+    expect(beta.subtotal).toBeCloseTo(1250.5);
+    expect(beta.fee).toBeCloseTo(62.53);
+    expect(beta.total).toBeCloseTo(1313.03);
+    expect(grand.subtotal).toBeCloseTo(1340.5);
+    expect(grand.total).toBeCloseTo(houses[0]!.total + beta.total);
+    expect(grand.auctions).toBe(4);
+  });
+  test("groupByHouse agrupa por casa em ordem alfabética", () => {
+    const g = groupByHouse(groups);
+    expect(g.map((x) => x.house)).toEqual(["Alfa", "Beta"]);
+    expect(g[1]!.groups.map((x) => x.idLeilao)).toEqual(["20", "10"]);
   });
 });
