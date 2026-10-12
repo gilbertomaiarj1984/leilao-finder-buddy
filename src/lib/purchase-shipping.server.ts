@@ -2,6 +2,7 @@ import { db } from "@/lib/db-client.server";
 
 import {
   isAuctionStatus,
+  isUnpaid,
   type AuctionState,
   type AuctionStatus,
   type Shipment,
@@ -83,14 +84,14 @@ async function readState(idLeilao: string): Promise<AuctionState | null> {
 }
 
 /**
- * Muda o status de UM pregão. Datas automáticas: `paid_at` ao sair de "aberto" (mantém a já
- * gravada), `received_at` ao virar "recebido"; voltar a "aberto" limpa pagamento e remessa.
+ * Muda o status de UM pregão. Datas automáticas: `paid_at` ao sair de "aberto"/"frete" (mantém a já
+ * gravada), `received_at` ao virar "recebido"; voltar a "aberto"/"aguardando frete" limpa pagamento e remessa.
  * Sair de "em trânsito" desvincula a remessa (se ficar órfã, ela é apagada).
  */
 export async function setAuctionStatus(idLeilao: string, status: AuctionStatus): Promise<void> {
   const prev = await readState(idLeilao);
   const today = todayIso();
-  const paidAt = status === "aberto" ? null : (prev?.paidAt ?? today);
+  const paidAt = isUnpaid(status) ? null : (prev?.paidAt ?? today);
   const receivedAt = status === "recebido" ? (prev?.receivedAt ?? today) : null;
   const keepShipment = status === "transito" || status === "recebido";
   const shipmentId = keepShipment ? (prev?.shipmentId ?? null) : null;

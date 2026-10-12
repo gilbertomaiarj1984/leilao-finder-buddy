@@ -25,13 +25,16 @@ import {
 import {
   AUCTION_STATUSES,
   GUARD_ALERT_DAYS,
+  AUCTIONEER_FEE_RATE,
   REFERENCE_FREIGHT,
   STATUS_LABEL,
   canBundle,
+  groupByHouse,
   groupByPregao,
   guardDays,
   previewShipment,
   summarizeByStatus,
+  totalsByHouse,
   type AuctionStatus,
   type PregaoGroup,
   type ShippingData,
@@ -40,6 +43,7 @@ import type { Purchase } from "@/lib/purchases.server";
 
 const STATUS_STYLE: Record<AuctionStatus, string> = {
   aberto: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
+  frete: "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300",
   pago: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
   guarda: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300",
   transito: "bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300",
@@ -112,7 +116,12 @@ export function PregaoView({
 
   const chosen = groups.filter((g) => selected.has(g.idLeilao));
   const chosenHouse = chosen[0]?.house ?? null;
-  const visible = groups.filter((g) => filter === "todos" || g.state.status === filter);
+  const visible = groups.filter((g) =>
+    filter === "todos" ? g.state.status !== "recebido" : g.state.status === filter,
+  );
+  const others = visible.filter((g) => g.state.status !== "guarda");
+  const keepByHouse = groupByHouse(visible.filter((g) => g.state.status === "guarda"));
+  const houseTotals = useMemo(() => totalsByHouse(visible), [visible]);
   const keepHouses = new Set(groups.filter((g) => g.state.status === "guarda").map((g) => g.house))
     .size;
 
@@ -121,6 +130,29 @@ export function PregaoView({
     if (!next.delete(id)) next.add(id);
     return next;
   };
+
+  const renderCard = (g: PregaoGroup<Purchase>) => (
+    <PregaoCard
+      key={g.idLeilao}
+      group={g}
+      today={today}
+      expanded={open.has(g.idLeilao)}
+      selected={selected.has(g.idLeilao)}
+      pickBlocked={selected.size > 0 && chosenHouse !== g.house}
+      onToggleOpen={() => setOpen((s) => toggle(s, g.idLeilao))}
+      onTogglePick={() => setSelected((s) => toggle(s, g.idLeilao))}
+      onStatus={(status) => statusMut.mutate({ idLeilao: g.idLeilao, status })}
+      onReceive={() =>
+        g.shipment
+          ? recvMut.mutate(g.shipment.id)
+          : statusMut.mutate({ idLeilao: g.idLeilao, status: "recebido" })
+      }
+      onChanged={onChanged}
+      ownedLabelFor={ownedLabelFor}
+      onOpenOwned={onOpenOwned}
+      onSend={onSend}
+    />
+  );
 
   return (
     <div className="space-y-4 pb-24">
@@ -139,8 +171,8 @@ export function PregaoView({
         <section className="grid grid-cols-2 gap-2 sm:grid-cols-5" aria-label="Totais">
           <Total
             label="A pagar"
-            value={brl(summary.aberto.total)}
-            sub={`${summary.aberto.auctions} pregão(ões) em aberto`}
+            value={brl(summary.aberto.total + summary.frete.total)}
+            sub={`${summary.aberto.auctions} novo(s) · ${summary.frete.auctions} aguardando frete`}
           />
           <Total
             label="Pago · a enviar"
@@ -158,13 +190,14 @@ export function PregaoView({
             sub={`${summary.transito.auctions} pregão(ões)`}
           />
           <Total label="Recebidos" value={String(summary.recebido.discs)} sub="discos já comigo" />
+          <HouseTotalsTable data={houseTotals} />
         </section>
       ) : null}
 
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por status">
         <FilterChip
-          label="Todos"
-          count={groups.length}
+          label="Ativos"
+          count={groups.length - summary.recebido.auctions}
           active={filter === "todos"}
           onClick={() => setFilter("todos")}
         />
@@ -185,28 +218,36 @@ export function PregaoView({
         </div>
       ) : (
         <div className="space-y-3">
-          {visible.map((g) => (
-            <PregaoCard
-              key={g.idLeilao}
-              group={g}
-              today={today}
-              expanded={open.has(g.idLeilao)}
-              selected={selected.has(g.idLeilao)}
-              pickBlocked={selected.size > 0 && chosenHouse !== g.house}
-              onToggleOpen={() => setOpen((s) => toggle(s, g.idLeilao))}
-              onTogglePick={() => setSelected((s) => toggle(s, g.idLeilao))}
-              onStatus={(status) => statusMut.mutate({ idLeilao: g.idLeilao, status })}
-              onReceive={() =>
-                g.shipment
-                  ? recvMut.mutate(g.shipment.id)
-                  : statusMut.mutate({ idLeilao: g.idLeilao, status: "recebido" })
-              }
-              onChanged={onChanged}
-              ownedLabelFor={ownedLabelFor}
-              onOpenOwned={onOpenOwned}
-              onSend={onSend}
-            />
-          ))}
+          {others.map(renderCard)}
+          {keepByHouse.map((h) => {
+            const ids = h.groups.map((g) => g.idLeilao);
+            const allPicked = ids.every((id) => selected.has(id));
+            return (
+              <section
+                key={h.house}
+                className="space-y-3 rounded-md border border-violet-300 p-3 dark:border-violet-900"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold">
+                    Na guarda · {h.house || "casa não identificada"}
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      {h.groups.length} pregão(ões) ·{" "}
+                      {h.groups.reduce((n, g) => n + g.purchases.length, 0)} discos ·{" "}
+                      {brl(h.groups.reduce((n, g) => n + g.total, 0))}
+                    </span>
+                  </h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelected(allPicked ? new Set() : new Set(ids))}
+                  >
+                    {allPicked ? "Limpar seleção" : "Selecionar todos da casa"}
+                  </Button>
+                </div>
+                {h.groups.map(renderCard)}
+              </section>
+            );
+          })}
         </div>
       )}
 
@@ -244,6 +285,49 @@ export function PregaoView({
           onChanged();
         }}
       />
+    </div>
+  );
+}
+
+function HouseTotalsTable({ data }: { data: ReturnType<typeof totalsByHouse> }) {
+  const rate = `${Math.round(AUCTIONEER_FEE_RATE * 100)}%`;
+  return (
+    <div className="col-span-full overflow-x-auto rounded-md border border-border bg-card px-3 py-2">
+      <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Por casa (lista atual) · taxa do leiloeiro {rate}
+      </p>
+      <table className="w-full text-sm">
+        <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+          <tr>
+            <th className="py-1 pr-2">Casa</th>
+            <th className="py-1 pr-2 text-right">Pregões</th>
+            <th className="py-1 pr-2 text-right">Discos</th>
+            <th className="py-1 pr-2 text-right">Arrematado</th>
+            <th className="py-1 pr-2 text-right">Taxa {rate}</th>
+            <th className="py-1 text-right">Total</th>
+          </tr>
+        </thead>
+        <tbody className="tabular-nums">
+          {data.houses.map((r) => (
+            <tr key={r.house} className="border-t border-border">
+              <td className="py-1 pr-2">{r.house || "(casa não identificada)"}</td>
+              <td className="py-1 pr-2 text-right">{r.auctions}</td>
+              <td className="py-1 pr-2 text-right">{r.discs}</td>
+              <td className="py-1 pr-2 text-right">{brl(r.subtotal)}</td>
+              <td className="py-1 pr-2 text-right">{brl(r.fee)}</td>
+              <td className="py-1 text-right font-medium">{brl(r.total)}</td>
+            </tr>
+          ))}
+          <tr className="border-t-2 border-border font-semibold">
+            <td className="py-1 pr-2">Total geral</td>
+            <td className="py-1 pr-2 text-right">{data.grand.auctions}</td>
+            <td className="py-1 pr-2 text-right">{data.grand.discs}</td>
+            <td className="py-1 pr-2 text-right">{brl(data.grand.subtotal)}</td>
+            <td className="py-1 pr-2 text-right">{brl(data.grand.fee)}</td>
+            <td className="py-1 text-right">{brl(data.grand.total)}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }

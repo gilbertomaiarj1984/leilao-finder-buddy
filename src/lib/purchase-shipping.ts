@@ -3,19 +3,34 @@ import { parsePrice } from "@/lib/vinyl-parse";
 // Acompanhamento de pagamento/envio das compras POR PREGÃO (`id_leilao`). Módulo puro/client-safe:
 // o estado persistido vem de `purchase-shipping.server.ts`; aqui só agrupamento e regras.
 
-export const AUCTION_STATUSES = ["aberto", "pago", "guarda", "transito", "recebido"] as const;
+export const AUCTION_STATUSES = [
+  "aberto",
+  "frete",
+  "pago",
+  "guarda",
+  "transito",
+  "recebido",
+] as const;
 export type AuctionStatus = (typeof AUCTION_STATUSES)[number];
 
 export const STATUS_LABEL: Record<AuctionStatus, string> = {
-  aberto: "Em aberto",
+  aberto: "Em aberto · novo",
+  frete: "Em aberto · aguardando frete",
   pago: "Pago · a enviar",
   guarda: "Na guarda",
   transito: "Em trânsito",
   recebido: "Recebido",
 };
 
+/** Ainda não pago: "novo" (aberto) ou aguardando o vendedor responder o frete. */
+export function isUnpaid(status: AuctionStatus): boolean {
+  return status === "aberto" || status === "frete";
+}
+
 /** Dias na guarda a partir dos quais o pregão ganha o aviso de prazo. */
 export const GUARD_ALERT_DAYS = 15;
+/** Taxa (comissão) do leiloeiro somada ao valor arrematado nos totais por casa. */
+export const AUCTIONEER_FEE_RATE = 0.05;
 /** Frete médio por envio, só para estimar a economia de juntar pregões numa remessa. */
 export const REFERENCE_FREIGHT = 38;
 
@@ -161,4 +176,64 @@ export function previewShipment<P extends PurchaseLike>(
     savedShipments: saved,
     estimatedSaving: saved * referenceFreight,
   };
+}
+
+type HouseTotal = {
+  house: string;
+  auctions: number;
+  discs: number;
+  subtotal: number;
+  fee: number;
+  total: number;
+};
+
+const cents = (n: number) => Math.round(n * 100) / 100;
+
+/** Totais por casa (ordem alfabética) com a taxa do leiloeiro, mais o total geral. */
+export function totalsByHouse<P extends PurchaseLike>(
+  groups: PregaoGroup<P>[],
+  feeRate = AUCTIONEER_FEE_RATE,
+): { houses: HouseTotal[]; grand: HouseTotal } {
+  const map = new Map<string, HouseTotal>();
+  for (const g of groups) {
+    const row = map.get(g.house) ?? {
+      house: g.house,
+      auctions: 0,
+      discs: 0,
+      subtotal: 0,
+      fee: 0,
+      total: 0,
+    };
+    row.auctions += 1;
+    row.discs += g.purchases.length;
+    row.subtotal += g.total;
+    map.set(g.house, row);
+  }
+  const houses = [...map.values()]
+    .map((r) => ({ ...r, subtotal: cents(r.subtotal), fee: cents(r.subtotal * feeRate) }))
+    .map((r) => ({ ...r, total: cents(r.subtotal + r.fee) }))
+    .sort((a, b) => a.house.localeCompare(b.house, "pt-BR"));
+  const grand = houses.reduce<HouseTotal>(
+    (acc, r) => ({
+      house: "Total geral",
+      auctions: acc.auctions + r.auctions,
+      discs: acc.discs + r.discs,
+      subtotal: cents(acc.subtotal + r.subtotal),
+      fee: cents(acc.fee + r.fee),
+      total: cents(acc.total + r.total),
+    }),
+    { house: "Total geral", auctions: 0, discs: 0, subtotal: 0, fee: 0, total: 0 },
+  );
+  return { houses, grand };
+}
+
+/** Pregões agrupados por casa (ordem alfabética), mantendo a ordem de entrada dentro de cada casa. */
+export function groupByHouse<P extends PurchaseLike>(
+  groups: PregaoGroup<P>[],
+): { house: string; groups: PregaoGroup<P>[] }[] {
+  const map = new Map<string, PregaoGroup<P>[]>();
+  for (const g of groups) map.set(g.house, [...(map.get(g.house) ?? []), g]);
+  return [...map.entries()]
+    .map(([house, list]) => ({ house, groups: list }))
+    .sort((a, b) => a.house.localeCompare(b.house, "pt-BR"));
 }

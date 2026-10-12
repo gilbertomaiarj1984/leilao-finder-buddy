@@ -385,7 +385,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   agrupa as compras por `id_leilao` (`groupByPregao`, `purchase-shipping.ts`, puro/testado em
   `tests/purchase-shipping.test.ts`), mais recente primeiro. As visões antigas (recentes / por dia
   / por casa) seguem disponíveis; a preferência agora usa a chave `compras-view`.
-- **Status por pregão** (não por disco): `aberto` (padrão) → `pago` (a enviar) → `guarda` (pago, parado
+- **Status por pregão** (não por disco): `aberto` (padrão, "novo") → `frete` (em aberto, aguardando retorno do frete; v0.131.0, também sem data de pagamento) → `pago` (a enviar) → `guarda` (pago, parado
   no vendedor) → `transito` → `recebido`. Persistido em `purchase_auctions` (linha só existe depois que
   o usuário mexe; ausência = aberto), **separada de `purchases`** para a sync nunca sobrescrever.
   `paid_at` é preenchido sozinho ao sair de "aberto" (data de Brasília), `received_at` ao virar
@@ -402,4 +402,5 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
 - Server functions em `purchases.functions.ts` (`getPurchaseShipping`, `setPregaoStatus`,
   `setPregaoNote`, `approveShipment`, `editShipment`, `receiveShipment`); lógica em
   `purchase-shipping.server.ts`. Não testável contra o site daqui (só funções puras).
-
+- **Recebidos ocultos (v0.131.0):** o chip "Ativos" (padrão; chave interna `todos`) lista tudo menos `recebido`; os recebidos aparecem só no filtro "Recebido". "A pagar" nos totais soma novo + aguardando frete. Atenção: o CHECK de `purchase_auctions.status` é recriado por `ALTER TABLE` no `setup.sql` (o `CREATE TABLE IF NOT EXISTS` não altera tabela existente).
+- **Guarda agrupada por casa e totais com taxa (v0.131.0):** nas listas "Ativos" e "Na guarda", os pregões na guarda saem da ordem por data e aparecem em seções por casa (`groupByHouse`), com resumo e botão "Selecionar todos da casa" (atalho para montar a remessa); os demais seguem por data. Os totais ganham a tabela "Por casa" (`totalsByHouse`) sobre a lista atual: arrematado + taxa do leiloeiro (`AUCTIONEER_FEE_RATE` = 5%, somada ao valor arrematado, que não a inclui) = total, mais a linha "Total geral".
