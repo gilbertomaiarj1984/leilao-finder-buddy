@@ -1,0 +1,29 @@
+name: Resumo diário por e-mail
+
+# Uma vez por dia, 8:30 de Brasília (UTC 11:30; o agendador do GitHub pode atrasar alguns
+# minutos). Só chama o endpoint — o servidor decide: no máximo 1 e-mail por dia e no-op sem
+# GMAIL_USER/GMAIL_APP_PASSWORD no .env do VPS. Também pode ser disparado manualmente.
+on:
+  schedule:
+    - cron: "30 11 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: daily-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enviar resumo diário
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL:-}" ] || [ -z "${CRON_TOKEN:-}" ]; then
+            echo "Configure os secrets APP_URL e CRON_TOKEN no repositório."; exit 1
+          fi
+          curl -fsS --max-time 120 --retry 3 --retry-delay 5 \
+            -H "x-cron-token: $CRON_TOKEN" "${APP_URL%/}/api/cron?step=dailydigest"

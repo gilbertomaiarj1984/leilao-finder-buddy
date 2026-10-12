@@ -106,4 +106,5 @@ status 4 (FECHANDO)**, Turbo (polling ~250ms) + confirmação. Sniping clássico
 soft-close; a vantagem é reagir mais rápido no último instante. (`tools/` é ignorado no
 ESLint/Prettier.)
 
+- **E-mail pelo Gmail (v0.135.0):** `GMAIL_USER` + `GMAIL_APP_PASSWORD` (senha de app) e `EMAIL_TO` opcional no `.env` do VPS (recriar com `docker compose up -d --force-recreate app`); SMTP `smtp.gmail.com:465` via `nodemailer` (`email.server.ts`; templates puros em `email-templates.server.ts`). Usos: aviso do "De olho" (ver `colecao-sondagem-compras.md`) e **resumo diário** dos 30 melhores lotes dos próximos 5 dias (`daily-digest.server.ts`, `step=dailydigest`, ordenado pela nota da IA, sem os "caro"), disparado 1x/dia às 8:30 BRT por `.github/workflows/daily-digest.yml`; dedupe por dia em `app_state.daily_digest_sent`. Sem as envs é no-op.
 - **Env opcional `NTFY_TOPIC` / `NTFY_SERVER` (v0.107.0):** aviso push do "De olho" via ntfy.sh, lido só pelo servidor (`.env` do VPS; não é secret do GitHub). O tópico funciona como senha — usar nome longo/aleatório. Mudança no `.env` exige recriar o serviço (`docker compose up -d app`).

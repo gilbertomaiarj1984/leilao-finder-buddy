@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.135.0** — E-mail pelo Gmail (opcional): aviso do "De olho" também por e-mail (1 por rodada, junto do ntfy) e resumo diário dos 30 melhores lotes às 8:30 (`daily-digest.yml`, `step=dailydigest`).
 - **0.134.2** — Coleção: o aprendizado só sugere um disco se o artista dele aparece no lote (fim de "Gilberto Gil" sugerido para "Paulinho da Viola").
 - **0.134.1** — Avaliação das casas passa a ser por pregão (botão "Avaliar casa" no cabeçalho de cada pregão em `/compras`), não por compra; o semáforo da casa agrega os pregões avaliados.
 - **0.134.0** — Avaliação das casas: semáforo de 4 níveis (verde/amarelo/laranja/vermelho) ao lado do nome da casa, com detalhamento (tags e anotações) ao passar o mouse; a avaliação é feita por compra em `/compras`; também no LotCard, De olho, Pregões e Ao vivo.

@@ -1,4 +1,5 @@
-import nodemailer from "nodemailer";
+import type { EmailContent } from "@/lib/email-templates.server";
+import nodemailer, { type Transporter } from "nodemailer";
 
 /**
  * Envio de e-mail via SMTP do Gmail (senha de app). OPCIONAL: sem `GMAIL_USER` e
@@ -9,18 +10,9 @@ export function emailEnabled(): boolean {
   return Boolean(process.env["GMAIL_USER"] && process.env["GMAIL_APP_PASSWORD"]);
 }
 
-/** Escapa texto para interpolar em HTML de e-mail. */
-export function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+let transport: Transporter | null = null;
 
-let transport: nodemailer.Transporter | null = null;
-
-function getTransport(): nodemailer.Transporter {
+function getTransport(): Transporter {
   transport ??= nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 465,
@@ -33,11 +25,7 @@ function getTransport(): nodemailer.Transporter {
 }
 
 /** Envia um e-mail (texto + HTML). Lança em falha de SMTP; o chamador decide se é best-effort. */
-export async function sendEmail(msg: {
-  subject: string;
-  text: string;
-  html: string;
-}): Promise<void> {
+export async function sendEmail(msg: EmailContent): Promise<void> {
   const to = process.env["EMAIL_TO"] || process.env["LEILOESBR_EMAIL"];
   if (!to) throw new Error("defina EMAIL_TO (ou LEILOESBR_EMAIL) para enviar e-mail");
   await getTransport().sendMail({
