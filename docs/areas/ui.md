@@ -193,10 +193,11 @@
   futuro que casa com um disco marcado — ver `colecao-sondagem-compras.md`); perde para lance e
   vigia. O ícone `Binoculars` fica na linha de ações do card, ao lado de Vigiar.
 - **Destaque de novos no "De olho" (v0.128.0):** em `/olho`, enquanto houver lote `isNew`
-  (visto só na próxima visita; o contador do menu já zera ao abrir), aparece uma faixa no topo
-  ("N artistas com lotes novos", botão "Marcar como vistos" = `showNew=false`, só local), o
+  (v0.132.1: o "visto" só é gravado — `markLookoutSeen` — ao clicar em "Marcar como vistos";
+  abrir a página ou resolver outro lote com ✓/✕ não apaga os novos), aparece uma faixa no topo
+  ("N artistas com lotes novos", botão "Marcar como vistos"), o
   cabeçalho do artista ganha fundo/linha fúcsia + selo "N novos", a contagem do disco fica em
-  negrito fúcsia e cada lote novo no cartão ganha fundo/contorno fúcsia. Ordem nunca muda.
+  negrito fúcsia e cada lote novo no cartão ganha fundo/contorno fúcsia. Ordem nunca muda. Ao lado de cada artista há um botão "Voltar ao topo" (rola a página).
 - **v0.129.0:** `/olho` ordena em dois blocos (artistas com lote por vir; depois "sem lote por vir"; álbuns com lote primeiro dentro do artista). Arquivados ficam ocultos atrás de botão. A faixa de novos lista cada lote (`olho-item-<id>` é o alvo do scroll). Borda fúcsia só no disco com lote `isNew`; sem novo, `border-border`. Cabeçalho do artista: inicial em círculo + nome em negrito + linha grossa; álbuns recuados (`ml-11`) abaixo.
 - **Tarja diagonal "Vendido" (v0.50.0):** lote **vigiado ou com lance** cujo leilão já
   terminou com venda confirmada em `lot_sales` (mesma tabela do Vinil Analytics, preenchida pelo

@@ -1,8 +1,18 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Binoculars, LayoutList, Plus, RefreshCw, Rows3, Search, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowUpToLine,
+  Binoculars,
+  LayoutList,
+  Plus,
+  RefreshCw,
+  Rows3,
+  Search,
+  X,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -137,23 +147,19 @@ function OlhoPage() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.lookoutOverview });
   };
 
-  // Ao abrir a página, os matches atuais passam a "vistos": zera o contador do menu. O selo
-  // "novo" desta visita continua visível (a consulta completa não é refeita aqui) — só a versão
-  // leve (menu) é invalidada.
-  const markedRef = useRef(false);
-  useEffect(() => {
-    if (markedRef.current || !overview) return;
-    markedRef.current = true;
-    const keys = overview.upcoming.filter((m) => m.isNew).map(notifyKey);
+  // Os lotes "novos" só deixam de ser novos quando o usuário clica em "Marcar como vistos":
+  // abrir a página ou resolver outros lotes (✓/✕) não os apaga.
+  const markAllSeen = () => {
+    setShowNew(false);
+    const keys = (overview?.upcoming ?? []).filter((m) => m.isNew).map(notifyKey);
     if (!keys.length) return;
     void runSeen({ data: { keys } })
-      .then(() =>
-        queryClient.invalidateQueries({ queryKey: [...queryKeys.lookoutOverview, "light"] }),
-      )
+      .then(() => queryClient.invalidateQueries({ queryKey: queryKeys.lookoutOverview }))
       .catch(() => {
-        /* acessório: se falhar, o contador só demora a zerar */
+        toast.error("Não foi possível marcar como vistos");
+        setShowNew(true);
       });
-  }, [overview, runSeen, queryClient]);
+  };
 
   const updateMut = useMutation({
     mutationFn: async (vars: { id: string; patch: LookoutPatch }) =>
@@ -548,7 +554,7 @@ function OlhoPage() {
                 })}
               </ul>
             </div>
-            <Button size="sm" variant="outline" onClick={() => setShowNew(false)}>
+            <Button size="sm" variant="outline" onClick={markAllSeen}>
               Marcar como vistos
             </Button>
           </div>
@@ -723,6 +729,17 @@ function OlhoPage() {
                               {groupNewCount(group.items, upcomingByItem) === 1 ? "" : "s"}
                             </span>
                           ) : null}
+                          <button
+                            type="button"
+                            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                            aria-label="Voltar ao topo"
+                            title="Voltar ao topo"
+                            className={`rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground ${
+                              groupNewCount(group.items, upcomingByItem) > 0 ? "" : "ml-auto"
+                            }`}
+                          >
+                            <ArrowUpToLine className="h-4 w-4" />
+                          </button>
                         </h2>
                         {Object.values(artistJoins).filter(
                           (j) => resolveLookoutArtist(j.label, artistJoins) === group.artist,
