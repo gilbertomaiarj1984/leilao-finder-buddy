@@ -9,8 +9,8 @@ import { cn } from "@/lib/utils";
 /**
  * Semáforo da casa (verde/amarelo/laranja/vermelho), ao lado do nome em qualquer tela. Sem
  * avaliação, mostra uma bolinha tracejada. Ao parar o mouse (ou tocar) abre o detalhamento:
- * tags mais marcadas e anotações recentes das compras avaliadas. A avaliação em si é feita
- * por compra, na página Compras.
+ * tags mais marcadas e anotações recentes dos pregões avaliados. A avaliação em si é feita
+ * por pregão, na página Compras.
  */
 export function HouseLight({ house, className }: { house: string; className?: string }) {
   const { data } = useHouseRatingsQuery();
@@ -28,7 +28,7 @@ export function HouseLight({ house, className }: { house: string; className?: st
     timer.current = setTimeout(() => setOpen(false), 120);
   };
   const tip = level
-    ? `${house}: ${LEVEL_META[level].label} (${summary?.rated} compra(s) avaliada(s))`
+    ? `${house}: ${LEVEL_META[level].label} (${summary?.rated} pregão(ões) avaliado(s))`
     : `${house}: sem avaliação`;
 
   return (
@@ -85,14 +85,14 @@ function HouseLightDetail({ house, summary }: { house: string; summary?: HouseSu
           <p className="truncate text-sm font-semibold text-foreground">{house}</p>
           <p className="text-muted-foreground">
             {level
-              ? `${LEVEL_META[level].label} · ${summary?.rated} compra(s) avaliada(s)`
+              ? `${LEVEL_META[level].label} · ${summary?.rated} pregão(ões) avaliado(s)`
               : "Sem avaliação"}
           </p>
         </div>
       </div>
       {!level ? (
         <p className="text-muted-foreground">
-          Avalie uma compra desta casa na página Compras para ver o detalhamento aqui.
+          Avalie um pregão desta casa na página Compras para ver o detalhamento aqui.
         </p>
       ) : null}
       {summary?.tags.length ? (
@@ -120,7 +120,7 @@ function HouseLightDetail({ house, summary }: { house: string; summary?: HouseSu
               <LevelDot level={n.level} className="mt-0.5 h-2.5 w-2.5" />
               <div className="min-w-0">
                 <p className="text-foreground">{n.note}</p>
-                <p className="truncate text-muted-foreground">{n.title}</p>
+                <p className="truncate text-muted-foreground">{n.label}</p>
               </div>
             </li>
           ))}

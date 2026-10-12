@@ -3,15 +3,13 @@ import { describe, expect, test } from "bun:test";
 import {
   houseKey,
   levelFromScores,
+  pregaoRefs,
   sanitizeRating,
   summarizeHouses,
-  type PurchaseRating,
+  type PregaoRating,
 } from "../src/lib/house-rating";
 
-const r = (
-  level: PurchaseRating["level"],
-  extra: Partial<PurchaseRating> = {},
-): PurchaseRating => ({
+const r = (level: PregaoRating["level"], extra: Partial<PregaoRating> = {}): PregaoRating => ({
   level,
   tags: [],
   note: "",
@@ -48,14 +46,28 @@ describe("sanitizeRating", () => {
   });
 });
 
+describe("pregaoRefs", () => {
+  test("um registro por pregão, com a data mais recente", () => {
+    const refs = pregaoRefs([
+      { idLeilao: "10", house: "Casa A", wonDate: "2026-01-10" },
+      { idLeilao: "10", house: "Casa A", wonDate: "2026-01-12" },
+      { idLeilao: "11", house: "Casa B", wonDate: null },
+    ]);
+    expect(refs).toEqual([
+      { id: "10", house: "Casa A", date: "2026-01-12" },
+      { id: "11", house: "Casa B", date: null },
+    ]);
+  });
+});
+
 describe("summarizeHouses", () => {
   test("agrega por casa, conta tags e pega as notas mais recentes", () => {
-    const purchases = [
-      { id: "1", house: "Casa A", title: "Disco 1", wonDate: "2026-01-10" },
-      { id: "2", house: "casa a", title: "Disco 2", wonDate: "2026-02-10" },
-      { id: "3", house: "Casa B", title: "Disco 3", wonDate: "2026-02-11" },
+    const pregoes = [
+      { id: "1", house: "Casa A", date: "2026-01-10" },
+      { id: "2", house: "casa a", date: "2026-02-10" },
+      { id: "3", house: "Casa B", date: "2026-02-11" },
     ];
-    const out = summarizeHouses(purchases, {
+    const out = summarizeHouses(pregoes, {
       "1": r("verde", { tags: ["Envio rápido"], note: "antiga" }),
       "2": r("laranja", { tags: ["Envio rápido", "Taxas altas"], note: "nova" }),
     });
@@ -63,5 +75,6 @@ describe("summarizeHouses", () => {
     expect(out["casa a"]!.rated).toBe(2);
     expect(out["casa a"]!.tags[0]).toEqual({ tag: "Envio rápido", count: 2 });
     expect(out["casa a"]!.notes[0]!.note).toBe("nova");
+    expect(out["casa a"]!.notes[0]!.label).toBe("Pregão 2");
   });
 });

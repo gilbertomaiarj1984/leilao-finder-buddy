@@ -1,6 +1,7 @@
 // Avaliação das casas de leilão (semáforo de 4 níveis + tags + anotação). Módulo puro/client-safe:
-// a avaliação é feita POR COMPRA (página Compras) e o semáforo da casa é a agregação das compras
-// avaliadas, com peso maior para as mais recentes.
+// a avaliação é feita POR PREGÃO (página Compras) — é a nota da casa naquele pregão, não de um
+// lote — e o semáforo da casa é a agregação dos pregões avaliados, com peso maior para os
+// mais recentes.
 
 export const RATING_LEVELS = ["verde", "amarelo", "laranja", "vermelho"] as const;
 export type RatingLevel = (typeof RATING_LEVELS)[number];
@@ -30,7 +31,7 @@ export const NEGATIVE_TAGS = [
 ] as const;
 const ALL_TAGS: readonly string[] = [...POSITIVE_TAGS, ...NEGATIVE_TAGS];
 
-export type PurchaseRating = {
+export type PregaoRating = {
   level: RatingLevel;
   tags: string[];
   note: string;
@@ -41,16 +42,16 @@ export type HouseSummary = {
   key: string;
   /** `null` = nenhuma compra avaliada ainda. */
   level: RatingLevel | null;
-  /** Compras avaliadas dessa casa. */
+  /** Pregões avaliados dessa casa. */
   rated: number;
   /** Tags mais marcadas (maior contagem primeiro). */
   tags: { tag: string; count: number }[];
   /** Anotações mais recentes (até 3). */
-  notes: { title: string; note: string; level: RatingLevel; date: string }[];
+  notes: { label: string; note: string; level: RatingLevel; date: string }[];
 };
 
 export type RatingsPayload = {
-  ratings: Record<string, PurchaseRating>;
+  ratings: Record<string, PregaoRating>;
   houses: Record<string, HouseSummary>;
 };
 
@@ -75,7 +76,7 @@ export function sanitizeRating(input: {
   level?: unknown;
   tags?: unknown;
   note?: unknown;
-}): Omit<PurchaseRating, "updatedAt"> | null {
+}): Omit<PregaoRating, "updatedAt"> | null {
   if (!isRatingLevel(input.level)) return null;
   const tags = Array.isArray(input.tags)
     ? [...new Set(input.tags.filter((t): t is string => typeof t === "string"))].filter((t) =>
@@ -105,15 +106,30 @@ export function levelFromScores(scoresNewestFirst: number[]): RatingLevel | null
   return "vermelho";
 }
 
-type PurchaseRef = { id: string; house: string; title: string; wonDate: string | null };
+/** Um pregão (leilão) em que houve compra: a unidade avaliada. `id` = `purchases.id_leilao`. */
+type PregaoRef = { id: string; house: string; date: string | null };
 
-/** Resumo por casa (chave = `houseKey`) a partir das compras e das avaliações por compra. */
-export function summarizeHouses(
-  purchases: readonly PurchaseRef[],
-  ratings: Record<string, PurchaseRating>,
-): Record<string, HouseSummary> {
-  const byHouse = new Map<string, { p: PurchaseRef; r: PurchaseRating }[]>();
+/** Pregões distintos das compras (data = a mais recente do pregão). */
+export function pregaoRefs(
+  purchases: readonly { idLeilao: string; house: string; wonDate: string | null }[],
+): PregaoRef[] {
+  const map = new Map<string, PregaoRef>();
   for (const p of purchases) {
+    if (!p.idLeilao) continue;
+    const cur = map.get(p.idLeilao);
+    if (!cur) map.set(p.idLeilao, { id: p.idLeilao, house: p.house, date: p.wonDate });
+    else if (p.wonDate && (!cur.date || p.wonDate > cur.date)) cur.date = p.wonDate;
+  }
+  return [...map.values()];
+}
+
+/** Resumo por casa (chave = `houseKey`) a partir dos pregões e das avaliações por pregão. */
+export function summarizeHouses(
+  pregoes: readonly PregaoRef[],
+  ratings: Record<string, PregaoRating>,
+): Record<string, HouseSummary> {
+  const byHouse = new Map<string, { p: PregaoRef; r: PregaoRating }[]>();
+  for (const p of pregoes) {
     const r = ratings[p.id];
     if (!r || !p.house) continue;
     const key = houseKey(p.house);
@@ -124,8 +140,8 @@ export function summarizeHouses(
   const out: Record<string, HouseSummary> = {};
   for (const [key, list] of byHouse) {
     list.sort((a, b) =>
-      (b.p.wonDate ?? b.r.updatedAt.slice(0, 10)).localeCompare(
-        a.p.wonDate ?? a.r.updatedAt.slice(0, 10),
+      (b.p.date ?? b.r.updatedAt.slice(0, 10)).localeCompare(
+        a.p.date ?? a.r.updatedAt.slice(0, 10),
       ),
     );
     const counts = new Map<string, number>();
@@ -139,10 +155,10 @@ export function summarizeHouses(
         .filter(({ r }) => r.note)
         .slice(0, 3)
         .map(({ p, r }) => ({
-          title: p.title,
+          label: `Pregão ${p.id}`,
           note: r.note,
           level: r.level,
-          date: p.wonDate ?? r.updatedAt.slice(0, 10),
+          date: p.date ?? r.updatedAt.slice(0, 10),
         })),
     };
   }

@@ -13,46 +13,46 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { LevelDot } from "@/components/vinyl/level-dot";
-import { savePurchaseRating } from "@/lib/house-rating.functions";
+import { savePregaoRating } from "@/lib/house-rating.functions";
 import {
   LEVEL_META,
   NEGATIVE_TAGS,
   POSITIVE_TAGS,
   RATING_LEVELS,
-  type PurchaseRating,
+  type PregaoRating,
   type RatingLevel,
 } from "@/lib/house-rating";
 import { queryKeys } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 /**
- * Avaliação da experiência com UMA compra: semáforo (obrigatório), tags e anotação (opcionais).
- * O semáforo da casa, mostrado em todo o app, é a agregação das compras avaliadas dela.
+ * Avaliação da casa num pregão (a experiência geral, não um lote): semáforo (obrigatório), tags e
+ * anotação (opcionais). O semáforo da casa, mostrado em todo o app, agrega os pregões avaliados.
  */
-export function PurchaseRatingDialog({
+export function PregaoRatingDialog({
   open,
   onOpenChange,
-  purchaseId,
+  idLeilao,
   house,
   title,
   current,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  purchaseId: string;
+  idLeilao: string;
   house: string;
   title: string;
-  current: PurchaseRating | undefined;
+  current: PregaoRating | undefined;
 }) {
   const queryClient = useQueryClient();
-  const save = useServerFn(savePurchaseRating);
+  const save = useServerFn(savePregaoRating);
   const [level, setLevel] = useState<RatingLevel | null>(current?.level ?? null);
   const [tags, setTags] = useState<string[]>(current?.tags ?? []);
   const [note, setNote] = useState(current?.note ?? "");
 
   const mutation = useMutation({
     mutationFn: (remove: boolean) =>
-      save({ data: { purchaseId, ...(remove || !level ? {} : { level, tags, note }) } }),
+      save({ data: { idLeilao, ...(remove || !level ? {} : { level, tags, note }) } }),
     onSuccess: async (_r, remove) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.houseRatings });
       toast.success(remove ? "Avaliação removida" : "Avaliação salva");
@@ -114,7 +114,7 @@ export function PurchaseRatingDialog({
               value={note}
               maxLength={500}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Ex.: disco veio riscado, sem resposta ao e-mail"
+              placeholder="Ex.: discos vieram riscados, sem resposta ao e-mail"
               className="min-h-16 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             />
           </div>

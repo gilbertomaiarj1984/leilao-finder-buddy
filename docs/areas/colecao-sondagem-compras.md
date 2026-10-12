@@ -407,20 +407,23 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
 - **Barra de remessa x rodapé (v0.131.1):** a barra fixa de seleção fica `sm:bottom-[2.1rem]` (altura do `Footer`, também fixo, z-40); no celular o rodapé é oculto, então a barra fica em `bottom-0`. Se a altura do `Footer` mudar, ajustar esse offset.
 - **Gasto por período (v0.132.0):** `SpendingHistory` (totais de `/compras`, `spendingByPeriod`) soma o arrematado de TODOS os pregões (qualquer status, inclusive recebidos) por mês ou ano da data do pregão, com a taxa do leiloeiro (5%) e a linha "Histórico geral"; independe do filtro da lista. Escolha mês/ano lembrada em `compras-gasto-periodo`.
 
-## Avaliação das casas (v0.134.0)
+## Avaliação das casas (v0.134.0, por pregão desde v0.134.1)
 
-- **Avaliação por compra:** cada `PurchaseCard` (`/compras`) tem o botão "Avaliar compra" →
-  `PurchaseRatingDialog` (semáforo obrigatório: verde/amarelo/laranja/vermelho; tags e anotação
-  opcionais). Gravado em `app_state.house_ratings` = `{ [purchases.id]: { level, tags, note,
-updatedAt } }` (`house-rating.server.ts`; server fns `getHouseRatings`/`savePurchaseRating` em
+- **Avaliação por pregão (não por lote):** a nota é da casa, então vale uma por pregão. Cada
+  `PregaoCard` (visão Pregões de `/compras`, `pregao-list.tsx`) tem o botão "Avaliar casa" →
+  `PregaoRatingDialog` (semáforo obrigatório: verde/amarelo/laranja/vermelho; tags e anotação
+  opcionais). Gravado em `app_state.house_ratings` = `{ [id_leilao]: { level, tags, note,
+updatedAt } }` (`house-rating.server.ts`; server fns `getHouseRatings`/`savePregaoRating` em
   `house-rating.functions.ts`). Tags só da lista fixa (`POSITIVE_TAGS`/`NEGATIVE_TAGS`).
-- **Semáforo da casa = agregação** (`summarizeHouses`/`levelFromScores`, módulo puro
-  `house-rating.ts`): score verde 3 … vermelho 0, média ponderada pela data da compra (mais
+  ⚠️ Na v0.134.0 a chave era o id da COMPRA; essas entradas não casam mais com nenhum pregão e são
+  ignoradas (não há migração).
+- **Semáforo da casa = agregação** (`pregaoRefs` → `summarizeHouses`/`levelFromScores`, módulo
+  puro `house-rating.ts`): score verde 3 … vermelho 0, média ponderada pela data do pregão (mais
   recente peso 1, cada anterior ×0,8); ≥2,5 verde, ≥1,5 amarelo, ≥0,5 laranja, senão vermelho.
   Chave da casa = `houseKey` (minúsculas, sem acento). Sem avaliação: bolinha tracejada.
 - **`HouseLight`** (`components/vinyl/house-light.tsx`) mostra o semáforo + popover (hover/toque)
   com tags mais marcadas e anotações recentes. Aplicado nos cabeçalhos de casa de Compras, Dia,
-  Vigiados e Lances; query compartilhada `useHouseRatingsQuery` (`queryKeys.houseRatings`).
-- **Também em:** barra de origem do `LotCard` (desktop/mobile), De olho (histórico de vendas), Pregões e
-  Ao vivo; em `live-auctions.tsx` (card dentro de `<a>`) usa `HouseDot`, bolinha sem popover.
+  Vigiados e Lances, barra de origem do `LotCard` (desktop/mobile), De olho (histórico de vendas),
+  Pregões e Ao vivo; em `live-auctions.tsx` (card dentro de `<a>`) usa `HouseDot`, bolinha sem
+  popover. Query compartilhada `useHouseRatingsQuery` (`queryKeys.houseRatings`).
 - **Pendente:** ranking das casas e o cabeçalho do detalhe mobile do lote.
