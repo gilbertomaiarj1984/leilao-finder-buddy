@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.134.0** — Avaliação das casas: semáforo de 4 níveis (verde/amarelo/laranja/vermelho) ao lado do nome da casa, com detalhamento (tags e anotações) ao passar o mouse; a avaliação é feita por compra em `/compras`; também no LotCard, De olho, Pregões e Ao vivo.
 - **0.133.0** — De olho: botão `+` em cada lote por vir cria um novo álbum de olho a partir dele (diálogo com artista/álbum/ano).
 - **0.132.1** — De olho: lotes "novos" não somem mais ao dizer "não é este disco" (✕) em outro lote — só saem com "Marcar como vistos"; botão "Voltar ao topo" ao lado de cada artista.
 - **0.132.0** — Compras: nos totais, tabela "Quanto gastei" por mês ou por ano (todas as compras, qualquer status, com taxa de 5%) e linha de histórico geral.

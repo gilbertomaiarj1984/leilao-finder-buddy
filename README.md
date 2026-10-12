@@ -23,18 +23,18 @@ App em http://localhost:3000
 
 Veja `.env.example`. Resumo:
 
-| Variável                                | Onde                      | Para quê                                                     |
-| --------------------------------------- | ------------------------- | ------------------------------------------------------------- |
-| `DATABASE_URL`                          | servidor                  | conexão com o Postgres — **segredo**                          |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | servidor              | login Google OAuth (authorization code + PKCE)                |
-| `SESSION_SECRET`                        | servidor                  | assina o cookie de sessão — **segredo**                       |
-| `LEILOESBR_EMAIL`                       | servidor                  | único e-mail Google autorizado                                 |
-| `LEILOESBR_SENHA`                       | servidor                  | login no site de leilões (scraper)                             |
-| `CRON_TOKEN`                            | servidor + GitHub Actions | protege o endpoint `/api/cron`                                 |
-| `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`  | servidor                  | IA (avaliação/identificação) — Claude e/ou Gemini, opcional    |
-| `DISCOGS_TOKEN`                         | servidor                  | âncora de preço/mercado, opcional                              |
-| `COLLECTION_DIR` / `PUBLIC_BASE_URL`    | servidor                  | fotos da Coleção em disco (ver `.env.example`)                 |
-| `NTFY_TOPIC` / `NTFY_SERVER`            | servidor                  | aviso push do "De olho" (ntfy.sh), opcional                    |
+| Variável                                    | Onde                      | Para quê                                                    |
+| ------------------------------------------- | ------------------------- | ----------------------------------------------------------- |
+| `DATABASE_URL`                              | servidor                  | conexão com o Postgres — **segredo**                        |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | servidor                  | login Google OAuth (authorization code + PKCE)              |
+| `SESSION_SECRET`                            | servidor                  | assina o cookie de sessão — **segredo**                     |
+| `LEILOESBR_EMAIL`                           | servidor                  | único e-mail Google autorizado                              |
+| `LEILOESBR_SENHA`                           | servidor                  | login no site de leilões (scraper)                          |
+| `CRON_TOKEN`                                | servidor + GitHub Actions | protege o endpoint `/api/cron`                              |
+| `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`      | servidor                  | IA (avaliação/identificação) — Claude e/ou Gemini, opcional |
+| `DISCOGS_TOKEN`                             | servidor                  | âncora de preço/mercado, opcional                           |
+| `COLLECTION_DIR` / `PUBLIC_BASE_URL`        | servidor                  | fotos da Coleção em disco (ver `.env.example`)              |
+| `NTFY_TOPIC` / `NTFY_SERVER`                | servidor                  | aviso push do "De olho" (ntfy.sh), opcional                 |
 
 Lista completa e comentada em `.env.example`.
 

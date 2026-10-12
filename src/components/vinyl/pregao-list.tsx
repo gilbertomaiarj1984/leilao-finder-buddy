@@ -1,4 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
+import { HouseLight } from "@/components/vinyl/house-light";
 import { useServerFn } from "@tanstack/react-start";
 import { ChevronDown, ChevronUp, Package, Truck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -231,7 +232,9 @@ export function PregaoView({
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="text-sm font-semibold">
-                    Na guarda · {h.house || "casa não identificada"}
+                    Na guarda ·{" "}
+                    {h.house ? <HouseLight house={h.house} className="-mx-0.5" /> : null}
+                    {h.house || "casa não identificada"}
                     <span className="ml-2 text-xs font-normal text-muted-foreground">
                       {h.groups.length} pregão(ões) ·{" "}
                       {h.groups.reduce((n, g) => n + g.purchases.length, 0)} discos ·{" "}
@@ -516,8 +519,10 @@ function PregaoCard({
           <span className="w-4" aria-hidden />
         )}
         <div className="min-w-0 flex-1 basis-56">
-          <h3 className="font-semibold">
-            Pregão {g.idLeilao} · {g.house || "casa não identificada"}
+          <h3 className="flex flex-wrap items-center gap-x-1 font-semibold">
+            Pregão {g.idLeilao} ·{" "}
+            {g.house ? <HouseLight house={g.house} className="-mx-1" /> : null}
+            {g.house || "casa não identificada"}
             {g.uf ? ` (${g.uf})` : ""}
           </h3>
           <p className="text-xs text-muted-foreground">

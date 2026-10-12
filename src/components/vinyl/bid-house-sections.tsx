@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, ChevronUp, ExternalLink } from "lucide-react";
 
+import { HouseLight } from "@/components/vinyl/house-light";
 import { Badge } from "@/components/ui/badge";
 
 import { catalogUrlFromLot } from "@/lib/vinyl-parse";
@@ -101,6 +102,7 @@ export function BidHouseSections({
                   {houseGroup.house}
                 </h2>
               )}
+              <HouseLight house={houseGroup.house} />
               <Badge variant="secondary">{houseGroup.lots.length} lance(s)</Badge>
               <BidStatBadges stats={computeBidStats(houseGroup.lots)} />
               {houseGroup.houseUrl && houseGroup.houseUrl !== "#" ? (

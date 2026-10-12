@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TabsContent } from "@/components/ui/tabs";
+import { HouseLight } from "@/components/vinyl/house-light";
 import { AuctionStatusInline, BidStatBadges, HouseStatBadges } from "@/components/vinyl/badges";
 import { BidHouseSections } from "@/components/vinyl/bid-house-sections";
 import { ArtistFilter, PriceFilter } from "@/components/vinyl/filters";
@@ -373,6 +374,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                         {houseGroup.house}
                       </span>
                     </button>
+                    <HouseLight house={houseGroup.house} />
                     <Badge variant="secondary">{houseGroup.lots.length} lote(s)</Badge>
                     <HouseStatBadges
                       stats={computeHouseStats(houseGroup.lots, watchedIds, bidStatusById)}
@@ -616,6 +618,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                         {group.house}
                       </span>
                     </button>
+                    <HouseLight house={group.house} />
                     <Badge variant="secondary">{houseLots.length} lotes</Badge>
                     <HouseStatBadges
                       stats={computeHouseStats(houseLots, watchedIds, bidStatusById)}

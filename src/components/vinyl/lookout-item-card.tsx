@@ -16,6 +16,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { HouseLight } from "@/components/vinyl/house-light";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -167,6 +168,7 @@ export function LookoutItemCard({
     <li key={h.lotId} className="flex flex-wrap items-center gap-x-2">
       <span className="font-semibold text-foreground">{brl(h.soldPrice)}</span>
       <span>{h.soldDate ? shortDay(h.soldDate) : "—"}</span>
+      <HouseLight house={h.house} className="-mx-1" />
       <span>{h.house}</span>
       {h.media || h.sleeve ? (
         <span title="Grau do disco / da capa">

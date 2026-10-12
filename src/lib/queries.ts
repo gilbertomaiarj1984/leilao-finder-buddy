@@ -6,6 +6,9 @@ import { useQueries, useQuery, type QueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef } from "react";
 
+import { getHouseRatings } from "@/lib/house-rating.functions";
+import { EMPTY_RATINGS, type RatingsPayload } from "@/lib/house-rating";
+
 import {
   getCollection,
   getCollectionFeedback,
@@ -62,6 +65,7 @@ export const queryKeys = {
   lookoutLinks: ["lookout-links"],
   lookoutOverview: ["lookout-overview"],
   analyticsAliases: ["analytics-aliases"],
+  houseRatings: ["house-ratings"],
 } as const;
 
 const MIN = 60 * 1000;
@@ -353,5 +357,22 @@ export function useLookoutOverviewQuery(opts: { history: boolean }) {
     staleTime: 15 * MIN,
     refetchOnWindowFocus: false,
     retry: false,
+  });
+}
+
+/** Avaliações das casas (semáforo por casa + avaliação por compra). Acessória: erro vira vazio. */
+export function useHouseRatingsQuery() {
+  const fetchRatings = useServerFn(getHouseRatings);
+  return useQuery<RatingsPayload>({
+    queryKey: queryKeys.houseRatings,
+    queryFn: async () => {
+      try {
+        return (await fetchRatings()) as RatingsPayload;
+      } catch {
+        return EMPTY_RATINGS;
+      }
+    },
+    staleTime: HOUR,
+    refetchOnWindowFocus: false,
   });
 }
