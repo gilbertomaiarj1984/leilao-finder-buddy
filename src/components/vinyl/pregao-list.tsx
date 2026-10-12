@@ -252,7 +252,7 @@ export function PregaoView({
       )}
 
       {chosen.length > 0 ? (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-violet-500 bg-card px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-violet-500 sm:bottom-[2.1rem] bg-card px-4 py-3 pb-3 max-sm:pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
             <p className="text-sm">
               <strong>
