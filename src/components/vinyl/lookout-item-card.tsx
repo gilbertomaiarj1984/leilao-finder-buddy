@@ -11,6 +11,7 @@ import {
   Loader2,
   Merge,
   Pencil,
+  Plus,
   Sparkles,
   Trash2,
   X,
@@ -82,6 +83,7 @@ export function LookoutItemCard({
   onWatch,
   onOpenLot,
   onResolve,
+  onCreateFromLot,
   onResolveSale,
   onDismissPending,
   onIdentify,
@@ -109,6 +111,8 @@ export function LookoutItemCard({
   /** Abre o cartão completo do lote (clicar na linha do lote por vir). */
   onOpenLot: (m: LookoutUpcoming) => void;
   onResolve: (m: LookoutUpcoming, decision: "confirm" | "dismiss") => void;
+  /** Cria um disco de olho NOVO a partir deste lote por vir (abre o diálogo de identidade). */
+  onCreateFromLot: (m: LookoutUpcoming) => void;
   /** Valida (✓ é este disco) ou descarta (✕) uma aparição anterior "a validar". */
   onResolveSale: (h: LookoutPastSale, decision: "confirm" | "dismiss") => void;
   /** Descarta de uma vez todas as aparições "a validar" deste disco. */
@@ -632,6 +636,17 @@ export function LookoutItemCard({
                           title="Não é este disco"
                         >
                           <X className="h-4 w-4" />
+                        </Button>
+                      ) : null}
+                      {!m.isOrigin ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => onCreateFromLot(m)}
+                          aria-label="Criar novo álbum de olho a partir deste lote"
+                          title="Criar novo álbum de olho a partir deste lote"
+                        >
+                          <Plus className="h-4 w-4" />
                         </Button>
                       ) : null}
                       <Button
