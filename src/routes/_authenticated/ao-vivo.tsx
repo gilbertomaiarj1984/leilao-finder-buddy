@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { HouseLight } from "@/components/vinyl/house-light";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { ArrowLeft, ExternalLink, LogIn, Radio, RefreshCw, X } from "lucide-react";
@@ -101,7 +102,10 @@ function AuctionCard({
   return (
     <div className="flex flex-col rounded-md border border-border bg-card p-3">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-semibold text-foreground">{auction.house}</p>
+        <p className="flex items-center gap-1 text-sm font-semibold text-foreground">
+          <HouseLight house={auction.house} className="-ml-1" />
+          {auction.house}
+        </p>
         <Badge variant={status.variant} className="shrink-0 gap-1.5">
           {auction.status === "live" ? <LiveDot /> : null}
           {status.label}

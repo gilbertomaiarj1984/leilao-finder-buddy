@@ -419,7 +419,8 @@ updatedAt } }` (`house-rating.server.ts`; server fns `getHouseRatings`/`savePurc
   recente peso 1, cada anterior ×0,8); ≥2,5 verde, ≥1,5 amarelo, ≥0,5 laranja, senão vermelho.
   Chave da casa = `houseKey` (minúsculas, sem acento). Sem avaliação: bolinha tracejada.
 - **`HouseLight`** (`components/vinyl/house-light.tsx`) mostra o semáforo + popover (hover/toque)
-  com tags mais marcadas e anotações recentes. Já aplicado nos cabeçalhos de casa de Compras, Dia,
+  com tags mais marcadas e anotações recentes. Aplicado nos cabeçalhos de casa de Compras, Dia,
   Vigiados e Lances; query compartilhada `useHouseRatingsQuery` (`queryKeys.houseRatings`).
-- **Pendente:** semáforo nas demais telas (Ao vivo — dentro de `<a>`, não aninhar botão —,
-  `LotCard`, De olho, Pregões) e ranking das casas.
+- **Também em:** barra de origem do `LotCard` (desktop/mobile), De olho (histórico de vendas), Pregões e
+  Ao vivo; em `live-auctions.tsx` (card dentro de `<a>`) usa `HouseDot`, bolinha sem popover.
+- **Pendente:** ranking das casas e o cabeçalho do detalhe mobile do lote.

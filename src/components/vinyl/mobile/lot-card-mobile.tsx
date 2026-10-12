@@ -1,4 +1,5 @@
 import { ArrowRightLeft, Binoculars, Disc3, Eye, EyeOff, Loader2 } from "lucide-react";
+import { HouseLight } from "@/components/vinyl/house-light";
 import { useEffect, useRef, useState } from "react";
 
 import { formatAiAlbum } from "@/components/vinyl/ai-score-utils";
@@ -76,6 +77,7 @@ export function LotCardMobile(props: LotCardProps) {
             barTone,
           )}
         >
+          <HouseLight house={origin.house} className="bg-white/90 !p-0.5" />
           <span className="font-bold">{origin.house}</span>
           {origin.houseWinning || origin.houseCovered ? (
             <span className="inline-flex gap-0.5 rounded bg-white/90 px-1 leading-4">

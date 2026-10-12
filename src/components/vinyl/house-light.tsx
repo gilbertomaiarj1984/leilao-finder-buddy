@@ -60,6 +60,21 @@ export function HouseLight({ house, className }: { house: string; className?: st
   );
 }
 
+/** Só a bolinha (sem popover) — para lugares dentro de link, onde um botão não pode ser aninhado. */
+export function HouseDot({ house }: { house: string }) {
+  const { data } = useHouseRatingsQuery();
+  const summary = data?.houses[houseKey(house)];
+  return (
+    <span
+      title={
+        summary?.level ? `${house}: ${LEVEL_META[summary.level].label}` : `${house}: sem avaliação`
+      }
+    >
+      <LevelDot level={summary?.level ?? null} />
+    </span>
+  );
+}
+
 function HouseLightDetail({ house, summary }: { house: string; summary?: HouseSummary }) {
   const level = summary?.level ?? null;
   return (

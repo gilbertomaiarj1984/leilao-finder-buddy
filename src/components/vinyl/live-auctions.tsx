@@ -1,4 +1,5 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
+import { HouseDot } from "@/components/vinyl/house-light";
 import { useServerFn } from "@tanstack/react-start";
 import { ChevronDown, ExternalLink, Gavel, Radio } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -154,7 +155,10 @@ export function LiveAuctions() {
               className="group flex flex-col justify-center gap-0.5 rounded-md border border-border bg-card px-3 py-2 transition hover:border-primary"
             >
               <div className="flex items-center justify-between gap-2">
-                <p className="truncate text-sm font-semibold text-foreground">{auction.house}</p>
+                <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-foreground">
+                  <HouseDot house={auction.house} />
+                  {auction.house}
+                </p>
                 <Radio className="h-4 w-4 shrink-0 text-primary" />
               </div>
               <p className="flex items-center gap-1 text-xs text-muted-foreground">
