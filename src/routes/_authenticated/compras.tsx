@@ -58,6 +58,7 @@ import type { ShippingData } from "@/lib/purchase-shipping";
 import { extractArtist, titleCase, UNCLASSIFIED_LABEL } from "@/lib/vinyl-parse";
 import {
   lotIdentity,
+  ownedCandidate,
   ownedSignatureFromLot,
   resolveOwned,
   type CollectionLinks,
@@ -239,7 +240,19 @@ function ComprasPage() {
       const autoHit: OwnedHit | null = exactId
         ? { id: exactId, label: collLabel(exactId), score: 1 }
         : null;
-      return resolveOwned(p.lotId, links, autoHit, feedback, lotIdentity({ title: p.title }));
+      return resolveOwned(
+        p.lotId,
+        links,
+        autoHit,
+        feedback,
+        lotIdentity({ title: p.title }),
+        (itemId) => {
+          const it = collById.get(itemId);
+          return it
+            ? ownedCandidate({ id: it.id, artist: it.artist, album: it.album, year: it.year })
+            : undefined;
+        },
+      );
     } catch {
       return { kind: "none" };
     }

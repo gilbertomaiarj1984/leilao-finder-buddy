@@ -3,7 +3,13 @@ import { expect, test } from "bun:test";
 import { deriveAlbum, foldPlural } from "@/lib/analytics";
 import { parseCollectionBulkText } from "@/lib/collection-bulk";
 import { extractKeywords } from "@/lib/lot-exclusion";
-import { bestWantForLot, lotIdentity, wantCandidate } from "@/lib/wantlist-match";
+import {
+  bestWantForLot,
+  lotIdentity,
+  ownedCandidate,
+  resolveOwned,
+  wantCandidate,
+} from "@/lib/wantlist-match";
 import { parseWantlistText } from "@/lib/wantlist-parse";
 
 test("parseWantlistText", () => {
@@ -63,4 +69,26 @@ test("foldPlural", () => {
   expect(foldPlural("autografos de sucesso")).toBe(foldPlural("autografo de sucessos"));
   expect(foldPlural("sucessos 1")).not.toBe(foldPlural("sucessos 2"));
   expect(foldPlural("sucessos 1971")).toBe("sucessos 1971");
+});
+
+test("aprendizado não sugere disco da Coleção cujo artista não está no lote", () => {
+  const gil = ownedCandidate({
+    id: "gil",
+    artist: "Gilberto Gil",
+    album: "Gilberto Gil",
+    year: 1971,
+  });
+  const id = lotIdentity({ title: "Lp Paulinho da Viola Prisma Luminoso |Em estado regular" });
+  const feedback = [
+    {
+      lotId: "x",
+      itemId: "gil",
+      verdict: "pos" as const,
+      artist: ["paulinho", "viola"],
+      album: ["prisma", "luminoso"],
+      year: 1983,
+    },
+  ];
+  const of = (i: string) => (i === "gil" ? gil : undefined);
+  expect(resolveOwned("l", {}, null, feedback, id, of).kind).toBe("none");
 });

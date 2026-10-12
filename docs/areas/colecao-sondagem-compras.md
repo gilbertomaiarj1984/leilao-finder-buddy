@@ -355,7 +355,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
     fuzzy por tokens (`ownedMatchForLot`), que a home usa para lotes "candidatos" ainda não
     comprados; aqui a compra já é a peça exata, então só o `lot_id` interessa. Roxo = já
     relacionado (enviado por este fluxo, ou vinculado manualmente a um disco pré-existente);
-    cinza = sem relação. Clicar abre o `OwnedPanel` (mesmo componente da home) para confirmar,
+    cinza = sem relação. A sugestão por aprendizado (`resolveOwned`) só vale se o artista do disco sugerido aparece no lote (`candidateOf` + `ownedArtistLevel`), mesmo que a assinatura do feedback case. Clicar abre o `OwnedPanel` (mesmo componente da home) para confirmar,
     vincular a outro disco da Coleção, marcar "não tenho" ou reativar — a decisão grava em
     `collection_links`/`collection_feedback` via `applyCollectionDecision`, **compartilhado**
     com a home (útil quando o disco já estava na Coleção antes deste recurso existir, cadastrado

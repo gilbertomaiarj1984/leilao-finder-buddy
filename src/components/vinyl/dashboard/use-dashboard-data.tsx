@@ -841,6 +841,7 @@ export function useDashboardData() {
         ownedAutoById.get(lot.id) ?? null,
         feedback,
         identityById.get(lot.id) ?? EMPTY_IDENTITY,
+        (itemId) => ownedCands.find((c) => c.id === itemId),
       );
     } catch {
       return { kind: "none" };
