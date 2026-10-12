@@ -1,5 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
 import { HouseLight } from "@/components/vinyl/house-light";
+import { LevelDot } from "@/components/vinyl/level-dot";
+import { PregaoRatingDialog } from "@/components/vinyl/pregao-rating-dialog";
+import { LEVEL_META } from "@/lib/house-rating";
+import { useHouseRatingsQuery } from "@/lib/queries";
 import { useServerFn } from "@tanstack/react-start";
 import { ChevronDown, ChevronUp, Package, Truck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -496,6 +500,10 @@ function PregaoCard({
     onError: (e: Error) => toast.error(e.message || "Não foi possível salvar o rastreio"),
   });
 
+  const { data: ratings } = useHouseRatingsQuery();
+  const rating = ratings?.ratings[g.idLeilao];
+  const [rateOpen, setRateOpen] = useState(false);
+
   return (
     <article
       className={`rounded-md border bg-card ${selected ? "border-violet-500 ring-2 ring-violet-500/20" : "border-border"}`}
@@ -534,6 +542,25 @@ function PregaoCard({
           {brl(g.total)}
           <span className="block font-sans text-[11px] text-muted-foreground">total</span>
         </p>
+        <button
+          type="button"
+          onClick={() => setRateOpen(true)}
+          title="Avaliar a casa neste pregão (alimenta o semáforo da casa)"
+          className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-medium hover:border-primary"
+        >
+          <LevelDot level={rating?.level ?? null} />
+          {rating ? LEVEL_META[rating.level].label : "Avaliar casa"}
+        </button>
+        {rateOpen ? (
+          <PregaoRatingDialog
+            open={rateOpen}
+            onOpenChange={setRateOpen}
+            idLeilao={g.idLeilao}
+            house={g.house}
+            title={`Pregão ${g.idLeilao} · ${brDate(g.date)} · ${g.purchases.length} disco(s)`}
+            current={rating}
+          />
+        ) : null}
         <select
           value={status}
           onChange={(e) => onStatus(e.target.value as AuctionStatus)}

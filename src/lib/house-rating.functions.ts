@@ -9,7 +9,7 @@ async function guard(context: { claims?: Record<string, unknown> }) {
   assertAllowed(context.claims?.["email"] as string | undefined);
 }
 
-/** Avaliações por compra + semáforo por casa. Best-effort: vazio em erro (feature acessória). */
+/** Avaliações por pregão + semáforo por casa. Best-effort: vazio em erro (feature acessória). */
 export const getHouseRatings = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .handler(async ({ context }) => {
@@ -23,24 +23,22 @@ export const getHouseRatings = createServerFn({ method: "GET" })
     }
   });
 
-/** Salva a avaliação de uma compra; `level` ausente remove a avaliação. */
-export const savePurchaseRating = createServerFn({ method: "POST" })
+/** Salva a avaliação de um pregão; `level` ausente remove a avaliação. */
+export const savePregaoRating = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator(
-    (
-      input: { purchaseId?: string; level?: string; tags?: string[]; note?: string } | undefined,
-    ) => {
-      if (!input?.purchaseId || typeof input.purchaseId !== "string") {
-        throw new Error("Compra inválida.");
+    (input: { idLeilao?: string; level?: string; tags?: string[]; note?: string } | undefined) => {
+      if (!input?.idLeilao || typeof input.idLeilao !== "string") {
+        throw new Error("Pregão inválido.");
       }
-      return input as { purchaseId: string; level?: string; tags?: string[]; note?: string };
+      return input as { idLeilao: string; level?: string; tags?: string[]; note?: string };
     },
   )
   .handler(async ({ context, data }) => {
     await guard(context);
     const { sanitizeRating } = await import("./house-rating");
-    const { setPurchaseRating } = await import("./house-rating.server");
+    const { setPregaoRating } = await import("./house-rating.server");
     const rating = data.level ? sanitizeRating(data) : null;
     if (data.level && !rating) throw new Error("Nível inválido.");
-    await setPurchaseRating(data.purchaseId, rating);
+    await setPregaoRating(data.idLeilao, rating);
   });
