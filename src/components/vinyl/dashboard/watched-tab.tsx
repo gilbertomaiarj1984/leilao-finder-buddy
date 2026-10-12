@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TabsContent } from "@/components/ui/tabs";
+import { HouseLight } from "@/components/vinyl/house-light";
 import { AuctionStatusInline, HouseStatBadges } from "@/components/vinyl/badges";
 import {
   catalogAuctionInfo,
@@ -639,6 +640,7 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                               {houseGroup.house}
                             </span>
                           </button>
+                          <HouseLight house={houseGroup.house} />
                           <Badge variant="secondary">{houseLots.length} lote(s)</Badge>
                           {houseGroup.multi ? (
                             <Badge variant="outline">{houseGroup.shown.length} catálogos</Badge>

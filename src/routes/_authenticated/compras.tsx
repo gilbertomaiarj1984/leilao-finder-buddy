@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { HouseLight } from "@/components/vinyl/house-light";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -601,7 +602,8 @@ function ComprasPage() {
           <div className="space-y-8">
             {byHouseWithDays.map((group) => (
               <section key={group.house}>
-                <h2 className="mb-3 text-sm font-semibold text-foreground">
+                <h2 className="mb-3 flex items-center gap-1 text-sm font-semibold text-foreground">
+                  {group.house ? <HouseLight house={group.house} className="-ml-1" /> : null}
                   {group.house || "(casa não identificada)"}
                   <span className="ml-2 text-xs font-normal text-muted-foreground">
                     ({group.lots.length})
@@ -748,7 +750,8 @@ function DaySection({
             <div className="space-y-4">
               {houseGroups.map((hg) => (
                 <div key={hg.house || "sem-casa"}>
-                  <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+                  <h3 className="mb-2 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                    {hg.house ? <HouseLight house={hg.house} className="-ml-1" /> : null}
                     {hg.house || "(casa não identificada)"}
                     <span className="ml-1.5">({hg.lots.length})</span>
                   </h3>

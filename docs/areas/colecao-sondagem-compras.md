@@ -406,3 +406,20 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
 - **Guarda agrupada por casa e totais com taxa (v0.131.0):** nas listas "Ativos" e "Na guarda", os pregões na guarda saem da ordem por data e aparecem em seções por casa (`groupByHouse`), com resumo e botão "Selecionar todos da casa" (atalho para montar a remessa); os demais seguem por data. Os totais ganham a tabela "Por casa" (`totalsByHouse`) sobre a lista atual: arrematado + taxa do leiloeiro (`AUCTIONEER_FEE_RATE` = 5%, somada ao valor arrematado, que não a inclui) = total, mais a linha "Total geral".
 - **Barra de remessa x rodapé (v0.131.1):** a barra fixa de seleção fica `sm:bottom-[2.1rem]` (altura do `Footer`, também fixo, z-40); no celular o rodapé é oculto, então a barra fica em `bottom-0`. Se a altura do `Footer` mudar, ajustar esse offset.
 - **Gasto por período (v0.132.0):** `SpendingHistory` (totais de `/compras`, `spendingByPeriod`) soma o arrematado de TODOS os pregões (qualquer status, inclusive recebidos) por mês ou ano da data do pregão, com a taxa do leiloeiro (5%) e a linha "Histórico geral"; independe do filtro da lista. Escolha mês/ano lembrada em `compras-gasto-periodo`.
+
+## Avaliação das casas (v0.134.0)
+
+- **Avaliação por compra:** cada `PurchaseCard` (`/compras`) tem o botão "Avaliar compra" →
+  `PurchaseRatingDialog` (semáforo obrigatório: verde/amarelo/laranja/vermelho; tags e anotação
+  opcionais). Gravado em `app_state.house_ratings` = `{ [purchases.id]: { level, tags, note,
+updatedAt } }` (`house-rating.server.ts`; server fns `getHouseRatings`/`savePurchaseRating` em
+  `house-rating.functions.ts`). Tags só da lista fixa (`POSITIVE_TAGS`/`NEGATIVE_TAGS`).
+- **Semáforo da casa = agregação** (`summarizeHouses`/`levelFromScores`, módulo puro
+  `house-rating.ts`): score verde 3 … vermelho 0, média ponderada pela data da compra (mais
+  recente peso 1, cada anterior ×0,8); ≥2,5 verde, ≥1,5 amarelo, ≥0,5 laranja, senão vermelho.
+  Chave da casa = `houseKey` (minúsculas, sem acento). Sem avaliação: bolinha tracejada.
+- **`HouseLight`** (`components/vinyl/house-light.tsx`) mostra o semáforo + popover (hover/toque)
+  com tags mais marcadas e anotações recentes. Já aplicado nos cabeçalhos de casa de Compras, Dia,
+  Vigiados e Lances; query compartilhada `useHouseRatingsQuery` (`queryKeys.houseRatings`).
+- **Pendente:** semáforo nas demais telas (Ao vivo — dentro de `<a>`, não aninhar botão —,
+  `LotCard`, De olho, Pregões) e ranking das casas.

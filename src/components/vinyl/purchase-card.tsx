@@ -1,7 +1,13 @@
 import { Disc3, ExternalLink, Send } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { HouseLight } from "@/components/vinyl/house-light";
+import { LevelDot } from "@/components/vinyl/level-dot";
+import { PurchaseRatingDialog } from "@/components/vinyl/purchase-rating-dialog";
 import { LotTracklistHover } from "@/components/vinyl/tracklist-hover";
+import { LEVEL_META } from "@/lib/house-rating";
+import { useHouseRatingsQuery } from "@/lib/queries";
 import type { Purchase } from "@/lib/purchases.server";
 
 /** dd/mm/aaaa a partir de "yyyy-mm-dd" (ou "" se ausente/inválida). */
@@ -27,6 +33,9 @@ export function PurchaseCard({
 }) {
   const dateLabel = formatDate(purchase.wonDate);
   const alt = purchase.title || "lote arrematado";
+  const { data: ratings } = useHouseRatingsQuery();
+  const rating = ratings?.ratings[purchase.id];
+  const [rateOpen, setRateOpen] = useState(false);
 
   return (
     <article className="relative flex flex-col overflow-hidden rounded-md border border-border bg-card">
@@ -65,9 +74,10 @@ export function PurchaseCard({
         <p className="line-clamp-2 text-sm font-semibold leading-snug text-foreground">
           {purchase.title || "(sem título)"}
         </p>
-        <p className="text-xs text-muted-foreground">
-          {[purchase.house, purchase.uf].filter(Boolean).join(" — ")}
-        </p>
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          {purchase.house ? <HouseLight house={purchase.house} className="-ml-1" /> : null}
+          <span>{[purchase.house, purchase.uf].filter(Boolean).join(" — ")}</span>
+        </div>
 
         <div className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           {purchase.wonPrice ? (
@@ -88,6 +98,26 @@ export function PurchaseCard({
           >
             Ver no leiloeiro <ExternalLink className="h-3 w-3" />
           </a>
+        ) : null}
+
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setRateOpen(true)}
+          title="Avaliar a experiência com esta compra (alimenta o semáforo da casa)"
+        >
+          <LevelDot level={rating?.level ?? null} className="mr-2" />
+          {rating ? `Avaliada: ${LEVEL_META[rating.level].label}` : "Avaliar compra"}
+        </Button>
+        {rateOpen ? (
+          <PurchaseRatingDialog
+            open={rateOpen}
+            onOpenChange={setRateOpen}
+            purchaseId={purchase.id}
+            house={purchase.house}
+            title={purchase.title}
+            current={rating}
+          />
         ) : null}
 
         {ownedLabel ? (
