@@ -1,8 +1,18 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Binoculars, LayoutList, Plus, RefreshCw, Rows3, Search, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowUpToLine,
+  Binoculars,
+  LayoutList,
+  Plus,
+  RefreshCw,
+  Rows3,
+  Search,
+  X,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -24,6 +34,7 @@ import {
   mergeLookout,
   setLookoutLink,
   setLookoutArtistGroup,
+  toggleLookout,
   setLookoutLinksBatch,
   unmergeLookout,
   updateLookout,
@@ -111,6 +122,7 @@ function OlhoPage() {
   const runMerge = useServerFn(mergeLookout);
   const runUnmerge = useServerFn(unmergeLookout);
   const runArtistGroup = useServerFn(setLookoutArtistGroup);
+  const runToggleLookout = useServerFn(toggleLookout);
 
   const query = useLookoutOverviewQuery({ history: true });
   const overview = query.data;
@@ -137,23 +149,19 @@ function OlhoPage() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.lookoutOverview });
   };
 
-  // Ao abrir a página, os matches atuais passam a "vistos": zera o contador do menu. O selo
-  // "novo" desta visita continua visível (a consulta completa não é refeita aqui) — só a versão
-  // leve (menu) é invalidada.
-  const markedRef = useRef(false);
-  useEffect(() => {
-    if (markedRef.current || !overview) return;
-    markedRef.current = true;
-    const keys = overview.upcoming.filter((m) => m.isNew).map(notifyKey);
+  // Os lotes "novos" só deixam de ser novos quando o usuário clica em "Marcar como vistos":
+  // abrir a página ou resolver outros lotes (✓/✕) não os apaga.
+  const markAllSeen = () => {
+    setShowNew(false);
+    const keys = (overview?.upcoming ?? []).filter((m) => m.isNew).map(notifyKey);
     if (!keys.length) return;
     void runSeen({ data: { keys } })
-      .then(() =>
-        queryClient.invalidateQueries({ queryKey: [...queryKeys.lookoutOverview, "light"] }),
-      )
+      .then(() => queryClient.invalidateQueries({ queryKey: queryKeys.lookoutOverview }))
       .catch(() => {
-        /* acessório: se falhar, o contador só demora a zerar */
+        toast.error("Não foi possível marcar como vistos");
+        setShowNew(true);
       });
-  }, [overview, runSeen, queryClient]);
+  };
 
   const updateMut = useMutation({
     mutationFn: async (vars: { id: string; patch: LookoutPatch }) =>
@@ -247,6 +255,43 @@ function OlhoPage() {
     onSuccess: refresh,
     onError: (error: unknown) =>
       toast.error((error as Error)?.message || "Não foi possível salvar"),
+  });
+
+  // "Criar novo álbum de olho" a partir de um lote por vir: o diálogo pede artista/álbum/ano
+  // (artista e álbum pré-preenchidos); o lote passa a ser a origem do disco novo e deixa o antigo.
+  const [createFrom, setCreateFrom] = useState<{
+    m: LookoutUpcoming;
+    artist: string;
+    album: string;
+    year: string;
+  } | null>(null);
+  const createMut = useMutation({
+    mutationFn: async (c: NonNullable<typeof createFrom>) => {
+      const y = Number(c.year);
+      const res = await runToggleLookout({
+        data: {
+          lotId: c.m.lotId,
+          artist: c.artist,
+          album: c.album,
+          year: Number.isFinite(y) && y >= 1900 && y <= 2100 ? Math.trunc(y) : null,
+          title: c.m.title,
+          house: c.m.house,
+          image: c.m.image,
+          url: c.m.url,
+          dayKey: c.m.dayKey,
+        },
+      });
+      // O lote deixa de casar com o disco antigo (✕) e vira origem do novo.
+      if (res.item) await runLink({ data: { lotId: c.m.lotId, value: res.item.id } });
+      return res.item;
+    },
+    onSuccess: () => {
+      toast.success("Novo álbum de olho criado");
+      setCreateFrom(null);
+      refresh();
+    },
+    onError: (error: unknown) =>
+      toast.error((error as Error)?.message || "Não foi possível criar o álbum"),
   });
 
   // Vigia REAL: a lista vem da conta do LeilõesBR (`listWatched`), exposta pelo mesmo hook/cache/
@@ -384,6 +429,9 @@ function OlhoPage() {
         }
         onWatch={(m) => void watchLot(m)}
         onOpenLot={(m) => setOpenLotId(m.lotId)}
+        onCreateFromLot={(m) =>
+          setCreateFrom({ m, artist: it.artist, album: m.album ?? "", year: "" })
+        }
         onResolve={(m, decision) =>
           resolveMut.mutate({
             lotId: m.lotId,
@@ -548,7 +596,7 @@ function OlhoPage() {
                 })}
               </ul>
             </div>
-            <Button size="sm" variant="outline" onClick={() => setShowNew(false)}>
+            <Button size="sm" variant="outline" onClick={markAllSeen}>
               Marcar como vistos
             </Button>
           </div>
@@ -723,6 +771,17 @@ function OlhoPage() {
                               {groupNewCount(group.items, upcomingByItem) === 1 ? "" : "s"}
                             </span>
                           ) : null}
+                          <button
+                            type="button"
+                            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                            aria-label="Voltar ao topo"
+                            title="Voltar ao topo"
+                            className={`rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground ${
+                              groupNewCount(group.items, upcomingByItem) > 0 ? "" : "ml-auto"
+                            }`}
+                          >
+                            <ArrowUpToLine className="h-4 w-4" />
+                          </button>
                         </h2>
                         {Object.values(artistJoins).filter(
                           (j) => resolveLookoutArtist(j.label, artistJoins) === group.artist,
@@ -823,6 +882,54 @@ function OlhoPage() {
             palavras de agrupamento e junção.
           </DialogDescription>
           {openItem ? renderCard(openItem) : null}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={createFrom != null} onOpenChange={(o) => (o ? undefined : setCreateFrom(null))}>
+        <DialogContent className="max-w-md">
+          <DialogTitle>Novo álbum de olho</DialogTitle>
+          <DialogDescription>
+            {createFrom ? createFrom.m.title : ""} — informe qual disco é este lote. Ele passa a ser
+            o lote de origem do novo álbum.
+          </DialogDescription>
+          {createFrom ? (
+            <form
+              className="space-y-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!createFrom.artist.trim() || !createFrom.album.trim()) {
+                  toast.error("Informe artista e álbum");
+                  return;
+                }
+                createMut.mutate(createFrom);
+              }}
+            >
+              <Input
+                value={createFrom.artist}
+                onChange={(e) => setCreateFrom({ ...createFrom, artist: e.target.value })}
+                placeholder="Artista"
+              />
+              <Input
+                value={createFrom.album}
+                onChange={(e) => setCreateFrom({ ...createFrom, album: e.target.value })}
+                placeholder="Álbum"
+                autoFocus
+              />
+              <Input
+                value={createFrom.year}
+                onChange={(e) => setCreateFrom({ ...createFrom, year: e.target.value })}
+                placeholder="Ano (opcional)"
+                inputMode="numeric"
+              />
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" onClick={() => setCreateFrom(null)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={createMut.isPending}>
+                  Criar
+                </Button>
+              </div>
+            </form>
+          ) : null}
         </DialogContent>
       </Dialog>
       <LookoutLotDialog
