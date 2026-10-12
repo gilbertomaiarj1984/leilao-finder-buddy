@@ -298,6 +298,11 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   dentro do teto; `Click` = `PUBLIC_BASE_URL/olho`. Máx. 8 pushes por rodada, o resto vira um
   resumo. **Sem `NTFY_TOPIC` é no-op.** Ao marcar o primeiro disco, lotes já casando disparam
   (limitado pelo teto acima).
+- **Aviso por e-mail (v0.135.0):** o mesmo `notifyLookoutMatches` também envia **1 e-mail por
+  rodada** com todos os matches novos (`buildLookoutEmail`, dentro do teto primeiro) pelo Gmail
+  (`email.server.ts`, `GMAIL_USER`/`GMAIL_APP_PASSWORD`, destino `EMAIL_TO` ou `LEILOESBR_EMAIL`).
+  Canais independentes e opcionais; um match vira "avisado" se QUALQUER canal entregou. Sem
+  nenhum configurado é no-op.
 - **Limites conhecidos:** o histórico só vê o que `lot_sales` guarda (e artista/título gravados);
   `lots.price` é o valor da listagem (pode estar defasado); o estado "vigiando" da página vem da vigia
   real (`useWatchedQuery`: mesmo cache/acumulador da home e da Análise, casando por `idPeca`;

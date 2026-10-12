@@ -407,6 +407,13 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await notifyLookoutMatches());
     }
 
+    // Resumo diário por e-mail (Gmail) dos melhores lotes — chamado 1x/dia pelo `daily-digest.yml`
+    // (8:30 BRT); no máximo um por dia (`app_state.daily_digest_sent`); no-op sem GMAIL_*.
+    if (step === "dailydigest") {
+      const { sendDailyDigest } = await import("./daily-digest.server");
+      return json(await sendDailyDigest());
+    }
+
     // Diagnóstico da captura de vendas: sinais crus do catálogo dos leilões terminados
     // (não grava, não marca). Útil quando `sales` volta 0 — confirma se é legítimo.
     if (step === "salesdebug") {
