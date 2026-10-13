@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 import { formatCoveredLot } from "@/components/vinyl/ai-score-utils";
 
-import { bidIsCovered } from "./vinyl-parse";
+import { newlyCoveredBids } from "./bid-transitions";
 import { loadAccum, saveAccum } from "./watched-accum";
 import type { MyBid } from "./leiloesbr-bids.server";
 
@@ -15,22 +15,6 @@ import type { MyBid } from "./leiloesbr-bids.server";
 // "Coberto" — sem isso, todo carregamento de página reavisaria de lotes já cobertos
 // numa sessão anterior.
 const BID_STATUS_SNAPSHOT_KEY = "leilao-finder:bid-status-snapshot:v1";
-
-function detectNewlyCoveredBids(
-  bids: MyBid[],
-  prevSnapshot: Map<string, string>,
-): { newlyCovered: MyBid[]; nextSnapshot: Map<string, string> } {
-  const nextSnapshot = new Map(prevSnapshot);
-  const newlyCovered: MyBid[] = [];
-  for (const bid of bids) {
-    const prevStatus = prevSnapshot.get(bid.id);
-    if (bidIsCovered(bid.status) && (prevStatus === undefined || !bidIsCovered(prevStatus))) {
-      newlyCovered.push(bid);
-    }
-    nextSnapshot.set(bid.id, bid.status);
-  }
-  return { newlyCovered, nextSnapshot };
-}
 
 /**
  * Avisa (toast) quando `bids` traz um lote que acabou de virar "Coberto". Chamar com o
@@ -51,7 +35,7 @@ export function useBidCoveredAlerts(
 
   useEffect(() => {
     if (!bids) return;
-    const { newlyCovered, nextSnapshot } = detectNewlyCoveredBids(bids, snapshotRef.current!);
+    const { newlyCovered, nextSnapshot } = newlyCoveredBids(bids, snapshotRef.current!);
     snapshotRef.current = nextSnapshot;
     saveAccum(BID_STATUS_SNAPSHOT_KEY, nextSnapshot);
     if (newlyCovered.length === 0) return;

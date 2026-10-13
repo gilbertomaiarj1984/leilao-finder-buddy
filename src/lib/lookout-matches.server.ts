@@ -17,6 +17,7 @@ import {
 } from "@/lib/lookout.server";
 import { buildLookoutEmail, type LookoutEmailEntry } from "@/lib/email-templates.server";
 import { emailEnabled, sendEmail } from "@/lib/email.server";
+import { pushReady, sendPushToAll } from "@/lib/push.server";
 import { readLotsRange } from "@/lib/leiloesbr-scrape.server";
 import { analyticsHistoryForItems } from "@/lib/lookout-analytics";
 import {
@@ -360,9 +361,34 @@ async function pushNtfy(msg: {
 }
 
 /**
+ * Envia a mensagem por todos os canais de push ligados (ntfy e/ou Web Push do PWA). Conta como
+ * entregue se ALGUM canal entregou; se todos falharem, lança (o lote volta a ser candidato).
+ */
+async function pushAll(
+  msg: { title: string; message: string; click?: string; priority?: number; tag: string },
+  channels: { ntfy: boolean; web: boolean },
+): Promise<void> {
+  const jobs: Promise<unknown>[] = [];
+  if (channels.ntfy) jobs.push(pushNtfy(msg));
+  if (channels.web) {
+    jobs.push(
+      sendPushToAll({ title: msg.title, body: msg.message, url: "/olho", tag: msg.tag }).then(
+        (r) => {
+          if (r.sent === 0) throw new Error("nenhum aparelho recebeu o push");
+        },
+      ),
+    );
+  }
+  const results = await Promise.allSettled(jobs);
+  if (!results.some((r) => r.status === "fulfilled")) {
+    throw (results[0] as PromiseRejectedResult).reason;
+  }
+}
+
+/**
  * Avisa cada lote NOVO que casa com um "olho" com confiança — uma vez só por (lote × item), com
- * dedupe em `app_state` gravado SÓ depois do envio. Dois canais independentes, ambos opcionais
- * (sem nenhum configurado é no-op, como a IA sem chaves): push no ntfy (um por lote) e e-mail
+ * dedupe em `app_state` gravado SÓ depois do envio. Três canais independentes, todos opcionais
+ * (sem nenhum configurado é no-op, como a IA sem chaves): push no ntfy e/ou Web Push do PWA (um por lote) e e-mail
  * pelo Gmail (UM com todos os matches da rodada). Um match conta como avisado se QUALQUER canal
  * entregou; falha de canal é best-effort — o lote volta a ser candidato na próxima rodada.
  */
@@ -373,8 +399,9 @@ export async function notifyLookoutMatches(): Promise<{
   failed: number;
 }> {
   const ntfyOn = Boolean(process.env["NTFY_TOPIC"]);
+  const webOn = await pushReady();
   const emailOn = emailEnabled();
-  if (!ntfyOn && !emailOn) return { enabled: false, matches: 0, notified: 0, failed: 0 };
+  if (!ntfyOn && !webOn && !emailOn) return { enabled: false, matches: 0, notified: 0, failed: 0 };
   const overview = await computeLookout(false);
   const notifiedSet = new Set(await getLookoutNotified());
   // O lote que o próprio usuário marcou (origem) nunca gera aviso.
@@ -392,7 +419,8 @@ export async function notifyLookoutMatches(): Promise<{
   const done = new Set<string>();
   let failed = 0;
 
-  if (ntfyOn) {
+  if (ntfyOn || webOn) {
+    const channels = { ntfy: ntfyOn, web: webOn };
     const individual = fresh.slice(0, MAX_PUSHES_PER_RUN);
     for (const m of individual) {
       const up = byLot.get(m.lotId);
@@ -401,31 +429,40 @@ export async function notifyLookoutMatches(): Promise<{
       const label = [item.artist, item.album].filter(Boolean).join(" — ");
       const ceiling = item.maxPrice != null ? ` · teto ${brl(item.maxPrice)}` : "";
       try {
-        await pushNtfy({
-          title: `👁 De olho: ${label}`,
-          message: `${up.house} · ${shortDay(up.dayKey)}${up.time ? ` ${up.time}` : ""} · atual ${brl(up.priceNum)}${ceiling} · ${Math.round(m.score * 100)}%`,
-          click: page,
-          priority:
-            item.maxPrice != null && up.priceNum != null && up.priceNum <= item.maxPrice ? 4 : 3,
-        });
+        await pushAll(
+          {
+            title: `👁 De olho: ${label}`,
+            message: `${up.house} · ${shortDay(up.dayKey)}${up.time ? ` ${up.time}` : ""} · atual ${brl(up.priceNum)}${ceiling} · ${Math.round(m.score * 100)}%`,
+            click: page,
+            priority:
+              item.maxPrice != null && up.priceNum != null && up.priceNum <= item.maxPrice ? 4 : 3,
+            tag: `lookout-${m.lotId}`,
+          },
+          channels,
+        );
         done.add(notifyKey(m));
       } catch (error) {
         failed++;
-        console.error("[lookout] falha ao avisar (ntfy)", error);
+        console.error("[lookout] falha ao avisar (push)", error);
       }
     }
     const rest = fresh.slice(MAX_PUSHES_PER_RUN);
     if (rest.length) {
       try {
-        await pushNtfy({
-          title: `👁 De olho: +${rest.length} matches`,
-          message: "Mais lotes casam com os discos que você está de olho — abra a página De olho.",
-          click: page,
-        });
+        await pushAll(
+          {
+            title: `👁 De olho: +${rest.length} matches`,
+            message:
+              "Mais lotes casam com os discos que você está de olho — abra a página De olho.",
+            click: page,
+            tag: "lookout-more",
+          },
+          channels,
+        );
         for (const m of rest) done.add(notifyKey(m));
       } catch (error) {
         failed++;
-        console.error("[lookout] falha ao avisar o resumo (ntfy)", error);
+        console.error("[lookout] falha ao avisar o resumo (push)", error);
       }
     }
   }

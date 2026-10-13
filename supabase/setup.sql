@@ -489,6 +489,19 @@ CREATE TRIGGER update_lookout_items_updated_at BEFORE UPDATE ON public.lookout_i
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- ---------------------------------------------------------------------
+-- push_subscriptions — inscrições de Web Push (PWA, v0.138.0): uma linha por navegador/aparelho
+-- que ativou "Avisos no aparelho". `endpoint` é a chave natural (URL do serviço de push);
+-- inscrições mortas (404/410) são apagadas no envio (src/lib/push.server.ts).
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.push_subscriptions (
+  endpoint    text PRIMARY KEY,
+  p256dh      text NOT NULL,
+  auth        text NOT NULL,
+  user_agent  text NOT NULL DEFAULT '',
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------
 -- FKs de limpeza (Fase 5 da migração para VPS): `lot_ai`/`lot_ident`/`lot_market`/
 -- `lot_condition` (todos com `id` = `lots.id`) viram órfãos quando `pruneOutOfWindow`
 -- apaga de `lots` os lotes fora da janela de dias. `ON DELETE CASCADE` evita isso dali
@@ -543,6 +556,7 @@ ALTER TABLE public.shipments          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchase_auctions  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.excluded_lots    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lookout_items    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.seen_auctions  FROM anon, authenticated;
 REVOKE ALL ON public.lots           FROM anon, authenticated;
@@ -560,6 +574,7 @@ REVOKE ALL ON public.shipments          FROM anon, authenticated;
 REVOKE ALL ON public.purchase_auctions  FROM anon, authenticated;
 REVOKE ALL ON public.excluded_lots    FROM anon, authenticated;
 REVOKE ALL ON public.lookout_items    FROM anon, authenticated;
+REVOKE ALL ON public.push_subscriptions FROM anon, authenticated;
 
 GRANT ALL ON public.seen_auctions  TO service_role;
 GRANT ALL ON public.lots           TO service_role;
@@ -577,3 +592,4 @@ GRANT ALL ON public.shipments          TO service_role;
 GRANT ALL ON public.purchase_auctions  TO service_role;
 GRANT ALL ON public.excluded_lots    TO service_role;
 GRANT ALL ON public.lookout_items    TO service_role;
+GRANT ALL ON public.push_subscriptions TO service_role;

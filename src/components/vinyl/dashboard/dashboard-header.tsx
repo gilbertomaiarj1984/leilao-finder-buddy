@@ -20,6 +20,7 @@ import { useLookoutOverviewQuery } from "@/lib/queries";
 import { isManuallyFinished } from "@/lib/manually-finished-auctions";
 import { auctionDayPassed } from "@/lib/vinyl-parse";
 
+import { PushToggle } from "../push-toggle";
 import { LotSearchBox } from "./lot-search-box";
 import type { DashboardData } from "./use-dashboard-data";
 
@@ -78,6 +79,7 @@ export function DashboardHeader({
                 <LogOut className="h-3 w-3" />
                 Sair
               </button>
+              <PushToggle />
             </div>
             {/* No mobile a barra de ações rola na horizontal (uma linha), para o header sticky
           ficar baixo e não atrapalhar; no desktop volta a quebrar em linhas (flex-wrap). */}

@@ -1,5 +1,6 @@
 import { createFileRoute, redirect, Outlet } from "@tanstack/react-router";
 
+import { AppBadgeSync } from "@/components/vinyl/app-badge-sync";
 import { MobileBottomNav } from "@/components/vinyl/mobile/mobile-bottom-nav";
 import { getSessionEmail } from "@/lib/auth.functions";
 import { useIsMobile } from "@/lib/use-is-mobile";
@@ -18,6 +19,7 @@ function AuthenticatedLayout() {
   const mobile = useIsMobile();
   return (
     <>
+      <AppBadgeSync />
       <Outlet />
       {mobile ? <MobileBottomNav /> : null}
     </>

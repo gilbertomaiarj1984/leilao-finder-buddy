@@ -10,6 +10,7 @@ import {
 import { type ReactNode } from "react";
 
 import { Footer } from "@/components/Footer";
+import { PwaSetup } from "@/components/PwaSetup";
 import { Toaster } from "@/components/ui/sonner";
 
 import appCss from "../styles.css?url";
@@ -82,6 +83,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:description", content: "Garimpo de discos de vinil em leilões." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "theme-color", content: "#181513" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-title", content: "Garimpo" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "black" },
     ],
     links: [
       {
@@ -89,6 +95,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: appCss,
       },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "manifest", href: "/manifest.webmanifest" },
+      { rel: "apple-touch-icon", href: "/icons/apple-touch-icon.png" },
     ],
   }),
   shellComponent: RootShell,
@@ -126,6 +134,7 @@ function RootComponent() {
         </div>
       </div>
       <Footer />
+      <PwaSetup />
       <Toaster richColors mobileOffset={{ bottom: 88 }} />
     </QueryClientProvider>
   );

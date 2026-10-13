@@ -842,3 +842,45 @@ segue existindo, usado pela home ("Atualizar tudo" — desde v0.84.0 também rod
   está em `docs/pendencias.md`.
 
 - **Busca da Wantlist lembrada (v0.115.1):** o campo de busca do diálogo da Sondagem usa `usePersistedState("wantlist-search")`.
+
+## PWA instalável (v0.137.0)
+
+- **Arquivos** (todos em `public/`, servidos pelo Nitro sem tocar no Caddy): `manifest.webmanifest`
+  (`display: standalone`, tema escuro `#181513`, atalhos para `/olho`, `/ao-vivo`, `/compras`,
+  `/colecao`), `icons/` (192/512, maskable 512 e `apple-touch-icon`, gerados por
+  `tools/gen-pwa-icons.py` — disco de vinil âmbar), `offline.html` e `sw.js`. As `<meta>`/`<link>`
+  (manifest, apple-touch-icon, theme-color, `apple-mobile-web-app-*`) ficam em `__root.tsx`.
+- **Service worker** (`sw.js`): estratégia deliberadamente conservadora — **nunca cacheia dados**
+  (HTML do SSR autenticado, server functions, `/api/*`: cron, auth, pregão ao vivo). Só:
+  `/assets/*` (hash no nome) cache-first; `/icons/*` e o manifest stale-while-revalidate;
+  `/collection/*` (fotos) stale-while-revalidate limitado a 400; navegação sem rede cai em
+  `/offline.html`. Para invalidar tudo, mude `VERSION` no topo do arquivo.
+- **Registro e convite** (`components/PwaSetup.tsx`, montado no `__root.tsx`): registra o SW **só em
+  produção** (`import.meta.env.PROD`); oferece instalar uma vez por navegador (`localStorage`
+  `pwa-install-hint`) — Android/Chrome via `beforeinstallprompt` (toast com botão "Instalar"),
+  iOS com a dica "Compartilhar → Adicionar à Tela de Início". Não aparece já instalado (standalone).
+- **Não validado num aparelho real** (sem rede/dispositivo aqui): conferir no celular o convite, o
+  ícone, o modo standalone e o login Google dentro do app instalado.
+
+### Web Push e selo no ícone (v0.138.0)
+
+- **Opcional** (no-op sem `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` no `.env` do servidor; gerar o par
+  uma vez com `bunx web-push generate-vapid-keys` e nunca trocar). Tabela `push_subscriptions`
+  (`endpoint` PK, uma linha por aparelho; mortas 404/410 são apagadas no envio).
+- **Servidor**: `push.server.ts` (`sendPushToAll`, `pushReady` = configurado E ≥1 aparelho) e
+  `push.functions.ts` (`getPushStatus`, `subscribePush`, `unsubscribePush`, `sendTestPush`).
+  Canais de aviso do cron: `lookoutnotify` (De olho) agora envia ntfy e/ou Web Push (um por lote;
+  conta como avisado se ALGUM canal entregou) + e-mail; novo `step=bidnotify`
+  (`bid-notify.server.ts`) lê Meus lances e avisa os que viraram "Coberto" desde a rodada anterior
+  (snapshot `app_state.bid_status_snapshot`; a 1ª rodada só semeia). A detecção da transição é a
+  função pura `bid-transitions.ts`, compartilhada com o toast do app aberto (`bid-alerts.ts`).
+  Como o cron roda 4×/dia, o aviso de lance superado tem atraso de horas (ver pendências).
+- **Cliente**: sino `PushToggle` (`components/vinyl/push-toggle.tsx`) ao lado de "Sair" no desktop e
+  no Menu do celular — pede permissão, assina (`pushManager.subscribe`), grava no servidor e dispara
+  um push de teste. Só aparece em produção, com suporte do navegador e push configurado.
+  No `sw.js`, `push` mostra a notificação e `notificationclick` foca/abre o app na URL do payload.
+- **Selo do ícone**: `AppBadgeSync` (layout logado) grava `lances superados + novos do De olho`
+  (`useAppBadge`, Badge API) lendo só o cache das queries (`skipToken`, não busca lances no site).
+  Com o app fechado o `sw.js` soma 1 por push (contador no cache `garimpo-meta`); o app aberto
+  grava o número real.
+- **Não validado num aparelho real**: conferir permissão, notificação, toque (abre `/olho`) e selo.

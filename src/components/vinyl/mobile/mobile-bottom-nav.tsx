@@ -25,6 +25,7 @@ import { APP_VERSION } from "@/lib/version";
 import { cn } from "@/lib/utils";
 
 import { BottomSheet } from "./bottom-sheet";
+import { PushToggle } from "../push-toggle";
 import { isMenuRoute, nextHomeNav, type SavedHomeNav } from "./mobile-nav-utils";
 import { setMenuExtraHost, useMobileNavState, type HomeTab } from "./mobile-nav-store";
 
@@ -183,6 +184,7 @@ function MobileMenuSheet({
             Sair
           </button>
         </div>
+        <PushToggle withLabel className="mb-3 min-h-9 px-1 font-medium" />
         <div className="grid grid-cols-3 gap-2">
           {MENU_TILES.map(({ to, label, icon: Icon }) => (
             <Link

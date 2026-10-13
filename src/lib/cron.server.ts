@@ -407,6 +407,14 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await notifyLookoutMatches());
     }
 
+    // Web Push (PWA) de "lance superado": lê Meus lances na conta e avisa os que acabaram de
+    // virar "Coberto" desde a rodada anterior (snapshot em `app_state.bid_status_snapshot`).
+    // No-op sem VAPID_* ou sem aparelho inscrito.
+    if (step === "bidnotify") {
+      const { notifyOutbidBids } = await import("./bid-notify.server");
+      return json(await notifyOutbidBids());
+    }
+
     // Resumo diário por e-mail (Gmail) dos melhores lotes — chamado 1x/dia pelo `daily-digest.yml`
     // (8:30 BRT); no máximo um por dia (`app_state.daily_digest_sent`); no-op sem GMAIL_*.
     if (step === "dailydigest") {

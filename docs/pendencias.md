@@ -66,3 +66,14 @@ aderente é **acrescentar provedores à camada plugável que já existe** (`runT
 Discogs. A Sondagem (`wantlist-parse.ts`) e a importação de compras para a Coleção poderiam usar o
 mesmo resolvedor (hoje cada uma tem o seu parse/busca de capa). Extrair para um módulo comum se
 valer a pena.
+
+## PWA — próximos passos (v0.137.0/v0.138.0)
+
+- **Leitura offline da última visão** (ex.: Coleção/Vigiados no sebo sem sinal): exigiria cachear
+  respostas de server functions (hoje deliberadamente fora, para não mostrar lance velho).
+- **Share target**: receber link/texto compartilhado do celular (ex.: lote do LeilõesBR) para
+  vigiar/adicionar em "De olho".
+- **Push de fim de pregão** e "meu lance está ganhando/perdendo" em tempo real: o cron roda 4×/dia
+  (`refresh.yml`), então o aviso de lance superado chega com atraso de horas. Para ser quase
+  imediato precisaria de um agendador mais frequente só para `step=bidnotify` (cuidar da sessão
+  única por origem no LeilõesBR).
