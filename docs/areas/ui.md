@@ -861,4 +861,3 @@ segue existindo, usado pela home ("Atualizar tudo" — desde v0.84.0 também rod
   iOS com a dica "Compartilhar → Adicionar à Tela de Início". Não aparece já instalado (standalone).
 - **Não validado num aparelho real** (sem rede/dispositivo aqui): conferir no celular o convite, o
   ícone, o modo standalone e o login Google dentro do app instalado.
-

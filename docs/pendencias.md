@@ -77,4 +77,3 @@ valer a pena.
   respostas de server functions (hoje deliberadamente fora, para não mostrar lance velho).
 - **Share target**: receber link/texto compartilhado do celular (ex.: lote do LeilõesBR) para
   vigiar/adicionar em "De olho".
-
