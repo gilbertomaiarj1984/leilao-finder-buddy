@@ -10,6 +10,7 @@ function normalizeInput(input: Record<string, unknown> | undefined) {
     artist?: string;
     album?: string;
     title?: string;
+    barcode?: string;
     year?: number | null;
     image?: string | null;
     house?: string;
@@ -27,6 +28,7 @@ function normalizeInput(input: Record<string, unknown> | undefined) {
   if (str(input?.artist) !== undefined) patch.artist = String(input!.artist);
   if (str(input?.album) !== undefined) patch.album = String(input!.album);
   if (str(input?.title) !== undefined) patch.title = String(input!.title);
+  if (str(input?.barcode) !== undefined) patch.barcode = String(input!.barcode);
   if (input?.year !== undefined)
     patch.year = input.year === null ? null : Number(input.year) || null;
   if (input?.image !== undefined)

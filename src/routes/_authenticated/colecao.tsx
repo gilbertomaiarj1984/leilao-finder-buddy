@@ -40,6 +40,7 @@ import {
 } from "@/lib/vinyl-parse";
 import { useAiProviderQuery, useCollectionQuery, useLotAiQuery, queryKeys } from "@/lib/queries";
 import { CoverPickerDialog } from "@/components/vinyl/cover-picker-dialog";
+import { DiscCodeScannerDialog } from "@/components/vinyl/disc-code-scanner-dialog";
 import { BulkImportDialog, EditDialog } from "@/components/vinyl/colecao-dialogs";
 import { Draft, EMPTY_DRAFT, toDraft } from "@/components/vinyl/colecao-draft";
 
@@ -306,6 +307,7 @@ function ColecaoPage() {
         artist: d.artist,
         album: d.album,
         title: d.title,
+        barcode: d.barcode,
         year: d.year.trim() ? Number(d.year) || null : null,
         image: d.image,
         wonPrice: d.wonPrice,
@@ -398,10 +400,19 @@ function ColecaoPage() {
     onSuccess: (res: { found: boolean }) => {
       void invalidate();
       if (res.found) toast.success("Tracklist encontrada.");
-      else toast.error("A IA não soube a tracklist deste disco.");
+      else
+        toast.error("O Discogs não achou a tracklist deste disco. Tente ler o código de barras.");
     },
     onError: (e: Error) => toast.error(e.message || "Não foi possível buscar a tracklist"),
   });
+
+  // "Atualizar faixas": sem código de barras salvo, oferece lê-lo pela câmera (mais certeiro no
+  // Discogs); dá para seguir só pelo nome. Com código salvo, busca direto.
+  const [scanItem, setScanItem] = useState<CollectionItem | null>(null);
+  function requestTracklist(item: CollectionItem) {
+    if (item.barcode.trim()) tracklistMut.mutate({ id: item.id, provider: aiProvider });
+    else setScanItem(item);
+  }
 
   // Props do card completo — o mesmo na visão Cards e no card flutuante da visão Títulos.
   const cardProps = (item: CollectionItem) => ({
@@ -413,7 +424,7 @@ function ColecaoPage() {
     onReprocess: (mode: "image" | "text", hint?: string) => startReprocess(item.id, mode, hint),
     onTagsChange: (next: string[]) => tagsMut.mutate({ id: item.id, tags: next }),
     onPickCover: () => setCoverItem(item),
-    onFetchTracklist: () => tracklistMut.mutate({ id: item.id, provider: aiProvider }),
+    onFetchTracklist: () => requestTracklist(item),
   });
 
   const artists = useMemo(() => artistOptions(items), [items]);
@@ -651,6 +662,29 @@ function ColecaoPage() {
         onClose={() => setDraft(null)}
         onSave={() => draft && saveMut.mutate(draft)}
         onUpload={handleUpload}
+      />
+
+      <DiscCodeScannerDialog
+        open={scanItem !== null}
+        title="Ler código para buscar as faixas"
+        confirmLabel="Salvar código e buscar faixas"
+        skipLabel="Buscar só pelo nome"
+        provider={aiProvider}
+        onClose={() => setScanItem(null)}
+        onSkip={() => {
+          if (scanItem) tracklistMut.mutate({ id: scanItem.id, provider: aiProvider });
+        }}
+        onConfirm={async (code) => {
+          if (!scanItem) return;
+          const id = scanItem.id;
+          try {
+            await updateItem({ data: { id, barcode: code } });
+            await invalidate();
+            tracklistMut.mutate({ id, provider: aiProvider });
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Não foi possível salvar o código");
+          }
+        }}
       />
 
       <BulkImportDialog

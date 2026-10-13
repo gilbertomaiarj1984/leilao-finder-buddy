@@ -9,6 +9,7 @@
  */
 import { parse } from "node-html-parser";
 
+import type { DiscCode, DiscogsCodeInfo } from "./disc-code";
 import { parseDiscogsTracklist, type RawTrack } from "./tracklist";
 import { normalizeForMatch } from "./vinyl-parse";
 
@@ -420,6 +421,46 @@ export async function fetchDiscogsTracklist(
   if (!id) return null;
   const rel = (await discogsGet(`/releases/${id}`)) as { tracklist?: unknown } | null;
   return parseDiscogsTracklist(rel?.tracklist);
+}
+
+/** O Discogs numera artistas homônimos: "Nome (2)" → "Nome". */
+function cleanDiscogsArtist(name: string): string {
+  return name.replace(/\s*\(\d+\)$/, "").trim();
+}
+
+/**
+ * Acha o release pelo código impresso: `barcode=` (EAN/UPC) ou `catno=` (nº de catálogo),
+ * preferindo vinil. Bem mais certeiro que a busca por nome. `null` sem token ou sem resultado.
+ */
+export async function findReleaseByCode(code: DiscCode): Promise<DiscogsCodeInfo | null> {
+  if (!discogsConfigured()) return null;
+  const param = code.kind === "barcode" ? "barcode" : "catno";
+  const base = `type=release&per_page=10&${param}=${encodeURIComponent(code.value)}`;
+  let hits = await searchReleases(`${base}&format=Vinyl`);
+  if (!hits.length) hits = await searchReleases(base);
+  const id = hits.find((h) => h.id)?.id;
+  if (!id) return null;
+  const rel = (await discogsGet(`/releases/${id}`)) as {
+    title?: string;
+    year?: number;
+    artists?: { name?: string }[];
+    images?: { uri?: string; type?: string }[];
+    tracklist?: unknown;
+  } | null;
+  if (!rel) return null;
+  const artist = (rel.artists ?? [])
+    .map((a) => cleanDiscogsArtist(a.name ?? ""))
+    .filter(Boolean)
+    .join(", ");
+  const cover = (rel.images ?? []).find((i) => i.type === "primary")?.uri ?? rel.images?.[0]?.uri;
+  return {
+    releaseId: id,
+    artist,
+    album: (rel.title ?? "").trim(),
+    year: rel.year && rel.year > 1900 ? rel.year : null,
+    cover: cover ?? null,
+    tracks: parseDiscogsTracklist(rel.tracklist)?.length ?? 0,
+  };
 }
 
 export async function fetchMarket(album: string | null, title: string): Promise<MarketData> {

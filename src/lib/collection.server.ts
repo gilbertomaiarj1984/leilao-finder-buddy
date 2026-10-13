@@ -18,6 +18,7 @@ import {
 } from "@/lib/vinyl-parse";
 
 import type { AiProvider } from "./ai-provider";
+import { parseDiscCode } from "./disc-code";
 import { normalizeTracklist, type Track } from "./tracklist";
 
 /**
@@ -34,6 +35,8 @@ export type CollectionItem = {
   artist: string;
   album: string;
   title: string;
+  // Código de barras (EAN/UPC) ou nº de catálogo; vazio = não informado.
+  barcode: string;
   year: number | null;
   image: string | null;
   house: string;
@@ -57,6 +60,7 @@ export type CollectionItem = {
 type CollectionItemWrite = Partial<{
   album: string;
   artist: string;
+  barcode: string;
   condition_media: string;
   condition_sleeve: string;
   created_at: string;
@@ -83,7 +87,7 @@ type CollectionItemWrite = Partial<{
 }>;
 
 const COLS =
-  "id, lot_id, origin_lot_id, source, artist, album, title, year, image, house, uf, won_price, won_date, condition_media, condition_sleeve, notes, description, tags, market_low, market_high, source_url, position, tracklist";
+  "id, lot_id, origin_lot_id, source, artist, album, title, year, image, house, uf, won_price, won_date, condition_media, condition_sleeve, notes, description, tags, market_low, market_high, source_url, position, tracklist, barcode";
 
 type DbRow = {
   id: string;
@@ -109,6 +113,7 @@ type DbRow = {
   source_url: string | null;
   position: number;
   tracklist: unknown;
+  barcode: string | null;
 };
 
 function toItem(r: DbRow): CollectionItem {
@@ -120,6 +125,7 @@ function toItem(r: DbRow): CollectionItem {
     artist: r.artist ?? "",
     album: r.album ?? "",
     title: r.title ?? "",
+    barcode: r.barcode ?? "",
     year: r.year,
     image: r.image,
     house: r.house ?? "",
@@ -443,7 +449,7 @@ export async function fetchCollectionTracklist(
   provider: AiProvider,
 ): Promise<{ found: boolean; tracklist: Track[] | null }> {
   const { aiConfigured, resolveGeminiModel } = await import("./ai-eval.server");
-  const { discogsConfigured } = await import("./discogs.server");
+  const { discogsConfigured, findReleaseByCode } = await import("./discogs.server");
   const { buildTracklist, rateFame } = await import("./tracklist-step.server");
   if (!discogsConfigured()) {
     throw new Error("O Discogs não está configurado (DISCOGS_TOKEN ausente no servidor).");
@@ -451,15 +457,23 @@ export async function fetchCollectionTracklist(
   const item = (await getAllCollection()).find((i) => i.id === id);
   if (!item) throw new Error("Disco não encontrado na coleção.");
   const name = [item.artist, item.album || item.title].filter(Boolean).join(" - ");
-  if (!name.trim()) throw new Error("Disco sem artista/álbum para buscar a tracklist.");
+  if (!name.trim() && !item.barcode.trim()) {
+    throw new Error("Disco sem artista/álbum/código para buscar a tracklist.");
+  }
 
-  const album = item.year ? `${name} (${item.year})` : name;
-  let tracklist = await buildTracklist(album, null);
+  const album = name.trim() ? (item.year ? `${name} (${item.year})` : name) : "";
+  // Com código de barras/catálogo, o release vem do código (certeiro); sem ele ou sem
+  // resultado, cai na busca por artista+álbum.
+  const code = parseDiscCode(item.barcode);
+  const byCode = code ? await findReleaseByCode(code) : null;
+  let tracklist = await buildTracklist(album, byCode?.releaseId ?? null);
+  if (!tracklist && byCode && album) tracklist = await buildTracklist(album, null);
   if (!tracklist) return { found: false, tracklist: null };
   // A fama (IA) é opcional: se a IA não estiver disponível/falhar, as faixas ficam sem fama.
   if (aiConfigured()) {
+    const label = album || [byCode?.artist, byCode?.album].filter(Boolean).join(" - ");
     tracklist =
-      (await rateFame(album, tracklist, provider, await resolveGeminiModel())) ?? tracklist;
+      (await rateFame(label, tracklist, provider, await resolveGeminiModel())) ?? tracklist;
   }
   const { error } = await db.from("collection_items").update({ tracklist }).eq("id", id);
   if (error) throw new Error(`Não foi possível gravar a tracklist: ${error.message}`);
@@ -533,6 +547,7 @@ type CollectionInput = {
   artist?: string;
   album?: string;
   title?: string;
+  barcode?: string;
   year?: number | null;
   image?: string | null;
   house?: string;
@@ -573,6 +588,7 @@ export async function addCollectionItem(input: CollectionInput): Promise<Collect
       artist,
       album,
       title: (input.title ?? "").trim(),
+      barcode: (input.barcode ?? "").trim().slice(0, 40),
       year: input.year ?? null,
       image: input.image ?? null,
       house: (input.house ?? "").trim(),
@@ -668,6 +684,7 @@ export async function updateCollectionItem(
   if (typeof input.artist === "string") patch.artist = input.artist.trim();
   if (typeof input.album === "string") patch.album = input.album.trim();
   if (typeof input.title === "string") patch.title = input.title.trim();
+  if (typeof input.barcode === "string") patch.barcode = input.barcode.trim().slice(0, 40);
   if (input.year !== undefined) patch.year = input.year;
   if (input.image !== undefined) patch.image = input.image;
   if (typeof input.house === "string") patch.house = input.house.trim();
