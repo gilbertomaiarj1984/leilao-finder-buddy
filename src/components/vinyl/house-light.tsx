@@ -1,3 +1,4 @@
+import { Luggage } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -6,16 +7,31 @@ import { useHouseRatingsQuery } from "@/lib/queries";
 import { LevelDot } from "@/components/vinyl/level-dot";
 import { cn } from "@/lib/utils";
 
+/** Mala ao lado do semáforo: a casa tem compras na guarda. */
+function GuardBag({ count, className }: { count: number; className?: string }) {
+  return (
+    <span
+      role="img"
+      title={`${count} pregão(ões) na guarda`}
+      aria-label={`${count} pregão(ões) na guarda`}
+      className={cn("inline-flex shrink-0 items-center text-amber-500", className)}
+    >
+      <Luggage className="h-3.5 w-3.5" />
+    </span>
+  );
+}
+
 /**
  * Semáforo da casa (verde/amarelo/laranja/vermelho), ao lado do nome em qualquer tela. Sem
  * avaliação, mostra uma bolinha tracejada. Ao parar o mouse (ou tocar) abre o detalhamento:
  * tags mais marcadas e anotações recentes dos pregões avaliados. A avaliação em si é feita
- * por pregão, na página Compras.
+ * por pregão, na página Compras. Casas com compras na guarda ganham uma mala ao lado.
  */
 export function HouseLight({ house, className }: { house: string; className?: string }) {
   const { data } = useHouseRatingsQuery();
   const summary: HouseSummary | undefined = data?.houses[houseKey(house)];
   const level = summary?.level ?? null;
+  const guarded = data?.guarded?.[houseKey(house)] ?? 0;
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -32,31 +48,34 @@ export function HouseLight({ house, className }: { house: string; className?: st
     : `${house}: sem avaliação`;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
+    <span className="inline-flex shrink-0 items-center">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            onMouseEnter={show}
+            onMouseLeave={hide}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={tip}
+            className={cn("inline-flex shrink-0 items-center rounded-full p-1", className)}
+          >
+            <LevelDot level={level} className="h-3.5 w-3.5" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          side="bottom"
+          align="start"
+          collisionPadding={12}
+          className="w-72 max-w-[calc(100vw-1.5rem)] p-3 text-xs"
           onMouseEnter={show}
           onMouseLeave={hide}
-          onClick={(e) => e.stopPropagation()}
-          aria-label={tip}
-          className={cn("inline-flex shrink-0 items-center rounded-full p-1", className)}
+          onOpenAutoFocus={(e) => e.preventDefault()}
         >
-          <LevelDot level={level} className="h-3.5 w-3.5" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        side="bottom"
-        align="start"
-        collisionPadding={12}
-        className="w-72 max-w-[calc(100vw-1.5rem)] p-3 text-xs"
-        onMouseEnter={show}
-        onMouseLeave={hide}
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <HouseLightDetail house={house} summary={summary} />
-      </PopoverContent>
-    </Popover>
+          <HouseLightDetail house={house} summary={summary} guarded={guarded} />
+        </PopoverContent>
+      </Popover>
+      {guarded ? <GuardBag count={guarded} /> : null}
+    </span>
   );
 }
 
@@ -64,23 +83,35 @@ export function HouseLight({ house, className }: { house: string; className?: st
 export function HouseDot({ house }: { house: string }) {
   const { data } = useHouseRatingsQuery();
   const summary = data?.houses[houseKey(house)];
+  const guarded = data?.guarded?.[houseKey(house)] ?? 0;
   return (
     <span
+      className="inline-flex items-center gap-1"
       title={
         summary?.level ? `${house}: ${LEVEL_META[summary.level].label}` : `${house}: sem avaliação`
       }
     >
       <LevelDot level={summary?.level ?? null} />
+      {guarded ? <GuardBag count={guarded} /> : null}
     </span>
   );
 }
 
-function HouseLightDetail({ house, summary }: { house: string; summary?: HouseSummary }) {
+function HouseLightDetail({
+  house,
+  summary,
+  guarded,
+}: {
+  house: string;
+  summary?: HouseSummary;
+  guarded: number;
+}) {
   const level = summary?.level ?? null;
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <LevelDot level={level} className="h-4 w-4" />
+        {guarded ? <GuardBag count={guarded} className="-ml-1" /> : null}
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-foreground">{house}</p>
           <p className="text-muted-foreground">

@@ -5,9 +5,11 @@ import {
   sanitizeRating,
   pregaoRefs,
   summarizeHouses,
+  guardedHouses,
   type PregaoRating,
   type RatingsPayload,
 } from "./house-rating";
+import { getShippingData } from "./purchase-shipping.server";
 import { getAllPurchases } from "./purchases.server";
 
 /** `app_state.house_ratings`: { [id_leilao]: PregaoRating } — uma avaliação por pregão. */
@@ -33,8 +35,20 @@ async function readRatings(): Promise<Record<string, PregaoRating>> {
 
 /** Avaliações por pregão + semáforo agregado por casa. */
 export async function getHouseRatings(): Promise<RatingsPayload> {
-  const [ratings, purchases] = await Promise.all([readRatings(), getAllPurchases()]);
-  return { ratings, houses: summarizeHouses(pregaoRefs(purchases), ratings) };
+  const [ratings, purchases, shipping] = await Promise.all([
+    readRatings(),
+    getAllPurchases(),
+    getShippingData(),
+  ]);
+  const refs = pregaoRefs(purchases);
+  const guardIds = new Set(
+    shipping.auctions.filter((a) => a.status === "guarda").map((a) => a.idLeilao),
+  );
+  return {
+    ratings,
+    houses: summarizeHouses(refs, ratings),
+    guarded: guardedHouses(refs, guardIds),
+  };
 }
 
 /** Grava (ou remove, com `rating === null`) a avaliação de um pregão. */

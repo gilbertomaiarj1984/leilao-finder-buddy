@@ -53,9 +53,25 @@ export type HouseSummary = {
 export type RatingsPayload = {
   ratings: Record<string, PregaoRating>;
   houses: Record<string, HouseSummary>;
+  /** Casas com compras "na guarda" (chave = `houseKey`) → nº de pregões na guarda. */
+  guarded: Record<string, number>;
 };
 
-export const EMPTY_RATINGS: RatingsPayload = { ratings: {}, houses: {} };
+export const EMPTY_RATINGS: RatingsPayload = { ratings: {}, houses: {}, guarded: {} };
+
+/** Casas com pregões na guarda: `guardIds` = ids dos pregões com status "guarda". */
+export function guardedHouses(
+  pregoes: readonly { id: string; house: string }[],
+  guardIds: ReadonlySet<string>,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const p of pregoes) {
+    if (!p.house || !guardIds.has(p.id)) continue;
+    const key = houseKey(p.house);
+    out[key] = (out[key] ?? 0) + 1;
+  }
+  return out;
+}
 
 export function isRatingLevel(v: unknown): v is RatingLevel {
   return typeof v === "string" && (RATING_LEVELS as readonly string[]).includes(v);
