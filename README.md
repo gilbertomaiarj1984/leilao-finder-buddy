@@ -35,6 +35,7 @@ Veja `.env.example`. Resumo:
 | `DISCOGS_TOKEN`                             | servidor                  | âncora de preço/mercado, opcional                           |
 | `COLLECTION_DIR` / `PUBLIC_BASE_URL`        | servidor                  | fotos da Coleção em disco (ver `.env.example`)              |
 | `NTFY_TOPIC` / `NTFY_SERVER`                | servidor                  | aviso push do "De olho" (ntfy.sh), opcional                 |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`    | servidor                  | Web Push do PWA (De olho + lance superado), opcional        |
 
 Lista completa e comentada em `.env.example`.
 

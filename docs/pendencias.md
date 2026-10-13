@@ -67,13 +67,13 @@ Discogs. A Sondagem (`wantlist-parse.ts`) e a importação de compras para a Col
 mesmo resolvedor (hoje cada uma tem o seu parse/busca de capa). Extrair para um módulo comum se
 valer a pena.
 
-## PWA — próximos passos (v0.137.0)
+## PWA — próximos passos (v0.137.0/v0.138.0)
 
-- **Web Push nativo** no lugar/ao lado do ntfy e do e-mail (avisos do "De olho", lance superado,
-  fim de pregão): VAPID + tabela de inscrições + `push` no `sw.js`. No iPhone só funciona com o
-  app instalado na Tela de Início (iOS 16.4+).
-- **Badge no ícone** (`navigator.setAppBadge`) com nº de lances superados / novos do "De olho".
 - **Leitura offline da última visão** (ex.: Coleção/Vigiados no sebo sem sinal): exigiria cachear
   respostas de server functions (hoje deliberadamente fora, para não mostrar lance velho).
 - **Share target**: receber link/texto compartilhado do celular (ex.: lote do LeilõesBR) para
   vigiar/adicionar em "De olho".
+- **Push de fim de pregão** e "meu lance está ganhando/perdendo" em tempo real: o cron roda 4×/dia
+  (`refresh.yml`), então o aviso de lance superado chega com atraso de horas. Para ser quase
+  imediato precisaria de um agendador mais frequente só para `step=bidnotify` (cuidar da sessão
+  única por origem no LeilõesBR).

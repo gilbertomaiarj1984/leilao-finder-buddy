@@ -861,3 +861,26 @@ segue existindo, usado pela home ("Atualizar tudo" — desde v0.84.0 também rod
   iOS com a dica "Compartilhar → Adicionar à Tela de Início". Não aparece já instalado (standalone).
 - **Não validado num aparelho real** (sem rede/dispositivo aqui): conferir no celular o convite, o
   ícone, o modo standalone e o login Google dentro do app instalado.
+
+### Web Push e selo no ícone (v0.138.0)
+
+- **Opcional** (no-op sem `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` no `.env` do servidor; gerar o par
+  uma vez com `bunx web-push generate-vapid-keys` e nunca trocar). Tabela `push_subscriptions`
+  (`endpoint` PK, uma linha por aparelho; mortas 404/410 são apagadas no envio).
+- **Servidor**: `push.server.ts` (`sendPushToAll`, `pushReady` = configurado E ≥1 aparelho) e
+  `push.functions.ts` (`getPushStatus`, `subscribePush`, `unsubscribePush`, `sendTestPush`).
+  Canais de aviso do cron: `lookoutnotify` (De olho) agora envia ntfy e/ou Web Push (um por lote;
+  conta como avisado se ALGUM canal entregou) + e-mail; novo `step=bidnotify`
+  (`bid-notify.server.ts`) lê Meus lances e avisa os que viraram "Coberto" desde a rodada anterior
+  (snapshot `app_state.bid_status_snapshot`; a 1ª rodada só semeia). A detecção da transição é a
+  função pura `bid-transitions.ts`, compartilhada com o toast do app aberto (`bid-alerts.ts`).
+  Como o cron roda 4×/dia, o aviso de lance superado tem atraso de horas (ver pendências).
+- **Cliente**: sino `PushToggle` (`components/vinyl/push-toggle.tsx`) ao lado de "Sair" no desktop e
+  no Menu do celular — pede permissão, assina (`pushManager.subscribe`), grava no servidor e dispara
+  um push de teste. Só aparece em produção, com suporte do navegador e push configurado.
+  No `sw.js`, `push` mostra a notificação e `notificationclick` foca/abre o app na URL do payload.
+- **Selo do ícone**: `AppBadgeSync` (layout logado) grava `lances superados + novos do De olho`
+  (`useAppBadge`, Badge API) lendo só o cache das queries (`skipToken`, não busca lances no site).
+  Com o app fechado o `sw.js` soma 1 por push (contador no cache `garimpo-meta`); o app aberto
+  grava o número real.
+- **Não validado num aparelho real**: conferir permissão, notificação, toque (abre `/olho`) e selo.

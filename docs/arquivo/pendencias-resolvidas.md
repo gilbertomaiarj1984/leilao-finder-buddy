@@ -293,3 +293,7 @@ idLeilao)` (`leiloesbr-catalog.server.ts`, já existente, usada por `enrich`/`co
     nesse caminho dói. Fix: `listGalleryAuctions` trocou `looksNonVinyl` (lista de bloqueio,
     permissiva) por `isVinylTitle` (exige palavra de vinil no título) — ver linha da tabela de
     versões (v0.69.43) para o detalhe completo do porquê.
+
+## Web Push nativo e selo no ícone do PWA (resolvido na v0.138.0)
+
+Eram as duas primeiras pendências do PWA (v0.137.0). Ver `docs/areas/ui.md`, "PWA instalável".

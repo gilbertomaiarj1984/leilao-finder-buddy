@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.138.0** — Web Push nativo (PWA): avisos do "De olho" e de lance superado direto no aparelho (sino no cabeçalho/Menu; `step=bidnotify` no cron; VAPID opcional) e selo com número no ícone do app (lances superados + novos do "De olho").
 - **0.137.0** — PWA instalável: `manifest.webmanifest` (atalhos De olho/Ao vivo/Compras/Coleção), ícones de disco de vinil, service worker (`public/sw.js`: cache só de estáticos/fotos da Coleção + página offline; nunca de dados) e convite único para instalar (Android/iOS).
 - **0.136.0** — Coleção: leitura do código de barras / nº do disco pela câmera do celular (barras ao vivo; texto/número por foto + IA), campo `barcode` no disco e busca no Discogs por código; "Atualizar faixas" oferece ler o código.
 - **0.135.0** — E-mail pelo Gmail (opcional): aviso do "De olho" também por e-mail (1 por rodada, junto do ntfy) e resumo diário dos 30 melhores lotes às 8:30 (`daily-digest.yml`, `step=dailydigest`).

@@ -266,6 +266,15 @@ jobs:
             echo "lookoutnotify: falhou (não crítico) — $res"
           fi
 
+          echo "== Aviso de lance superado (Web Push do PWA) =="
+          # Lances que viraram "Coberto" desde a rodada anterior viram 1 push. No-op sem
+          # VAPID_* no .env do servidor ou sem aparelho inscrito; falha só é avisada.
+          if res="$(call_soft "/api/cron?step=bidnotify")"; then
+            echo "bidnotify: $res"
+          else
+            echo "bidnotify: falhou (não crítico) — $res"
+          fi
+
           echo "== Faxina de seen_auctions (Fase 5 da migração para VPS) =="
           # Remove leilões cujas vendas já foram capturadas e fora da janela de retenção —
           # tabela nunca era podada antes, só crescia. 1 chamada, idempotente.
