@@ -8,6 +8,7 @@ export type Draft = {
   artist: string;
   album: string;
   title: string;
+  barcode: string;
   year: string;
   image: string | null;
   wonPrice: string;
@@ -24,6 +25,7 @@ export const EMPTY_DRAFT: Draft = {
   artist: "",
   album: "",
   title: "",
+  barcode: "",
   year: "",
   image: null,
   wonPrice: "",
@@ -41,6 +43,7 @@ export function toDraft(item: CollectionItem): Draft {
     artist: item.artist,
     album: item.album,
     title: item.title,
+    barcode: item.barcode,
     year: item.year == null ? "" : String(item.year),
     image: item.image,
     wonPrice: item.wonPrice,

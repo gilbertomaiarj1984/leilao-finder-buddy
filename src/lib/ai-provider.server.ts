@@ -186,13 +186,34 @@ export async function getAnthropicClient() {
 }
 
 type AnthropicBlock =
-  { type: "text"; text: string } | { type: "image"; source: { type: "url"; url: string } };
+  | { type: "text"; text: string }
+  | { type: "image"; source: { type: "url"; url: string } }
+  | {
+      type: "image";
+      source: {
+        type: "base64";
+        media_type: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+        data: string;
+      };
+    };
+
+/** `data:image/...;base64,...` (foto tirada na hora, sem URL pública) → bloco base64. */
+function anthropicImageBlock(image: string): AnthropicBlock {
+  const m = image.match(/^data:(image\/(?:jpeg|png|webp|gif));base64,(.+)$/);
+  if (m) {
+    return {
+      type: "image",
+      source: { type: "base64", media_type: m[1] as "image/jpeg", data: m[2]! },
+    };
+  }
+  return { type: "image", source: { type: "url", url: image } };
+}
 
 /** Converte a requisição neutra no formato de mensagem da Anthropic (Messages/Batches). */
 export function toAnthropicMessageParams(req: AiRequest, model: string) {
   const content: AnthropicBlock[] = [];
   // A imagem vem ANTES do texto (recomendação da API de visão).
-  if (req.image) content.push({ type: "image", source: { type: "url", url: req.image } });
+  if (req.image) content.push(anthropicImageBlock(req.image));
   content.push({ type: "text", text: req.text });
   return {
     model,
@@ -231,6 +252,8 @@ type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: str
  * Best-effort: em qualquer falha (rede/tipo), devolve null e a chamada segue só com texto.
  */
 async function fetchInlineImage(url: string): Promise<{ mimeType: string; data: string } | null> {
+  const dataUrl = url.match(/^data:(image\/[a-z+.-]+);base64,(.+)$/);
+  if (dataUrl) return { mimeType: dataUrl[1]!, data: dataUrl[2]! };
   try {
     const resp = await fetch(url);
     if (!resp.ok) return null;

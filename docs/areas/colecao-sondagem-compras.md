@@ -86,6 +86,21 @@
   **Discogs** (v0.124.0, `buildTracklist`, sem tocar em artista/álbum/ano) e, se houver IA, aplica a fama
   (`rateFame`; opcional — sem IA as faixas ficam sem fama); se o Discogs não achou, não grava (dá para
   tentar de novo). As tracklists antigas (da IA) foram zeradas na migração única (ver `ia.md`).
+- **Código de barras / nº do disco (v0.136.0):** coluna `collection_items.barcode` (texto; EAN/UPC
+  ou nº de catálogo). `EditDialog` ganhou o campo + botão **Ler** → `DiscCodeScannerDialog`
+  (`disc-code-scanner-dialog.tsx`): câmera traseira via `getUserMedia`; leitura **ao vivo** das
+  barras no navegador (`BarcodeDetector` nativo ou `@zxing/browser` como fallback, carregado sob
+  demanda) e botão **"Ler texto/número (foto)"** que manda um quadro (≤1280px) a
+  `readDiscCodePhoto` → `readDiscCodeFromPhoto` (`disc-code.server.ts`, IA de visão via `runText`;
+  `AiRequest.image` aceita `data:` URL) → `extractDiscCodes`. Campo manual como último recurso. O
+  código é conferido por `lookupDiscCode` → `findReleaseByCode` (`discogs.server.ts`: busca
+  `barcode=`/`catno=`, vinil primeiro) e o diálogo mostra o disco achado; no formulário só
+  preenche o que estiver **vazio** (artista/álbum/ano/capa). Parsing/validação puros em
+  `disc-code.ts` (`parseDiscCode`, `extractDiscCodes`, checksum GTIN; testes em
+  `tests/disc-code.test.ts`). **"Atualizar faixas"** (card): sem código salvo, abre o leitor
+  (com "Buscar só pelo nome"); ao confirmar grava o `barcode` e busca. `fetchCollectionTracklist`
+  usa o release achado pelo código (cai na busca por nome se falhar).
+  A câmera exige HTTPS (produção ok).
 - **Descritivo da IA (`buildCollectionIdentPrompt`, `ai-eval.server.ts`):** prompt pede um texto
   RICO/LONGO baseado **principalmente no nome do álbum** (+ artista): momento histórico do álbum,
   panorama do artista e **faixa a faixa** quando souber; `max_tokens=2000`, slice do descritivo até

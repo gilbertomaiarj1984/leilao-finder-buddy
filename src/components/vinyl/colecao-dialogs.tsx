@@ -1,6 +1,6 @@
 // Diálogos da página Coleção (importação em massa e edição de disco).
 
-import { Camera, Copy } from "lucide-react";
+import { Camera, Copy, ScanBarcode } from "lucide-react";
 import { useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { CoverPickerDialog } from "@/components/vinyl/cover-picker-dialog";
+import { DiscCodeScannerDialog } from "@/components/vinyl/disc-code-scanner-dialog";
 import { GradeSelect } from "@/components/vinyl/grade-select";
 import { GEMINI_IMPORT_PROMPT, parseCollectionBulkText } from "@/lib/collection-bulk";
 import { Draft } from "@/components/vinyl/colecao-draft";
@@ -165,6 +166,7 @@ export function EditDialog({
 }) {
   const [uploading, setUploading] = useState(false);
   const [pickingCover, setPickingCover] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const cameraRef = useRef<HTMLInputElement>(null);
   const set = (patch: Partial<Draft>) => draft && onChange({ ...draft, ...patch });
 
@@ -282,6 +284,26 @@ export function EditDialog({
             <Field label="Álbum">
               <Input value={draft.album} onChange={(e) => set({ album: e.target.value })} />
             </Field>
+            <div className="sm:col-span-2">
+              <Field label="Código de barras / nº do disco (ancora a busca no Discogs)">
+                <div className="flex gap-2">
+                  <Input
+                    value={draft.barcode}
+                    placeholder="Ex.: 0077774620714 ou SHVL 804"
+                    onChange={(e) => set({ barcode: e.target.value })}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setScanning(true)}
+                    disabled={saving}
+                  >
+                    <ScanBarcode className="mr-2 h-4 w-4" />
+                    Ler
+                  </Button>
+                </div>
+              </Field>
+            </div>
             <Field label="Ano">
               <Input
                 value={draft.year}
@@ -358,6 +380,23 @@ export function EditDialog({
           </form>
         ) : null}
       </DialogContent>
+      <DiscCodeScannerDialog
+        open={scanning}
+        onClose={() => setScanning(false)}
+        onConfirm={(code, info) => {
+          // Código sempre entra; artista/álbum/ano/capa só preenchem o que estiver vazio.
+          set({
+            barcode: code,
+            ...(info && !draft?.artist.trim() ? { artist: info.artist } : {}),
+            ...(info && !draft?.album.trim() ? { album: info.album } : {}),
+            ...(info && !draft?.year.trim() && info.year ? { year: String(info.year) } : {}),
+            ...(info && !draft?.image && info.cover ? { image: info.cover } : {}),
+          });
+          toast.success(
+            info ? "Código lido — dados do Discogs aplicados." : "Código salvo no disco.",
+          );
+        }}
+      />
       <CoverPickerDialog
         open={pickingCover}
         artist={draft?.artist ?? ""}

@@ -347,6 +347,8 @@ ALTER TABLE public.collection_items ADD COLUMN IF NOT EXISTS origin_lot_id text;
 CREATE INDEX IF NOT EXISTS collection_items_origin_lot_idx ON public.collection_items (origin_lot_id);
 -- Tracklist do disco (mesmo formato de lot_ai.tracklist), buscada pela IA sob demanda.
 ALTER TABLE public.collection_items ADD COLUMN IF NOT EXISTS tracklist jsonb;
+-- Código de barras (EAN/UPC) ou nº de catálogo do disco — lido pela câmera; ancora a busca no Discogs.
+ALTER TABLE public.collection_items ADD COLUMN IF NOT EXISTS barcode text NOT NULL DEFAULT '';
 
 DROP TRIGGER IF EXISTS update_collection_items_updated_at ON public.collection_items;
 CREATE TRIGGER update_collection_items_updated_at BEFORE UPDATE ON public.collection_items
