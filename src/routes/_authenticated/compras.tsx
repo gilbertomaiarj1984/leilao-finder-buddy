@@ -203,7 +203,10 @@ function ComprasPage() {
     [shippingQuery.data],
   );
   const invalidateShipping = () =>
-    queryClient.invalidateQueries({ queryKey: ["purchase-shipping"] });
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["purchase-shipping"] }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.houseRatings }),
+    ]);
 
   const purchases = useMemo(() => query.data ?? [], [query.data]);
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["purchases"] });

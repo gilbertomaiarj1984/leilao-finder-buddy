@@ -446,4 +446,7 @@ updatedAt } }` (`house-rating.server.ts`; server fns `getHouseRatings`/`savePreg
   Vigiados e Lances, barra de origem do `LotCard` (desktop/mobile), De olho (histórico de vendas),
   Pregões e Ao vivo; em `live-auctions.tsx` (card dentro de `<a>`) usa `HouseDot`, bolinha sem
   popover. Query compartilhada `useHouseRatingsQuery` (`queryKeys.houseRatings`).
+- **Mala na guarda:** `RatingsPayload.guarded` (`guardedHouses`, chave `houseKey` → nº de pregões
+  com status "guarda") alimenta um ícone de mala ao lado do semáforo em `HouseLight`/`HouseDot`
+  (todo lugar onde o semáforo aparece); mudar status em Compras invalida `houseRatings`.
 - **Pendente:** ranking das casas e o cabeçalho do detalhe mobile do lote.
