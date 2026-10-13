@@ -842,3 +842,23 @@ segue existindo, usado pela home ("Atualizar tudo" — desde v0.84.0 também rod
   está em `docs/pendencias.md`.
 
 - **Busca da Wantlist lembrada (v0.115.1):** o campo de busca do diálogo da Sondagem usa `usePersistedState("wantlist-search")`.
+
+## PWA instalável (v0.137.0)
+
+- **Arquivos** (todos em `public/`, servidos pelo Nitro sem tocar no Caddy): `manifest.webmanifest`
+  (`display: standalone`, tema escuro `#181513`, atalhos para `/olho`, `/ao-vivo`, `/compras`,
+  `/colecao`), `icons/` (192/512, maskable 512 e `apple-touch-icon`, gerados por
+  `tools/gen-pwa-icons.py` — disco de vinil âmbar), `offline.html` e `sw.js`. As `<meta>`/`<link>`
+  (manifest, apple-touch-icon, theme-color, `apple-mobile-web-app-*`) ficam em `__root.tsx`.
+- **Service worker** (`sw.js`): estratégia deliberadamente conservadora — **nunca cacheia dados**
+  (HTML do SSR autenticado, server functions, `/api/*`: cron, auth, pregão ao vivo). Só:
+  `/assets/*` (hash no nome) cache-first; `/icons/*` e o manifest stale-while-revalidate;
+  `/collection/*` (fotos) stale-while-revalidate limitado a 400; navegação sem rede cai em
+  `/offline.html`. Para invalidar tudo, mude `VERSION` no topo do arquivo.
+- **Registro e convite** (`components/PwaSetup.tsx`, montado no `__root.tsx`): registra o SW **só em
+  produção** (`import.meta.env.PROD`); oferece instalar uma vez por navegador (`localStorage`
+  `pwa-install-hint`) — Android/Chrome via `beforeinstallprompt` (toast com botão "Instalar"),
+  iOS com a dica "Compartilhar → Adicionar à Tela de Início". Não aparece já instalado (standalone).
+- **Não validado num aparelho real** (sem rede/dispositivo aqui): conferir no celular o convite, o
+  ícone, o modo standalone e o login Google dentro do app instalado.
+
