@@ -237,13 +237,20 @@ export async function handleCron(request: Request): Promise<Response | null> {
     // `max` lotes ainda não casados (throttle interno respeita o rate limit). Sem
     // DISCOGS_TOKEN → no-op explícito.
     if (step === "market") {
-      const { discogsConfigured, fetchMarket } = await import("./discogs.server");
+      const { discogsConfigured, fetchMarket, fetchSuggestionMap } =
+        await import("./discogs.server");
       if (!discogsConfigured()) return json({ skipped: "DISCOGS_TOKEN não configurado" });
       const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
       const { getAllLotAi } = await import("./lot-ai.server");
       const { getAllLotIdent } = await import("./lot-ident.server");
-      const { getAllLotMarket, upsertLotMarket, selectLotsForMarket, marketBasis } =
-        await import("./lot-market.server");
+      const {
+        getAllLotMarket,
+        upsertLotMarket,
+        selectLotsForMarket,
+        selectMarketBackfill,
+        updateSuggestionMaps,
+        marketBasis,
+      } = await import("./lot-market.server");
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 12, 1), 40);
       const [snapshot, aiRows, identRows, marketRows] = await Promise.all([
         scrapeVinylLots(false),
@@ -258,7 +265,18 @@ export async function handleCron(request: Request): Promise<Response | null> {
       for (const r of aiRows) if (r.album) albumMap.set(r.id, r.album);
       const albumRows = [...albumMap.entries()].map(([id, album]) => ({ id, album }));
       const targets = selectLotsForMarket(snapshot.lots, albumRows, marketRows, max);
-      if (!targets.length) return json({ done: true, updated: 0 });
+      if (!targets.length) {
+        // Nada novo a casar: preenche o sugerido por condição das linhas antigas (1 chamada
+        // por release, bem mais barato que refazer a busca).
+        const backfill = selectMarketBackfill(marketRows, max);
+        if (!backfill.length) return json({ done: true, updated: 0 });
+        const items = [];
+        for (const b of backfill) {
+          items.push({ id: b.id, map: await fetchSuggestionMap(b.release_id) });
+        }
+        const filled = await updateSuggestionMaps(items);
+        return json({ backfilled: filled, done: backfill.length < max });
+      }
 
       const rows = [];
       for (const t of targets) {
@@ -276,6 +294,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
           currency: m.currency,
           suggested_price: m.suggestedPrice,
           suggested_condition: m.suggestedCondition,
+          suggested_by_condition: m.suggestedByCondition,
           have: m.have,
           want: m.want,
           price_low_br: m.priceLowBr,

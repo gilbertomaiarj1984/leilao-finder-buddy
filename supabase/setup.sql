@@ -181,6 +181,9 @@ CREATE TABLE IF NOT EXISTS public.lot_market (
 ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS price_low_br    numeric;
 ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS price_high_br   numeric;
 ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS num_for_sale_br integer;
+-- Preço sugerido de TODAS as condições (BRL), ex.: {"NM": 66.27, "VG+": 50.68}. O veredicto usa a
+-- condição do lote. NULL = ainda não coletado (o cron preenche); {} = consultado, sem sugestões.
+ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS suggested_by_condition jsonb;
 
 -- ---------------------------------------------------------------------
 -- wantlist_items — "sondagem": rascunho de obras que o usuário caça.

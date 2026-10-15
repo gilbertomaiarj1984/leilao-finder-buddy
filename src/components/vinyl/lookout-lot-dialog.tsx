@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo } from "react";
 
-import { toLotMarket, type LotAi } from "@/components/vinyl/ai-score-utils";
+import { toLotMarket, withConditionAnchor, type LotAi } from "@/components/vinyl/ai-score-utils";
 import { LotCard } from "@/components/vinyl/lot-card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { parseConditionFromText, scoreCondition, type Grade } from "@/lib/grading";
@@ -59,7 +59,7 @@ export function LookoutLotDialog({
         }
       : undefined;
   }, [aiQuery.data, id]);
-  const market = useMemo(() => {
+  const marketRaw = useMemo(() => {
     const r = (marketQuery.data ?? []).find((x) => x.id === id);
     return r ? toLotMarket(r) : undefined;
   }, [marketQuery.data, id]);
@@ -89,6 +89,11 @@ export function LookoutLotDialog({
     }
     return parseConditionFromText(lot?.title ?? "");
   }, [cond, lot?.title]);
+  // Mercado com a âncora de preço da condição (mídia) do lote.
+  const market = useMemo(
+    () => withConditionAnchor(marketRaw, condition.media),
+    [marketRaw, condition.media],
+  );
 
   return (
     <Dialog open={lot != null} onOpenChange={(open) => (open ? undefined : onClose())}>

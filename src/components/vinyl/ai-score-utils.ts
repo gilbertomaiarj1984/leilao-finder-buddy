@@ -1,3 +1,11 @@
+import {
+  anchorForCondition,
+  gradeToCondKey,
+  normalizeSuggestionMap,
+  type PriceAnchor,
+  type SuggestionMap,
+} from "@/lib/discogs-price";
+import { normalizeGrade, type Grade } from "@/lib/grading";
 import type { Track } from "@/lib/tracklist";
 import { bidIsWinning, normalizeForMatch, parsePrice, titleCase } from "@/lib/vinyl-parse";
 
@@ -148,6 +156,10 @@ export type LotMarket = {
   currency: string | null;
   suggestedPrice: number | null;
   suggestedCondition: string | null;
+  /** Sugerido de todas as condições (BRL); null = ainda não coletado. */
+  suggestedByCondition: SuggestionMap | null;
+  /** Âncora para a condição do lote (preenchida por `withConditionAnchor`). */
+  anchor?: PriceAnchor | null;
   have: number | null;
   want: number | null;
   // Faixa real no mercado, só vendedores do Brasil, com TOTAL (preço + frete). BRL.
@@ -167,6 +179,7 @@ export function toLotMarket(r: {
   currency: string | null;
   suggested_price: number | null;
   suggested_condition: string | null;
+  suggested_by_condition?: unknown;
   have: number | null;
   want: number | null;
   price_low_br?: number | null;
@@ -183,6 +196,7 @@ export function toLotMarket(r: {
     currency: r.currency,
     suggestedPrice: r.suggested_price,
     suggestedCondition: r.suggested_condition,
+    suggestedByCondition: normalizeSuggestionMap(r.suggested_by_condition),
     have: r.have,
     want: r.want,
     priceLowBr: r.price_low_br ?? null,
@@ -212,13 +226,25 @@ export function marketDeal(
 ): "barato" | "justo" | "caro" | "indefinido" {
   if (!m || !m.matched) return "indefinido";
   const p = parsePrice(price);
-  // Âncora: menor total (preço + frete) de vendedor BR quando houver; senão o menor do
-  // Discogs (stats) e, por fim, o sugerido.
-  const ref = m.priceLowBr ?? m.lowestPrice ?? m.suggestedPrice;
+  // Âncora, da mais para a menos confiável: sugerido da CONDIÇÃO do lote; menor total (preço +
+  // frete) de vendedor BR; sugerido padrão (VG+); e só por último o menor global, que é o
+  // anúncio mais barato do mundo em qualquer condição (ou, em disco raro, um lacrado caro).
+  const ref = m.anchor?.price ?? m.priceLowBr ?? m.suggestedPrice ?? m.lowestPrice;
   if (p === null || ref === null || ref <= 0) return "indefinido";
   if (p <= ref * 0.7) return "barato";
   if (p >= ref * 1.15) return "caro";
   return "justo";
+}
+
+/** Anexa ao mercado a âncora de preço da condição (mídia) do lote; sem condição, usa VG+. */
+export function withConditionAnchor(
+  m: LotMarket | undefined,
+  media: Grade | string | null | undefined,
+): LotMarket | undefined {
+  if (!m) return m;
+  const grade = media ? normalizeGrade(media) : null;
+  const anchor = anchorForCondition(m.suggestedByCondition, gradeToCondKey(grade));
+  return anchor ? { ...m, anchor } : m;
 }
 
 /** URL pública do release no Discogs (para tornar a âncora de mercado clicável em todo lugar). */

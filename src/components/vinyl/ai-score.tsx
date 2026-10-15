@@ -66,7 +66,15 @@ function MarketBlock({ market, price }: { market: LotMarket; price?: string }) {
             </dd>
           </>
         ) : null}
-        {market.suggestedPrice !== null ? (
+        {market.anchor ? (
+          <>
+            <dt>Sugerido ({market.anchor.condition}):</dt>
+            <dd className="font-medium text-foreground">
+              {fmtMoney(market.anchor.price, "BRL")}
+              {market.anchor.exact ? " · condição do lote" : " · estado do lote desconhecido"}
+            </dd>
+          </>
+        ) : market.suggestedPrice !== null ? (
           <>
             <dt>Sugerido:</dt>
             <dd className="font-medium text-foreground">

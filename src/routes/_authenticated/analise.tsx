@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -44,6 +44,7 @@ import {
   RARITY_LEGEND,
   rowStatusTone,
   toLotMarket,
+  withConditionAnchor,
   type LotAi,
   type LotMarket,
 } from "@/components/vinyl/ai-score-utils";
@@ -55,6 +56,7 @@ import {
   importWantlist,
   updateWantlistItem,
 } from "@/lib/wantlist.functions";
+import { getLotCondition } from "@/lib/leiloesbr.functions";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
 import { bidIsWinning, formatDayLabel, normalizeForMatch, type VinylLot } from "@/lib/vinyl-parse";
@@ -493,7 +495,22 @@ function AnalisePage() {
     if (!base) return undefined;
     return { ...base, matchesInterests: matchesInterest(lot.title) };
   };
-  const marketFor = (lot: VinylLot): LotMarket | undefined => marketById.get(lot.id);
+  // Estado do disco por lote (mesma chave da home → compartilha o cache): a âncora de mercado
+  // usa o preço sugerido do Discogs para a condição dele.
+  const fetchCondition = useServerFn(getLotCondition);
+  const lotConditionQuery = useQuery({
+    queryKey: ["lot-condition"] as const,
+    queryFn: () => fetchCondition(),
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const mediaById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of lotConditionQuery.data ?? []) if (r.media) map.set(r.id, r.media);
+    return map;
+  }, [lotConditionQuery.data]);
+  const marketFor = (lot: VinylLot): LotMarket | undefined =>
+    withConditionAnchor(marketById.get(lot.id), mediaById.get(lot.id));
 
   // Estado por lote (vigia/lance) e o valor "Atual" corrigido para quem está vencendo.
   const isWatched = (lot: VinylLot) => watchedIds.has(lot.idPeca);

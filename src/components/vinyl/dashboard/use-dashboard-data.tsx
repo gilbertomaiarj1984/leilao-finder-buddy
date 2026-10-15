@@ -16,6 +16,7 @@ import {
   buildInterestMatcher,
   parseAiAlbum,
   toLotMarket,
+  withConditionAnchor,
   type LotAi,
   type LotMarket,
 } from "@/components/vinyl/ai-score-utils";
@@ -580,7 +581,9 @@ export function useDashboardData() {
     if (!base) return undefined;
     return { ...base, matchesInterests: matchesInterest(lot.title ?? "") };
   };
-  const marketFor = (lot: { id: string }): LotMarket | undefined => marketById.get(lot.id);
+  // Mercado com a âncora de preço da CONDIÇÃO do lote (sugerido do Discogs para o estado dele).
+  const marketFor = (lot: { id: string }): LotMarket | undefined =>
+    withConditionAnchor(marketById.get(lot.id), conditionById.get(lot.id)?.media);
   // Estado de conservação (Disco/Capa). Prioriza o CACHE do servidor (`lot_condition`,
   // alimentado pelo descritivo do catálogo — mais rico); cai no parse do TÍTULO quando não
   // há linha no cache ainda (ou ela ficou indefinida).

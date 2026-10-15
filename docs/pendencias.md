@@ -77,3 +77,19 @@ valer a pena.
   (`refresh.yml`), então o aviso de lance superado chega com atraso de horas. Para ser quase
   imediato precisaria de um agendador mais frequente só para `step=bidnotify` (cuidar da sessão
   única por origem no LeilõesBR).
+
+## Discogs — frete e faixa BR (levantado em 15/10/2026)
+
+- **Faixa BR com frete está morta:** a página de venda do Discogs devolve 403/Cloudflare ao servidor
+  (testado do VPS com o release 555878). Caminhos a avaliar: ler o **inventário por vendedor** pela
+  API (mapear vendedores brasileiros; não confirmado se traz o frete), `GET /marketplace/listings/{id}`
+  (preço, frete e origem de um anúncio, mas exige o id), ou um serviço de scraping pago. Enquanto
+  isso o veredicto usa o sugerido por condição (v0.141.0).
+- **Cotação USD→BRL** derivada da própria API (razão `stats?curr_abbr=BRL` ÷ `curr_abbr=USD`):
+  hoje tudo é BRL, então ainda não é preciso; guardar a taxa se algum preço em outra moeda entrar.
+- **Sugerido vs. estado da capa:** a âncora usa só a condição da mídia; capa muito pior que o disco
+  poderia descontar. Só vale com dado real de calibração (painel de IA planejado).
+- **Painel de gestão da IA:** prévia navegável aprovada em linhas gerais (blocos de contexto
+  arrastáveis, calibração, ordem do cron). Implementação depende da ordem de fases decidida com o
+  usuário; mover `aieval` para depois de `aiident`/`market`/`condition`/`sales` no `refresh.yml` é
+  pré-requisito para a IA enxergar esses dados.
