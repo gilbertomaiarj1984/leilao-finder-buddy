@@ -1,4 +1,4 @@
-import { formatCoveredLot } from "@/components/vinyl/ai-score-utils";
+import { formatCoveredLot } from "@/lib/lot-score";
 import { newlyCoveredBids } from "@/lib/bid-transitions";
 import { db } from "@/lib/db-client.server";
 import { listMyBidsFromSite } from "@/lib/leiloesbr-bids.server";

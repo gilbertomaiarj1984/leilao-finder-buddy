@@ -1,4 +1,4 @@
-import { marketDeal, toLotMarket, withConditionAnchor } from "@/components/vinyl/ai-score-utils";
+import { marketDeal, toLotMarket, withConditionAnchor } from "@/lib/lot-score";
 import { getAiPanelConfig, getAnalyticsAliases } from "@/lib/app-state.server";
 import type { AnalyticsAliases, SaleRow } from "@/lib/analytics";
 import { shiftDayKey } from "@/lib/day-bar";

@@ -1,4 +1,4 @@
-import { parseAiAlbum } from "@/components/vinyl/ai-score-utils";
+import { parseAiAlbum } from "@/lib/lot-score";
 import { titleCase } from "@/lib/vinyl-parse";
 
 import { aiConfigured, identLotsSyncRows, resolveAiProvider } from "./ai-eval.server";

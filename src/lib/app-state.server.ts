@@ -720,6 +720,7 @@ export async function setAiProvider(provider: AiProvider): Promise<{ savedAt: st
  * v0.69.0, mais barato ainda, mas desliga em 16/out/2026) e `gemini-flash-latest` (padrão
  * histórico desde o v0.27.0). Precedência: `app_state` → env `GEMINI_MODEL` → padrão de fábrica.
  */
+// DUP(modelos): lista/padrão dos modelos Gemini repetidos em 4 arquivos — centralizar em `ai-models.ts`.
 const GEMINI_MODELS = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"] as const;
 const ANTHROPIC_MODELS = ["claude-haiku-5-5"] as const;
 type AnthropicModel = (typeof ANTHROPIC_MODELS)[number];

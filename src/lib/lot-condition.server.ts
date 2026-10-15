@@ -132,9 +132,12 @@ function conditionRow(
   };
 }
 
-// Teto de lotes por rodada que passam pelo fallback de IA (quando o regex fica indefinido
-// mas há texto) — mantém a rodada rápida/barata mesmo com muitos lotes sem sigla no catálogo.
-const AI_CONDITION_CAP = 25;
+// Teto de lotes por rodada que passam pelo fallback de IA (quando o regex fica indefinido mas há
+// texto). O teto existe pelo TEMPO da rodada (chamadas síncronas, 4 em paralelo: 40 lotes levam
+// cerca de 30s), não pelo custo (centavos). Quem passa do teto NÃO é gravado: volta na chamada
+// seguinte, e a ordem é a do leilão mais próximo (ver `urgency` abaixo), então o que fecha primeiro
+// é lido primeiro.
+const AI_CONDITION_CAP = 40;
 
 /**
  * Enriquece o estado (Disco/Capa) dos lotes da janela buscando o **catálogo** de cada leilão
@@ -178,7 +181,18 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
     byAuction.set(key, entry);
   }
 
-  const all = [...byAuction.values()].sort((a, b) => a.idLeilao.localeCompare(b.idLeilao));
+  // Urgência: dia + hora do lote. Leilões que fecham antes são lidos primeiro (e, no teto da IA, os
+  // lotes mais próximos primeiro).
+  const urgency = new Map(snapshot.lots.map((l) => [l.id, `${l.dayKey} ${l.time ?? ""}`]));
+  const soonest = (lots: { id: string }[]): string =>
+    lots.reduce(
+      (min, l) => ((urgency.get(l.id) ?? "9") < min ? (urgency.get(l.id) ?? "9") : min),
+      "9",
+    );
+  const all = [...byAuction.values()].sort(
+    (a, b) =>
+      soonest(a.lots).localeCompare(soonest(b.lots)) || a.idLeilao.localeCompare(b.idLeilao),
+  );
   const total = all.length;
   const batch = all.slice(0, maxAuctions);
 
@@ -209,6 +223,7 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
     const withText = rows.filter(
       (r) => r.source === "indefinido" && (textByLotId.get(r.id) ?? "").trim(),
     );
+    withText.sort((a, b) => (urgency.get(a.id) ?? "9").localeCompare(urgency.get(b.id) ?? "9"));
     const candidates = withText
       .slice(0, AI_CONDITION_CAP)
       .map((r) => ({ id: r.id, text: textByLotId.get(r.id)! }));

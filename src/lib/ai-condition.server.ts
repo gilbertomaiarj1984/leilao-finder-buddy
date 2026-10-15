@@ -9,6 +9,7 @@ import {
   type SyncOutcome,
 } from "./ai-eval.server";
 import { GRADE_ORDER, normalizeGrade, type Grade, type InsertState } from "./grading";
+import { extractJsonObject } from "./json-extract";
 
 const CONDITION_SYSTEM_PROMPT =
   "Você extrai o estado de conservação de um disco de vinil (Disco/mídia e Capa) a partir " +
@@ -53,16 +54,8 @@ function buildConditionRequest(text: string): AiRequest {
 export function parseConditionAiObject(
   text: string,
 ): { media: Grade | null; sleeve: Grade | null; insert: InsertState } | null {
-  if (!text) return null;
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
-  let obj: Record<string, unknown>;
-  try {
-    obj = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+  const obj = extractJsonObject(text);
+  if (!obj) return null;
   const media = typeof obj["media"] === "string" ? normalizeGrade(obj["media"]) : null;
   const sleeve = typeof obj["sleeve"] === "string" ? normalizeGrade(obj["sleeve"]) : null;
   const insertRaw = typeof obj["insert"] === "string" ? obj["insert"].toLowerCase().trim() : "";
@@ -96,6 +89,7 @@ export async function conditionAiSync(
   const tracker = new ProviderTracker();
   let failed = 0;
   let firstError: string | null = null;
+  // DUP(pool): mesmo laço de workers com `cursor` em 8 lugares — extrair `runPool` ao mexer aqui (AGENTS.md, "Código repetido").
   let cursor = 0;
 
   const worker = async () => {

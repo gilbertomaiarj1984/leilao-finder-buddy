@@ -19,9 +19,15 @@ import { parsePrice, type VinylLot } from "./vinyl-parse";
 import { priceRoseSinceEval } from "./ai-reprice";
 import type { LotAiRow } from "./lot-ai.server";
 import type { LotIdentRow } from "./lot-ident.server";
-import { contextForPrompt, PROMPT_VERSION, type LotContext } from "./ai-context";
+import {
+  contextForPrompt,
+  contextSchemaSignature,
+  PROMPT_VERSION,
+  type LotContext,
+} from "./ai-context";
 import { DEFAULT_PANEL_CONFIG, type PanelConfig } from "./ai-panel-config";
 import { loadLotContexts } from "./ai-context.server";
+import { DEAL_BAND_CHEAP, DEAL_BAND_EXPENSIVE } from "./lot-score";
 import {
   runText,
   resolveAnthropicModel,
@@ -32,6 +38,7 @@ import {
   type AiProvider,
   type AiRequest,
 } from "./ai-provider.server";
+import { extractJsonObject } from "./json-extract";
 
 /** Teto de lotes avaliados por rodada de cron (evita batches gigantes). */
 const MAX_PER_ROUND = 800;
@@ -61,7 +68,7 @@ export function titleHash(title: string): string {
 // uma vez, depois que as duas constantes existem (ver `PROMPT_FINGERPRINT` abaixo de `SYSTEM_PROMPT`).
 let promptFingerprint: string | null = null;
 function promptFp(): string {
-  promptFingerprint ??= titleHash(SYSTEM_PROMPT + USER_INSTRUCTIONS);
+  promptFingerprint ??= titleHash(SYSTEM_PROMPT + USER_INSTRUCTIONS + contextSchemaSignature());
   return promptFingerprint;
 }
 
@@ -119,6 +126,9 @@ function usableImage(url: string | null): string | null {
   return url && /^https?:\/\//i.test(url) ? url : null;
 }
 
+// Faixas do veredicto no formato do texto ("0,7", "1,15").
+const brBand = (n: number): string => String(n).replace(".", ",");
+
 const SYSTEM_PROMPT =
   "Você avalia discos de vinil (LPs, compactos, bolachões) que vão a leilão no Brasil, " +
   "para um colecionador brasileiro. Todos os preços são em reais (R$). Quando houver imagem " +
@@ -130,7 +140,7 @@ const SYSTEM_PROMPT =
   'do Discogs, em reais, para a condição do disco ("estado_do_lote_conhecido" falso quer ' +
   'dizer que o estado não foi informado e a referência é G+); "lote_mais_frete_brl" é o valor ' +
   "do lote somado ao frete da casa. Compare-o com o preço sugerido: " +
-  '"razao_lote_vs_sugerido" até 0,7 é barato, de 0,7 a 1,15 é justo e acima de 1,15 é caro. ' +
+  `"razao_lote_vs_sugerido" até ${brBand(DEAL_BAND_CHEAP)} é barato, de ${brBand(DEAL_BAND_CHEAP)} a ${brBand(DEAL_BAND_EXPENSIVE)} é justo e acima de ${brBand(DEAL_BAND_EXPENSIVE)} é caro. ` +
   '"querem" maior que "tem" indica disco procurado. Sem contexto, estime pelo seu ' +
   "conhecimento de música e discografia. Seja realista: a grande maioria dos discos é comum e " +
   "de baixo valor. Responda SOMENTE com um objeto JSON, sem nenhum texto fora do JSON.";
@@ -196,16 +206,8 @@ function buildLotParams(lot: EvalLot, model: string, ctx?: LotContext | null, cf
 export function parseEvalObject(
   text: string,
 ): Omit<LotAiRow, "id" | "title_hash" | "model" | "eval_price"> | null {
-  if (!text) return null;
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
-  let obj: Record<string, unknown>;
-  try {
-    obj = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+  const obj = extractJsonObject(text);
+  if (!obj) return null;
   const scoreRaw = typeof obj["score"] === "number" ? obj["score"] : Number(obj["score"] ?? NaN);
   const score = Number.isFinite(scoreRaw) ? Math.max(0, Math.min(100, Math.round(scoreRaw))) : null;
   const rarity =
@@ -372,16 +374,8 @@ function buildIdentParams(lot: EvalLot, withImage: boolean, model: string) {
 export function parseIdentObject(
   text: string,
 ): { album: string | null; year: number | null; confidence: string | null } | null {
-  if (!text) return null;
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
-  let obj: Record<string, unknown>;
-  try {
-    obj = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+  const obj = extractJsonObject(text);
+  if (!obj) return null;
   const album =
     typeof obj["album"] === "string" && obj["album"].trim()
       ? obj["album"].trim().slice(0, 200)
@@ -552,6 +546,7 @@ export async function evalLotsSync(
   const tracker = new ProviderTracker();
   let failed = 0;
   let firstError: string | null = null;
+  // DUP(pool): mesmo laço de workers com `cursor` em 8 lugares — extrair `runPool` ao mexer aqui (AGENTS.md, "Código repetido").
   let cursor = 0;
 
   const worker = async () => {
@@ -633,6 +628,7 @@ export async function identLotsSync(
   if (!lots.length) return [];
   const geminiModel = await resolveGeminiModel();
   const rows: IdentResult[] = [];
+  // DUP(pool): mesmo laço de workers com `cursor` em 8 lugares — extrair `runPool` ao mexer aqui (AGENTS.md, "Código repetido").
   let cursor = 0;
 
   const worker = async () => {
@@ -675,6 +671,7 @@ export async function identLotsSyncRows(
   const source: "title" | "image" = withImage ? "image" : "title";
   let failed = 0;
   let firstError: string | null = null;
+  // DUP(pool): mesmo laço de workers com `cursor` em 8 lugares — extrair `runPool` ao mexer aqui (AGENTS.md, "Código repetido").
   let cursor = 0;
 
   const worker = async () => {
@@ -751,6 +748,7 @@ export async function resolveGeminiModel(): Promise<string> {
     return await getGeminiModel();
   } catch (error) {
     console.error("[ai-eval] não foi possível ler o modelo do Gemini (usando padrão)", error);
+    // DUP(modelos): lista/padrão dos modelos Gemini repetidos em 4 arquivos — centralizar em `ai-models.ts`.
     return "gemini-3.1-flash-lite";
   }
 }

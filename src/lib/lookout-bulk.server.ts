@@ -3,6 +3,7 @@ import { titleCase } from "@/lib/vinyl-parse";
 import { aiConfigured, resolveAiProvider, resolveGeminiModel } from "./ai-eval.server";
 import { runText } from "./ai-provider.server";
 import { addLookoutManual, updateLookoutItem, type LookoutRow } from "./lookout.server";
+import { extractJsonObject } from "./json-extract";
 
 /**
  * "De olho" por texto (lista colada/digitada): a IA (SÓ TEXTO) resolve UMA linha em
@@ -44,16 +45,7 @@ export async function addLookoutFromText(
     provider,
     geminiModel,
   );
-  const start = r.text.indexOf("{");
-  const end = r.text.lastIndexOf("}");
-  let obj: Record<string, unknown> | null = null;
-  if (start >= 0 && end > start) {
-    try {
-      obj = JSON.parse(r.text.slice(start, end + 1)) as Record<string, unknown>;
-    } catch {
-      obj = null;
-    }
-  }
+  const obj = extractJsonObject(r.text);
   const s = (v: unknown) => (typeof v === "string" ? v.trim().slice(0, 200) : "");
   const artist = s(obj?.["artist"]);
   const album = s(obj?.["album"]);

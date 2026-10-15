@@ -1,0 +1,273 @@
+import type { PanelConfig } from "@/lib/ai-panel-config";
+import { auctionFreight } from "@/lib/auction-freight";
+import {
+  anchorForCondition,
+  gradeToCondKey,
+  normalizeSuggestionMap,
+  type PriceAnchor,
+  type SuggestionMap,
+} from "@/lib/discogs-price";
+import { normalizeGrade, type Grade } from "@/lib/grading";
+import type { Track } from "@/lib/tracklist";
+import { normalizeForMatch, parsePrice, titleCase } from "@/lib/vinyl-parse";
+
+/**
+ * Quebra o `album` da IA ("Artista - Álbum (1970)") em {artist, album, year}. Versão
+ * client-safe (espelha `parseAlbum`/`extractYear` de `discogs.server.ts`, que não pode
+ * ser importado no cliente): separa no 1º travessão/hífen/dois-pontos/barra e extrai o
+ * ano. O modelo às vezes devolve "Artista / Álbum" em vez do " - " pedido, então " / "
+ * (com espaços) também conta como separador — sem isso o artista caía no heurístico do
+ * título ("LP: Artista: X"), que rendia o literal "Artista" e agrupava tudo errado.
+ * Sem separador, `artist` fica null e tudo vira `album`.
+ */
+export function parseAiAlbum(album: string | null | undefined): {
+  artist: string | null;
+  album: string | null;
+  year: number | null;
+} {
+  const raw = (album ?? "").trim();
+  if (!raw) return { artist: null, album: null, year: null };
+  const yearMatch = raw.match(/\b(19|20)\d{2}\b/);
+  const year = yearMatch ? Number(yearMatch[0]) : null;
+  let s = raw
+    .replace(/\((?:\s*\d{4}\s*)\)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const parts = s.split(/\s[-–—:/]\s/);
+  if (parts.length >= 2 && parts[0]!.trim()) {
+    const artist = parts[0]!.trim();
+    const rest = parts.slice(1).join(" - ").trim();
+    return { artist: artist || null, album: rest || null, year };
+  }
+  s = s
+    .replace(/\b(19|20)\d{2}\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { artist: null, album: s || null, year };
+}
+
+/**
+ * Formato PADRÃO de exibição do artista/álbum sugerido pela IA: `Artista — Álbum (Ano)`.
+ * Aplica `titleCase` no artista; usa `fallbackYear` (ex.: `market.year`) quando o texto
+ * da IA não traz o ano. Sem artista, mostra só o álbum; string vazia quando não há nada.
+ */
+export function formatAiAlbum(
+  album: string | null | undefined,
+  fallbackYear?: number | null,
+): string {
+  const parsed = parseAiAlbum(album);
+  if (!parsed.artist && !parsed.album) return (album ?? "").trim();
+  const year = parsed.year ?? fallbackYear ?? null;
+  const artist = parsed.artist ? titleCase(parsed.artist) : null;
+  const core = artist
+    ? parsed.album
+      ? `${artist} — ${parsed.album}`
+      : artist
+    : (parsed.album ?? "");
+  return year ? `${core} (${year})` : core;
+}
+
+/**
+ * Linha curta do aviso de lance superado: `Lote 12 — Artista — Álbum` (sem ano). `albumRaw` é o
+ * álbum resolvido pela IA ("Artista - Álbum (1970)"); sem ele, cai no título cru do lance.
+ */
+export function formatCoveredLot(
+  lot: { lote: string; title: string },
+  albumRaw: string | null | undefined,
+): string {
+  const parsed = parseAiAlbum(albumRaw);
+  const artist = parsed.artist ? titleCase(parsed.artist) : null;
+  const what =
+    artist && parsed.album
+      ? `${artist} — ${parsed.album}`
+      : (artist ?? parsed.album ?? lot.title.trim());
+  const lote = lot.lote.trim();
+  return lote ? `Lote ${lote} — ${what}` : what;
+}
+
+/** Avaliação da IA consumida pela UI (o que compõe a nota do lote). */
+export type LotAi = {
+  score: number | null;
+  rarity: string | null;
+  deal: string | null;
+  album: string | null;
+  reason: string | null;
+  tags: string[];
+  /** Preço (R$) do lote quando a nota foi dada (`lot_ai.eval_price`) — ver `ai-reprice.ts`. */
+  evalPrice?: number | null;
+  /** Tracklist com a fama de cada faixa (`lot_ai.tracklist`); null/ausente = não informada. */
+  tracklist?: Track[] | null;
+  matchesInterests?: boolean;
+};
+
+const RARITY_LABEL: Record<string, string> = {
+  comum: "Comum",
+  interessante: "Interessante",
+  raro: "Raro",
+  muito_raro: "Muito raro",
+};
+
+const DEAL_LABEL: Record<string, string> = {
+  caro: "Caro",
+  justo: "Preço justo",
+  barato: "Barato",
+  indefinido: "Preço indefinido",
+};
+
+export function rarityLabel(r: string | null): string {
+  return r ? (RARITY_LABEL[r] ?? r) : "—";
+}
+
+/**
+ * Ordem da raridade, do MENOR para o MAIOR valor. Alimenta a legenda da Análise
+ * (o usuário não sabia qual extremo é o "mais raro").
+ */
+const RARITY_ORDER = ["comum", "interessante", "raro", "muito_raro"] as const;
+export const RARITY_LEGEND: { key: string; label: string }[] = RARITY_ORDER.map((key) => ({
+  key,
+  label: RARITY_LABEL[key] ?? key,
+}));
+export function dealLabel(d: string | null): string {
+  return d ? (DEAL_LABEL[d] ?? d) : "—";
+}
+
+/** Âncora de mercado do Discogs consumida pela UI (camelCase; espelha `lot_market`). */
+export type LotMarket = {
+  matched: boolean;
+  releaseId: number | null;
+  releaseTitle: string | null;
+  year: number | null;
+  numForSale: number | null;
+  lowestPrice: number | null;
+  currency: string | null;
+  suggestedPrice: number | null;
+  suggestedCondition: string | null;
+  /** Sugerido de todas as condições (BRL); null = ainda não coletado. */
+  suggestedByCondition: SuggestionMap | null;
+  /** Âncora para a condição do lote (preenchida por `withConditionAnchor`). */
+  anchor?: PriceAnchor | null;
+  /** Frete estimado do leilão (por UF), somado ao valor do lote no veredicto. */
+  freight?: number | null;
+  have: number | null;
+  want: number | null;
+  // Faixa real no mercado, só vendedores do Brasil, com TOTAL (preço + frete). BRL.
+  priceLowBr: number | null;
+  priceHighBr: number | null;
+  numForSaleBr: number | null;
+};
+
+/** Converte a linha do banco (snake_case) para o tipo da UI (camelCase). */
+export function toLotMarket(r: {
+  matched: boolean;
+  release_id: number | null;
+  release_title: string | null;
+  year: number | null;
+  num_for_sale: number | null;
+  lowest_price: number | null;
+  currency: string | null;
+  suggested_price: number | null;
+  suggested_condition: string | null;
+  suggested_by_condition?: unknown;
+  have: number | null;
+  want: number | null;
+  price_low_br?: number | null;
+  price_high_br?: number | null;
+  num_for_sale_br?: number | null;
+}): LotMarket {
+  return {
+    matched: r.matched,
+    releaseId: r.release_id,
+    releaseTitle: r.release_title,
+    year: r.year,
+    numForSale: r.num_for_sale,
+    lowestPrice: r.lowest_price,
+    currency: r.currency,
+    suggestedPrice: r.suggested_price,
+    suggestedCondition: r.suggested_condition,
+    suggestedByCondition: normalizeSuggestionMap(r.suggested_by_condition),
+    have: r.have,
+    want: r.want,
+    priceLowBr: r.price_low_br ?? null,
+    priceHighBr: r.price_high_br ?? null,
+    numForSaleBr: r.num_for_sale_br ?? null,
+  };
+}
+
+/** Formata valor com a moeda do Discogs (BRL na maioria; cai no símbolo genérico). */
+export function fmtMoney(value: number | null, currency: string | null): string {
+  if (value === null) return "—";
+  try {
+    return value.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: currency || "BRL",
+      maximumFractionDigits: 0,
+    });
+  } catch {
+    return `${currency || "R$"} ${value.toFixed(0)}`;
+  }
+}
+
+/**
+ * Faixas do veredicto "vs. mercado": barato quando (lote + frete) ≤ 70% da âncora; caro quando
+ * ≥ 115%. O texto do prompt da IA (`ai-eval.server.ts`) usa as MESMAS constantes.
+ */
+export const DEAL_BAND_CHEAP = 0.7;
+export const DEAL_BAND_EXPENSIVE = 1.15;
+
+/** Preço do lote (BRL) vs. mercado: barato/justo/caro. "indefinido" sem base comparável. */
+export function marketDeal(
+  price: string,
+  m: LotMarket | undefined,
+): "barato" | "justo" | "caro" | "indefinido" {
+  if (!m || !m.matched) return "indefinido";
+  const hammer = parsePrice(price);
+  // Conta justa: o lote custa o valor + o frete da casa (as casas brasileiras sempre cobram).
+  const p = hammer === null ? null : hammer + (m.freight ?? 0);
+  // Âncora, da mais para a menos confiável: sugerido da CONDIÇÃO do lote; menor total (preço +
+  // frete) de vendedor BR; sugerido padrão (G+); e só por último o menor global, que é o
+  // anúncio mais barato do mundo em qualquer condição (ou, em disco raro, um lacrado caro).
+  const ref = m.anchor?.price ?? m.priceLowBr ?? m.suggestedPrice ?? m.lowestPrice;
+  if (p === null || ref === null || ref <= 0) return "indefinido";
+  if (p <= ref * DEAL_BAND_CHEAP) return "barato";
+  if (p >= ref * DEAL_BAND_EXPENSIVE) return "caro";
+  return "justo";
+}
+
+/**
+ * Anexa ao mercado o contexto do lote: a âncora de preço da condição (mídia; sem condição usa
+ * G+) e o frete estimado do leilão pela UF.
+ */
+export function withConditionAnchor(
+  m: LotMarket | undefined,
+  media: Grade | string | null | undefined,
+  uf?: string | null,
+  cfg?: Pick<PanelConfig, "defaultCond" | "freight">,
+): LotMarket | undefined {
+  if (!m) return m;
+  const grade = media ? normalizeGrade(media) : null;
+  const anchor = anchorForCondition(
+    m.suggestedByCondition,
+    gradeToCondKey(grade),
+    cfg?.defaultCond,
+  );
+  return { ...m, ...(anchor ? { anchor } : {}), freight: auctionFreight(uf, cfg?.freight) };
+}
+
+/** URL pública do release no Discogs (para tornar a âncora de mercado clicável em todo lugar). */
+export function discogsUrl(releaseId: number | null | undefined): string | null {
+  return releaseId ? `https://www.discogs.com/release/${releaseId}` : null;
+}
+
+/**
+ * Cria um teste "casa com meus interesses" a partir da lista do usuário. Determinístico e
+ * barato (não gasta a IA): normaliza (sem acento/pontuação) e casa por substring. Ignora
+ * termos muito curtos para evitar falsos positivos.
+ */
+export function buildInterestMatcher(interests: string[]): (text: string) => boolean {
+  const terms = interests.map(normalizeForMatch).filter((s) => s.length >= 3);
+  if (!terms.length) return () => false;
+  return (text: string) => {
+    const t = normalizeForMatch(text);
+    return terms.some((term) => t.includes(term));
+  };
+}

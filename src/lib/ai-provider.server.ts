@@ -56,6 +56,7 @@ const ANTHROPIC_DEFAULT_MODEL = "claude-haiku-5-5";
  * no v0.69.3). Espelha `DEFAULT_GEMINI_MODEL` de `ai-provider.ts` (client-safe, mesma lição
  * do v0.24.x: este arquivo não importa de lá).
  */
+// DUP(modelos): lista/padrão dos modelos Gemini repetidos em 4 arquivos — centralizar em `ai-models.ts`.
 const GEMINI_DEFAULT_MODEL = "gemini-3.1-flash-lite";
 /**
  * Modelo efetivo do provedor. Pro Gemini, `geminiModel` (a escolha do usuário, persistida em

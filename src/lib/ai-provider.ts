@@ -40,6 +40,7 @@ export function isAiProvider(value: unknown): value is AiProvider {
  * (o mais caro, ~$0,75/$3,75). `gemini-3.5-flash-lite` (lançado em jul/2026, ~$0,30/$2,50) foi
  * adicionado a partir de fontes públicas — se a API devolver 400, volte pro 3.1 na caixa de IA.
  */
+// DUP(modelos): lista/padrão dos modelos Gemini repetidos em 4 arquivos — centralizar em `ai-models.ts`.
 export type GeminiModel = "gemini-3.1-flash-lite" | "gemini-3.5-flash-lite";
 
 const GEMINI_MODELS: readonly GeminiModel[] = [

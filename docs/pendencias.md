@@ -164,3 +164,9 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
 > Atualização (v0.144.0): feitos — «Meus lances» com nota/mercado/estado, De olho com veredicto de mercado, «Oportunidade»
 > de mercado no lugar da gravada pela IA, blocos «em breve» no painel. Lista completa de pendências e dos testes
 > manuais: `docs/checklist-ia.md`.
+
+## Código repetido (marcado com `// DUP(...)`; regra no AGENTS.md)
+
+Achar: `grep -rn "DUP(" src`. Pendentes: `DUP(pool)` — laço de workers com `cursor` em 8 lugares
+(extrair `runPool`); `DUP(modelos)` — lista/padrão dos modelos Gemini em 4 arquivos (`ai-models.ts`).
+Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score.ts`.

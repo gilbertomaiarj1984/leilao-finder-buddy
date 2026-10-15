@@ -185,3 +185,14 @@ describe("seleção por hash", () => {
     expect(selectLotsToEvaluate(lots.slice(0, 1), rows).map((l) => l.id)).toEqual(["1"]);
   });
 });
+
+describe("assinatura da estrutura do contexto", () => {
+  test("lista blocos e campos na ordem do painel (mudou um campo → muda a impressão do prompt)", async () => {
+    const { contextSchemaSignature } = await import("../src/lib/ai-context");
+    const sig = contextSchemaSignature();
+    expect(sig.startsWith("estado:disco,capa,encarte,nota_estado|mercado:preco_sugerido")).toBe(
+      true,
+    );
+    expect(sig).toContain("|frete:frete_estimado_brl,lote_mais_frete_brl");
+  });
+});

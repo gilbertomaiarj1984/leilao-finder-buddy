@@ -1,4 +1,4 @@
-import { dealLabel, rarityLabel } from "@/components/vinyl/ai-score-utils";
+import { dealLabel, rarityLabel } from "@/lib/lot-score";
 
 /**
  * Conteúdo (assunto/texto/HTML) dos e-mails do app. Funções puras: quem monta os dados e envia

@@ -145,6 +145,7 @@ export async function runTracklistBackfill(max = 20): Promise<{
   }
   const albums = [...releaseOf.keys()];
   let failed = 0;
+  // DUP(pool): mesmo laço de workers com `cursor` em 8 lugares — extrair `runPool` ao mexer aqui (AGENTS.md, "Código repetido").
   let cursor = 0;
   const worker = async () => {
     for (;;) {
@@ -218,6 +219,7 @@ export async function runFameBackfill(max = 20): Promise<{
   const byAlbum = new Map<string, Track[] | null>();
   const albums = [...new Set(batch.map((r) => r.album))];
   let failed = 0;
+  // DUP(pool): mesmo laço de workers com `cursor` em 8 lugares — extrair `runPool` ao mexer aqui (AGENTS.md, "Código repetido").
   let cursor = 0;
   const worker = async () => {
     for (;;) {

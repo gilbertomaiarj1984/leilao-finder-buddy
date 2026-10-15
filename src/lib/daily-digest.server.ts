@@ -1,9 +1,4 @@
-import {
-  formatAiAlbum,
-  marketDeal,
-  toLotMarket,
-  withConditionAnchor,
-} from "@/components/vinyl/ai-score-utils";
+import { formatAiAlbum, marketDeal, toLotMarket, withConditionAnchor } from "@/lib/lot-score";
 import { db } from "@/lib/db-client.server";
 import { buildDigestEmail, type DigestEntry } from "@/lib/email-templates.server";
 import { emailEnabled, sendEmail } from "@/lib/email.server";

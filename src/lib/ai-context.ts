@@ -7,7 +7,13 @@
  * pelo próprio conhecimento, como antes).
  */
 import { auctionFreight } from "./auction-freight";
-import { DEFAULT_PANEL_CONFIG, fieldOn, type PanelConfig } from "./ai-panel-config";
+import {
+  CONTEXT_BLOCK_IDS,
+  CONTEXT_FIELDS,
+  DEFAULT_PANEL_CONFIG,
+  fieldOn,
+  type PanelConfig,
+} from "./ai-panel-config";
 import {
   anchorForCondition,
   gradeToCondKey,
@@ -22,6 +28,18 @@ import { normalizeGrade, scoreCondition } from "./grading";
  * contexto? Suba aqui.
  */
 export const PROMPT_VERSION = 3;
+
+/**
+ * Descrição textual da ESTRUTURA do contexto (blocos e campos que o prompt pode levar). Entra no hash
+ * da avaliação: acrescentar, renomear ou remover um bloco/campo em `ai-panel-config.ts` muda este
+ * texto e reavalia a base sozinho. O que NÃO é coberto (e por isso ainda pede subir `PROMPT_VERSION`):
+ * mudança na LÓGICA que calcula um valor (ex.: outra âncora, outro arredondamento) sem mudar nomes.
+ */
+export function contextSchemaSignature(): string {
+  return CONTEXT_BLOCK_IDS.map((b) => `${b}:${CONTEXT_FIELDS[b].map((f) => f.key).join(",")}`).join(
+    "|",
+  );
+}
 
 export type LotContext = {
   estado: {
