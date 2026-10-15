@@ -1,6 +1,7 @@
 import { db } from "@/lib/db-client.server";
 
 import type { CatalogLot } from "./leiloesbr-catalog.server";
+import { effectiveTextRules, type TextRule } from "./condition-text";
 import { parseConditionFromText, scoreCondition } from "./grading";
 import type { VinylLot } from "./vinyl-parse";
 
@@ -91,10 +92,14 @@ async function upsertLotCondition(rows: LotConditionRow[]): Promise<number> {
 }
 
 /** Monta a linha de estado de um lote a partir do lote do catálogo (com fallback ao título). */
-function conditionRow(lot: VinylLot, catalog?: CatalogLot): LotConditionRow {
-  const fromCatalog = parseConditionFromText(catalog?.text ?? "");
+function conditionRow(
+  lot: VinylLot,
+  catalog?: CatalogLot,
+  textRules?: readonly TextRule[],
+): LotConditionRow {
+  const fromCatalog = parseConditionFromText(catalog?.text ?? "", textRules);
   const hasCatalog = Boolean(fromCatalog.media || fromCatalog.sleeve || fromCatalog.insert);
-  const cond = hasCatalog ? fromCatalog : parseConditionFromText(lot.title);
+  const cond = hasCatalog ? fromCatalog : parseConditionFromText(lot.title, textRules);
   const source = hasCatalog
     ? "catalog"
     : cond.media || cond.sleeve || cond.insert
@@ -141,6 +146,10 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
 
   const [snapshot, existing] = await Promise.all([scrapeVinylLots(false), getAllLotCondition()]);
   const known = new Map(existing.map((r) => [r.id, r.title_hash]));
+  // Regras de texto do painel de IA (expressões do usuário + regras do app não desligadas).
+  const { getAiPanelConfig } = await import("./app-state.server");
+  const panel = await getAiPanelConfig();
+  const textRules = effectiveTextRules(panel.rules, panel.disabledRules);
 
   // Lotes que ainda precisam de estado, agrupados por leilão (domínio + idLeilao).
   const byAuction = new Map<string, { domain: string; idLeilao: string; lots: VinylLot[] }>();
@@ -173,7 +182,7 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
     }
     for (const lot of auction.lots) {
       const catalogLot = catalog.get(lot.idPeca);
-      rows.push(conditionRow(lot, catalogLot));
+      rows.push(conditionRow(lot, catalogLot, textRules));
       textByLotId.set(lot.id, catalogLot?.text || lot.title || "");
     }
   }

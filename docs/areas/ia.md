@@ -114,6 +114,21 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   `condition`, `sales` e `reident` (`refresh.yml`) — senão a primeira avaliação sairia sem contexto.
   Ainda fora do prompt: vendas passadas (exige casar `lot_sales` ao álbum identificado), perfil do
   colecionador, tracklist e correções (ver `docs/pendencias.md`).
+- **Painel de IA — `/ia-painel` (v0.143.0):** configuração em `app_state.ai_panel` (`PanelConfig`,
+  `ai-panel-config.ts`; `getAiPanelConfig` com cache de 30s, `setAiPanelConfig` normaliza tudo).
+  Abas: **Blocos de contexto** (ordem/campos do bloco `contexto`; `contextForPrompt(ctx, preço,
+  cfg)` respeita `blocks` e `hiddenFields`), **Correlação de condições** (`rules` do usuário —
+  frase com `*` — somam às `TEXT_RULES` do app, que podem ser desligadas em `disabledRules`; ver
+  `docs/areas/grading-e-estado.md`), **Frete e padrões** (`freight`, `defaultCond`) e **Modelo e
+  modo** (`AiModeSelect` = `app_state.ai_mode`, `AiModelSelect` = provedor+modelo; gravam na hora,
+  fora do botão Salvar). Onde a configuração vale: contexto do prompt (`loadLotContexts`), passo
+  `condition`, `captureFinishedSales` (estado das vendas), fallback de estado no cliente, `marketFor`
+  (home, Análise, diálogo do De olho) e o resumo diário (`dealFor` recalcula o "vs. mercado").
+  **Mudar a configuração não reavalia a base**: o hash só leva `PROMPT_VERSION`. Para refazer as
+  notas com a configuração nova, suba `PROMPT_VERSION` (`ai-context.ts`). Nota gravada com o contexto
+  indisponível leva `x` no hash (`evalHash(title, false)`) e volta para a fila.
+  ⚠️ `lot_ident.title_hash` é o `titleHash` PURO; só `lot_ai` usa `evalHash`. `selectLotsToEvaluate`
+  recebe a função de hash (5º parâmetro) justamente para a identificação não usar a da avaliação.
 - **Identificação simples — `lot_ident`** (isolada da avaliação, **sem gate de modo**): passada
   **barata** que preenche só artista/álbum/ano em **toda a base**. Tabela `lot_ident` (`id`,
   `title_hash`, `album`, `year`, `confidence`, `source`, `model`). `buildIdentUserPrompt`/

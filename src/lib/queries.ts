@@ -6,6 +6,7 @@ import { useQueries, useQuery, type QueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef } from "react";
 
+import { getAiPanel } from "@/lib/ai-panel.functions";
 import { getHouseRatings } from "@/lib/house-rating.functions";
 import { EMPTY_RATINGS, type RatingsPayload } from "@/lib/house-rating";
 
@@ -57,6 +58,8 @@ export const queryKeys = {
   aiProvider: ["ai-provider"],
   geminiModel: ["gemini-model"],
   anthropicModel: ["anthropic-model"],
+  aiPanel: ["ai-panel"],
+  aiMode: ["ai-mode"],
   collection: ["collection"],
   collectionLinks: ["collection-links"],
   collectionFeedback: ["collection-feedback"],
@@ -372,6 +375,17 @@ export function useHouseRatingsQuery() {
         return EMPTY_RATINGS;
       }
     },
+    staleTime: HOUR,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Configuração do painel de IA (frete, condição padrão, regras de texto, blocos do prompt). */
+export function useAiPanelQuery() {
+  const fetchPanel = useServerFn(getAiPanel);
+  return useQuery({
+    queryKey: queryKeys.aiPanel,
+    queryFn: () => fetchPanel(),
     staleTime: HOUR,
     refetchOnWindowFocus: false,
   });

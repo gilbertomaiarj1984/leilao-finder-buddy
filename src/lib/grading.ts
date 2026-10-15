@@ -15,7 +15,7 @@
  *   graus (arredondada). Ver `scoreCondition`.
  */
 
-import { matchTextRules } from "./condition-text";
+import { matchTextRules, type TextRule } from "./condition-text";
 
 /** Graus canônicos, do melhor (M) ao pior (F/P). A ordem define o eixo pior→melhor do Analytics. */
 export const GRADE_ORDER = ["M", "NM", "EX", "VG+", "VG", "VG-", "G+", "G", "G-", "F/P"] as const;
@@ -246,7 +246,10 @@ function detectInsert(text: string): InsertState {
  * Nunca inventa: sem sinal → `source: 'indefinido'`. O resultado final passa por
  * `scoreCondition`, que ESPELHA o grau quando só um lado foi encontrado (ver seu doc).
  */
-export function parseConditionFromText(text: string | null | undefined): Condition {
+export function parseConditionFromText(
+  text: string | null | undefined,
+  textRules?: readonly TextRule[],
+): Condition {
   const rawTrim = (text ?? "").trim();
   if (!rawTrim) return { ...EMPTY_CONDITION };
   const folded = foldUpper(rawTrim);
@@ -263,9 +266,12 @@ export function parseConditionFromText(text: string | null | undefined): Conditi
       sleeve = overall;
     } else {
       // (3) palavra de item inteiro sem rótulo.
-      if (/\b(MINT|LACRAD[OA]|SELAD[OA]|IMPECAVEL)\b/.test(folded)) {
+      if (/(?<!NEAR\s*)\b(MINT|LACRAD[OA]|SELAD[OA]|IMPECAVEL)\b/.test(folded)) {
         media = "M";
         sleeve = "M";
+      } else if (/\bNEAR\s*MINT\b/.test(folded)) {
+        media = "NM";
+        sleeve = "NM";
       } else {
         // (4) uma única sigla forte solta (evita M/G/F/P sozinhos, ambíguos demais).
         const STRONG = /\b(VG\+\+|VG\+|VG-|M-|NM|EX|G\+|G-|F\/P)\b/g;
@@ -281,7 +287,7 @@ export function parseConditionFromText(text: string | null | undefined): Conditi
 
   // Frases brasileiras sem grau ("em ótimo estado", "estado regular") e defeitos audíveis
   // ("riscos que afetam a audição", "pula"): ver condition-text.ts.
-  const hits = matchTextRules(folded);
+  const hits = matchTextRules(folded, textRules);
   if (!media && !sleeve) {
     const set = hits.find((h) => h.rule.effect === "set");
     if (set) {

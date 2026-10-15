@@ -1,3 +1,4 @@
+import type { PanelConfig } from "@/lib/ai-panel-config";
 import { auctionFreight } from "@/lib/auction-freight";
 import {
   anchorForCondition,
@@ -249,11 +250,16 @@ export function withConditionAnchor(
   m: LotMarket | undefined,
   media: Grade | string | null | undefined,
   uf?: string | null,
+  cfg?: Pick<PanelConfig, "defaultCond" | "freight">,
 ): LotMarket | undefined {
   if (!m) return m;
   const grade = media ? normalizeGrade(media) : null;
-  const anchor = anchorForCondition(m.suggestedByCondition, gradeToCondKey(grade));
-  return { ...m, ...(anchor ? { anchor } : {}), freight: auctionFreight(uf) };
+  const anchor = anchorForCondition(
+    m.suggestedByCondition,
+    gradeToCondKey(grade),
+    cfg?.defaultCond,
+  );
+  return { ...m, ...(anchor ? { anchor } : {}), freight: auctionFreight(uf, cfg?.freight) };
 }
 
 /** URL pública do release no Discogs (para tornar a âncora de mercado clicável em todo lugar). */

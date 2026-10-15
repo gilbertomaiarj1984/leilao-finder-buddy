@@ -9,14 +9,14 @@
 import type { Grade } from "./grading";
 
 /** Condições do Discogs, da melhor para a pior. */
-const COND_KEYS = ["M", "NM", "VG+", "VG", "G+", "G", "F", "P"] as const;
+export const COND_KEYS = ["M", "NM", "VG+", "VG", "G+", "G", "F", "P"] as const;
 export type CondKey = (typeof COND_KEYS)[number];
 
 /** Preço sugerido (BRL) por condição; só as condições que o Discogs informou. */
 export type SuggestionMap = Partial<Record<CondKey, number>>;
 
 /** Condição de referência quando o estado do lote é desconhecido (decisão do usuário: G+). */
-const DEFAULT_COND: CondKey = "G+";
+export const DEFAULT_COND: CondKey = "G+";
 
 const API_NAMES: Record<string, CondKey> = {
   "Mint (M)": "M",
@@ -104,9 +104,10 @@ export type PriceAnchor = {
 export function anchorForCondition(
   map: SuggestionMap | null | undefined,
   want: CondKey | null | undefined,
+  fallback: CondKey = DEFAULT_COND,
 ): PriceAnchor | null {
   if (!map) return null;
-  const target = want ?? DEFAULT_COND;
+  const target = want ?? fallback;
   const direct = map[target];
   if (direct !== undefined) return { price: direct, condition: target, exact: want != null };
   const ti = COND_KEYS.indexOf(target);

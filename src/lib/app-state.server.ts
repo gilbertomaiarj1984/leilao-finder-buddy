@@ -941,3 +941,42 @@ export async function setPendingAiIdentBatch(batch: PendingAiIdentBatch | null):
     throw new Error(`Não foi possível gravar o batch de identificação: ${error.message}`);
   }
 }
+
+// --- Painel de IA (v0.143.0) ---------------------------------------------------------------
+const AI_PANEL_KEY = "ai_panel";
+let aiPanelCache: { at: number; cfg: import("./ai-panel-config").PanelConfig } | null = null;
+const AI_PANEL_TTL_MS = 30_000;
+
+/** Configuração do painel de IA (blocos do prompt, correlação de condições, frete). Cache de 30s. */
+export async function getAiPanelConfig(): Promise<import("./ai-panel-config").PanelConfig> {
+  const { normalizePanelConfig } = await import("./ai-panel-config");
+  if (aiPanelCache && Date.now() - aiPanelCache.at < AI_PANEL_TTL_MS) return aiPanelCache.cfg;
+  try {
+    const { data, error } = await db
+      .from("app_state")
+      .select("value")
+      .eq("key", AI_PANEL_KEY)
+      .maybeSingle();
+    if (error) throw error;
+    const cfg = normalizePanelConfig(data?.value);
+    aiPanelCache = { at: Date.now(), cfg };
+    return cfg;
+  } catch (error) {
+    console.error("[app-state] não foi possível ler o painel de IA (usando padrão)", error);
+    return normalizePanelConfig(null);
+  }
+}
+
+export async function setAiPanelConfig(
+  raw: unknown,
+): Promise<{ config: import("./ai-panel-config").PanelConfig; savedAt: string }> {
+  const { normalizePanelConfig } = await import("./ai-panel-config");
+  const config = normalizePanelConfig(raw);
+  const savedAt = new Date().toISOString();
+  const { error } = await db
+    .from("app_state")
+    .upsert({ key: AI_PANEL_KEY, value: config, updated_at: savedAt }, { onConflict: "key" });
+  if (error) throw new Error(`Não foi possível salvar o painel de IA: ${error.message}`);
+  aiPanelCache = { at: Date.now(), cfg: config };
+  return { config, savedAt };
+}

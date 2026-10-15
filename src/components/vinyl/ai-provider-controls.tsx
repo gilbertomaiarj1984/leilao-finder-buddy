@@ -6,9 +6,9 @@
  * quota. O componente cuida das queries/gravação sozinho (mesmas chaves de `queries.ts`), então
  * as telas só renderizam `<AiModelSelect />`.
  */
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Cpu } from "lucide-react";
+import { Cpu, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -20,7 +20,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { setAiProvider, setAnthropicModel, setGeminiModel } from "@/lib/ai.functions";
+import {
+  getAiMode,
+  setAiMode,
+  setAiProvider,
+  setAnthropicModel,
+  setGeminiModel,
+} from "@/lib/ai.functions";
 import {
   AI_MODEL_OPTIONS,
   AI_PROVIDER_LABELS,
@@ -98,6 +104,62 @@ export function AiModelSelect({ disabled, className }: { disabled?: boolean; cla
               ))}
             </SelectGroup>
           ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+type AiMode = "off" | "all" | "watched";
+
+const AI_MODE_TOASTS: Record<AiMode, string> = {
+  off: "IA desligada — não gasta créditos automaticamente",
+  all: "IA avaliando todos os lotes novos",
+  watched: "IA avaliando só vigiados e com lance",
+};
+
+/**
+ * Modo da avaliação AUTOMÁTICA por IA (cron): desligada, tudo ou só vigiados + lances. Controla o
+ * gasto de créditos; a análise sob demanda (botões) funciona em qualquer modo. Fonte da verdade é
+ * o servidor (`app_state.ai_mode`); a seleção é otimista.
+ */
+export function AiModeSelect({ disabled, className }: { disabled?: boolean; className?: string }) {
+  const queryClient = useQueryClient();
+  const fetchMode = useServerFn(getAiMode);
+  const runSetMode = useServerFn(setAiMode);
+  const modeQuery = useQuery({
+    queryKey: queryKeys.aiMode,
+    queryFn: () => fetchMode(),
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const mode: AiMode = modeQuery.data ?? "watched";
+
+  const onChange = (next: string) => {
+    const prev = modeQuery.data;
+    queryClient.setQueryData(queryKeys.aiMode, next); // otimista
+    void runSetMode({ data: { mode: next as AiMode } })
+      .then(() => toast.success(AI_MODE_TOASTS[next as AiMode]))
+      .catch((error: unknown) => {
+        queryClient.setQueryData(queryKeys.aiMode, prev);
+        toast.error((error as Error)?.message || "Não foi possível salvar o modo da IA");
+      });
+  };
+
+  return (
+    <div
+      className={`flex items-center gap-1.5 ${className ?? ""}`}
+      title="Modo da avaliação automática por IA (controla o gasto de créditos). A análise sob demanda, pelos botões nos dias/casas, funciona em qualquer modo."
+    >
+      <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+      <Select value={mode} onValueChange={onChange} disabled={disabled}>
+        <SelectTrigger className="h-8 w-[200px] text-xs" aria-label="Modo da IA">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="off">IA: desligada</SelectItem>
+          <SelectItem value="all">IA: tudo</SelectItem>
+          <SelectItem value="watched">IA: vigiados + lances</SelectItem>
         </SelectContent>
       </Select>
     </div>

@@ -17,6 +17,7 @@ import { Route as AuthenticatedAnaliseRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedAoVivoRouteImport } from './routes/_authenticated/ao-vivo'
 import { Route as AuthenticatedColecaoRouteImport } from './routes/_authenticated/colecao'
 import { Route as AuthenticatedComprasRouteImport } from './routes/_authenticated/compras'
+import { Route as AuthenticatedIaPainelRouteImport } from './routes/_authenticated/ia-painel'
 import { Route as AuthenticatedOlhoRouteImport } from './routes/_authenticated/olho'
 import { Route as AuthenticatedVinilAnalyticsRouteImport } from './routes/_authenticated/vinil-analytics'
 
@@ -59,6 +60,11 @@ const AuthenticatedComprasRoute = AuthenticatedComprasRouteImport.update({
   path: '/compras',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedIaPainelRoute = AuthenticatedIaPainelRouteImport.update({
+  id: '/ia-painel',
+  path: '/ia-painel',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedOlhoRoute = AuthenticatedOlhoRouteImport.update({
   id: '/olho',
   path: '/olho',
@@ -79,6 +85,7 @@ export interface FileRoutesByFullPath {
   '/ao-vivo': typeof AuthenticatedAoVivoRoute
   '/colecao': typeof AuthenticatedColecaoRoute
   '/compras': typeof AuthenticatedComprasRoute
+  '/ia-painel': typeof AuthenticatedIaPainelRoute
   '/olho': typeof AuthenticatedOlhoRoute
   '/vinil-analytics': typeof AuthenticatedVinilAnalyticsRoute
 }
@@ -89,6 +96,7 @@ export interface FileRoutesByTo {
   '/ao-vivo': typeof AuthenticatedAoVivoRoute
   '/colecao': typeof AuthenticatedColecaoRoute
   '/compras': typeof AuthenticatedComprasRoute
+  '/ia-painel': typeof AuthenticatedIaPainelRoute
   '/olho': typeof AuthenticatedOlhoRoute
   '/vinil-analytics': typeof AuthenticatedVinilAnalyticsRoute
   '/': typeof AuthenticatedIndexRoute
@@ -102,6 +110,7 @@ export interface FileRoutesById {
   '/_authenticated/ao-vivo': typeof AuthenticatedAoVivoRoute
   '/_authenticated/colecao': typeof AuthenticatedColecaoRoute
   '/_authenticated/compras': typeof AuthenticatedComprasRoute
+  '/_authenticated/ia-painel': typeof AuthenticatedIaPainelRoute
   '/_authenticated/olho': typeof AuthenticatedOlhoRoute
   '/_authenticated/vinil-analytics': typeof AuthenticatedVinilAnalyticsRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
@@ -116,6 +125,7 @@ export interface FileRouteTypes {
     | '/ao-vivo'
     | '/colecao'
     | '/compras'
+    | '/ia-painel'
     | '/olho'
     | '/vinil-analytics'
   fileRoutesByTo: FileRoutesByTo
@@ -126,6 +136,7 @@ export interface FileRouteTypes {
     | '/ao-vivo'
     | '/colecao'
     | '/compras'
+    | '/ia-painel'
     | '/olho'
     | '/vinil-analytics'
     | '/'
@@ -138,6 +149,7 @@ export interface FileRouteTypes {
     | '/_authenticated/ao-vivo'
     | '/_authenticated/colecao'
     | '/_authenticated/compras'
+    | '/_authenticated/ia-painel'
     | '/_authenticated/olho'
     | '/_authenticated/vinil-analytics'
     | '/_authenticated/'
@@ -207,6 +219,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedComprasRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/ia-painel': {
+      id: '/_authenticated/ia-painel'
+      path: '/ia-painel'
+      fullPath: '/ia-painel'
+      preLoaderRoute: typeof AuthenticatedIaPainelRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/olho': {
       id: '/_authenticated/olho'
       path: '/olho'
@@ -229,6 +248,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAoVivoRoute: typeof AuthenticatedAoVivoRoute
   AuthenticatedColecaoRoute: typeof AuthenticatedColecaoRoute
   AuthenticatedComprasRoute: typeof AuthenticatedComprasRoute
+  AuthenticatedIaPainelRoute: typeof AuthenticatedIaPainelRoute
   AuthenticatedOlhoRoute: typeof AuthenticatedOlhoRoute
   AuthenticatedVinilAnalyticsRoute: typeof AuthenticatedVinilAnalyticsRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
@@ -239,6 +259,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAoVivoRoute: AuthenticatedAoVivoRoute,
   AuthenticatedColecaoRoute: AuthenticatedColecaoRoute,
   AuthenticatedComprasRoute: AuthenticatedComprasRoute,
+  AuthenticatedIaPainelRoute: AuthenticatedIaPainelRoute,
   AuthenticatedOlhoRoute: AuthenticatedOlhoRoute,
   AuthenticatedVinilAnalyticsRoute: AuthenticatedVinilAnalyticsRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,

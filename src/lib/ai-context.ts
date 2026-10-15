@@ -7,6 +7,7 @@
  * pelo próprio conhecimento, como antes).
  */
 import { auctionFreight } from "./auction-freight";
+import { DEFAULT_PANEL_CONFIG, fieldOn, type PanelConfig } from "./ai-panel-config";
 import {
   anchorForCondition,
   gradeToCondKey,
@@ -20,7 +21,7 @@ import { normalizeGrade, scoreCondition } from "./grading";
  * número reavalia todos os lotes na rodada seguinte. Mudou o texto do prompt ou os blocos de
  * contexto? Suba aqui.
  */
-export const PROMPT_VERSION = 2;
+export const PROMPT_VERSION = 3;
 
 export type LotContext = {
   estado: {
@@ -56,11 +57,14 @@ type MarketInput = {
 } | null;
 
 /** Monta o contexto de um lote a partir das linhas de `lot_condition`, `lot_market` e da UF. */
-export function buildLotContext(input: {
-  condition?: ConditionInput;
-  market?: MarketInput;
-  uf?: string | null;
-}): LotContext {
+export function buildLotContext(
+  input: {
+    condition?: ConditionInput;
+    market?: MarketInput;
+    uf?: string | null;
+  },
+  cfg: PanelConfig = DEFAULT_PANEL_CONFIG,
+): LotContext {
   const c = input.condition;
   const mediaRaw = c?.media ? normalizeGrade(c.media) : null;
   const sleeveRaw = c?.sleeve ? normalizeGrade(c.sleeve) : null;
@@ -80,7 +84,11 @@ export function buildLotContext(input: {
   const grade = scoreCondition(mediaRaw, sleeveRaw).media;
   const m = input.market;
   const anchor = m?.matched
-    ? anchorForCondition(normalizeSuggestionMap(m.suggested_by_condition), gradeToCondKey(grade))
+    ? anchorForCondition(
+        normalizeSuggestionMap(m.suggested_by_condition),
+        gradeToCondKey(grade),
+        cfg.defaultCond,
+      )
     : null;
   const mercado =
     m && anchor
@@ -92,36 +100,54 @@ export function buildLotContext(input: {
           anuncios_a_venda: m.num_for_sale ?? null,
         }
       : null;
-  return { estado, mercado, frete: auctionFreight(input.uf) };
+  return { estado, mercado, frete: auctionFreight(input.uf, cfg.freight) };
 }
 
 /**
- * Objeto `contexto` que vai no JSON do prompt. `priceBrl` é o valor atual do lote (sem frete);
- * com ele e a âncora do Discogs entram o total com frete e a razão entre os dois, que é o número
- * que a IA precisa para dizer "barato" ou "caro" (mesmas faixas do `marketDeal` do app).
+ * Objeto `contexto` que vai no JSON do prompt, na ordem dos blocos da configuração e sem os campos
+ * desligados. `priceBrl` é o valor atual do lote (sem frete); com ele e a âncora do Discogs entram
+ * o total com frete e a razão entre os dois, o número que a IA precisa para dizer "barato" ou
+ * "caro" (mesmas faixas do `marketDeal` do app).
  */
 export function contextForPrompt(
   ctx: LotContext,
   priceBrl: number | null,
+  cfg: PanelConfig = DEFAULT_PANEL_CONFIG,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  if (ctx.estado) out["estado"] = ctx.estado;
-  out["frete_estimado_brl"] = ctx.frete;
   const total = priceBrl != null && priceBrl > 0 ? priceBrl + ctx.frete : null;
-  if (total != null) out["lote_mais_frete_brl"] = total;
-  if (ctx.mercado) {
-    const { anchor, ano, querem, tem, anuncios_a_venda } = ctx.mercado;
-    out["mercado_discogs_brl"] = {
-      preco_sugerido: Math.round(anchor.price),
-      condicao_de_referencia: anchor.condition,
-      estado_do_lote_conhecido: anchor.exact,
-      ...(ano != null ? { ano } : {}),
-      ...(querem != null ? { querem } : {}),
-      ...(tem != null ? { tem } : {}),
-      ...(anuncios_a_venda != null ? { anuncios_a_venda } : {}),
-    };
-    if (total != null)
-      out["razao_lote_vs_sugerido"] = Math.round((total / anchor.price) * 100) / 100;
+  const pick = (block: "estado" | "mercado" | "frete", all: Record<string, unknown>) =>
+    Object.fromEntries(
+      Object.entries(all).filter(([k, v]) => v !== undefined && fieldOn(cfg, block, k)),
+    );
+
+  for (const block of cfg.blocks) {
+    if (block === "estado" && ctx.estado) {
+      const o = pick("estado", { ...ctx.estado });
+      if (Object.keys(o).length) out["estado"] = o;
+    } else if (block === "mercado" && ctx.mercado) {
+      const { anchor, ano, querem, tem, anuncios_a_venda } = ctx.mercado;
+      const o = pick("mercado", {
+        preco_sugerido: Math.round(anchor.price),
+        condicao_de_referencia: anchor.condition,
+        estado_do_lote_conhecido: anchor.exact,
+        ano: ano ?? undefined,
+        querem: querem ?? undefined,
+        tem: tem ?? undefined,
+        anuncios_a_venda: anuncios_a_venda ?? undefined,
+        razao_lote_vs_sugerido:
+          total != null ? Math.round((total / anchor.price) * 100) / 100 : undefined,
+      });
+      if (Object.keys(o).length) out["mercado_discogs_brl"] = o;
+    } else if (block === "frete") {
+      Object.assign(
+        out,
+        pick("frete", {
+          frete_estimado_brl: ctx.frete,
+          lote_mais_frete_brl: total ?? undefined,
+        }),
+      );
+    }
   }
   return out;
 }

@@ -884,3 +884,12 @@ segue existindo, usado pela home ("Atualizar tudo" — desde v0.84.0 também rod
   Com o app fechado o `sw.js` soma 1 por push (contador no cache `garimpo-meta`); o app aberto
   grava o número real.
 - **Não validado num aparelho real**: conferir permissão, notificação, toque (abre `/olho`) e selo.
+
+
+## Painel de IA (`/ia-painel`, v0.143.0)
+
+Rota `routes/_authenticated/ia-painel.tsx` + `components/vinyl/ai-panel/` (`blocks-tab`, `correl-tab`,
+`freight-tab`, `model-tab`, `use-list-dnd`). Rascunho local (`edited`) e botão Salvar → `setAiPanel`;
+"Restaurar padrão" só vale depois de salvar. Arrastar e soltar nativo (HTML5), como no resto do app;
+cada reordenação também tem botões ▲▼ (touch). O rodapé da tela inicial perdeu o modo/modelo da IA
+(agora na aba "Modelo e modo"); ficou o atalho "Painel de IA" ao lado de "Atualizar tudo".

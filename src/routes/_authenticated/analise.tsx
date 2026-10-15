@@ -56,6 +56,8 @@ import {
   importWantlist,
   updateWantlistItem,
 } from "@/lib/wantlist.functions";
+import { effectiveTextRules } from "@/lib/condition-text";
+import { parseConditionFromText } from "@/lib/grading";
 import { getLotCondition } from "@/lib/leiloesbr.functions";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
@@ -71,6 +73,7 @@ import {
   useInterestsQuery,
   useLotAiQuery,
   useLotIdentQuery,
+  useAiPanelQuery,
   useLotMarketQuery,
   useLotsQuery,
   useWantlistQuery,
@@ -497,6 +500,7 @@ function AnalisePage() {
   };
   // Estado do disco por lote (mesma chave da home → compartilha o cache): a âncora de mercado
   // usa o preço sugerido do Discogs para a condição dele.
+  const aiPanelQuery = useAiPanelQuery();
   const fetchCondition = useServerFn(getLotCondition);
   const lotConditionQuery = useQuery({
     queryKey: ["lot-condition"] as const,
@@ -509,8 +513,17 @@ function AnalisePage() {
     for (const r of lotConditionQuery.data ?? []) if (r.media) map.set(r.id, r.media);
     return map;
   }, [lotConditionQuery.data]);
+  const textRules = useMemo(
+    () => effectiveTextRules(aiPanelQuery.data?.rules, aiPanelQuery.data?.disabledRules),
+    [aiPanelQuery.data],
+  );
   const marketFor = (lot: VinylLot): LotMarket | undefined =>
-    withConditionAnchor(marketById.get(lot.id), mediaById.get(lot.id), lot.uf);
+    withConditionAnchor(
+      marketById.get(lot.id),
+      mediaById.get(lot.id) ?? parseConditionFromText(lot.title, textRules).media,
+      lot.uf,
+      aiPanelQuery.data,
+    );
 
   // Estado por lote (vigia/lance) e o valor "Atual" corrigido para quem está vencendo.
   const isWatched = (lot: VinylLot) => watchedIds.has(lot.idPeca);

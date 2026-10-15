@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner";
 
 import { watchedDateToKey, type HouseStats } from "@/components/vinyl/grouping";
+import { effectiveTextRules } from "@/lib/condition-text";
 import { type Condition, type Grade, parseConditionFromText, scoreCondition } from "@/lib/grading";
 import {
   buildInterestMatcher,
@@ -25,7 +26,6 @@ import {
   getAiMode,
   repriceLotAi,
   runAiident,
-  setAiMode,
   setLotTags,
 } from "@/lib/ai.functions";
 import {
@@ -104,6 +104,7 @@ import {
   useInterestsQuery,
   useLotAiQuery,
   useLotIdentQuery,
+  useAiPanelQuery,
   useLotMarketQuery,
   useLotsQuery,
   useLotsRangeQueries,
@@ -368,7 +369,6 @@ export function useDashboardData() {
   const runSaveTags = useServerFn(setLotTags);
   const fetchLotCondition = useServerFn(getLotCondition);
   const fetchAiMode = useServerFn(getAiMode);
-  const runSetAiMode = useServerFn(setAiMode);
   const runAnalyze = useServerFn(analyzeOnDemand);
   const runApplyDecision = useServerFn(applyCollectionDecision);
   const runToggleLookout = useServerFn(toggleLookout);
@@ -432,30 +432,12 @@ export function useDashboardData() {
   const interestsQuery = useInterestsQuery();
   // Modo da IA automática (controla o gasto de créditos). Fonte da verdade é o servidor.
   const aiModeQuery = useQuery({
-    queryKey: ["ai-mode"] as const,
+    queryKey: queryKeys.aiMode,
     queryFn: () => fetchAiMode(),
     staleTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
   const aiMode: "off" | "all" | "watched" = aiModeQuery.data ?? "watched";
-  const changeAiMode = (mode: "off" | "all" | "watched") => {
-    const prev = aiModeQuery.data;
-    queryClient.setQueryData(["ai-mode"], mode); // otimista: pinta a seleção na hora
-    void runSetAiMode({ data: { mode } })
-      .then(() =>
-        toast.success(
-          mode === "off"
-            ? "IA desligada — não gasta créditos automaticamente"
-            : mode === "all"
-              ? "IA avaliando todos os lotes novos"
-              : "IA avaliando só vigiados e com lance",
-        ),
-      )
-      .catch((error: unknown) => {
-        queryClient.setQueryData(["ai-mode"], prev);
-        toast.error((error as Error)?.message || "Não foi possível salvar o modo da IA");
-      });
-  };
 
   // Provedor de IA PADRÃO (Claude/Gemini). Fonte da verdade é o servidor (`app_state`).
   const aiProviderQuery = useAiProviderQuery();
@@ -570,6 +552,7 @@ export function useDashboardData() {
     [interestsQuery.data],
   );
   const lotMarketQuery = useLotMarketQuery();
+  const aiPanelQuery = useAiPanelQuery();
   const marketById = useMemo(() => {
     const map = new Map<string, LotMarket>();
     for (const r of lotMarketQuery.data ?? []) map.set(r.id, toLotMarket(r));
@@ -582,8 +565,8 @@ export function useDashboardData() {
     return { ...base, matchesInterests: matchesInterest(lot.title ?? "") };
   };
   // Mercado com a âncora de preço da CONDIÇÃO do lote (sugerido do Discogs para o estado dele).
-  const marketFor = (lot: { id: string; uf?: string }): LotMarket | undefined =>
-    withConditionAnchor(marketById.get(lot.id), conditionById.get(lot.id)?.media, lot.uf);
+  const marketFor = (lot: { id: string; uf?: string; title?: string }): LotMarket | undefined =>
+    withConditionAnchor(marketById.get(lot.id), conditionFor(lot).media, lot.uf, aiPanelQuery.data);
   // Estado de conservação (Disco/Capa). Prioriza o CACHE do servidor (`lot_condition`,
   // alimentado pelo descritivo do catálogo — mais rico); cai no parse do TÍTULO quando não
   // há linha no cache ainda (ou ela ficou indefinida).
@@ -607,9 +590,14 @@ export function useDashboardData() {
     }
     return map;
   }, [lotConditionQuery.data]);
+  // Regras de texto do painel de IA (expressões do usuário + as do app não desligadas).
+  const textRules = useMemo(
+    () => effectiveTextRules(aiPanelQuery.data?.rules, aiPanelQuery.data?.disabledRules),
+    [aiPanelQuery.data],
+  );
   const conditionFor = (lot: { id?: string; title?: string }): Condition => {
     const cached = lot.id ? conditionById.get(lot.id) : undefined;
-    return cached ?? parseConditionFromText(lot.title ?? "");
+    return cached ?? parseConditionFromText(lot.title ?? "", textRules);
   };
   // Lotes já excluídos (ver src/lib/lot-exclusion.server.ts) — alimenta o badge "possível
   // lixo" na listagem. Calculado no CLIENTE (não persistido): volume baixo, sem gasto de IA.
@@ -1951,7 +1939,6 @@ export function useDashboardData() {
     excludeMutation,
     footerExtraHost,
     aiMode,
-    changeAiMode,
     aiProvider,
     refreshAll,
     refreshingAll,

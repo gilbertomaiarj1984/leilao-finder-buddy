@@ -27,6 +27,12 @@ describe("parseConditionFromText", () => {
     expect(grades("Disco lacrado")).toEqual(["M", "M"]);
   });
 
+  test("Near Mint solto é NM, não M", () => {
+    expect(grades("LP Fulano | Near Mint")).toEqual(["NM", "NM"]);
+    expect(grades("LP Fulano | Mint")).toEqual(["M", "M"]);
+    expect(grades("LP Fulano | Lacrado")).toEqual(["M", "M"]);
+  });
+
   test("sigla embutida em outra palavra não vira nota", () => {
     expect(grades("Disco de Vinil Raul Seixas - Krig-ha, Bandolo!")).toEqual([null, null]);
     expect(grades("Disco de Vinil Alex Cohen - Next Time")).toEqual([null, null]);

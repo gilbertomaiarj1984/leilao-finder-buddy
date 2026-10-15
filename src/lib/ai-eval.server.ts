@@ -20,6 +20,7 @@ import { priceRoseSinceEval } from "./ai-reprice";
 import type { LotAiRow } from "./lot-ai.server";
 import type { LotIdentRow } from "./lot-ident.server";
 import { contextForPrompt, PROMPT_VERSION, type LotContext } from "./ai-context";
+import { DEFAULT_PANEL_CONFIG, type PanelConfig } from "./ai-panel-config";
 import { loadLotContexts } from "./ai-context.server";
 import {
   runText,
@@ -61,8 +62,10 @@ export function titleHash(title: string): string {
  * senão a base inteira seria reavaliada sem parar. A identificação (`lot_ident`) segue com
  * `titleHash` puro.
  */
-export function evalHash(title: string): string {
-  return `${titleHash(title)}.p${PROMPT_VERSION}`;
+export function evalHash(title: string, contextOk = true): string {
+  // Sufixo "x": o contexto falhou ao carregar e a nota saiu sem ele — o hash diverge do esperado
+  // (`evalHash(title)`), então o lote volta para a fila em vez de ficar sem contexto para sempre.
+  return `${titleHash(title)}.p${PROMPT_VERSION}${contextOk ? "" : "x"}`;
 }
 
 /**
@@ -77,13 +80,14 @@ export function selectLotsToEvaluate(
   aiRows: (Pick<LotAiRow, "id" | "title_hash"> & { eval_price?: number | null })[],
   max = MAX_PER_ROUND,
   repriceIds?: ReadonlySet<string>,
+  hashOf: (title: string) => string = evalHash,
 ): EvalLot[] {
   const known = new Map(aiRows.map((r) => [r.id, r]));
   const out: EvalLot[] = [];
   for (const lot of lots) {
     if (!lot.id || !lot.title) continue;
     const row = known.get(lot.id);
-    if (row && row.title_hash === evalHash(lot.title)) {
+    if (row && row.title_hash === hashOf(lot.title)) {
       const reprice =
         repriceIds?.has(lot.id) && priceRoseSinceEval(row.eval_price, parsePrice(lot.price));
       if (!reprice) continue;
@@ -125,7 +129,11 @@ const SYSTEM_PROMPT =
  * Prompt de usuário (texto) para UM lote. A imagem, quando houver, vai num bloco à parte.
  * `ctx` (estado + mercado Discogs + frete, ver `ai-context.ts`) entra como o bloco "contexto".
  */
-export function buildUserPrompt(lot: EvalLot, ctx?: LotContext | null): string {
+export function buildUserPrompt(
+  lot: EvalLot,
+  ctx?: LotContext | null,
+  cfg: PanelConfig = DEFAULT_PANEL_CONFIG,
+): string {
   const price = parsePrice(lot.price);
   const info: Record<string, unknown> = {
     titulo: lot.title,
@@ -133,7 +141,7 @@ export function buildUserPrompt(lot: EvalLot, ctx?: LotContext | null): string {
     preco_reais: price ?? null,
     tem_imagem: Boolean(usableImage(lot.image)),
   };
-  if (ctx) info["contexto"] = contextForPrompt(ctx, price);
+  if (ctx) info["contexto"] = contextForPrompt(ctx, price, cfg);
   return (
     "Avalie este disco de vinil e devolva um objeto JSON com EXATAMENTE estas chaves:\n" +
     '- "score": inteiro 0-100 (interesse geral para um colecionador = raridade + oportunidade)\n' +
@@ -150,19 +158,23 @@ export function buildUserPrompt(lot: EvalLot, ctx?: LotContext | null): string {
 }
 
 /** Requisição NEUTRA (provedor-agnóstica) para avaliar UM lote. Inclui a capa (visão). */
-function buildEvalRequest(lot: EvalLot, ctx?: LotContext | null): AiRequest {
+function buildEvalRequest(
+  lot: EvalLot,
+  ctx?: LotContext | null,
+  cfg: PanelConfig = DEFAULT_PANEL_CONFIG,
+): AiRequest {
   return {
     system: SYSTEM_PROMPT,
     maxTokens: 600,
-    text: buildUserPrompt(lot, ctx),
+    text: buildUserPrompt(lot, ctx, cfg),
     image: usableImage(lot.image),
     json: true,
   };
 }
 
 /** Parâmetros de mensagem (Anthropic) para um lote — usado no request de BATCH. */
-function buildLotParams(lot: EvalLot, model: string, ctx?: LotContext | null) {
-  return toAnthropicMessageParams(buildEvalRequest(lot, ctx), model);
+function buildLotParams(lot: EvalLot, model: string, ctx?: LotContext | null, cfg?: PanelConfig) {
+  return toAnthropicMessageParams(buildEvalRequest(lot, ctx, cfg), model);
 }
 
 /**
@@ -237,12 +249,12 @@ export async function submitEvalBatch(lots: EvalLot[]): Promise<SubmitResult> {
   const hashes: Record<string, string> = {};
   const prices: Record<string, number> = {};
   // O Batches congela o contexto (estado, mercado, frete) no momento do envio.
-  const contexts = await loadLotContexts(lots.map((l) => l.id));
+  const { byId: contexts, cfg, ok: contextOk } = await loadLotContexts(lots.map((l) => l.id));
   const requests = lots.map((lot) => {
-    hashes[lot.id] = evalHash(lot.title);
+    hashes[lot.id] = evalHash(lot.title, contextOk);
     const price = parsePrice(lot.price);
     if (price != null && price > 0) prices[lot.id] = price;
-    return { custom_id: lot.id, params: buildLotParams(lot, model, contexts.get(lot.id)) };
+    return { custom_id: lot.id, params: buildLotParams(lot, model, contexts.get(lot.id), cfg) };
   });
   // O SDK tipa `params` de forma estrita (MessageCreateParams); nosso builder devolve o
   // shape compatível, mas afrouxamos aqui para não duplicar os tipos do SDK.
@@ -381,7 +393,8 @@ export function selectLotsToIdentify(
   identRows: Pick<LotIdentRow, "id" | "title_hash">[],
   max = MAX_PER_ROUND,
 ): EvalLot[] {
-  return selectLotsToEvaluate(lots, identRows, max);
+  // `lot_ident.title_hash` é o hash puro do título (sem a versão do prompt da avaliação).
+  return selectLotsToEvaluate(lots, identRows, max, undefined, titleHash);
 }
 
 /**
@@ -523,7 +536,7 @@ export async function evalLotsSync(
   if (!lots.length)
     return { rows: [], served: null, switched: false, failed: 0, error: null, attemptErrors: {} };
   const geminiModel = await resolveGeminiModel();
-  const contexts = await loadLotContexts(lots.map((l) => l.id));
+  const { byId: contexts, cfg, ok: contextOk } = await loadLotContexts(lots.map((l) => l.id));
   const rows: LotAiRow[] = [];
   const tracker = new ProviderTracker();
   let failed = 0;
@@ -537,13 +550,17 @@ export async function evalLotsSync(
       const lot = lots[index];
       if (!lot) return;
       try {
-        const r = await runText(buildEvalRequest(lot, contexts.get(lot.id)), provider, geminiModel);
+        const r = await runText(
+          buildEvalRequest(lot, contexts.get(lot.id), cfg),
+          provider,
+          geminiModel,
+        );
         tracker.note(r.provider, r.switched, r.attemptErrors);
         const parsed = parseEvalObject(r.text);
         if (parsed) {
           rows.push({
             id: lot.id,
-            title_hash: evalHash(lot.title),
+            title_hash: evalHash(lot.title, contextOk),
             score: parsed.score,
             rarity: parsed.rarity,
             deal: parsed.deal,

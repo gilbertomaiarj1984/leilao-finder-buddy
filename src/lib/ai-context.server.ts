@@ -3,12 +3,16 @@
  * Best-effort: qualquer falha devolve um mapa vazio e a avaliação segue sem contexto, como antes.
  */
 import { buildLotContext, type LotContext } from "./ai-context";
+import { DEFAULT_PANEL_CONFIG, type PanelConfig } from "./ai-panel-config";
 
 const CHUNK = 500;
 
-export async function loadLotContexts(ids: string[]): Promise<Map<string, LotContext>> {
+export async function loadLotContexts(
+  ids: string[],
+): Promise<{ byId: Map<string, LotContext>; cfg: PanelConfig; ok: boolean }> {
   const out = new Map<string, LotContext>();
-  if (!ids.length) return out;
+  let cfg: PanelConfig = DEFAULT_PANEL_CONFIG;
+  if (!ids.length) return { byId: out, cfg, ok: true };
   try {
     const { db } = await import("@/lib/db-client.server");
     type Row = Record<string, unknown> & { id: string };
@@ -24,6 +28,8 @@ export async function loadLotContexts(ids: string[]): Promise<Map<string, LotCon
       }
       return map;
     };
+    const { getAiPanelConfig } = await import("./app-state.server");
+    cfg = await getAiPanelConfig();
     const [conds, markets, lots] = await Promise.all([
       read("lot_condition", "id, media, sleeve, insert_state, score"),
       read("lot_market", "id, matched, year, num_for_sale, have, want, suggested_by_condition"),
@@ -32,16 +38,20 @@ export async function loadLotContexts(ids: string[]): Promise<Map<string, LotCon
     for (const id of ids) {
       out.set(
         id,
-        buildLotContext({
-          condition: (conds.get(id) as never) ?? null,
-          market: (markets.get(id) as never) ?? null,
-          uf: (lots.get(id)?.["uf"] as string | undefined) ?? null,
-        }),
+        buildLotContext(
+          {
+            condition: (conds.get(id) as never) ?? null,
+            market: (markets.get(id) as never) ?? null,
+            uf: (lots.get(id)?.["uf"] as string | undefined) ?? null,
+          },
+          cfg,
+        ),
       );
     }
   } catch (error) {
     console.error("[ai-context] falha ao ler o contexto dos lotes; seguindo sem ele", error);
     out.clear();
+    return { byId: out, cfg, ok: false };
   }
-  return out;
+  return { byId: out, cfg, ok: true };
 }

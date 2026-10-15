@@ -5,11 +5,12 @@ import { useMemo } from "react";
 import { toLotMarket, withConditionAnchor, type LotAi } from "@/components/vinyl/ai-score-utils";
 import { LotCard } from "@/components/vinyl/lot-card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { effectiveTextRules } from "@/lib/condition-text";
 import { parseConditionFromText, scoreCondition, type Grade } from "@/lib/grading";
 import { getLotCondition } from "@/lib/leiloesbr.functions";
 import type { LookoutItem } from "@/lib/lookout-match";
 import type { LookoutUpcoming } from "@/lib/lookout-matches.server";
-import { useLotAiQuery, useLotIdentQuery, useLotMarketQuery } from "@/lib/queries";
+import { useAiPanelQuery, useLotAiQuery, useLotIdentQuery, useLotMarketQuery } from "@/lib/queries";
 
 /**
  * Cartão COMPLETO do lote (o mesmo `LotCard` da home: nota da IA, Discogs, estado Disco/Capa,
@@ -34,6 +35,7 @@ export function LookoutLotDialog({
   const aiQuery = useLotAiQuery();
   const identQuery = useLotIdentQuery();
   const marketQuery = useLotMarketQuery();
+  const aiPanelQuery = useAiPanelQuery();
   const fetchCondition = useServerFn(getLotCondition);
   // Mesma chave da home → compartilha o cache.
   const conditionQuery = useQuery({
@@ -87,12 +89,15 @@ export function LookoutLotDialog({
         return { media, sleeve, insert, score, faixa, source: "regex" as const, raw: "" };
       }
     }
-    return parseConditionFromText(lot?.title ?? "");
-  }, [cond, lot?.title]);
+    return parseConditionFromText(
+      lot?.title ?? "",
+      effectiveTextRules(aiPanelQuery.data?.rules, aiPanelQuery.data?.disabledRules),
+    );
+  }, [cond, lot?.title, aiPanelQuery.data]);
   // Mercado com a âncora de preço da condição (mídia) do lote.
   const market = useMemo(
-    () => withConditionAnchor(marketRaw, condition.media, lot?.uf),
-    [marketRaw, condition.media, lot?.uf],
+    () => withConditionAnchor(marketRaw, condition.media, lot?.uf, aiPanelQuery.data),
+    [marketRaw, condition.media, lot?.uf, aiPanelQuery.data],
   );
 
   return (

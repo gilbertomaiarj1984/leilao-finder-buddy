@@ -1,9 +1,16 @@
-import { formatAiAlbum } from "@/components/vinyl/ai-score-utils";
+import {
+  formatAiAlbum,
+  marketDeal,
+  toLotMarket,
+  withConditionAnchor,
+} from "@/components/vinyl/ai-score-utils";
 import { db } from "@/lib/db-client.server";
 import { buildDigestEmail, type DigestEntry } from "@/lib/email-templates.server";
 import { emailEnabled, sendEmail } from "@/lib/email.server";
 import { readLotsRange } from "@/lib/leiloesbr-scrape.server";
+import { getAiPanelConfig } from "@/lib/app-state.server";
 import { getAllLotAi } from "@/lib/lot-ai.server";
+import { getAllLotCondition } from "@/lib/lot-condition.server";
 import { getAllLotMarket } from "@/lib/lot-market.server";
 import { shiftDayKey } from "@/lib/day-bar";
 import { parsePrice, upcomingDayKeys } from "@/lib/vinyl-parse";
@@ -51,19 +58,41 @@ export async function sendDailyDigest(): Promise<{
     return { enabled: true, sent: false, count: 0, reason: "já enviado hoje" };
   }
 
-  const [lots, aiRows, marketRows] = await Promise.all([
+  const [lots, aiRows, marketRows, condRows, panel] = await Promise.all([
     readLotsRange(today, shiftDayKey(today, DIGEST_DAYS - 1)),
     getAllLotAi(),
     getAllLotMarket().catch(() => []),
+    getAllLotCondition().catch(() => []),
+    getAiPanelConfig(),
   ]);
   const aiById = new Map(aiRows.map((r) => [r.id, r]));
   const marketById = new Map(marketRows.map((r) => [r.id, r]));
+  const condById = new Map(condRows.map((r) => [r.id, r]));
+
+  // Veredicto "vs. mercado" calculado AGORA (preço sugerido da condição do disco + frete da casa,
+  // configuração do painel de IA), igual ao do app. Vale mais que o `deal` gravado pela IA, que
+  // pode ter saído com a configuração antiga; sem mercado casado, cai no `deal` da IA.
+  const dealFor = (lot: { id: string; price: string; uf: string }, aiDeal: string | null) => {
+    const row = marketById.get(lot.id);
+    if (!row) return aiDeal;
+    const cond = condById.get(lot.id);
+    const anchored = withConditionAnchor(
+      toLotMarket(row),
+      cond?.media || cond?.sleeve || null,
+      lot.uf,
+      panel,
+    );
+    const verdict = anchored ? marketDeal(lot.price, anchored) : "indefinido";
+    return verdict === "indefinido" ? aiDeal : verdict;
+  };
 
   const ranked = lots
     .flatMap((lot) => {
       const ai = aiById.get(lot.id);
-      if (!ai || ai.score == null || ai.deal === "caro") return [];
-      return [{ lot, ai, score: ai.score }];
+      if (!ai || ai.score == null) return [];
+      const deal = dealFor(lot, ai.deal);
+      if (deal === "caro") return [];
+      return [{ lot, ai, score: ai.score, deal }];
     })
     .sort(
       (a, b) =>
@@ -73,7 +102,7 @@ export async function sendDailyDigest(): Promise<{
   if (!ranked.length)
     return { enabled: true, sent: false, count: 0, reason: "sem lotes avaliados" };
 
-  const entries: DigestEntry[] = ranked.map(({ lot, ai, score }) => {
+  const entries: DigestEntry[] = ranked.map(({ lot, ai, score, deal }) => {
     const market = marketById.get(lot.id);
     return {
       title: formatAiAlbum(ai.album, market?.year ?? null) || lot.title,
@@ -86,7 +115,7 @@ export async function sendDailyDigest(): Promise<{
       marketHigh: market?.price_high_br ?? null,
       aiScore: score,
       rarity: ai.rarity,
-      deal: ai.deal,
+      deal,
       watched: lot.watched,
     };
   });

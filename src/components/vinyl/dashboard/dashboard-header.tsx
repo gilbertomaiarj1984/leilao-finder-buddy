@@ -8,6 +8,7 @@ import {
   LogOut,
   Radio,
   ShoppingBag,
+  SlidersHorizontal,
   Sparkles,
 } from "lucide-react";
 
@@ -138,6 +139,17 @@ export function DashboardHeader({
                 <Link to="/vinil-analytics">
                   <BarChart3 className="mr-2 h-4 w-4" />
                   Analytics
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                asChild
+                title="Painel de IA: contexto, condições e frete"
+              >
+                <Link to="/ia-painel">
+                  <SlidersHorizontal className="mr-2 h-4 w-4" />
+                  IA
                 </Link>
               </Button>
               <LotSearchBox committed={search} onSearch={setSearch} onClear={() => setSearch("")} />

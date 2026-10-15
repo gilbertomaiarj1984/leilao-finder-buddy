@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildLotContext, contextForPrompt, PROMPT_VERSION } from "../src/lib/ai-context";
-import { buildUserPrompt, evalHash, titleHash } from "../src/lib/ai-eval.server";
+import { normalizePanelConfig } from "../src/lib/ai-panel-config";
+import {
+  buildUserPrompt,
+  evalHash,
+  selectLotsToEvaluate,
+  selectLotsToIdentify,
+  titleHash,
+} from "../src/lib/ai-eval.server";
 
 const market = {
   matched: true,
@@ -24,7 +31,9 @@ describe("contexto da avaliação", () => {
     expect(ctx.mercado?.anchor).toEqual({ price: 66.27, condition: "NM", exact: true });
     const out = contextForPrompt(ctx, 40);
     expect(out["lote_mais_frete_brl"]).toBe(65);
-    expect(out["razao_lote_vs_sugerido"]).toBe(0.98);
+    expect((out["mercado_discogs_brl"] as Record<string, unknown>)["razao_lote_vs_sugerido"]).toBe(
+      0.98,
+    );
     expect(out["mercado_discogs_brl"]).toMatchObject({
       preco_sugerido: 66,
       condicao_de_referencia: "NM",
@@ -44,7 +53,9 @@ describe("contexto da avaliação", () => {
     expect(
       (out["mercado_discogs_brl"] as Record<string, unknown>)["estado_do_lote_conhecido"],
     ).toBe(false);
-    expect(out["razao_lote_vs_sugerido"]).toBe(2.23); // (15 + 35) / 22,4
+    expect((out["mercado_discogs_brl"] as Record<string, unknown>)["razao_lote_vs_sugerido"]).toBe(
+      2.23,
+    ); // (15 + 35) / 22,4
   });
 
   test("com só a capa conhecida, o disco repete o grau (convenção do app)", () => {
@@ -84,5 +95,88 @@ describe("contexto da avaliação", () => {
   test("o hash de avaliação carrega a versão do prompt; a identificação não", () => {
     expect(evalHash("ABC")).toBe(`${titleHash("ABC")}.p${PROMPT_VERSION}`);
     expect(evalHash("ABC")).not.toBe(titleHash("ABC"));
+  });
+});
+
+describe("painel de IA — configuração", () => {
+  const input = {
+    condition: { media: "NM", sleeve: "NM", insert_state: "", score: 90 },
+    market,
+    uf: "SP",
+  };
+
+  test("a ordem dos blocos e os campos desligados valem no prompt", () => {
+    const cfg = normalizePanelConfig({
+      blocks: ["frete", "mercado"],
+      hiddenFields: ["mercado.tem", "mercado.querem"],
+    });
+    const out = contextForPrompt(buildLotContext(input, cfg), 40, cfg);
+    expect(Object.keys(out)).toEqual([
+      "frete_estimado_brl",
+      "lote_mais_frete_brl",
+      "mercado_discogs_brl",
+    ]);
+    const m = out["mercado_discogs_brl"] as Record<string, unknown>;
+    expect(m["tem"]).toBeUndefined();
+    expect(m["querem"]).toBeUndefined();
+    expect(m["ano"]).toBe(1984);
+    expect(out["estado"]).toBeUndefined(); // bloco desligado
+  });
+
+  test("frete e condição padrão configuráveis", () => {
+    const cfg = normalizePanelConfig({ freight: { sudeste: 30, outras: 50 }, defaultCond: "VG" });
+    const ctx = buildLotContext({ condition: null, market, uf: "BA" }, cfg);
+    expect(ctx.frete).toBe(50);
+    expect(ctx.mercado?.anchor.condition).toBe("G+"); // VG não existe no mapa de exemplo: G+ é a mais próxima
+    expect(buildLotContext({ market, uf: "RJ" }, cfg).frete).toBe(30);
+  });
+
+  test("normalizePanelConfig recusa lixo e limita valores", () => {
+    const cfg = normalizePanelConfig({
+      blocks: ["estado", "estado", "xyz"],
+      hiddenFields: ["mercado.tem", "nada.nada", 3],
+      defaultCond: "ZZ",
+      freight: { sudeste: -5, outras: 9999 },
+      rules: [
+        { id: "a", phrase: "ok frase", grade: "G+", effect: "cap" },
+        { id: "b", phrase: "x", grade: "G+", effect: "set" },
+        { id: "c", phrase: "frase boa", grade: "NOPE", effect: "set" },
+        "lixo",
+      ],
+      disabledRules: ["bom-estado", 7],
+    });
+    expect(cfg.blocks).toEqual(["estado"]);
+    expect(cfg.hiddenFields).toEqual(["mercado.tem"]);
+    expect(cfg.defaultCond).toBe("G+");
+    expect(cfg.freight).toEqual({ sudeste: 25, outras: 35 });
+    expect(cfg.rules).toEqual([{ id: "a", phrase: "ok frase", grade: "G+", effect: "cap" }]);
+    expect(cfg.disabledRules).toEqual(["bom-estado"]);
+    expect(normalizePanelConfig(null)).toEqual(normalizePanelConfig(undefined));
+  });
+});
+
+describe("seleção por hash", () => {
+  const lots = [
+    { id: "1", title: "LP A", price: "R$ 10,00", house: "X", image: null },
+    { id: "2", title: "LP B", price: "R$ 20,00", house: "X", image: null },
+  ];
+
+  test("a identificação compara o hash PURO do título (não reidentifica o que já foi feito)", () => {
+    const done = [{ id: "1", title_hash: titleHash("LP A") }];
+    expect(selectLotsToIdentify(lots, done).map((l) => l.id)).toEqual(["2"]);
+  });
+
+  test("a avaliação compara o hash com a versão do prompt", () => {
+    const rows = [
+      { id: "1", title_hash: evalHash("LP A") },
+      { id: "2", title_hash: titleHash("LP B") }, // gravado antes da versão do prompt
+    ];
+    expect(selectLotsToEvaluate(lots, rows).map((l) => l.id)).toEqual(["2"]);
+  });
+
+  test("nota gravada sem contexto (falha ao carregar) volta para a fila", () => {
+    expect(evalHash("LP A", false)).not.toBe(evalHash("LP A"));
+    const rows = [{ id: "1", title_hash: evalHash("LP A", false) }];
+    expect(selectLotsToEvaluate(lots.slice(0, 1), rows).map((l) => l.id)).toEqual(["1"]);
   });
 });

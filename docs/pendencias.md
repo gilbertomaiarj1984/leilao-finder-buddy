@@ -115,3 +115,15 @@ campo editável ali.
   ordem do cron isso deve ser raro; se incomodar, acrescentar flags grossas (`+e`, `+m`) ao hash.
 - **Medir o efeito:** comparar notas antes/depois da v0.142.0 em um punhado de lotes conhecidos antes
   de reavaliar a base toda (a calibração do painel de IA é o lugar disso).
+
+## Painel de IA — lacunas conhecidas (auditoria de 15/10/2026)
+
+- **"Meus lances"** (`bid-house-sections.tsx` → `LotCard`) não recebe `market`, `ai` nem `condition`:
+  lance sem nota/veredicto/estado. Ausência antiga, não da regra nova; passar `marketFor`/`aiFor`/
+  `conditionFor` se quiser.
+- **De olho** (`lookout-matches.server.ts`): `toLotMarket` cru, `deal: null` na notificação e faixa BR
+  crua no e-mail. Aplicar `withConditionAnchor` + `marketDeal` como no resumo diário.
+- **`ai.deal` gravado vs. "vs. mercado" calculado** aparecem lado a lado em `ai-score.tsx`/`analise.tsx`
+  e podem divergir até a próxima reavaliação.
+- O fallback de IA do estado (`conditionAiSync`) e a identificação não usam as regras do painel (só o
+  regex usa).

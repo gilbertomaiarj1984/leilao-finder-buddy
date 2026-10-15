@@ -9,7 +9,7 @@
  */
 import type { Grade } from "./grading";
 
-type TextRule = {
+export type TextRule = {
   id: string;
   label: string;
   /** Fonte da regex (aplicada em texto maiúsculo e sem acento). */
@@ -18,7 +18,7 @@ type TextRule = {
   effect: "set" | "cap";
 };
 
-const TEXT_RULES: readonly TextRule[] = [
+export const TEXT_RULES: readonly TextRule[] = [
   {
     id: "excelente-estado",
     label: "excelente estado",
@@ -105,3 +105,106 @@ export function matchTextRules(folded: string, rules: readonly TextRule[] = TEXT
   }
   return hits;
 }
+
+/** Regra escrita pelo usuário no painel de IA: frase simples, `*` vale por um trecho curto. */
+export type UserTextRule = {
+  id: string;
+  phrase: string;
+  grade: Grade;
+  effect: "set" | "cap";
+};
+
+/** Maiúsculas e sem acento, igual ao `foldUpper` do grading.ts (que aplica a regra). */
+function foldPhrase(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Converte as regras do usuário em `TextRule`. `*` casa até 40 caracteres sem cruzar fim de
+ * frase nem vírgula ("riscos * audição" pega "riscos que podem afetar a audição"). Frase vazia
+ * ou curta demais é ignorada, para um erro de digitação não casar com tudo.
+ */
+export function compileUserRules(rules: readonly UserTextRule[]): TextRule[] {
+  const out: TextRule[] = [];
+  for (const r of rules) {
+    const folded = foldPhrase(r.phrase);
+    if (folded.replace(/[*\s]/g, "").length < 3) continue;
+    const body = folded
+      .split("*")
+      .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+      .join("[^.;!?,]{0,40}?");
+    out.push({
+      id: r.id,
+      label: r.phrase,
+      pattern: `\\b${body}\\b`,
+      grade: r.grade,
+      effect: r.effect,
+    });
+  }
+  return out;
+}
+
+/** Regras em vigor: as do app (menos as desligadas) mais as do usuário. */
+export function effectiveTextRules(
+  userRules: readonly UserTextRule[] = [],
+  disabledIds: readonly string[] = [],
+): TextRule[] {
+  const off = new Set(disabledIds);
+  return [...TEXT_RULES.filter((r) => !off.has(r.id)), ...compileUserRules(userRules)];
+}
+
+/**
+ * Siglas e palavras que o sistema JÁ reconhece como grau (usadas depois de "Disco", "Capa" ou
+ * "Estado"; as de item inteiro como "lacrado" e "near mint" valem também soltas). Só para exibir no
+ * painel de IA; a regra de verdade mora em `normalizeGrade` (testado contra esta lista).
+ */
+export const VOCABULARY_TERMS: readonly string[] = [
+  "M",
+  "NM",
+  "M-",
+  "EX",
+  "VG++",
+  "VG+",
+  "VG",
+  "VG-",
+  "G+",
+  "G",
+  "G-",
+  "F",
+  "P",
+  "F/P",
+  "mint",
+  "lacrado",
+  "lacrada",
+  "selado",
+  "selada",
+  "impecável",
+  "perfeito",
+  "perfeita",
+  "novo",
+  "near mint",
+  "quase perfeito",
+  "quase perfeita",
+  "quase novo",
+  "excelente",
+  "excellent",
+  "ótimo",
+  "ótima",
+  "muito bom",
+  "muito boa",
+  "very good plus",
+  "very good",
+  "bom",
+  "boa",
+  "good plus",
+  "good",
+  "regular",
+  "razoável",
+  "fair",
+  "poor",
+  "ruim",
+  "péssimo",
+  "péssima",
+  "danificado",
+  "danificada",
+];
