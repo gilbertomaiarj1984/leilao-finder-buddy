@@ -231,6 +231,8 @@ CREATE TABLE IF NOT EXISTS public.lot_condition (
 -- Sinais de demanda (VISITAS/QTDLANCE) do catálogo, adicionados depois (idempotente).
 ALTER TABLE public.lot_condition ADD COLUMN IF NOT EXISTS views integer;
 ALTER TABLE public.lot_condition ADD COLUMN IF NOT EXISTS bids  integer;
+-- Descrição completa do lote (tooltip do catálogo da casa), limpa e truncada — vai no prompt da IA.
+ALTER TABLE public.lot_condition ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT '';
 
 -- ---------------------------------------------------------------------
 -- lot_sales — histórico de vendas dos lotes (base do Vinil Analytics).

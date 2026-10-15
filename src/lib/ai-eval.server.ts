@@ -141,7 +141,9 @@ const SYSTEM_PROMPT =
   'dizer que o estado não foi informado e a referência é G+); "lote_mais_frete_brl" é o valor ' +
   "do lote somado ao frete da casa. Compare-o com o preço sugerido: " +
   `"razao_lote_vs_sugerido" até ${brBand(DEAL_BAND_CHEAP)} é barato, de ${brBand(DEAL_BAND_CHEAP)} a ${brBand(DEAL_BAND_EXPENSIVE)} é justo e acima de ${brBand(DEAL_BAND_EXPENSIVE)} é caro. ` +
-  '"querem" maior que "tem" indica disco procurado. Sem contexto, estime pelo seu ' +
+  '"querem" maior que "tem" indica disco procurado. "descricao_do_lote" é o texto completo da ' +
+  "casa de leilão: use-o para país, prensagem, edição, defeitos e o que vem junto (encarte, " +
+  "vários discos). Sem contexto, estime pelo seu " +
   "conhecimento de música e discografia. Seja realista: a grande maioria dos discos é comum e " +
   "de baixo valor. Responda SOMENTE com um objeto JSON, sem nenhum texto fora do JSON.";
 

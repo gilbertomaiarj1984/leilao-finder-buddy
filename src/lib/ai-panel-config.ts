@@ -9,7 +9,7 @@ import { COND_KEYS, DEFAULT_COND, type CondKey } from "./discogs-price";
 import { GRADE_ORDER } from "./grading";
 
 /** Blocos do bloco `contexto` do prompt da avaliação (ver `ai-context.ts`). */
-export const CONTEXT_BLOCK_IDS = ["estado", "mercado", "frete"] as const;
+export const CONTEXT_BLOCK_IDS = ["estado", "mercado", "frete", "descricao"] as const;
 export type ContextBlockId = (typeof CONTEXT_BLOCK_IDS)[number];
 
 /** Campos de cada bloco, na ordem em que aparecem no JSON do prompt. */
@@ -34,17 +34,27 @@ export const CONTEXT_FIELDS: Record<ContextBlockId, readonly { key: string; labe
     { key: "frete_estimado_brl", label: "Frete estimado" },
     { key: "lote_mais_frete_brl", label: "Lote + frete" },
   ],
+  descricao: [{ key: "descricao_do_lote", label: "Texto da descrição" }],
 };
 
 export const CONTEXT_BLOCK_NAMES: Record<ContextBlockId, string> = {
   estado: "Estado de conservação",
   mercado: "Discogs · mercado em reais",
   frete: "Frete do leilão",
+  descricao: "Descrição completa do lote",
 };
+
+/** Blocos que já existiam antes de `blocksSeen`: config salva sem ele conhece só estes. */
+const LEGACY_BLOCKS: readonly ContextBlockId[] = ["estado", "mercado", "frete"];
 
 export type PanelConfig = {
   /** Blocos ligados, na ordem do prompt. Bloco fora da lista = desligado. */
   blocks: ContextBlockId[];
+  /**
+   * Blocos que o usuário já "conheceu" (estavam disponíveis quando a config foi salva). Um bloco
+   * NOVO do app, ainda não visto, entra ligado sozinho; um que ele tirou continua fora.
+   */
+  blocksSeen: ContextBlockId[];
   /** Campos desligados, no formato "bloco.campo" (ex.: "mercado.tem"). */
   hiddenFields: string[];
   /** Condição do Discogs usada quando o estado do lote é desconhecido. */
@@ -59,6 +69,7 @@ export type PanelConfig = {
 
 export const DEFAULT_PANEL_CONFIG: PanelConfig = {
   blocks: [...CONTEXT_BLOCK_IDS],
+  blocksSeen: [...CONTEXT_BLOCK_IDS],
   hiddenFields: [],
   defaultCond: DEFAULT_COND,
   freight: { sudeste: FREIGHT_SUDESTE, outras: FREIGHT_OUTRAS_REGIOES },
@@ -86,6 +97,9 @@ export function normalizePanelConfig(raw: unknown): PanelConfig {
         blocks.push(b as ContextBlockId);
     }
   } else blocks.push(...d.blocks);
+  const rawSeen = Array.isArray(raw["blocksSeen"]) ? raw["blocksSeen"] : LEGACY_BLOCKS;
+  for (const b of CONTEXT_BLOCK_IDS)
+    if (!rawSeen.includes(b) && !blocks.includes(b)) blocks.push(b);
 
   const valid = new Set(
     CONTEXT_BLOCK_IDS.flatMap((id) => CONTEXT_FIELDS[id].map((f) => `${id}.${f.key}`)),
@@ -133,7 +147,15 @@ export function normalizePanelConfig(raw: unknown): PanelConfig {
       ]
     : [];
 
-  return { blocks, hiddenFields, defaultCond, freight, rules, disabledRules };
+  return {
+    blocks,
+    blocksSeen: [...CONTEXT_BLOCK_IDS],
+    hiddenFields,
+    defaultCond,
+    freight,
+    rules,
+    disabledRules,
+  };
 }
 
 /** O campo "bloco.campo" está ligado? */

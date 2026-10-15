@@ -106,6 +106,9 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   base inteira (até 800 lotes por rodada). Dados voláteis (have/want, preços) ficam fora do hash de
   propósito. **Ordem do cron:** `aieval`/`tracklist`/`fame` rodam depois de `aiident`, `market`,
   `condition`, `sales` e `reident` (`refresh.yml`) — senão a primeira avaliação sairia sem contexto.
+  **Descrição do lote (v0.147.0):** bloco `descricao` → `descricao_do_lote`, vindo de
+  `lot_condition.description` (texto do catálogo gravado pelo `step=condition`; vazio quando só repete o
+  título). Blocos novos do app entram ligados numa config já salva (`PanelConfig.blocksSeen`).
   Ainda fora do prompt: vendas passadas (exige casar `lot_sales` ao álbum identificado), perfil do
   colecionador, tracklist e correções (ver `docs/pendencias.md`).
 - **Painel de IA — `/ia-painel` (v0.143.0):** configuração em `app_state.ai_panel` (`PanelConfig`,

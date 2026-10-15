@@ -12,18 +12,19 @@ const mkt = await import(R + "lot-market.server");
 const lai = await import(R + "lot-ai.server");
 const cond = await import(R + "lot-condition.server");
 const ctx = await import(R + "ai-context.server");
+const ctxPrompt = await import(R + "ai-context");
 const { sql } = { sql: (await import(R + "db.server")).getSql() };
 
 // ---- painel de IA: round trip e normalização ----
 const d0 = await app.getAiPanelConfig();
-ok("painel: padrão sem nada salvo", d0.defaultCond === "G+" && d0.freight.sudeste === 25 && d0.blocks.length === 3, d0);
+ok("painel: padrão sem nada salvo", d0.defaultCond === "G+" && d0.freight.sudeste === 25 && d0.blocks.length === 4, d0);
 const saved = await app.setAiPanelConfig({
   blocks: ["frete", "mercado", "lixo"], hiddenFields: ["mercado.tem", "x.y"], defaultCond: "VG",
   freight: { sudeste: 30, outras: 99999 },
   rules: [{ id: "a", phrase: "muito bem conservado", grade: "VG+", effect: "set" }, { id: "b", phrase: "a*b*c*d*e", grade: "G+", effect: "cap" }],
   disabledRules: ["bom-estado"],
 });
-ok("painel: salvar normaliza (lixo some, frete limitado, asteriscos)", JSON.stringify(saved.config.blocks) === '["frete","mercado"]' && saved.config.freight.outras === 35 && saved.config.rules.length === 1 && saved.config.defaultCond === "VG", saved.config);
+ok("painel: salvar normaliza (lixo some, frete limitado, asteriscos)", JSON.stringify(saved.config.blocks) === '["frete","mercado","descricao"]' && saved.config.freight.outras === 35 && saved.config.rules.length === 1 && saved.config.defaultCond === "VG", saved.config);
 const row = (await sql`select value from app_state where key = 'ai_panel'`)[0];
 ok("painel: gravado como jsonb em app_state", row && row.value.defaultCond === "VG", row);
 const back = await app.getAiPanelConfig();
@@ -84,7 +85,7 @@ const cli3 = (await lai.getAllLotAiClient()).find((r: any) => r.id === "itest-1"
 ok("lot_ai cliente: NULL = hasTracklist false (sem erro)", cli3?.hasTracklist === false, cli3);
 
 // ---- lot_condition + contexto ----
-await sql`insert into lot_condition (id,title_hash,media,sleeve,insert_state,score,faixa,source) values ('itest-1','h.c2.k','VG+','VG','sim',78,'Muito Bom','catalog') on conflict (id) do update set media = excluded.media`;
+await sql`insert into lot_condition (id,title_hash,media,sleeve,insert_state,score,faixa,source,description) values ('itest-1','h.c2.k','VG+','VG','sim',78,'Muito Bom','catalog','Prensagem original com encarte') on conflict (id) do update set media = excluded.media`;
 const lc = (await cond.getAllLotCondition()).find((r: any) => r.id === "itest-1");
 ok("lot_condition: leitura", lc?.media === "VG+", lc);
 const { byId, cfg, ok: ctxOk } = await ctx.loadLotContexts(["itest-1", "itest-2", "itest-3"]);
@@ -92,6 +93,7 @@ ok("contexto: carregou do banco e usou a config do painel", ctxOk && cfg.default
 const c1 = byId.get("itest-1");
 ok("contexto itest-1: estado + âncora VG+ + frete SP (30)", c1.estado?.disco === "VG+" && c1.mercado?.anchor.condition === "VG+" && c1.mercado.anchor.exact && c1.frete === 30, c1);
 const c2 = byId.get("itest-2");
+ok("contexto itest-1: descrição do catálogo chega ao contexto e ao prompt", c1.descricao === "Prensagem original com encarte" && JSON.stringify(ctxPrompt.contextForPrompt(c1, 40, cfg)).includes("descricao_do_lote"), c1.descricao);
 ok("contexto itest-2: sem mapa → sem mercado; frete BA (35, 'outras' foi limitado)", c2.mercado === null && c2.estado === null && c2.frete === 35, c2);
 
 await sql`delete from lots where id like 'itest-%'`;

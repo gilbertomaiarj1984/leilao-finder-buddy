@@ -2,6 +2,7 @@ import { db } from "@/lib/db-client.server";
 
 import type { CatalogLot } from "./leiloesbr-catalog.server";
 import { titleHash } from "./ai-eval.server";
+import { cleanLotDescription } from "./ai-context";
 import { effectiveTextRules, type TextRule } from "./condition-text";
 import { parseConditionFromText, scoreCondition } from "./grading";
 import type { VinylLot } from "./vinyl-parse";
@@ -24,6 +25,8 @@ type LotConditionRow = {
   source: string; // 'catalog' | 'title' | 'ia' | 'indefinido'
   views: number | null; // VISITAS — demanda (visualizações) do lote pré-leilão
   bids: number | null; // QTDLANCE — demanda (lances) do lote pré-leilão
+  /** Descrição completa (catálogo), limpa/truncada — vai no prompt da IA. Fora de `COND_COLUMNS`. */
+  description?: string;
 };
 
 const COND_COLUMNS =
@@ -33,7 +36,7 @@ const COND_COLUMNS =
  * Versão do leitor de estado. Suba ao mudar `grading.ts`/`condition-text.ts` de forma que o
  * resultado de um mesmo texto mude: todas as linhas de `lot_condition` são relidas na rodada seguinte.
  */
-const CONDITION_PARSER_VERSION = 2;
+const CONDITION_PARSER_VERSION = 3; // 3: passa a guardar a descrição (relê tudo uma vez)
 
 /**
  * Hash de `lot_condition.title_hash`: título + versão do leitor + regras do painel de IA em vigor.
@@ -127,6 +130,7 @@ function conditionRow(
     score: cond.score,
     faixa: cond.faixa?.label ?? "",
     source,
+    description: cleanLotDescription(catalog?.text, lot.title),
     views: catalog?.views ?? null,
     bids: catalog?.bids ?? null,
   };

@@ -31,7 +31,7 @@ export async function loadLotContexts(
     const { getAiPanelConfig } = await import("./app-state.server");
     cfg = await getAiPanelConfig();
     const [conds, markets, lots] = await Promise.all([
-      read("lot_condition", "id, media, sleeve, insert_state, score"),
+      read("lot_condition", "id, media, sleeve, insert_state, score, description"),
       read("lot_market", "id, matched, year, num_for_sale, have, want, suggested_by_condition"),
       read("lots", "id, uf"),
     ]);

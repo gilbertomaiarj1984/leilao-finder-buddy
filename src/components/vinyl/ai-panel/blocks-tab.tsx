@@ -20,6 +20,7 @@ const BLOCK_SRC: Record<ContextBlockId, string> = {
   estado: "lot_condition (lido da descrição do lote)",
   mercado: "lot_market.suggested_by_condition (preço sugerido do Discogs, em reais)",
   frete: "frete estimado da casa pela UF (Sudeste ou demais regiões)",
+  descricao: "lot_condition.description (texto do catálogo da casa, até 600 caracteres)",
 };
 
 /**
@@ -50,14 +51,6 @@ const PLANNED_BLOCKS: {
     recommended: true,
   },
   {
-    id: "descricao",
-    name: "Descrição completa do lote",
-    src: "descrição do catálogo da casa",
-    missing:
-      "Hoje a descrição só é lida para extrair o estado; não existe coluna para guardá-la. Criar a coluna em lots e preenchê-la no passo de estado.",
-    recommended: true,
-  },
-  {
     id: "tracklist",
     name: "Tracklist e fama das faixas",
     src: "lot_ai.tracklist",
@@ -82,7 +75,14 @@ const SAMPLES = [
     title: "GILBERTO GIL - RAÇA HUMANA LP",
     price: 40,
     uf: "SP",
-    condition: { media: "VG+", sleeve: "VG+", insert_state: "sim", score: 78 },
+    condition: {
+      media: "VG+",
+      sleeve: "VG+",
+      insert_state: "sim",
+      score: 78,
+      description:
+        "GILBERTO GIL - RAÇA HUMANA - LP 1984 WEA, capa VG+, disco VG+/NM, com encarte. Prensagem original brasileira.",
+    },
     market: {
       matched: true,
       year: 1984,

@@ -12,6 +12,7 @@ import {
   CONTEXT_FIELDS,
   DEFAULT_PANEL_CONFIG,
   fieldOn,
+  type ContextBlockId,
   type PanelConfig,
 } from "./ai-panel-config";
 import {
@@ -28,6 +29,30 @@ import { normalizeGrade, scoreCondition } from "./grading";
  * contexto? Suba aqui.
  */
 export const PROMPT_VERSION = 3;
+
+/** Teto da descrição que vai no prompt (≈ 150 tokens). */
+const DESCRIPTION_MAX = 600;
+
+/**
+ * Descrição do lote para o prompt: o texto do catálogo sem espaços repetidos, truncado numa palavra.
+ * Vazio quando não passa de uma repetição do título (o título já vai no prompt).
+ */
+export function cleanLotDescription(text: string | null | undefined, title = ""): string {
+  const t = String(text ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!t) return "";
+  const norm = (x: string) =>
+    x
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim();
+  if (norm(t) === norm(title)) return "";
+  if (t.length <= DESCRIPTION_MAX) return t;
+  const cut = t.slice(0, DESCRIPTION_MAX);
+  const sp = cut.lastIndexOf(" ");
+  return `${(sp > DESCRIPTION_MAX * 0.6 ? cut.slice(0, sp) : cut).trimEnd()}…`;
+}
 
 /**
  * Descrição textual da ESTRUTURA do contexto (blocos e campos que o prompt pode levar). Entra no hash
@@ -56,6 +81,8 @@ export type LotContext = {
     anuncios_a_venda: number | null;
   } | null;
   frete: number;
+  /** Descrição completa do lote (catálogo da casa), já limpa; null = sem descrição além do título. */
+  descricao: string | null;
 };
 
 type ConditionInput = {
@@ -63,6 +90,7 @@ type ConditionInput = {
   sleeve?: string | null;
   insert_state?: string | null;
   score?: number | null;
+  description?: string | null;
 } | null;
 
 type MarketInput = {
@@ -118,7 +146,12 @@ export function buildLotContext(
           anuncios_a_venda: m.num_for_sale ?? null,
         }
       : null;
-  return { estado, mercado, frete: auctionFreight(input.uf, cfg.freight) };
+  return {
+    estado,
+    mercado,
+    frete: auctionFreight(input.uf, cfg.freight),
+    descricao: cleanLotDescription(c?.description) || null,
+  };
 }
 
 /**
@@ -134,7 +167,7 @@ export function contextForPrompt(
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   const total = priceBrl != null && priceBrl > 0 ? priceBrl + ctx.frete : null;
-  const pick = (block: "estado" | "mercado" | "frete", all: Record<string, unknown>) =>
+  const pick = (block: ContextBlockId, all: Record<string, unknown>) =>
     Object.fromEntries(
       Object.entries(all).filter(([k, v]) => v !== undefined && fieldOn(cfg, block, k)),
     );
@@ -157,6 +190,8 @@ export function contextForPrompt(
           total != null ? Math.round((total / anchor.price) * 100) / 100 : undefined,
       });
       if (Object.keys(o).length) out["mercado_discogs_brl"] = o;
+    } else if (block === "descricao" && ctx.descricao) {
+      Object.assign(out, pick("descricao", { descricao_do_lote: ctx.descricao }));
     } else if (block === "frete") {
       Object.assign(
         out,

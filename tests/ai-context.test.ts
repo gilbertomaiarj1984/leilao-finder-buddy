@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildLotContext, contextForPrompt, PROMPT_VERSION } from "../src/lib/ai-context";
+import {
+  buildLotContext,
+  cleanLotDescription,
+  contextForPrompt,
+  PROMPT_VERSION,
+} from "../src/lib/ai-context";
 import { normalizePanelConfig } from "../src/lib/ai-panel-config";
 import {
   buildUserPrompt,
@@ -145,7 +150,8 @@ describe("painel de IA — configuração", () => {
       ],
       disabledRules: ["bom-estado", 7],
     });
-    expect(cfg.blocks).toEqual(["estado"]);
+    // sem `blocksSeen` (config antiga), o bloco novo «descricao» entra ligado
+    expect(cfg.blocks).toEqual(["estado", "descricao"]);
     expect(cfg.hiddenFields).toEqual(["mercado.tem"]);
     expect(cfg.defaultCond).toBe("G+");
     expect(cfg.freight).toEqual({ sudeste: 25, outras: 35 });
@@ -194,5 +200,44 @@ describe("assinatura da estrutura do contexto", () => {
       true,
     );
     expect(sig).toContain("|frete:frete_estimado_brl,lote_mais_frete_brl");
+  });
+});
+
+describe("descrição completa do lote", () => {
+  test("cleanLotDescription: limpa, ignora repetição do título e trunca em palavra", () => {
+    expect(cleanLotDescription("  Capa  VG+ \n disco   NM  ", "Outro título")).toBe(
+      "Capa VG+ disco NM",
+    );
+    expect(cleanLotDescription("GILBERTO GIL - Raça Humana", "gilberto gil raça humana")).toBe("");
+    expect(cleanLotDescription(null)).toBe("");
+    const long = cleanLotDescription("palavra ".repeat(200));
+    expect(long.length).toBeLessThanOrEqual(601);
+    expect(long.endsWith("…")).toBe(true);
+    expect(long.endsWith(" …")).toBe(false);
+  });
+
+  test("entra no prompt só quando o bloco está ligado e o campo não está oculto", () => {
+    const ctx = buildLotContext({
+      condition: { media: "VG", description: "Prensagem original, encarte incluso" },
+      uf: "SP",
+    });
+    expect(ctx.descricao).toBe("Prensagem original, encarte incluso");
+    expect(contextForPrompt(ctx, null)["descricao_do_lote"]).toBe(ctx.descricao);
+    const off = normalizePanelConfig({
+      blocks: ["estado", "frete"],
+      blocksSeen: ["estado", "mercado", "frete", "descricao"],
+    });
+    expect(contextForPrompt(ctx, null, off)["descricao_do_lote"]).toBeUndefined();
+    const hidden = normalizePanelConfig({ hiddenFields: ["descricao.descricao_do_lote"] });
+    expect(contextForPrompt(ctx, null, hidden)["descricao_do_lote"]).toBeUndefined();
+  });
+
+  test("bloco novo entra ligado numa config antiga; um removido de propósito continua fora", () => {
+    const legacy = normalizePanelConfig({ blocks: ["frete", "estado"] }); // salva antes de existir `blocksSeen`
+    expect(legacy.blocks).toEqual(["frete", "estado", "descricao"]); // mercado foi tirado antes; descricao é nova
+    const again = normalizePanelConfig(legacy); // regravada: já conhece tudo
+    expect(again.blocks).toEqual(["frete", "estado", "descricao"]);
+    const removed = normalizePanelConfig({ ...again, blocks: ["frete", "estado"] });
+    expect(removed.blocks).toEqual(["frete", "estado"]);
   });
 });
