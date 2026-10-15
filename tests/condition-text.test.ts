@@ -29,6 +29,11 @@ describe("texto brasileiro → grau", () => {
     expect(media("Disco NM, não pula e sem riscos que afetem a audição")).toBe("NM");
   });
 
+  test("a vírgula encerra o alcance da negação", () => {
+    expect(media("LP Fulano | sem pulos, em ótimo estado")).toBe("VG+");
+    expect(media("LP Fulano | sem encarte, mas pula na faixa 2")).toBe("G+");
+  });
+
   test("a capa continua independente do aviso de audição", () => {
     const c = parseConditionFromText("Capa VG+. Disco com riscos que afetam a audição");
     expect(c.sleeve).toBe("VG+");

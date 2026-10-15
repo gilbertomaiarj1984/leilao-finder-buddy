@@ -90,8 +90,9 @@ const TEXT_RULES: readonly TextRule[] = [
 
 type TextHit = { rule: TextRule; excerpt: string };
 
-// Negação logo antes do trecho ("sem pulos", "não pula", "livre de riscos que afetem…").
-const NEGATION = /\b(?:SEM|NAO|NENHUM|NENHUMA|NUNCA|ISENTO|LIVRE\s+DE)\b[^.;!?]*$/;
+// Negação logo antes do trecho ("sem pulos", "não pula", "livre de riscos que afetem…"). A vírgula
+// encerra o alcance: em "sem pulos, ótimo estado" a negação não vale para o "ótimo estado".
+const NEGATION = /\b(?:SEM|NAO|NENHUM|NENHUMA|NUNCA|ISENTO|LIVRE\s+DE)\b[^.;!?,]*$/;
 
 /** Regras que casam com o texto dobrado, ignorando as precedidas de negação. */
 export function matchTextRules(folded: string, rules: readonly TextRule[] = TEXT_RULES): TextHit[] {

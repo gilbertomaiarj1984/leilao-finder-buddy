@@ -60,7 +60,7 @@ Cache de estado (Disco/Capa) por lote para os **cards pré-leilão**, alimentado
   VG+, "muito bom estado" = VG+, "bom estado" = VG, "estado regular/razoável" = G+. Vale para os dois lados.
 - **`cap`** (limita o DISCO a G+, mesmo com outro grau no texto): "riscos que afetam/prejudicam a
   audição", "afeta a reprodução", "problemas na audição", "pula/pulos/trava", "riscos profundos/fundos".
-  Negação até 40 caracteres antes ("sem pulos", "não pula") anula.
+  Negação até 40 caracteres antes ("sem pulos", "não pula") anula; a vírgula encerra o alcance da negação.
 - `normalizeGrade`: "ótimo/ótima" = **VG+** (era EX) e "regular/razoável" = **G+** (era G).
 - Linhas já gravadas em `lot_condition` só mudam quando o título/descrição muda; para reler tudo:
   `DELETE FROM lot_condition;` e deixar o `step=condition` refazer.
