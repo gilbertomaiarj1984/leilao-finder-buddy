@@ -137,19 +137,10 @@ export async function upsertLotAi(rows: LotAiRow[]): Promise<number> {
     // podado/excluído entre a seleção do batch e este upsert vira linha órfã que quebra o
     // upsert inteiro e derruba o resto do cron.
     if (error.code === "23503") {
-      const { filterExistingLotIds, ensureAccountLotStubs } =
-        await import("./lot-orphan-guard.server");
-      let validIds = await filterExistingLotIds(payload.map((r) => r.id));
-      // Vigiado/lance fora da varredura geral (casa parceira): cria a linha em `lots` a partir
-      // da conta em vez de perder a nota (senão "volta ao estado anterior" no refetch).
-      const missing = payload.map((r) => r.id).filter((id) => !validIds.has(id));
-      if (missing.length) {
-        const created = await ensureAccountLotStubs(missing).catch((e: unknown) => {
-          console.error("[lot-ai] falha ao criar lotes da conta em lots", e);
-          return new Set<string>();
-        });
-        if (created.size) validIds = new Set([...validIds, ...created]);
-      }
+      // Vigiado/lance fora da varredura geral (casa parceira, ou além da janela): cria a linha
+      // em `lots` a partir da conta em vez de perder a nota (senão "volta ao estado anterior").
+      const { resolveLotIdsWithAccount } = await import("./lot-orphan-guard.server");
+      const validIds = await resolveLotIdsWithAccount(payload.map((r) => r.id));
       const filtered = payload.filter((r) => validIds.has(r.id));
       const dropped = payload.length - filtered.length;
       if (dropped > 0) {
