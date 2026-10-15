@@ -450,3 +450,5 @@ updatedAt } }` (`house-rating.server.ts`; server fns `getHouseRatings`/`savePreg
   com status "guarda") alimenta um ícone de mala ao lado do semáforo em `HouseLight`/`HouseDot`
   (todo lugar onde o semáforo aparece); mudar status em Compras invalida `houseRatings`.
 - **Pendente:** ranking das casas e o cabeçalho do detalhe mobile do lote.
+
+- **Valor atual ao vivo (v0.139.1):** `computeLookout` (`applyLivePrices`) sobrescreve `price`/`priceNum` de cada lote por vir com `VALOR_VALUE` do `peca.asp` (`fetchLotDetails`, até 200 lotes por chamada, ordem dia/hora, cache em memória de 3 min); falha = mantém o valor da varredura (`lots.price`, cron 3×/dia, defasado). Vale também para o aviso externo (`lookoutnotify`: "atual" e comparação com o teto).

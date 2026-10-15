@@ -19,6 +19,7 @@ import { buildLookoutEmail, type LookoutEmailEntry } from "@/lib/email-templates
 import { emailEnabled, sendEmail } from "@/lib/email.server";
 import { pushReady, sendPushToAll } from "@/lib/push.server";
 import { readLotsRange } from "@/lib/leiloesbr-scrape.server";
+import { fetchLotDetails } from "@/lib/leiloesbr-lot-details.server";
 import { analyticsHistoryForItems } from "@/lib/lookout-analytics";
 import {
   buildLotIdentity,
@@ -143,12 +144,53 @@ async function confirmPendingByDescription(
   }
 }
 
+/** Teto de lotes por vir consultados ao vivo (1 requisição por lote, 100 por chamada). */
+const LIVE_PRICE_MAX = 200;
+/** Cache curto do valor ao vivo por lote — evita refazer ~200 requisições a cada abertura da página. */
+const LIVE_PRICE_TTL_MS = 3 * 60 * 1000;
+const livePriceCache = new Map<string, { at: number; value: string | null }>();
+
+/**
+ * Sobrescreve o valor atual dos lotes por vir com o valor AO VIVO do `peca.asp` — o `price` de
+ * `lots` vem da varredura geral (cron 3×/dia) e fica defasado (ex.: R$ 35 na varredura, R$ 88 no
+ * site). Os mais próximos do pregão vêm primeiro (a lista já está ordenada por dia/hora).
+ * Best-effort: lote que falhar mantém o valor da varredura.
+ */
+async function applyLivePrices(upcoming: LookoutUpcoming[]): Promise<void> {
+  const now = Date.now();
+  const targets = upcoming
+    .filter(
+      (u) => u.idPeca && u.url && (livePriceCache.get(u.lotId)?.at ?? 0) + LIVE_PRICE_TTL_MS < now,
+    )
+    .slice(0, LIVE_PRICE_MAX)
+    .map((u) => ({ id: u.lotId, idPeca: u.idPeca, url: u.url }));
+  try {
+    for (let i = 0; i < targets.length; i += 100) {
+      const chunk = targets.slice(i, i + 100);
+      const details = await fetchLotDetails(chunk);
+      for (const t of chunk) {
+        livePriceCache.set(t.id, { at: now, value: details[t.id]?.currentValue ?? null });
+      }
+    }
+  } catch (error) {
+    console.error("[lookout] não foi possível ler os valores ao vivo (usando a varredura)", error);
+  }
+  for (const u of upcoming) {
+    const live = livePriceCache.get(u.lotId)?.value;
+    const n = live ? parsePrice(live) : null;
+    if (live && n != null) {
+      u.price = live;
+      u.priceNum = n;
+    }
+  }
+}
+
 /**
  * Casa os itens de olho ativos com os lotes por vir (hoje até o fim da retenção) e, se
  * `withHistory`, com as vendas passadas arquivadas. Best-effort por fonte: falha numa leitura
  * auxiliar (aliases, mercado…) degrada o casamento, não derruba.
  */
-export async function computeLookout(withHistory = true): Promise<LookoutOverview> {
+export async function computeLookout(withHistory = true, live = true): Promise<LookoutOverview> {
   const [items, artistGroups] = await Promise.all([getAllLookout(), getLookoutArtistGroups()]);
   if (!items.some((i) => i.status === "active")) {
     return { items, upcoming: [], history: [], newCount: 0, artistGroups };
@@ -233,6 +275,7 @@ export async function computeLookout(withHistory = true): Promise<LookoutOvervie
   upcoming.sort(
     (a, b) => (a.dayKey + a.time).localeCompare(b.dayKey + b.time) || b.score - a.score,
   );
+  if (live) await applyLivePrices(upcoming);
 
   const history: LookoutPastSale[] = [];
   if (withHistory) {

@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.139.1** — De olho: o "Atual" dos lotes por vir agora é o valor AO VIVO do `peca.asp` (cache 3 min, até 200 lotes, os mais próximos primeiro), não o `price` defasado da varredura (ex.: R$ 35 no app × R$ 88 no site).
 - **0.139.0** — Mala ao lado do semáforo da casa (em todo lugar) quando há compras na guarda.
 - **0.138.0** — Web Push nativo (PWA): avisos do "De olho" e de lance superado direto no aparelho (sino no cabeçalho/Menu; `step=bidnotify` no cron; VAPID opcional) e selo com número no ícone do app (lances superados + novos do "De olho").
 - **0.137.0** — PWA instalável: `manifest.webmanifest` (atalhos De olho/Ao vivo/Compras/Coleção), ícones de disco de vinil, service worker (`public/sw.js`: cache só de estáticos/fotos da Coleção + página offline; nunca de dados) e convite único para instalar (Android/iOS).
