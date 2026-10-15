@@ -50,7 +50,7 @@ import {
   type LookoutArtistGroups,
   type LookoutItem,
 } from "@/lib/lookout-match";
-import type { LookoutUpcoming } from "@/lib/lookout-matches.server";
+import type { LookoutOverview, LookoutUpcoming } from "@/lib/lookout-matches.server";
 import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
 import {
   queryKeys,
@@ -181,21 +181,57 @@ function OlhoPage() {
       });
   };
 
+  // Ações simples (editar, arquivar, remover) refletem NA HORA no cache da visão: o recálculo dos
+  // matches no servidor é pesado e roda em segundo plano (`refresh`); erro desfaz.
+  const patchOverview = (fn: (o: LookoutOverview) => LookoutOverview) => {
+    queryClient.setQueriesData<LookoutOverview>({ queryKey: queryKeys.lookoutOverview }, (o) =>
+      o ? fn(o) : o,
+    );
+  };
+  const optimistic = async () => {
+    await queryClient.cancelQueries({ queryKey: queryKeys.lookoutOverview });
+    return queryClient.getQueriesData<LookoutOverview>({ queryKey: queryKeys.lookoutOverview });
+  };
+  const rollback = (prev?: [readonly unknown[], LookoutOverview | undefined][]) => {
+    for (const [key, data] of prev ?? []) queryClient.setQueryData(key, data);
+  };
   const updateMut = useMutation({
     mutationFn: async (vars: { id: string; patch: LookoutPatch }) =>
       await runUpdate({ data: { id: vars.id, ...vars.patch } }),
+    onMutate: async (vars) => {
+      const prev = await optimistic();
+      patchOverview((o) => ({
+        ...o,
+        items: o.items.map((i) => (i.id === vars.id ? { ...i, ...vars.patch } : i)),
+      }));
+      return { prev };
+    },
     onSuccess: refresh,
-    onError: (error: unknown) =>
-      toast.error((error as Error)?.message || "Não foi possível salvar"),
+    onError: (error: unknown, _vars, ctx) => {
+      rollback(ctx?.prev);
+      toast.error((error as Error)?.message || "Não foi possível salvar");
+    },
   });
   const deleteMut = useMutation({
     mutationFn: async (id: string) => await runDelete({ data: { id } }),
+    onMutate: async (id) => {
+      const prev = await optimistic();
+      patchOverview((o) => ({
+        ...o,
+        items: o.items.filter((i) => i.id !== id),
+        upcoming: o.upcoming.filter((m) => m.itemId !== id),
+        history: o.history.filter((h) => h.itemId !== id),
+      }));
+      return { prev };
+    },
     onSuccess: () => {
       toast.success("Removido da lista");
       refresh();
     },
-    onError: (error: unknown) =>
-      toast.error((error as Error)?.message || "Não foi possível remover"),
+    onError: (error: unknown, _id, ctx) => {
+      rollback(ctx?.prev);
+      toast.error((error as Error)?.message || "Não foi possível remover");
+    },
   });
   // Identificação por IA (texto + imagem) de UM item: preenche artista/álbum/ano e recalcula os
   // matches. `identifyingId` = item em andamento (spinner só nele).
