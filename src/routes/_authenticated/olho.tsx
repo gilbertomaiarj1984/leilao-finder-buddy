@@ -55,6 +55,7 @@ import {
   useAnalyticsAliasesQuery,
   useCollectionQuery,
   useLookoutOverviewQuery,
+  useBidsQuery,
   useWatchedQuery,
 } from "@/lib/queries";
 import { saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
@@ -302,6 +303,12 @@ function OlhoPage() {
     () => new Set((watched.data ?? []).map((w) => w.idPeca)),
     [watched.data],
   );
+  // Meus lances (mesmo hook/cache da home): pinta a borda do lote por vir (vencendo/superado).
+  const { query: bids } = useBidsQuery();
+  const bidById = useMemo(
+    () => new Map((bids.data ?? []).map((b) => [b.id, { status: b.status, myBid: b.myBid }])),
+    [bids.data],
+  );
   const [busyWatch, setBusyWatch] = useState<string | null>(null);
   // Liga/desliga a vigia real de UM lote e atualiza o acumulador NA HORA nas duas direções, como o
   // `toggle` da home: a conta do LeilõesBR pode demorar a refletir, então NÃO invalidamos
@@ -402,6 +409,7 @@ function OlhoPage() {
         upcoming={it.status === "active" ? (upcomingByItem.get(it.id) ?? []) : []}
         history={it.status === "active" ? (historyByItem.get(it.id) ?? []) : []}
         watchedIds={watchedIds}
+        bidById={bidById}
         watchLoading={watched.isLoading}
         busyWatch={busyWatch}
         mergeOptions={active.filter((o) => o.id !== it.id)}
