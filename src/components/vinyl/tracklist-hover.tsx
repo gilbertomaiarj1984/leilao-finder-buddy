@@ -6,7 +6,7 @@ import {
   useLotTracklistRefresh,
   type TracklistRefresh,
 } from "@/components/vinyl/tracklist-refresh";
-import { useLotAiQuery } from "@/lib/queries";
+import { useLotAiQuery, useLotTracklist } from "@/lib/queries";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { groupTracksBySide, type Track, type TrackFame } from "@/lib/tracklist";
 
@@ -25,13 +25,15 @@ const FAME_LABEL: Record<TrackFame, string> = {
 };
 
 /**
- * Ícone de TRACKLIST do álbum (faixas do Discogs + fama da IA, `lot_ai.tracklist`). Ao parar o mouse em cima
- * abre a lista por lado, com bolinha verde (mais famosas), amarela (menos) ou vermelha
+ * Ícone de TRACKLIST do álbum (faixas do Discogs + fama da IA, `lot_ai.tracklist`). As faixas dos lotes
+ * NÃO vêm na lista de avaliações (`hasTracklist` só acende o ícone): são buscadas ao passar o mouse/tocar.
+ * Ao parar o mouse em cima abre a lista por lado, com bolinha verde (mais famosas), amarela (menos) ou vermelha
  * (desconhecidas e/ou lado B). Toque/clique também abre (mobile). Sem tracklist, o ícone
  * fica apagado e explica que ela vem com a análise da IA.
  */
 export function TracklistHover({
   tracklist,
+  hasTracklist = false,
   title,
   onRequest,
   loading = false,
@@ -39,6 +41,8 @@ export function TracklistHover({
   refresh: refreshProp,
 }: {
   tracklist?: Track[] | null;
+  /** O lote tem tracklist gravada, mas as faixas ainda não foram baixadas (busca sob demanda). */
+  hasTracklist?: boolean;
   title?: string;
   /** Lote cuja tracklist pode ser atualizada manualmente (botão "atualizar" na lista). */
   lotId?: string | null;
@@ -53,10 +57,15 @@ export function TracklistHover({
   const refresh = refreshProp ?? lotRefresh;
   const [open, setOpen] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const has = Boolean(tracklist?.length);
+  const [wanted, setWanted] = useState(false);
+  const direct = Boolean(tracklist?.length);
+  const lazy = useLotTracklist(lotId, wanted && !direct && hasTracklist);
+  const tracks = direct ? (tracklist ?? []) : (lazy.data ?? []);
+  const has = direct || hasTracklist || tracks.length > 0;
 
   const show = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
+    setWanted(true);
     if (has) setOpen(true);
   };
   const hide = () => {
@@ -78,7 +87,13 @@ export function TracklistHover({
       : "Tracklist ainda não disponível — vem com a análise da IA";
 
   return (
-    <Popover open={open} onOpenChange={(o) => setOpen(o && has)}>
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        if (o) setWanted(true);
+        setOpen(o && has);
+      }}
+    >
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -106,7 +121,13 @@ export function TracklistHover({
           onMouseLeave={hide}
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
-          <TracklistContent tracklist={tracklist ?? []} title={title} refresh={refresh} />
+          {tracks.length ? (
+            <TracklistContent tracklist={tracks} title={title} refresh={refresh} />
+          ) : (
+            <p className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" /> Carregando faixas…
+            </p>
+          )}
         </PopoverContent>
       ) : null}
     </Popover>
@@ -209,13 +230,14 @@ export function LotTracklistHover({
   loading?: boolean;
 }) {
   const aiQuery = useLotAiQuery();
-  const fromLot = useMemo(
-    () => (lotId ? (aiQuery.data?.find((r) => r.id === lotId)?.tracklist ?? null) : null),
+  const hasFromLot = useMemo(
+    () => (lotId ? Boolean(aiQuery.data?.find((r) => r.id === lotId)?.hasTracklist) : false),
     [aiQuery.data, lotId],
   );
   return (
     <TracklistHover
-      tracklist={own?.length ? own : fromLot}
+      tracklist={own?.length ? own : null}
+      hasTracklist={!own?.length && hasFromLot}
       title={title}
       lotId={own?.length ? null : lotId}
       refresh={refresh}

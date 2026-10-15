@@ -8,7 +8,6 @@ import {
   type SuggestionMap,
 } from "@/lib/discogs-price";
 import { normalizeGrade, type Grade } from "@/lib/grading";
-import type { Track } from "@/lib/tracklist";
 import { normalizeForMatch, parsePrice, titleCase } from "@/lib/vinyl-parse";
 
 /**
@@ -95,10 +94,33 @@ export type LotAi = {
   tags: string[];
   /** Preço (R$) do lote quando a nota foi dada (`lot_ai.eval_price`) — ver `ai-reprice.ts`. */
   evalPrice?: number | null;
-  /** Tracklist com a fama de cada faixa (`lot_ai.tracklist`); null/ausente = não informada. */
-  tracklist?: Track[] | null;
+  /** Existe tracklist (faixas + fama) gravada — a lista em si vem sob demanda (`useLotTracklist`). */
+  hasTracklist?: boolean;
   matchesInterests?: boolean;
 };
+
+/** Linha de `getLotAi` (banco, snake_case) → `LotAi` da UI. DUP(lot-ai-mapper): único ponto. */
+export function toLotAi(r: {
+  score: number | null;
+  rarity: string | null;
+  deal: string | null;
+  album: string | null;
+  reason: string | null;
+  tags: string[];
+  eval_price: number | null;
+  hasTracklist: boolean;
+}): LotAi {
+  return {
+    score: r.score,
+    rarity: r.rarity,
+    deal: r.deal,
+    album: r.album,
+    reason: r.reason,
+    tags: r.tags,
+    evalPrice: r.eval_price,
+    hasTracklist: r.hasTracklist,
+  };
+}
 
 const RARITY_LABEL: Record<string, string> = {
   comum: "Comum",

@@ -153,7 +153,7 @@ function ColecaoPage() {
   // discos sem artista/álbum. "Lote"/"Coletâneas" não têm álbum único → fora das duas listas.
   const tracklistTargets = useMemo(() => {
     const lotTracks = new Set(
-      (lotAiQuery.data ?? []).filter((r) => r.tracklist?.length).map((r) => r.id),
+      (lotAiQuery.data ?? []).filter((r) => r.hasTracklist).map((r) => r.id),
     );
     return items.filter((it) => {
       if (it.tracklist?.length) return false;

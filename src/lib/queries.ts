@@ -24,6 +24,7 @@ import {
   getAnthropicModel,
   getGeminiModel,
   getLotAi,
+  getLotTracklist,
   getLotIdent,
   getUserInterests,
 } from "@/lib/ai.functions";
@@ -52,6 +53,7 @@ export const queryKeys = {
   watched: ["vinyl-watched"],
   bids: ["vinyl-my-bids"],
   lotAi: ["lot-ai"],
+  lotTracklist: (id: string) => ["lot-tracklist", id] as const,
   lotIdent: ["lot-ident"],
   lotMarket: ["lot-market"],
   interests: ["user-interests"],
@@ -180,6 +182,21 @@ export function useLotAiQuery() {
     queryKey: queryKeys.lotAi,
     queryFn: () => fetchLotAi(),
     staleTime: 10 * MIN,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * Tracklist de UM lote, buscada só quando alguém a pede (`enabled`): `getLotAi` não carrega mais as
+ * faixas de todos os discos, só `hasTracklist`. Atualizada por `useLotTracklistRefresh`.
+ */
+export function useLotTracklist(id: string | null | undefined, enabled: boolean) {
+  const fetchTracklist = useServerFn(getLotTracklist);
+  return useQuery({
+    queryKey: queryKeys.lotTracklist(id ?? ""),
+    queryFn: () => fetchTracklist({ data: { id: id as string } }),
+    enabled: enabled && Boolean(id),
+    staleTime: 30 * MIN,
     refetchOnWindowFocus: false,
   });
 }

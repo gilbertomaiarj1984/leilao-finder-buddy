@@ -56,12 +56,26 @@ export const getLotAi = createServerFn({ method: "GET" })
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     try {
-      const { getAllLotAi } = await import("./lot-ai.server");
-      return await getAllLotAi();
+      const { getAllLotAiClient } = await import("./lot-ai.server");
+      return await getAllLotAiClient();
     } catch (error) {
       console.error("[lot-ai] não foi possível ler as avaliações", error);
       return [];
     }
+  });
+
+/** Tracklist (faixas + fama) de UM lote, sob demanda — `getLotAi` só informa `hasTracklist`. */
+export const getLotTracklist = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .inputValidator((input: { id?: string } | undefined) => {
+    if (!input?.id || typeof input.id !== "string") throw new Error("Lote inválido.");
+    return { id: input.id };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getLotTracklist } = await import("./lot-ai.server");
+    return await getLotTracklist(data.id);
   });
 
 /** Identificação simplificada da IA por lote (artista/álbum/ano). Best-effort: [] em erro. */
@@ -131,15 +145,14 @@ export const reevaluateLot = createServerFn({ method: "POST" })
     }
     const { getAiProvider } = await import("./app-state.server");
     const provider = await getAiProvider();
-    const { upsertLotAi, getAllLotAi } = await import("./lot-ai.server");
+    const { upsertLotAi, getLotTracklist, toClientRow } = await import("./lot-ai.server");
     const { rows, error } = await evalLotsSync([data], provider);
     const row = rows[0];
     if (!row) throw new Error(error || "A IA não conseguiu reavaliar este lote.");
-    // A linha devolvida SUBSTITUI a do cache do cliente: sem isto as faixas (que a avaliação não
-    // gera) sumiriam da tela até o próximo refetch. O banco as mantém (`upsertLotAi` não zera).
-    const prevTracks = (await getAllLotAi()).find((r) => r.id === row.id)?.tracklist ?? null;
-    row.tracklist = row.tracklist ?? prevTracks;
-    await upsertLotAi([row]);
+    // A linha devolvida SUBSTITUI a do cache do cliente: `hasTracklist` precisa refletir as faixas
+    // que o banco mantém (a avaliação não as gera).
+    await upsertLotAi([row]); // não zera as faixas já gravadas
+    const prevTracks = row.tracklist ?? (await getLotTracklist(row.id));
     // Lote recém-avaliado (ex.: sem nota e sem faixas): completa com a rotina da tracklist —
     // faixas do Discogs + fama pela IA. Best-effort: falha aqui não derruba a reavaliação.
     if (row.album) {
@@ -148,13 +161,16 @@ export const reevaluateLot = createServerFn({ method: "POST" })
         if (discogsConfigured()) {
           const { refreshLotTracklist } = await import("./tracklist-step.server");
           const r = await refreshLotTracklist(row.id, provider, true);
-          return { row: { ...row, tracklist: r.tracklist } };
+          return {
+            row: { ...toClientRow({ ...row, tracklist: r.tracklist }) },
+            tracklist: r.tracklist,
+          };
         }
       } catch (error) {
         console.error(`[reevaluateLot] tracklist de ${row.id} falhou`, error);
       }
     }
-    return { row };
+    return { row: toClientRow({ ...row, tracklist: prevTracks }), tracklist: prevTracks };
   });
 
 /**
@@ -224,16 +240,18 @@ export const repriceLotAi = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
-    const empty = { rows: [] as import("./lot-ai.server").LotAiRow[] };
+    const empty = {
+      rows: [] as Awaited<ReturnType<typeof import("./lot-ai.server").getAllLotAiClient>>,
+    };
     if (!data.lots.length) return empty;
     const { aiConfigured, evalLotsSync } = await import("./ai-eval.server");
     if (!aiConfigured()) return empty;
     const { getAiMode, getAiProvider } = await import("./app-state.server");
     if ((await getAiMode()) === "off") return empty;
-    const { getAllLotAi, upsertLotAi } = await import("./lot-ai.server");
+    const { getAllLotAiClient, upsertLotAi, toClientRow } = await import("./lot-ai.server");
     const { priceRoseSinceEval } = await import("./ai-reprice");
     const { parsePrice } = await import("./vinyl-parse");
-    const byId = new Map((await getAllLotAi()).map((r) => [r.id, r]));
+    const byId = new Map((await getAllLotAiClient()).map((r) => [r.id, r]));
     const toEval = data.lots.filter((l) => {
       const row = byId.get(l.id);
       return row ? priceRoseSinceEval(row.eval_price, parsePrice(l.price)) : false;
@@ -241,9 +259,13 @@ export const repriceLotAi = createServerFn({ method: "POST" })
     if (!toEval.length) return empty;
     try {
       const { rows } = await evalLotsSync(toEval, await getAiProvider());
-      for (const r of rows) r.tracklist = r.tracklist ?? byId.get(r.id)?.tracklist ?? null;
-      await upsertLotAi(rows);
-      return { rows };
+      await upsertLotAi(rows); // não zera as faixas já gravadas
+      return {
+        rows: rows.map((r) => ({
+          ...toClientRow(r),
+          hasTracklist: Boolean(r.tracklist?.length) || (byId.get(r.id)?.hasTracklist ?? false),
+        })),
+      };
     } catch (error) {
       console.error("[lot-ai] falha ao reavaliar lotes por subida de preço", error);
       return empty;

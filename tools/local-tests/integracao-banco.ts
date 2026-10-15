@@ -58,15 +58,30 @@ ok("backfill: não repete depois do {}", mkt.selectMarketBackfill([after], 10).l
 
 // ---- lot_ai: lean x completo, cache ----
 await lai.upsertLotAi([{ id: "itest-1", title_hash: "h.p3.fp", score: 70, rarity: "raro", deal: "justo", album: "Gil - Raça Humana", reason: "r", tags: ["mpb"], model: "m", eval_price: 40, tracklist: [{ side: "A", title: "Faixa 1", fame: "alta" }] }]);
-const full = (await lai.getAllLotAi()).find((r: any) => r.id === "itest-1");
+const full = { tracklist: await lai.getLotTracklist("itest-1") };
 const lean = (await lai.getAllLotAiLean()).find((r: any) => r.id === "itest-1");
 ok("lot_ai: completo traz tracklist", full?.tracklist?.length === 1, full?.tracklist);
 ok("lot_ai: lean NÃO traz tracklist mas traz hash/nota", lean?.tracklist === null && lean?.title_hash === "h.p3.fp" && lean?.score === 70, lean);
 await lai.upsertLotAi([{ id: "itest-1", title_hash: "h2", score: 80, rarity: "raro", deal: "justo", album: "Gil - Raça Humana", reason: "r", tags: [], model: "m", eval_price: 40, tracklist: null }]);
 const lean2 = (await lai.getAllLotAiLean()).find((r: any) => r.id === "itest-1");
 ok("lot_ai: cache lean é invalidado pela escrita", lean2?.title_hash === "h2" && lean2?.score === 80, lean2);
-const full2 = (await lai.getAllLotAi()).find((r: any) => r.id === "itest-1");
+const full2 = { tracklist: await lai.getLotTracklist("itest-1") };
 ok("lot_ai: reavaliar não zera a tracklist (banco)", full2?.tracklist?.length === 1, full2?.tracklist);
+
+// ---- lot_ai: versão do navegador (sem faixas) + faixas sob demanda ----
+const cli = (await lai.getAllLotAiClient()).find((r: any) => r.id === "itest-1");
+ok("lot_ai cliente: sem campo tracklist, hasTracklist=true", cli && !("tracklist" in cli) && cli.hasTracklist === true && cli.score === 80, cli);
+const one = await lai.getLotTracklist("itest-1");
+ok("lot_ai: getLotTracklist traz as faixas de um lote", one?.length === 1 && one[0].title === "Faixa 1", one);
+ok("lot_ai: lote inexistente → null", (await lai.getLotTracklist("itest-nao-existe")) === null);
+await sql`update lot_ai set tracklist = '[]'::jsonb where id = 'itest-1'`;
+lai.invalidateLotAiCache();
+const cli2 = (await lai.getAllLotAiClient()).find((r: any) => r.id === "itest-1");
+ok("lot_ai cliente: [] = hasTracklist false (já tentado, sem faixas)", cli2?.hasTracklist === false, cli2);
+await sql`update lot_ai set tracklist = null where id = 'itest-1'`;
+lai.invalidateLotAiCache();
+const cli3 = (await lai.getAllLotAiClient()).find((r: any) => r.id === "itest-1");
+ok("lot_ai cliente: NULL = hasTracklist false (sem erro)", cli3?.hasTracklist === false, cli3);
 
 // ---- lot_condition + contexto ----
 await sql`insert into lot_condition (id,title_hash,media,sleeve,insert_state,score,faixa,source) values ('itest-1','h.c2.k','VG+','VG','sim',78,'Muito Bom','catalog') on conflict (id) do update set media = excluded.media`;

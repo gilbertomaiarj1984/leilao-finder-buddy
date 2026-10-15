@@ -43,6 +43,7 @@ import {
   marketDeal,
   RARITY_LEGEND,
   rowStatusTone,
+  toLotAi,
   toLotMarket,
   withConditionAnchor,
   type LotAi,
@@ -446,17 +447,7 @@ function AnalisePage() {
 
   const aiById = useMemo(() => {
     const map = new Map<string, LotAi>();
-    for (const r of lotAiQuery.data ?? [])
-      map.set(r.id, {
-        score: r.score,
-        rarity: r.rarity,
-        deal: r.deal,
-        album: r.album,
-        reason: r.reason,
-        tags: r.tags,
-        evalPrice: r.eval_price,
-        tracklist: r.tracklist,
-      });
+    for (const r of lotAiQuery.data ?? []) map.set(r.id, toLotAi(r));
     return map;
   }, [lotAiQuery.data]);
   // Mapa id→álbum com identidade ESTÁVEL enquanto os álbuns não mudam (assinatura id:album).

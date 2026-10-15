@@ -19,6 +19,7 @@ import { formatAiAlbum, scoreTone } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import { TracklistContent } from "@/components/vinyl/tracklist-hover";
 import { useLotTracklistRefresh } from "@/components/vinyl/tracklist-refresh";
+import { useLotTracklist } from "@/lib/queries";
 import { LOOKOUT_CONFIDENT_MIN, priceVsCeiling } from "@/lib/lookout-match";
 import { decodeHtmlEntities, lotOpenUrl, parsePrice } from "@/lib/vinyl-parse";
 import { OWNED_CONFIDENT_MIN } from "@/lib/wantlist-match";
@@ -170,7 +171,8 @@ export function LotDetailSheet(
     sold: props.sold,
     lookoutActive: Boolean(lookout && (lookout.on || lookout.hit)),
   });
-  const tracks = ai?.tracklist ?? null;
+  const tracksQuery = useLotTracklist(lot.id, tab === "faixas" && Boolean(ai?.hasTracklist));
+  const tracks = tracksQuery.data ?? null;
   const tracklistRefresh = useLotTracklistRefresh(lot.id);
   const hit = lookout?.hit ?? null;
   const hitSure = hit ? hit.confirmed || hit.score >= LOOKOUT_CONFIDENT_MIN : false;
@@ -470,7 +472,11 @@ export function LotDetailSheet(
             </Box>
           ) : (
             <Box>
-              <p className="text-sm text-muted-foreground">Tracklist ainda não disponível.</p>
+              <p className="text-sm text-muted-foreground">
+                {ai?.hasTracklist && tracksQuery.isFetching
+                  ? "Carregando faixas…"
+                  : "Tracklist ainda não disponível."}
+              </p>
               {tracklistRefresh ? (
                 <button
                   type="button"

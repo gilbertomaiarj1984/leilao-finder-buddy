@@ -54,6 +54,7 @@ do LeilõesBR, do Discogs, da IA e do login Google reais, que o ambiente de dese
 
 **Reavaliar com IA (todos devem usar o contexto)**
 - [ ] ✨ do lote sem nota, «refazer consulta» e «repassar a IA»: a nota volta, **as faixas (tracklist) não somem**.
+- [ ] Tracklist sob demanda (0.146.0): ícone de faixas acende nos lotes que têm; passar o mouse/tocar mostra «Carregando faixas…» e depois a lista; a aba «Faixas» do detalhe no celular também; «atualizar» troca a lista sem recarregar a página.
 - [ ] «Analisar dia», «Analisar casa» e «Analisar vigiados».
 - [ ] Trocar para Gemini no painel e reavaliar um lote com capa: confirmar que a capa ainda é enviada (a URL passa
   pelo filtro de segurança) e a nota sai.
@@ -75,7 +76,6 @@ do LeilõesBR, do Discogs, da IA e do login Google reais, que o ambiente de dese
 - [ ] Cotação USD→BRL derivada da API: só será preciso se aparecer preço em outra moeda.
 
 **Técnicas (não bloqueiam)**
-- [ ] O cliente ainda recebe a tracklist de todos os lotes (`getLotAi`); carregar sob demanda exige mudar o `TracklistHover`.
 - [ ] Duplicações (pool de workers, parser de JSON, lista de modelos), mover funções de `components/` para `src/lib`,
   teto de 25 do estado por IA sem prioridade, `PROMPT_VERSION` ainda manual para mudanças de ESTRUTURA do contexto.
 - [ ] Testes sem cobertura: `pickBestRelease`/`parseAlbum`/`buildQuery`, `isQuotaError`, `priceRoseSinceEval`.

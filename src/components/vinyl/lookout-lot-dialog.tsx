@@ -2,7 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo } from "react";
 
-import { toLotMarket, withConditionAnchor, type LotAi } from "@/components/vinyl/ai-score-utils";
+import {
+  toLotAi,
+  toLotMarket,
+  withConditionAnchor,
+  type LotAi,
+} from "@/components/vinyl/ai-score-utils";
 import { LotCard } from "@/components/vinyl/lot-card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { effectiveTextRules } from "@/lib/condition-text";
@@ -48,18 +53,7 @@ export function LookoutLotDialog({
   const id = lot?.lotId ?? "";
   const ai = useMemo<LotAi | undefined>(() => {
     const r = (aiQuery.data ?? []).find((x) => x.id === id);
-    return r
-      ? {
-          score: r.score,
-          rarity: r.rarity,
-          deal: r.deal,
-          album: r.album,
-          reason: r.reason,
-          tags: r.tags,
-          evalPrice: r.eval_price,
-          tracklist: r.tracklist,
-        }
-      : undefined;
+    return r ? toLotAi(r) : undefined;
   }, [aiQuery.data, id]);
   const marketRaw = useMemo(() => {
     const r = (marketQuery.data ?? []).find((x) => x.id === id);
