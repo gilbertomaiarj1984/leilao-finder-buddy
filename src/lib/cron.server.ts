@@ -97,11 +97,22 @@ export async function handleCron(request: Request): Promise<Response | null> {
       // 1) Há batch (Claude) em andamento? Tenta coletar — independe do provedor atual.
       const pending = await getPendingAiBatch();
       if (pending) {
-        const { done, rows } = await collectEvalBatch(
-          pending.batchId,
-          pending.hashes,
-          pending.prices,
-        );
+        let result: Awaited<ReturnType<typeof collectEvalBatch>>;
+        try {
+          result = await collectEvalBatch(pending.batchId, pending.hashes, pending.prices);
+        } catch (error) {
+          // Batch expirado/removido (404) ou erro persistente: sem este descarte o `aieval` ficaria
+          // preso nele para sempre. Até 48h tenta de novo; depois abandona e segue para o próximo.
+          const ageH = (Date.now() - Date.parse(pending.submittedAt)) / 3_600_000;
+          if (!(ageH > 48)) throw error;
+          console.error(
+            `[cron] aieval: batch ${pending.batchId} abandonado após ${ageH.toFixed(0)}h`,
+            error,
+          );
+          await setPendingAiBatch(null);
+          return json({ dropped: pending.batchId });
+        }
+        const { done, rows } = result;
         if (!done) return json({ pending: true, batchId: pending.batchId });
         const collected = await upsertLotAi(rows);
         await setPendingAiBatch(null);
@@ -271,40 +282,57 @@ export async function handleCron(request: Request): Promise<Response | null> {
         const backfill = selectMarketBackfill(marketRows, max);
         if (!backfill.length) return json({ done: true, updated: 0 });
         const items = [];
+        let failed = 0;
         for (const b of backfill) {
-          items.push({ id: b.id, map: await fetchSuggestionMap(b.release_id) });
+          try {
+            items.push({ id: b.id, map: await fetchSuggestionMap(b.release_id) });
+          } catch (error) {
+            // Falha transitória do Discogs: não grava nada para esse disco (volta na próxima).
+            failed += 1;
+            console.error(`[cron] market backfill ${b.release_id}`, (error as Error)?.message);
+          }
         }
         const filled = await updateSuggestionMaps(items);
-        return json({ backfilled: filled, done: backfill.length < max });
+        return json({ backfilled: filled, failed, done: backfill.length < max });
       }
 
-      const rows = [];
+      // Um lote por vez e gravando na hora: uma falha do Discogs no 12º não perde os 11 já pagos
+      // em chamadas, e um erro transitório NÃO grava `matched=false` (o lote volta na próxima).
+      let updated = 0;
+      let failed = 0;
       for (const t of targets) {
-        const basis = marketBasis(t.album, t.title);
-        const m = await fetchMarket(t.album, t.title);
-        rows.push({
-          id: t.id,
-          basis,
-          matched: m.matched,
-          release_id: m.releaseId,
-          release_title: m.releaseTitle,
-          year: m.year,
-          num_for_sale: m.numForSale,
-          lowest_price: m.lowestPrice,
-          currency: m.currency,
-          suggested_price: m.suggestedPrice,
-          suggested_condition: m.suggestedCondition,
-          suggested_by_condition: m.suggestedByCondition,
-          have: m.have,
-          want: m.want,
-          price_low_br: m.priceLowBr,
-          price_high_br: m.priceHighBr,
-          num_for_sale_br: m.numForSaleBr,
-        });
+        try {
+          const basis = marketBasis(t.album, t.title);
+          const m = await fetchMarket(t.album, t.title);
+          updated += await upsertLotMarket([
+            {
+              id: t.id,
+              basis,
+              matched: m.matched,
+              release_id: m.releaseId,
+              release_title: m.releaseTitle,
+              year: m.year,
+              num_for_sale: m.numForSale,
+              lowest_price: m.lowestPrice,
+              currency: m.currency,
+              suggested_price: m.suggestedPrice,
+              suggested_condition: m.suggestedCondition,
+              suggested_by_condition: m.suggestedByCondition,
+              have: m.have,
+              want: m.want,
+              price_low_br: m.priceLowBr,
+              price_high_br: m.priceHighBr,
+              num_for_sale_br: m.numForSaleBr,
+            },
+          ]);
+        } catch (error) {
+          failed += 1;
+          console.error(`[cron] market ${t.id}`, (error as Error)?.message);
+        }
       }
-      const updated = await upsertLotMarket(rows);
       // Ainda há mais? (a seleção pega os primeiros `max`; se veio cheio, provavelmente há resto)
-      return json({ updated, done: targets.length < max });
+      // Se TODOS falharam (Discogs fora do ar), encerra a rodada em vez de repetir o mesmo bloco.
+      return json({ updated, failed, done: targets.length < max || failed === targets.length });
     }
 
     // Enriquecimento de ESTADO (Disco/Capa) dos lotes PRÉ-leilão (`lot_condition`).

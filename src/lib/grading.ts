@@ -205,7 +205,7 @@ function gradeAfterLabel(foldedText: string, labels: string, stopLabels = ""): G
   const stop = stopLabels ? `(?!${stopLabels})` : "";
   const filler = `(?:${stop}[^.;!?]){0,40}?`;
   const re = new RegExp(
-    `(?:${labels})${filler}[:\\-–=]?\\s*\\(?\\s*(?<!NAO\\s)(?<!SEM\\s)(?<![A-Z0-9])(${GRADE_TOKEN})(?![A-Z0-9])`,
+    `(?:${labels})${filler}[:\\-–=]?\\s*\\(?\\s*(?<!NAO\\s)(?<!SEM\\s)(?<![A-Z0-9])(${GRADE_TOKEN})(?![A-Z0-9])(?!-[A-Z])`,
     "i",
   );
   const m = foldedText.match(re);
@@ -274,7 +274,8 @@ export function parseConditionFromText(
         sleeve = "NM";
       } else {
         // (4) uma única sigla forte solta (evita M/G/F/P sozinhos, ambíguos demais).
-        const STRONG = /\b(VG\+\+|VG\+|VG-|M-|NM|EX|G\+|G-|F\/P)\b/g;
+        // `ex-Beatle`/`ex-Cassino`: EX colado a outra palavra por hífen não é grau.
+        const STRONG = /(?<![A-Z0-9])(VG\+\+|VG\+|VG-|M-|NM|EX|G\+|G-|F\/P)(?![A-Z0-9]|-[A-Z])/g;
         const found = new Set<Grade>();
         for (const m of folded.matchAll(STRONG)) {
           const g = normalizeGrade(m[1]!);

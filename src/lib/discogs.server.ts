@@ -318,25 +318,43 @@ async function throttle(): Promise<void> {
   lastCallAt = Date.now();
 }
 
+// Falhas TRANSITÓRIAS (rede, 429 após a nova tentativa, 5xx, 401/403) são contadas: um 404 é "não
+// existe" e pode ser gravado como tal, mas uma falha de rede não — gravar `matched=false` (ou `{}`)
+// por causa dela faria o lote nunca mais ser consultado. `fetchMarket` e `fetchSuggestionMap`
+// lançam `DiscogsTransientError` quando a contagem sobe durante a chamada.
+let transientErrors = 0;
+
+export class DiscogsTransientError extends Error {
+  constructor() {
+    super("Discogs indisponível no momento (erro transitório); nada foi gravado.");
+  }
+}
+
 async function discogsGet(path: string): Promise<unknown | null> {
   const token = process.env["DISCOGS_TOKEN"];
   if (!token) return null;
   await throttle();
   const url = `${BASE}${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
-  const resp = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
-  if (resp.status === 429) {
-    // Rate limit estourou: espera e tenta uma vez.
-    await new Promise((r) => setTimeout(r, 2000));
-    const retry = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
-    if (!retry.ok) return null;
-    return (await retry.json()) as unknown;
-  }
-  if (resp.status === 404) return null;
-  if (!resp.ok) {
-    console.error(`[discogs] GET ${path} → ${resp.status}`);
+  const headers = { "User-Agent": UA, Accept: "application/json" };
+  try {
+    let resp = await fetch(url, { headers });
+    if (resp.status === 429) {
+      // Rate limit estourou: espera e tenta uma vez.
+      await new Promise((r) => setTimeout(r, 2000));
+      resp = await fetch(url, { headers });
+    }
+    if (resp.status === 404) return null;
+    if (!resp.ok) {
+      console.error(`[discogs] GET ${path} → ${resp.status}`);
+      transientErrors += 1;
+      return null;
+    }
+    return (await resp.json()) as unknown;
+  } catch (error) {
+    console.error(`[discogs] GET ${path} falhou`, (error as Error)?.message);
+    transientErrors += 1;
     return null;
   }
-  return (await resp.json()) as unknown;
 }
 
 /**
@@ -477,6 +495,13 @@ export async function findReleaseByCode(code: DiscCode): Promise<DiscogsCodeInfo
 }
 
 export async function fetchMarket(album: string | null, title: string): Promise<MarketData> {
+  const before = transientErrors;
+  const result = await fetchMarketOnce(album, title);
+  if (transientErrors > before) throw new DiscogsTransientError();
+  return result;
+}
+
+async function fetchMarketOnce(album: string | null, title: string): Promise<MarketData> {
   const empty: MarketData = {
     matched: false,
     releaseId: null,
@@ -564,6 +589,13 @@ export async function fetchMarket(album: string | null, title: string): Promise<
  * preencher linhas antigas de `lot_market` sem refazer a busca/estatísticas.
  */
 export async function fetchSuggestionMap(releaseId: number): Promise<SuggestionMap | null> {
+  const before = transientErrors;
+  const map = await fetchSuggestionMapOnce(releaseId);
+  if (transientErrors > before) throw new DiscogsTransientError();
+  return map;
+}
+
+async function fetchSuggestionMapOnce(releaseId: number): Promise<SuggestionMap | null> {
   const suggestions = (await discogsGet(`/marketplace/price_suggestions/${releaseId}`)) as Record<
     string,
     { value?: number; currency?: string }

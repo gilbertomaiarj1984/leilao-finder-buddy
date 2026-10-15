@@ -34,14 +34,8 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   transitórios ANTES de propagar — útil quando o Gemini é o único provedor. Motivo real:
   `503 UNAVAILABLE "This model is currently experiencing high demand"` do `gemini-flash-latest`.
   Erros não-transitórios/não-quota (400/401/403, prompt bloqueado, parsing) propagam (por-item).
-- **Downgrade de modelo dentro do Gemini antes do failover de provedor:** quando o Gemini
-  escolhido/configurado bate em `isQuotaError`, `runOne` tenta primeiro
-  **`GEMINI_FREE_FALLBACK_MODEL`** (`gemini-2.5-flash-lite`, cota gratuita própria, mais barato
-  que o padrão de fábrica) antes de desistir do Gemini e cair pro Claude — evita queimar o
-  Claude quando o problema é só a cota diária do modelo escolhido (ex.: usuário travou
-  `gemini-flash-latest` e ele estourou quota — tenta o Flash-Lite 2.5 antes de ir pro Claude).
-  Só propaga (e aciona o failover de provedor do `runText`) se o Flash-Lite 2.5 também falhar
-  por quota, ou se o modelo pedido já era ele mesmo (sem loop).
+- ~~Downgrade de modelo dentro do Gemini~~ (removido na v0.143.1): o `gemini-2.5-flash-lite` desliga em
+  16/out/2026; quota estourada vai direto para o failover de provedor.
 - **Provedor PADRÃO** persistido em `app_state.ai_provider` (`getAiProvider`/`setAiProvider`;
   precedência: `app_state` → env `AI_PROVIDER` → `anthropic`). **Seletor único no header**
   (`AiProviderSelect`, na home, Coleção e Vinil Analytics) — é a **ÚNICA** forma de escolher a
@@ -108,7 +102,7 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   (≤ 0,7 barato, ≥ 1,15 caro — as mesmas faixas do `marketDeal`). Dado ausente não entra no JSON.
   Carregado na hora do envio (`loadLotContexts`, por ids; best-effort — falha = prompt sem contexto,
   como antes); o Batches congela o contexto no submit. **Versão do prompt:** `PROMPT_VERSION`
-  (`ai-context.ts`) vira sufixo do hash (`evalHash` = `titleHash.p2`); subir o número reavalia a
+  (`ai-context.ts`) vira sufixo do hash (`evalHash` = `titleHash.p3`); subir o número reavalia a
   base inteira (até 800 lotes por rodada). Dados voláteis (have/want, preços) ficam fora do hash de
   propósito. **Ordem do cron:** `aieval`/`tracklist`/`fame` rodam depois de `aiident`, `market`,
   `condition`, `sales` e `reident` (`refresh.yml`) — senão a primeira avaliação sairia sem contexto.
@@ -202,3 +196,17 @@ image})` chama `evalLotsSync` **direto** (ignora o cache por `title_hash` — é
 - **Custo Gemini (referência):** `gemini-flash-latest` ≈ US$0,75/US$3,75 por 1M tok in/out (mais
   barato que o Haiku 4.5); o alias `-latest` acompanha o Flash mais novo — para fixar, usar
   `GEMINI_MODEL`.
+
+
+### Revisão de código da IA (v0.143.1)
+
+- **Erros do Discogs** (`discogs.server.ts`): `discogsGet` conta falhas transitórias; `fetchMarket` e
+  `fetchSuggestionMap` lançam `DiscogsTransientError` quando houve alguma e o cron NÃO grava (404 é
+  "não existe" e continua gravando `matched=false`). `step=market` grava lote a lote.
+- **`lot_condition.title_hash`** = `titleHash.c<CONDITION_PARSER_VERSION>.<impressão das regras>`
+  (`lot-condition.server.ts`). Mudou `grading.ts`/`condition-text.ts` de forma que o resultado muda?
+  Suba `CONDITION_PARSER_VERSION`. Editar regras no painel muda a impressão sozinho.
+- **Capa para o Gemini** (`isSafeImageUrl`): só http(s) público; recusa localhost, nomes sem ponto
+  (serviços do Docker), `.local`/`.internal`, IPv6 literal e 10/8, 127/8, 169.254/16, 172.16/12,
+  192.168/16.
+- **Batch preso:** `aieval` abandona o batch pendente com mais de 48h se a coleta lançar erro.

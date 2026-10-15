@@ -152,7 +152,7 @@ jobs:
           # o rate limit). Chunked: repetimos até done=true ou acabar as iterações; o resto
           # completa nas execuções seguintes. No-op sem DISCOGS_TOKEN.
           for i in $(seq 1 12); do
-            res="$(call "/api/cron?step=market&max=12")"
+            res="$(call "/api/cron?step=market&max=8")"
             echo "market $i: $res"
             if echo "$res" | jq -e '.skipped' >/dev/null 2>&1; then break; fi
             if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi

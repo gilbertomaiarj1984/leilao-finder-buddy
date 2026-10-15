@@ -131,10 +131,14 @@ export const reevaluateLot = createServerFn({ method: "POST" })
     }
     const { getAiProvider } = await import("./app-state.server");
     const provider = await getAiProvider();
-    const { upsertLotAi } = await import("./lot-ai.server");
+    const { upsertLotAi, getAllLotAi } = await import("./lot-ai.server");
     const { rows, error } = await evalLotsSync([data], provider);
     const row = rows[0];
     if (!row) throw new Error(error || "A IA não conseguiu reavaliar este lote.");
+    // A linha devolvida SUBSTITUI a do cache do cliente: sem isto as faixas (que a avaliação não
+    // gera) sumiriam da tela até o próximo refetch. O banco as mantém (`upsertLotAi` não zera).
+    const prevTracks = (await getAllLotAi()).find((r) => r.id === row.id)?.tracklist ?? null;
+    row.tracklist = row.tracklist ?? prevTracks;
     await upsertLotAi([row]);
     // Lote recém-avaliado (ex.: sem nota e sem faixas): completa com a rotina da tracklist —
     // faixas do Discogs + fama pela IA. Best-effort: falha aqui não derruba a reavaliação.
@@ -237,6 +241,7 @@ export const repriceLotAi = createServerFn({ method: "POST" })
     if (!toEval.length) return empty;
     try {
       const { rows } = await evalLotsSync(toEval, await getAiProvider());
+      for (const r of rows) r.tracklist = r.tracklist ?? byId.get(r.id)?.tracklist ?? null;
       await upsertLotAi(rows);
       return { rows };
     } catch (error) {

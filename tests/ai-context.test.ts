@@ -150,6 +150,11 @@ describe("painel de IA — configuração", () => {
     expect(cfg.defaultCond).toBe("G+");
     expect(cfg.freight).toEqual({ sudeste: 25, outras: 35 });
     expect(cfg.rules).toEqual([{ id: "a", phrase: "ok frase", grade: "G+", effect: "cap" }]);
+    // frase com asteriscos demais é descartada (regex explosiva)
+    expect(
+      normalizePanelConfig({ rules: [{ phrase: "a*b*c*d*e*f", grade: "G+", effect: "set" }] })
+        .rules,
+    ).toEqual([]);
     expect(cfg.disabledRules).toEqual(["bom-estado"]);
     expect(normalizePanelConfig(null)).toEqual(normalizePanelConfig(undefined));
   });

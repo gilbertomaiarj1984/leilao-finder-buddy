@@ -5,7 +5,7 @@
 import { buildLotContext, type LotContext } from "./ai-context";
 import { DEFAULT_PANEL_CONFIG, type PanelConfig } from "./ai-panel-config";
 
-const CHUNK = 500;
+const CHUNK = 150;
 
 export async function loadLotContexts(
   ids: string[],

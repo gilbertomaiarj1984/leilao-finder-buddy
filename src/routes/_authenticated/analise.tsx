@@ -57,7 +57,7 @@ import {
   updateWantlistItem,
 } from "@/lib/wantlist.functions";
 import { effectiveTextRules } from "@/lib/condition-text";
-import { parseConditionFromText } from "@/lib/grading";
+import { normalizeGrade, parseConditionFromText, scoreCondition } from "@/lib/grading";
 import { getLotCondition } from "@/lib/leiloesbr.functions";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
@@ -510,7 +510,14 @@ function AnalisePage() {
   });
   const mediaById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const r of lotConditionQuery.data ?? []) if (r.media) map.set(r.id, r.media);
+    for (const r of lotConditionQuery.data ?? []) {
+      // Mesma convenção da home: com só um lado conhecido, o outro repete.
+      const media = scoreCondition(
+        normalizeGrade(r.media || null),
+        normalizeGrade(r.sleeve || null),
+      ).media;
+      if (media) map.set(r.id, media);
+    }
     return map;
   }, [lotConditionQuery.data]);
   const textRules = useMemo(

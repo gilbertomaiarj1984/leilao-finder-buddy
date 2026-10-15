@@ -4,7 +4,7 @@
  * app só lê um `PanelConfig` já normalizado. Sem configuração salva, vale o comportamento padrão.
  */
 import { FREIGHT_OUTRAS_REGIOES, FREIGHT_SUDESTE } from "./auction-freight";
-import type { UserTextRule } from "./condition-text";
+import { MAX_WILDCARDS, type UserTextRule } from "./condition-text";
 import { COND_KEYS, DEFAULT_COND, type CondKey } from "./discogs-price";
 import { GRADE_ORDER } from "./grading";
 
@@ -115,6 +115,7 @@ export function normalizePanelConfig(raw: unknown): PanelConfig {
       const phrase = typeof r["phrase"] === "string" ? r["phrase"].trim().slice(0, 80) : "";
       const grade = r["grade"];
       if (phrase.length < 3 || !(GRADE_ORDER as readonly unknown[]).includes(grade)) continue;
+      if (phrase.split("*").length - 1 > MAX_WILDCARDS) continue;
       rules.push({
         id: typeof r["id"] === "string" && r["id"] ? r["id"].slice(0, 40) : `u${rules.length + 1}`,
         phrase,

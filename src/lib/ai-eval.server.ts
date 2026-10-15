@@ -195,7 +195,7 @@ function parseEvalObject(
   } catch {
     return null;
   }
-  const scoreRaw = Number(obj["score"]);
+  const scoreRaw = typeof obj["score"] === "number" ? obj["score"] : Number(obj["score"] ?? NaN);
   const score = Number.isFinite(scoreRaw) ? Math.max(0, Math.min(100, Math.round(scoreRaw))) : null;
   const rarity =
     typeof obj["rarity"] === "string" && (RARITIES as readonly string[]).includes(obj["rarity"])

@@ -127,3 +127,30 @@ campo editável ali.
   e podem divergir até a próxima reavaliação.
 - O fallback de IA do estado (`conditionAiSync`) e a identificação não usam as regras do painel (só o
   regex usa).
+
+## Revisão de código da IA — itens adiados (15/10/2026)
+
+Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
+- **Duplicação:** pool de workers copiado em `evalLotsSync`/`identLotsSync*`/`conditionAiSync`/
+  `identCollectionSync` (extrair `runPool`); `identLotsSync` ≈ `identLotsSyncRows`; "primeiro `{` até o
+  último `}`" em 5 parsers (`extractJsonObject`); lista de modelos e padrão do Gemini em 4 lugares
+  (`ai-models.ts`); faixas 0,7/1,15 no texto do prompt e em `marketDeal` (constantes); pipeline
+  "condição em cache ou título → âncora" triplicado em home/Análise/diálogo do De olho (`useLotInsights()`).
+- **Camadas:** `daily-digest.server.ts` e `lookout-ident.server.ts` importam `components/vinyl/ai-score-utils`;
+  mover `parseAiAlbum`, `marketDeal`, `toLotMarket`, `withConditionAnchor` para `src/lib`.
+- **Desempenho:** `marketFor`/`conditionFor` criam objeto novo por lote a cada render (anula
+  `React.memo` do `LotCard`) → `useMemo` dos mapas `id → condição/mercado`; `getAllLotAi` traz o jsonb
+  `tracklist` de todos os lotes (cron e cliente) → projetar colunas e carregar a tracklist sob demanda;
+  regex estáticas em `grading.ts` (cada parse recompila 4-5); `getLotMarket` manda `basis` ao cliente.
+- **Cron:** `AI_CONDITION_CAP=25` grava `indefinido` para quem passou do corte (nunca mais usa o
+  fallback de IA); falha de catálogo reseleciona os mesmos leilões nas 40 voltas; `salesdebug` roda em
+  toda execução; `sleep 60` mesmo no caminho Gemini síncrono; resultado `errored` de lote com capa
+  morta é reenviado a cada rodada (tentar sem imagem).
+- **`PROMPT_VERSION` manual:** editar `SYSTEM_PROMPT` sem subir o número deixa notas defasadas →
+  derivar o hash do texto do prompt.
+- **`basis` do Discogs** usa o texto cru da IA; `lot_ident` → `lot_ai` com álbum diferente reconsulta o
+  Discogs → normalizar com `normalizeForMatch` e tirar o ano.
+- **Testes que faltam:** `parseEvalObject`/`parseIdentObject`/`parseConditionAiObject`, `priceRoseSinceEval`,
+  `isQuotaError`/`isTransientError`, `pickBestRelease`/`parseAlbum`/`buildQuery`, `selectLotsForMarket`/
+  `marketBasis`, starvation de `enrichConditions`.
+- `ai-provider-controls.tsx`: trocar provedor+modelo grava em duas server functions (pode gravar só uma).

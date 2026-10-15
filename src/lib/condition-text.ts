@@ -90,21 +90,40 @@ export const TEXT_RULES: readonly TextRule[] = [
 
 type TextHit = { rule: TextRule; excerpt: string };
 
-// Negação logo antes do trecho ("sem pulos", "não pula", "livre de riscos que afetem…"). A vírgula
-// encerra o alcance: em "sem pulos, ótimo estado" a negação não vale para o "ótimo estado".
-const NEGATION = /\b(?:SEM|NAO|NENHUM|NENHUMA|NUNCA|ISENTO|LIVRE\s+DE)\b[^.;!?,]*$/;
+// Negação logo antes do trecho ("sem pulos", "não pula", "livre de riscos que afetem…"). O alcance
+// termina na vírgula e em "mas", "porém", "e", "com" e "em": em "sem encarte em bom estado" a
+// negação é do encarte, não do "bom estado".
+const NEGATION =
+  /\b(?:SEM|NAO|NENHUM|NENHUMA|NUNCA|ISENTO|LIVRE\s+DE)\b(?:(?!\b(?:MAS|POREM|E|COM|EM)\b)[^.;!?,])*$/;
+// Negação DENTRO do trecho casado ("riscos superficiais que não afetam a audição").
+const NEGATION_INSIDE = /\b(?:NAO|SEM|NENHUM|NENHUMA|NUNCA)\b/;
+
+// A regex de cada regra é compilada uma vez (o passo `condition` e os cards chamam isto por lote).
+const REGEX_CACHE = new Map<string, RegExp>();
+function regexOf(pattern: string): RegExp {
+  let re = REGEX_CACHE.get(pattern);
+  if (!re) {
+    re = new RegExp(pattern);
+    REGEX_CACHE.set(pattern, re);
+  }
+  return re;
+}
 
 /** Regras que casam com o texto dobrado, ignorando as precedidas de negação. */
 export function matchTextRules(folded: string, rules: readonly TextRule[] = TEXT_RULES): TextHit[] {
   const hits: TextHit[] = [];
   for (const rule of rules) {
-    const m = new RegExp(rule.pattern).exec(folded);
+    const m = regexOf(rule.pattern).exec(folded);
     if (!m) continue;
+    if (NEGATION_INSIDE.test(m[0])) continue;
     if (NEGATION.test(folded.slice(Math.max(0, m.index - 40), m.index))) continue;
     hits.push({ rule, excerpt: m[0] });
   }
   return hits;
 }
+
+/** Máximo de `*` por frase (cada um vira um trecho de até 40 caracteres na regex). */
+export const MAX_WILDCARDS = 3;
 
 /** Regra escrita pelo usuário no painel de IA: frase simples, `*` vale por um trecho curto. */
 export type UserTextRule = {
@@ -129,6 +148,8 @@ export function compileUserRules(rules: readonly UserTextRule[]): TextRule[] {
   for (const r of rules) {
     const folded = foldPhrase(r.phrase);
     if (folded.replace(/[*\s]/g, "").length < 3) continue;
+    // Muitos `*` fazem a regex explodir (backtracking): ignora a frase.
+    if (folded.split("*").length - 1 > MAX_WILDCARDS) continue;
     const body = folded
       .split("*")
       .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
@@ -136,7 +157,7 @@ export function compileUserRules(rules: readonly UserTextRule[]): TextRule[] {
     out.push({
       id: r.id,
       label: r.phrase,
-      pattern: `\\b${body}\\b`,
+      pattern: `(?<![A-Z0-9])${body}(?![A-Z0-9])`,
       grade: r.grade,
       effect: r.effect,
     });

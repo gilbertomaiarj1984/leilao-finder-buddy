@@ -109,3 +109,63 @@ describe("regras do usuário (painel de IA)", () => {
     ).toBeNull();
   });
 });
+
+describe("revisão do leitor de texto (v0.143.1)", () => {
+  const media = (t: string) => parseConditionFromText(t).media;
+
+  test("negação dentro do trecho casado não rebaixa", () => {
+    expect(media("Disco VG+. Riscos superficiais que não afetam a audição")).toBe("VG+");
+    expect(media("Disco NM, riscos leves que nao interferem na reproducao")).toBe("NM");
+  });
+
+  test("a negação não atravessa 'em', 'com', 'e' e 'mas'", () => {
+    expect(media("LP Fulano sem encarte em bom estado")).toBe("VG");
+    expect(media("LP Fulano sem encarte mas em ótimo estado")).toBe("VG+");
+    expect(media("LP Fulano sem encarte e com riscos que afetam a audição")).toBe("G+");
+  });
+
+  test("ex- colado a outra palavra não é grau EX", () => {
+    expect(media("Disco do ex-Beatle Paul McCartney")).toBeNull();
+    expect(media("Disco EX, capa VG")).toBe("EX");
+  });
+
+  test("frase do usuário terminada em símbolo e limite de asteriscos", async () => {
+    const { compileUserRules, matchTextRules } = await import("../src/lib/condition-text");
+    const sym = compileUserRules([{ id: "s", phrase: "disco vg+", grade: "G+", effect: "cap" }]);
+    expect(matchTextRules("DISCO VG+ COM RISCOS", sym).length).toBe(1);
+    expect(matchTextRules("DISCO VG+X", sym).length).toBe(0);
+    const many = compileUserRules([{ id: "m", phrase: "a*b*c*d*e", grade: "G+", effect: "cap" }]);
+    expect(many).toEqual([]); // mais de 3 asteriscos é ignorada (backtracking)
+    const t0 = Date.now();
+    const ok = compileUserRules([
+      { id: "o", phrase: "riscos * * * audicao", grade: "G+", effect: "cap" },
+    ]);
+    matchTextRules("RISCOS ".repeat(40), ok);
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
+});
+
+describe("URL de capa enviada ao Gemini", () => {
+  test("recusa rede interna, metadados e esquemas estranhos", async () => {
+    const { isSafeImageUrl } = await import("../src/lib/ai-provider.server");
+    expect(isSafeImageUrl("https://img.leiloesbr.com.br/a/b.jpg")).toBe(true);
+    expect(isSafeImageUrl("http://i.discogs.com/x.jpeg")).toBe(true);
+    for (const bad of [
+      "http://localhost/a.jpg",
+      "http://app/a.jpg",
+      "http://postgres:5432/",
+      "http://127.0.0.1/a.jpg",
+      "http://10.0.0.5/a.jpg",
+      "http://172.20.1.1/a.jpg",
+      "http://192.168.1.2/a.jpg",
+      "http://169.254.169.254/latest/meta-data/",
+      "http://[::1]/a.jpg",
+      "http://servico.internal/a.jpg",
+      "file:///etc/passwd",
+      "ftp://x.com/a.jpg",
+      "lixo",
+    ])
+      expect(isSafeImageUrl(bad)).toBe(false);
+    expect(isSafeImageUrl("http://172.32.0.1/a.jpg")).toBe(true); // fora da faixa 172.16/12
+  });
+});
