@@ -1,7 +1,7 @@
 import { toLotMarket } from "@/components/vinyl/ai-score-utils";
 import { getAnalyticsAliases } from "@/lib/app-state.server";
 import type { AnalyticsAliases, SaleRow } from "@/lib/analytics";
-import { BAR_FORWARD_DAYS, shiftDayKey } from "@/lib/day-bar";
+import { shiftDayKey } from "@/lib/day-bar";
 import { getAllLotAi } from "@/lib/lot-ai.server";
 import { getAllLotIdent } from "@/lib/lot-ident.server";
 import { getAllLotMarket } from "@/lib/lot-market.server";
@@ -226,8 +226,23 @@ export async function computeLookout(withHistory = true, live = true): Promise<L
   const seenSet = new Set(seen);
 
   const today = upcomingDayKeys(1)[0]!;
-  const end = shiftDayKey(today, BAR_FORWARD_DAYS - 1);
-  const lots = await readLotsRange(today, end);
+  // Sem teto de hoje+14: vigia/lance da conta além da janela também são "por vir" (ficam em
+  // `lots` via `ensureAccountLotStubs`; a varredura nunca grava lote futuro além da janela).
+  const end = shiftDayKey(today, 365);
+  const dbLots = await readLotsRange(today, end, true);
+  // Vigiados e lances da conta também entram: lote ainda sem linha em `lots` (casa parceira, ou
+  // nunca avaliado pela IA) não pode ficar invisível pro De olho. O de `lots` vence (tem preço
+  // da varredura); o resto da conta só conta de hoje em diante.
+  const lots = [...dbLots];
+  try {
+    const { getAccountLots } = await import("./lot-orphan-guard.server");
+    const have = new Set(dbLots.map((l) => l.id));
+    for (const l of await getAccountLots()) {
+      if (!have.has(l.id) && l.dayKey >= today) lots.push(l);
+    }
+  } catch (error) {
+    console.error("[lookout] não foi possível ler vigiados/lances da conta", error);
+  }
 
   const upcoming: LookoutUpcoming[] = [];
   for (const lot of lots) {

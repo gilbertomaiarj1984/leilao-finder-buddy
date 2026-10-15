@@ -567,11 +567,16 @@ async function pruneOutOfWindow(): Promise<void> {
  * Lotes já gravados de um intervalo de dias (só banco, sem varrer o site) — alimenta as
  * páginas de histórico/futuro da barra de dias. Limitado à janela de retenção.
  */
-export async function readLotsRange(from: string, to: string): Promise<VinylLot[]> {
+export async function readLotsRange(
+  from: string,
+  to: string,
+  /** Não corta em hoje+14: inclui lotes da conta (vigia/lance) gravados além da janela. */
+  beyondWindow = false,
+): Promise<VinylLot[]> {
   const keepFrom = dayKeyAt(-HISTORY_DAYS);
   const keepTo = dayKeyAt(FORWARD_DAYS - 1);
   const start = from < keepFrom ? keepFrom : from;
-  const end = to > keepTo ? keepTo : to;
+  const end = !beyondWindow && to > keepTo ? keepTo : to;
   if (start > end) return [];
   return await readLots(start, end);
 }

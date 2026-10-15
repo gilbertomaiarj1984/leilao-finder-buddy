@@ -258,7 +258,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   item (casa com qualquer um dos nomes). UI: arrastar o cartão sobre outro ou botão "Juntar"
   (seletor); ✕ no chip "Juntado com" separa (`unmergeLookout`). **Binóculos na home:** `lookout.on` =
   lote de origem (inclui os dos álbuns juntados) OU casamento confiante; desmarcar um lote que só
-  casa = "não é este disco" (`lookout_links`). **Por vir inclui o lote de origem**
+  casa = "não é este disco" (`lookout_links`). **Por vir não tem teto de hoje+14** (v0.140.4: lê até +365 dias com `readLotsRange(..., beyondWindow)`, para lote da conta além da janela) e **procura também nos vigiados/lances da conta** (`getAccountLots`, v0.140.5; o de `lots` vence) e **inclui o lote de origem**
   (`includeOrigin` → `isOrigin`: score 1, selo "origem", nunca "novo" nem aviso ntfy). **Página:**
   grupos por artista (A→Z, "sem artista" por último), busca por artista (botão/Enter) e combo com
   nº de álbuns por artista. **Adquirido** = `status acquired` no item (leva todos os álbuns

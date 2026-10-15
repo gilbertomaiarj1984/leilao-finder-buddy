@@ -1,4 +1,5 @@
 import { db } from "@/lib/db-client.server";
+import type { VinylLot } from "./vinyl-parse";
 
 /**
  * `lot_ai`/`lot_ident`/`lot_market`/`lot_condition` têm FK `ON DELETE CASCADE` pra `lots(id)`
@@ -27,53 +28,72 @@ function brDateToDayKey(value: string): string | null {
   return iso;
 }
 
-/**
- * Garante uma linha em `lots` para lotes da CONTA (vigiados/lances) que a varredura geral não
- * traz (casas parceiras/catálogos, v0.105.6). Sem ela, a FK de `lot_ai` rejeita a nota e o
- * guard acima a descartava em silêncio — o card mostrava "Nota atualizada" e a nota sumia no
- * próximo refetch. Os dados vêm das listas da conta (`listWatchedFromSite`/`listMyBidsFromSite`);
- * id que não está em nenhuma delas (ou excluído manualmente) é ignorado. Devolve os `id`s criados.
- */
 // `reident` esbarra em dezenas de órfãos por rodada: evita reler a conta (2 logins/fetches) a cada uma.
-let accountCache: {
-  at: number;
-  lists: Promise<
-    [
-      Awaited<ReturnType<typeof import("./leiloesbr-watch.server").listWatchedFromSite>>,
-      Awaited<ReturnType<typeof import("./leiloesbr-bids.server").listMyBidsFromSite>>,
-    ]
-  >;
-} | null = null;
+let accountCache: { at: number; lots: Promise<VinylLot[]> } | null = null;
 const ACCOUNT_TTL_MS = 60_000;
 
+/**
+ * Lotes da CONTA (vigiados + com lance) no formato da varredura, com cache de 60s. Lance sem data
+ * válida é ignorado. Vigiado vence lance (traz hora/preço/casa). Falha de leitura = lista vazia.
+ */
+export async function getAccountLots(): Promise<VinylLot[]> {
+  if (accountCache && Date.now() - accountCache.at <= ACCOUNT_TTL_MS) return accountCache.lots;
+  const load = async (): Promise<VinylLot[]> => {
+    const [{ listWatchedFromSite }, { listMyBidsFromSite }, { extractArtist }] = await Promise.all([
+      import("./leiloesbr-watch.server"),
+      import("./leiloesbr-bids.server"),
+      import("./vinyl-parse"),
+    ]);
+    const [watched, bids] = await Promise.all([
+      listWatchedFromSite().catch(() => []),
+      listMyBidsFromSite().catch(() => []),
+    ]);
+    const out = new Map<string, VinylLot>();
+    for (const l of [...watched, ...bids]) {
+      if (out.has(l.id)) continue;
+      const dayKey = brDateToDayKey(l.date);
+      if (!dayKey) continue;
+      out.set(l.id, {
+        id: l.id,
+        idPeca: l.idPeca,
+        idLeilao: l.idLeilao,
+        base: l.base,
+        lote: l.lote,
+        watched: true,
+        title: l.title,
+        url: l.url,
+        image: l.image,
+        price: "price" in l ? l.price : "",
+        dayKey,
+        time: "time" in l ? l.time : "",
+        uf: l.uf,
+        house: l.house,
+        houseUrl: "houseUrl" in l ? l.houseUrl : "",
+        artist: "artist" in l ? l.artist : extractArtist(l.title),
+      });
+    }
+    return [...out.values()];
+  };
+  accountCache = { at: Date.now(), lots: load() };
+  return accountCache.lots;
+}
+
+/**
+ * Garante uma linha em `lots` para lotes da CONTA (vigiados/lances) que a varredura geral não
+ * traz (casas parceiras/catálogos, ou além da janela). Sem ela, a FK de `lot_ai` rejeita a nota e
+ * o guard descartava a linha em silêncio. Id que não está na conta (ou foi excluído manualmente)
+ * é ignorado. Devolve os `id`s criados.
+ */
 async function ensureAccountLotStubs(ids: string[]): Promise<Set<string>> {
   const created = new Set<string>();
   if (!ids.length) return created;
-  const [{ listWatchedFromSite }, { listMyBidsFromSite }, { getExcludedLotIds }] =
-    await Promise.all([
-      import("./leiloesbr-watch.server"),
-      import("./leiloesbr-bids.server"),
-      import("./lot-exclusion.server"),
-    ]);
+  const { getExcludedLotIds } = await import("./lot-exclusion.server");
   const wanted = new Set(ids);
-  if (!accountCache || Date.now() - accountCache.at > ACCOUNT_TTL_MS) {
-    accountCache = {
-      at: Date.now(),
-      lists: Promise.all([
-        listWatchedFromSite().catch(() => []),
-        listMyBidsFromSite().catch(() => []),
-      ]),
-    };
-  }
-  const [[watched, bids], excluded] = await Promise.all([accountCache.lists, getExcludedLotIds()]);
+  const [account, excluded] = await Promise.all([getAccountLots(), getExcludedLotIds()]);
   const nowIso = new Date().toISOString();
-  const rows = new Map<string, Record<string, unknown>>();
-  // Vigiados primeiro: trazem hora/preço/casa; o lance só entra se o lote não está vigiado.
-  for (const l of [...watched, ...bids]) {
-    if (!wanted.has(l.id) || rows.has(l.id) || excluded.has(l.id)) continue;
-    const dayKey = brDateToDayKey(l.date);
-    if (!dayKey) continue;
-    rows.set(l.id, {
+  const rows = account
+    .filter((l) => wanted.has(l.id) && !excluded.has(l.id))
+    .map((l) => ({
       id: l.id,
       id_leilao: l.idLeilao,
       id_peca: l.idPeca,
@@ -82,24 +102,23 @@ async function ensureAccountLotStubs(ids: string[]): Promise<Set<string>> {
       title: l.title,
       url: l.url,
       image: l.image,
-      price: "price" in l ? l.price : "",
-      day_key: dayKey,
-      start_time: "time" in l ? l.time : "",
+      price: l.price,
+      day_key: l.dayKey,
+      start_time: l.time,
       uf: l.uf,
       house: l.house,
-      house_url: "houseUrl" in l ? l.houseUrl : "",
-      artist: "artist" in l ? l.artist : "",
+      house_url: l.houseUrl,
+      artist: l.artist,
       last_seen_at: nowIso,
       updated_at: nowIso,
-    });
-  }
-  if (!rows.size) return created;
-  const { error } = await db.from("lots").upsert([...rows.values()], { onConflict: "id" });
+    }));
+  if (!rows.length) return created;
+  const { error } = await db.from("lots").upsert(rows, { onConflict: "id" });
   if (error) {
     console.error("[lot-orphan-guard] não foi possível criar lotes da conta em lots", error);
     return created;
   }
-  for (const id of rows.keys()) created.add(id);
+  for (const r of rows) created.add(r.id);
   return created;
 }
 
