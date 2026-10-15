@@ -11,15 +11,10 @@
   casamento `scoreWant`/`bestWantForLot` (o resto de `wantlist-match.ts` — `lotIdentity`, `ownedScore`,
   `resolveOwned` — segue servindo a Coleção e o De olho). Na Análise, 🎯 e o filtro «Só De olho» usam
   o mesmo casamento do De olho (`matchLookoutForLot` + `buildLotIdentity`, só confiante ≥ 80% ou confirmado).
-- **Migração (uma vez, pela interface):** `/olho` mostra o aviso «A Sondagem foi descontinuada» enquanto
-  houver obra por migrar. O botão **Migrar para o De olho** chama `migrateWantlist` em laço
-  (`wantlist-migration.server.ts`, 8 obras por chamada, 4 em paralelo): cada obra passa pela IA
-  (`addLookoutFromText`, mesma da lista colada) e vira item de olho sem lote de origem (`manual-…`); as
-  **adquiridas** viram itens `acquired`, a **nota** é copiada. Progresso em `app_state.wantlist_migration`
-  (`done`/`failed`/`dismissed`) — retomável e idempotente; as que a IA não resolve ficam listadas (adicionar
-  à mão ou «Dispensar»). No fim, os matches de HOJE dos itens migrados entram como «já avisados» (sem
-  enxurrada de push/e-mail; continuam aparecendo como «novos» na página). A tabela `wantlist_items`
-  **não é apagada** (cópia de segurança); remover depois de conferir (`DROP TABLE`, ver `docs/pendencias.md`).
+- **Migração concluída e removida (v0.151.0):** a v0.149.0 migrou as obras pela IA (`addLookoutFromText`; as
+  adquiridas viraram itens `acquired`, a nota foi copiada) e a tabela `wantlist_items` foi apagada do banco e do
+  `setup.sql`. O código da migração (`wantlist-migration.server.ts`, aviso em `/olho`) saiu junto. Resta só a linha
+  `app_state.wantlist_migration` (progresso antigo, inofensiva; pode ser apagada).
 - **Meus interesses** moveu para a página `/olho` (botão no cabeçalho). Interesses efetivos
   (`collector-profile.ts`, `useCollectorInterests`) = lista manual **∪ artistas dos discos de olho ativos**
   (somente leitura no diálogo, com «fixar» para copiar à lista manual). Vale para o ⭐ da home/Análise e

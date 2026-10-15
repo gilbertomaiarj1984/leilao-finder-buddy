@@ -107,9 +107,8 @@ campo editável ali.
 
 - **Vendas passadas (B5):** feito na v0.148.0 (ver `docs/areas/ia.md`). Limite conhecido: lote sem
   identificação (`lot_ident`/`lot_ai.album`) e com título sem "Artista - Álbum" não casa com o Analytics.
-- **Perfil do colecionador (B6):** feito na v0.149.0 (De olho + interesses; ver `docs/areas/colecao-sondagem-compras.md`).
-  Pendente: **apagar a tabela `wantlist_items`** (`DROP TABLE public.wantlist_items;` + trecho em `supabase/setup.sql`)
-  depois de conferir a migração no `/olho`.
+- **Perfil do colecionador (B6):** feito na v0.149.0 (De olho + interesses; ver `docs/areas/colecao-sondagem-compras.md`);
+  a Sondagem foi migrada e a tabela `wantlist_items` removida na v0.151.0.
 - **Reavaliação quando o contexto chega depois:** o hash não leva flags de contexto; um lote avaliado
   antes de ter estado/Discogs só é refeito ao subir `PROMPT_VERSION` ou ao mudar o título. Com a nova
   ordem do cron isso deve ser raro; se incomodar, acrescentar flags grossas (`+e`, `+m`) ao hash.

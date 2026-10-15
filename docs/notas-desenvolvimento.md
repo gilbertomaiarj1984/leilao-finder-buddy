@@ -61,7 +61,7 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
   **histórico/changelog** do schema. Ao criar tabela/coluna, editar `setup.sql` e o tipo
   da linha no módulo `*.server.ts` da tabela (não há tipos gerados do banco). Tabelas: `lots`, `known_artists`, `app_state`,
   `seen_auctions`, `lot_ai`, `lot_ident`, `lot_market`, `lot_condition`, `lot_sales`,
-  `wantlist_items`, `collection_items`, `purchases`, `excluded_lots`, `lookout_items`.
+  `collection_items`, `purchases`, `excluded_lots`, `lookout_items`.
 - **Git push HTTPS costuma funcionar**; quando não, usar os tools `mcp__github__*`.
 
 ## Arquitetura de dados

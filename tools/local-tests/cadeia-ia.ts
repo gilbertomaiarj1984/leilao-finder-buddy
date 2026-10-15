@@ -97,29 +97,9 @@ await sql`alter table lot_market_x rename to lot_market`;
 ok("contexto falhou: avaliação segue sem o bloco, hash com sufixo x", r3.rows[0]?.title_hash === ev.evalHash(title, false) && r3.rows[0].title_hash.endsWith("x"), r3.rows[0]?.title_hash);
 ok("contexto falhou: a nota volta para a fila (hash diverge)", ev.selectLotsToEvaluate([lot], [{ id: "chain-1", title_hash: r3.rows[0]!.title_hash }]).length === 1);
 
-// 6) migração da Sondagem → De olho (IA falsa lê «Linha: …»)
-const wm = await import(R + "wantlist-migration.server");
+// 6) perfil do colecionador no prompt: um disco de olho ativo (Tim Maia) casa com um lote novo
 await sql`delete from lookout_items`;
-await sql`delete from wantlist_items`;
-await sql`delete from app_state where key = 'wantlist_migration'`;
-await sql`insert into wantlist_items (raw, work, year, note, norm, acquired, position) values
-  ('1. Tim Maia Racional Vol. 1 (1975)', 'Tim Maia Racional Vol. 1', 1975, 'fase cult', 'tim maia racional vol 1', false, 1),
-  ('2. Gilberto Gil Raça Humana', 'Gilberto Gil Raça Humana', null, '', 'gilberto gil raca humana', true, 2),
-  ('3. ININTELIGIVEL', 'ININTELIGIVEL', null, '', 'ininteligivel', false, 3)`;
-const st0 = await wm.getWantlistMigrationStatus();
-ok("migração: 3 obras, nenhuma migrada", st0.total === 3 && st0.migrated === 0 && st0.pending === 3, st0);
-const st1 = await wm.migrateWantlistBatch();
-ok("migração: 2 migradas, 1 não resolvida, nada pendente", st1.migrated === 2 && st1.pending === 0 && st1.failed.length === 1 && st1.failed[0].work === "ININTELIGIVEL", st1);
-const looks = await sql`select artist, album, year, status, note, lot_id from lookout_items order by artist`;
-const tim = looks.find((l: any) => l.artist === "Tim Maia"), gil = looks.find((l: any) => l.artist === "Gilberto Gil");
-ok("migração: viraram itens de olho sem lote de origem (manual-…)", looks.length === 2 && String(tim.lot_id).startsWith("manual-"), looks);
-ok("migração: obra ativa vira «active» e leva a nota", tim.status === "active" && tim.note === "fase cult" && tim.year === 1975, tim);
-ok("migração: obra já adquirida vira «acquired» (fora do radar)", gil.status === "acquired", gil);
-const st2 = await wm.migrateWantlistBatch();
-ok("migração: rodar de novo não duplica nada (idempotente)", st2.migrated === 2 && (await sql`select count(*)::int as n from lookout_items`)[0].n === 2, st2);
-const st3 = await wm.dismissWantlistMigrationFailures();
-ok("migração: dispensar some com o aviso (nada pendente e sem falhas)", st3.failed.length === 0 && st3.pending === 0, st3);
-// perfil do colecionador chega ao prompt: o disco de olho do Tim Maia (ativo) em um lote novo
+await sql`insert into lookout_items (lot_id, artist, album, year, status) values ('manual-chain', 'Tim Maia', 'Racional Vol. 1', 1975, 'active')`;
 await sql`insert into lots (id,id_leilao,id_peca,base,lote,title,url,price,day_key,uf,house,artist) values ('chain-2','9','2','b','1','TIM MAIA - RACIONAL VOL. 1 LP','http://x.com/2','R$ 300,00','2026-10-20','RJ','Casa X','Tim Maia')`;
 await app.setAiPanelConfig({}); // painel padrão (todos os blocos)
 seen.length = 0;
@@ -127,8 +107,6 @@ await ev.evalLotsSync([{ id: "chain-2", title: "TIM MAIA - RACIONAL VOL. 1 LP", 
 const t6 = JSON.stringify(seen.find((s) => s.path === "/v1/messages")?.body?.messages);
 ok("perfil do colecionador: «de olho» e «interesse» aparecem no prompt do lote", t6.includes("perfil_do_colecionador") && t6.includes("de_olho") && t6.includes("Racional") && t6.includes("nos_meus_interesses"), t6);
 await sql`delete from lookout_items`;
-await sql`delete from wantlist_items`;
-await sql`delete from app_state where key = 'wantlist_migration'`;
 
 await sql`delete from lots where id like 'chain-%'`;
 await sql`delete from app_state where key in ('ai_panel')`;

@@ -1,4 +1,4 @@
-// De olho + Meus interesses (perfil do colecionador) e a Sondagem descontinuada.
+// De olho + Meus interesses (perfil do colecionador); a Sondagem foi removida.
 // Pré-requisitos: ver README.md (servidor em BASE_URL e PGHOST/PGPORT/PGUSER/PGDATABASE).
 import { createRequire } from "node:module";
 import crypto from "node:crypto";
@@ -19,12 +19,10 @@ const ok = (name, cond, extra) => { console.log(`${cond ? "PASS" : "FAIL"}  ${na
 
 const reset = () => {
   psql("delete from lookout_items");
-  psql("delete from wantlist_items");
-  psql("delete from app_state where key in ('user_interests','wantlist_migration')");
+  psql("delete from app_state where key in ('user_interests')");
 };
 reset();
 psql("insert into lookout_items (lot_id, artist, album, year, status) values ('manual-e2e', 'Chico Buarque', 'Construção', 1971, 'active')");
-psql("insert into wantlist_items (raw, work, year, norm, position) values ('1. Tim Maia Racional', 'Tim Maia Racional', 1975, 'tim maia racional', 1), ('2. Gil Raça Humana', 'Gil Raça Humana', 1984, 'gil raca humana', 2)");
 
 const browser = await chromium.launch({ executablePath: CHROMIUM, args: ["--no-sandbox"] });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
@@ -34,11 +32,7 @@ const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 
 await page.goto(BASE + "/olho", { waitUntil: "networkidle" });
-ok("aviso da Sondagem descontinuada aparece com 2 obras por migrar", await page.getByText("A Sondagem foi descontinuada").isVisible() && await page.getByText(/2 obra\(s\) da sua lista/).isVisible());
-await page.getByRole("button", { name: "Migrar para o De olho" }).click();
-await page.getByText(/IA não está configurada/).first().waitFor({ timeout: 8000 }).catch(() => {});
-ok("sem chave de IA, a migração avisa em vez de falhar calada", await page.getByText(/IA não está configurada/).first().isVisible());
-ok("nada é apagado nem marcado como falha ao faltar a IA", psql("select count(*) from wantlist_items") === "2" && psql("select count(*) from app_state where key = 'wantlist_migration'") === "0");
+ok("não existe mais o aviso de migração da Sondagem", (await page.getByText("A Sondagem foi descontinuada").count()) === 0);
 
 await page.getByRole("button", { name: /Meus interesses/ }).click();
 ok("«Meus interesses» mostra os artistas do De olho", await page.getByText(/Do De olho \(1\)/).isVisible() && await page.getByRole("button", { name: /Chico Buarque/ }).isVisible());
