@@ -69,8 +69,8 @@ export async function upsertLotIdent(rows: LotIdentRow[]): Promise<number> {
     // cron (chunk/enrich/market/sales/purchases/prune que ainda não rodaram na mesma execução)
     // por causa de UMA linha órfã pontual.
     if (error.code === "23503") {
-      const { filterExistingLotIds } = await import("./lot-orphan-guard.server");
-      const validIds = await filterExistingLotIds(payload.map((r) => r.id));
+      const { resolveLotIdsWithAccount } = await import("./lot-orphan-guard.server");
+      const validIds = await resolveLotIdsWithAccount(payload.map((r) => r.id));
       const filtered = payload.filter((r) => validIds.has(r.id));
       const dropped = payload.length - filtered.length;
       if (dropped > 0) {

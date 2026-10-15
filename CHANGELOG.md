@@ -4,6 +4,9 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.140.3** — Lotes futuros/fora da varredura com vigia ou lance são aceitos em TODAS as tabelas de enriquecimento: `lot_ident`, `lot_market` e `lot_condition` passam a usar `resolveLotIdsWithAccount` (cria a linha em `lots` pela conta, como `lot_ai` desde 0.140.1) em vez de descartar. Listas da conta em cache de 60s para não reler a conta a cada rodada do `reident`.
+- **0.140.2** — Complemento do 0.140.1: o lote do caso real era de 05/11 (além da janela hoje+14), e `pruneOutOfWindow` apagaria a linha criada em `lots` — com a nota da IA, por CASCADE — na próxima varredura. A poda agora só apaga o lado do passado (`day_key < hoje-10`); varreduras nunca gravam além da janela, então o que sobra no futuro é lote da conta.
+- **0.140.1** — Fix: "repassar a IA" num lote vigiado/de lance de casa parceira (fora da varredura geral) mostrava "Nota atualizada" mas a nota voltava ao estado anterior. Causa: o lote não existe em `lots`, a FK de `lot_ai` rejeitava o upsert e o guard de órfãos (v0.76.3) descartava a linha em silêncio. `upsertLotAi` agora cria a linha em `lots` a partir das listas da conta (`ensureAccountLotStubs`, `lot-orphan-guard.server.ts`) e regrava a nota; ids fora da conta continuam sendo descartados.
 - **0.140.0** — De olho: lote por vir com lance meu ganha borda verde (vencendo) ou vermelha (superado), com selo e valor do meu lance.
 - **0.139.1** — De olho: o "Atual" dos lotes por vir agora é o valor AO VIVO do `peca.asp` (cache 3 min, até 200 lotes, os mais próximos primeiro), não o `price` defasado da varredura (ex.: R$ 35 no app × R$ 88 no site).
 - **0.139.0** — Mala ao lado do semáforo da casa (em todo lugar) quando há compras na guarda.

@@ -554,8 +554,10 @@ async function pruneOutOfWindow(): Promise<void> {
   try {
     const { db } = await import("@/lib/db-client.server");
     const keepFrom = dayKeyAt(-HISTORY_DAYS);
-    const keepTo = dayKeyAt(FORWARD_DAYS - 1);
-    await db.from("lots").delete().or(`day_key.lt.${keepFrom},day_key.gt.${keepTo}`);
+    // Só o lado do PASSADO: as varreduras nunca gravam além de `FORWARD_DAYS`, então um lote
+    // futuro em `lots` é de vigiado/lance da conta (`ensureAccountLotStubs`) — apagá-lo levaria a
+    // nota da IA junto (CASCADE). Ele sai pelo lado do passado quando o leilão já foi.
+    await db.from("lots").delete().lt("day_key", keepFrom);
   } catch (error) {
     console.error("[leiloesbr] não foi possível limpar lotes fora da janela", error);
   }

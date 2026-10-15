@@ -63,8 +63,8 @@ async function upsertLotCondition(rows: LotConditionRow[]): Promise<number> {
     // um lote podado/excluído entre a seleção do lote (`enrichConditions`) e este upsert vira
     // linha órfã que quebra o upsert inteiro e derruba o resto do cron.
     if (error.code === "23503") {
-      const { filterExistingLotIds } = await import("./lot-orphan-guard.server");
-      const validIds = await filterExistingLotIds(payload.map((r) => r.id));
+      const { resolveLotIdsWithAccount } = await import("./lot-orphan-guard.server");
+      const validIds = await resolveLotIdsWithAccount(payload.map((r) => r.id));
       const filtered = payload.filter((r) => validIds.has(r.id));
       const dropped = payload.length - filtered.length;
       if (dropped > 0) {
