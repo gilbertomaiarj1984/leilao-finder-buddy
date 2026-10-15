@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.140.1** — Fix: "repassar a IA" num lote vigiado/de lance de casa parceira (fora da varredura geral) mostrava "Nota atualizada" mas a nota voltava ao estado anterior. Causa: o lote não existe em `lots`, a FK de `lot_ai` rejeitava o upsert e o guard de órfãos (v0.76.3) descartava a linha em silêncio. `upsertLotAi` agora cria a linha em `lots` a partir das listas da conta (`ensureAccountLotStubs`, `lot-orphan-guard.server.ts`) e regrava a nota; ids fora da conta continuam sendo descartados.
 - **0.140.0** — De olho: lote por vir com lance meu ganha borda verde (vencendo) ou vermelha (superado), com selo e valor do meu lance.
 - **0.139.1** — De olho: o "Atual" dos lotes por vir agora é o valor AO VIVO do `peca.asp` (cache 3 min, até 200 lotes, os mais próximos primeiro), não o `price` defasado da varredura (ex.: R$ 35 no app × R$ 88 no site).
 - **0.139.0** — Mala ao lado do semáforo da casa (em todo lugar) quando há compras na guarda.
