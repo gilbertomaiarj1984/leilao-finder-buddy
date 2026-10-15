@@ -71,7 +71,6 @@ export const queryKeys = {
   lookout: ["lookout"],
   lookoutLinks: ["lookout-links"],
   lookoutOverview: ["lookout-overview"],
-  wantlistMigration: ["wantlist-migration"],
   analyticsAliases: ["analytics-aliases"],
   houseRatings: ["house-ratings"],
 } as const;

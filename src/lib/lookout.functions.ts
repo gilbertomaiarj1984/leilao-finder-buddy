@@ -354,38 +354,3 @@ export const addLookoutByText = createServerFn({ method: "POST" })
     const { addLookoutFromText } = await import("./lookout-bulk.server");
     return await addLookoutFromText(data.text, data.year);
   });
-
-/** Migração da Sondagem (descontinuada) para o De olho: estado atual (`pending` > 0 = falta migrar). */
-export const getWantlistMigration = createServerFn({ method: "GET" })
-  .middleware([requireAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    try {
-      const { getWantlistMigrationStatus } = await import("./wantlist-migration.server");
-      return await getWantlistMigrationStatus();
-    } catch (error) {
-      console.error("[wantlist-migration] não foi possível ler o estado", error);
-      return { total: 0, migrated: 0, pending: 0, failed: [] };
-    }
-  });
-
-/** Migra um lote de obras da Sondagem para o De olho (a interface chama em laço até acabar). */
-export const migrateWantlist = createServerFn({ method: "POST" })
-  .middleware([requireAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { migrateWantlistBatch } = await import("./wantlist-migration.server");
-    return await migrateWantlistBatch();
-  });
-
-/** Dispensa as obras que a migração não conseguiu resolver. */
-export const dismissWantlistFailures = createServerFn({ method: "POST" })
-  .middleware([requireAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { dismissWantlistMigrationFailures } = await import("./wantlist-migration.server");
-    return await dismissWantlistMigrationFailures();
-  });

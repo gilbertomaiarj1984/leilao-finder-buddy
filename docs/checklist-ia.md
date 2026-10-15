@@ -105,11 +105,7 @@ do LeilõesBR, do Discogs, da IA e do login Google reais, que o ambiente de dese
 
 **Sondagem → De olho e perfil do colecionador (0.149.0)**
 
-- [ ] `/olho`: o aviso «A Sondagem foi descontinuada» lista as obras por migrar; **Migrar para o De olho** cria os itens
-      (confira artista/álbum de cada um), as adquiridas ficam como «adquiridas» e o aviso some. Obras que a IA não resolveu:
-      adicionar à mão ou «Dispensar».
-- [ ] Depois de migrar, **não deve chegar enxurrada de push/e-mail** do De olho (os matches de hoje entram como já avisados).
-- [ ] Apagar a tabela antiga quando estiver tudo certo: `DROP TABLE public.wantlist_items;` (e o trecho no `setup.sql`).
+- [x] Sondagem migrada para o De olho e tabela `wantlist_items` apagada (v0.151.0).
 - [ ] `/olho` → «Meus interesses»: lista manual editável + artistas do De olho (chips «fixar»); o ⭐ da home/Análise vale para ambos.
 - [ ] Análise: 🎯 aparece nos lotes que casam com um disco do De olho; «Só De olho» filtra; não há mais botão «Sondagem».
 - [ ] Painel de IA → Blocos: «Perfil do colecionador» aparece ligado; no prompt só entra o que se aplica ao lote.

@@ -185,32 +185,8 @@ ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS num_for_sale_br integer;
 -- condição do lote. NULL = ainda não coletado (o cron preenche); {} = consultado, sem sugestões.
 ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS suggested_by_condition jsonb;
 
--- ---------------------------------------------------------------------
--- wantlist_items — "sondagem": DESCONTINUADA na v0.149.0 (migrada para `lookout_items`, o De olho, pela
--- tela /olho). Fica só como cópia de segurança até o usuário conferir a migração; depois: DROP TABLE.
--- (histórico) rascunho de obras que o usuário caça.
--- Importado colando texto (linhas "01. Tim Maia (1970)"), depois editável no
--- app: pesquisar, editar, marcar `acquired` (já adquiri). Serve de input extra
--- para a Análise (destaca os lotes que casam com a lista). `norm` = título
--- normalizado (sem acento/pontuação) da obra, usado no casamento com os lotes.
--- ---------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.wantlist_items (
-  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  raw        text NOT NULL DEFAULT '',
-  work       text NOT NULL,
-  year       integer,
-  note       text NOT NULL DEFAULT '',
-  norm       text NOT NULL DEFAULT '',
-  acquired   boolean NOT NULL DEFAULT false,
-  position   integer NOT NULL DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS wantlist_items_position_idx ON public.wantlist_items (position);
-
-DROP TRIGGER IF EXISTS update_wantlist_items_updated_at ON public.wantlist_items;
-CREATE TRIGGER update_wantlist_items_updated_at BEFORE UPDATE ON public.wantlist_items
-FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+-- (A antiga tabela `wantlist_items` — "Sondagem" — foi descontinuada na v0.149.0, migrada para
+-- `lookout_items` (De olho) e removida na v0.151.0.)
 
 -- ---------------------------------------------------------------------
 -- lot_condition — cache de estado (Disco/Capa) por lote p/ os cards PRÉ-leilão.
@@ -578,7 +554,6 @@ ALTER TABLE public.lot_ident      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_market     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_condition  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_sales      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.wantlist_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.collection_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchases        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.shipments          ENABLE ROW LEVEL SECURITY;
@@ -597,7 +572,6 @@ REVOKE ALL ON public.lot_ident      FROM anon, authenticated;
 REVOKE ALL ON public.lot_market     FROM anon, authenticated;
 REVOKE ALL ON public.lot_condition  FROM anon, authenticated;
 REVOKE ALL ON public.lot_sales      FROM anon, authenticated;
-REVOKE ALL ON public.wantlist_items FROM anon, authenticated;
 REVOKE ALL ON public.collection_items FROM anon, authenticated;
 REVOKE ALL ON public.purchases        FROM anon, authenticated;
 REVOKE ALL ON public.shipments          FROM anon, authenticated;
@@ -615,7 +589,6 @@ GRANT ALL ON public.lot_ident      TO service_role;
 GRANT ALL ON public.lot_market     TO service_role;
 GRANT ALL ON public.lot_condition  TO service_role;
 GRANT ALL ON public.lot_sales      TO service_role;
-GRANT ALL ON public.wantlist_items TO service_role;
 GRANT ALL ON public.collection_items TO service_role;
 GRANT ALL ON public.purchases        TO service_role;
 GRANT ALL ON public.shipments          TO service_role;

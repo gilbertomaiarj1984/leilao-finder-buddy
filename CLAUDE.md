@@ -107,7 +107,7 @@ versão obrigatório em todo PR, atualizar a documentação (página da área + 
   consolidado em `supabase/setup.sql` (nome histórico, mantido — schema puro, sem nada
   específico do Supabase); histórico incremental em `supabase/migrations/`. Tabelas
   principais: `lots`, `known_artists`, `app_state`, `seen_auctions`, `lot_ai`, `lot_ident`,
-  `lot_market`, `lot_condition`, `lot_sales`, `lookout_items`, `collection_items` (a antiga `wantlist_items` — Sondagem — está descontinuada, migrada para o De olho).
+  `lot_market`, `lot_condition`, `lot_sales`, `lookout_items`, `collection_items` (a antiga Sondagem, `wantlist_items`, foi migrada para o De olho e removida).
 - **Fotos da Coleção**: arquivos em disco (`COLLECTION_DIR`, volume Docker), servidos pelo
   Caddy em produção (`/collection/*`, `Cache-Control` 7 dias) — ver `Caddyfile` e
   `src/lib/collection-storage.server.ts`.

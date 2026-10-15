@@ -21,7 +21,6 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { InterestsDialog } from "@/components/vinyl/interests-dialog";
-import { WantlistMigrationBanner } from "@/components/vinyl/wantlist-migration-banner";
 import { LookoutOwnedDialog } from "@/components/vinyl/lookout-owned-dialog";
 import { LookoutBulkDialog } from "@/components/vinyl/lookout-bulk-dialog";
 import { LookoutItemCard, type LookoutPatch } from "@/components/vinyl/lookout-item-card";
@@ -594,7 +593,6 @@ function OlhoPage() {
       />
       <LookoutBulkDialog open={bulkOpen} onOpenChange={setBulkOpen} onDone={refresh} />
       <div className="mx-auto max-w-6xl space-y-4 px-4 py-6">
-        <WantlistMigrationBanner onChanged={refresh} />
         {newCount > 0 ? (
           <div
             role="status"
