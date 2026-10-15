@@ -160,3 +160,7 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
 > parsers de resposta. Continuam abertos: o cliente ainda recebe a tracklist de todos os lotes
 > (`getLotAi`; carregar sob demanda exige mudar o `TracklistHover`), as duplicações/camadas e o
 > restante da lista acima.
+
+> Atualização (v0.144.0): feitos — «Meus lances» com nota/mercado/estado, De olho com veredicto de mercado, «Oportunidade»
+> de mercado no lugar da gravada pela IA, blocos «em breve» no painel. Lista completa de pendências e dos testes
+> manuais: `docs/checklist-ia.md`.

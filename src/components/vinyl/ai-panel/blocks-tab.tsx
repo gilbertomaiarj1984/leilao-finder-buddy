@@ -22,6 +22,59 @@ const BLOCK_SRC: Record<ContextBlockId, string> = {
   frete: "frete estimado da casa pela UF (Sudeste ou demais regiões)",
 };
 
+/**
+ * Blocos que ainda NÃO entram no prompt: mostrados como «em breve», com o que falta para ativar.
+ * `recommended: false` = existe a ideia, mas hoje não vale o custo/complexidade.
+ */
+const PLANNED_BLOCKS: {
+  id: string;
+  name: string;
+  src: string;
+  missing: string;
+  recommended: boolean;
+}[] = [
+  {
+    id: "vendas",
+    name: "Vendas passadas do mesmo disco",
+    src: "lot_sales",
+    missing:
+      "Casar o histórico de vendas ao álbum identificado (artista + álbum normalizados, ignorando kits de vários discos) e mandar menor, mediana e maior preço em reais.",
+    recommended: true,
+  },
+  {
+    id: "colecionador",
+    name: "Perfil do colecionador",
+    src: "interesses · sondagem · coleção",
+    missing:
+      "Mandar só o resultado do casamento de cada lote (está nos interesses, casa com a sondagem, já tenho), nunca as listas inteiras.",
+    recommended: true,
+  },
+  {
+    id: "descricao",
+    name: "Descrição completa do lote",
+    src: "descrição do catálogo da casa",
+    missing:
+      "Hoje a descrição só é lida para extrair o estado; não existe coluna para guardá-la. Criar a coluna em lots e preenchê-la no passo de estado.",
+    recommended: true,
+  },
+  {
+    id: "tracklist",
+    name: "Tracklist e fama das faixas",
+    src: "lot_ai.tracklist",
+    missing:
+      "Não recomendado: depende do álbum que a própria avaliação grava (circular) e custa de 150 a 400 tokens por lote.",
+    recommended: false,
+  },
+  {
+    id: "correcoes",
+    name: "Correções do usuário",
+    src: "ajustes manuais de identificação",
+    missing:
+      "Não recomendado agora: quase sempre vazio e mais útil para identificar o disco do que para a nota.",
+    recommended: false,
+  },
+];
+
 // Lotes de exemplo só para o preview do prompt (não são dados reais).
 const SAMPLES = [
   {
@@ -108,7 +161,7 @@ export function BlocksTab({ draft, setDraft }: Props) {
   const B = sel;
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4">
         <section className="rounded-md border border-border bg-card p-3">
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Contexto do lote no prompt — arraste para ordenar
@@ -204,6 +257,39 @@ export function BlocksTab({ draft, setDraft }: Props) {
 
         <section className="rounded-md border border-border bg-card p-3">
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Em breve — ainda não entram no prompt
+          </h2>
+          <div className="space-y-1.5">
+            {PLANNED_BLOCKS.map((b) => (
+              <div
+                key={b.id}
+                className="rounded border border-dashed border-border bg-secondary/20 px-2 py-2 opacity-90"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold">{b.name}</span>
+                  <span
+                    className={`rounded-full border px-1.5 text-[10px] ${
+                      b.recommended
+                        ? "border-amber-500/60 text-amber-600 dark:text-amber-400"
+                        : "border-border text-muted-foreground"
+                    }`}
+                  >
+                    {b.recommended ? "em breve" : "por ora não"}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">{b.src}</span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{b.missing}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Quando um deles ficar pronto, aparece aqui na lista de blocos para você ligar, ordenar e
+            escolher os campos.
+          </p>
+        </section>
+
+        <section className="rounded-md border border-border bg-card p-3">
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Campos de «{CONTEXT_BLOCK_NAMES[B]}»
           </h2>
           <div className="flex flex-wrap gap-1.5">
@@ -237,7 +323,7 @@ export function BlocksTab({ draft, setDraft }: Props) {
         </section>
       </div>
 
-      <section className="rounded-md border border-border bg-card p-3 lg:sticky lg:top-20 lg:self-start">
+      <section className="min-w-0 rounded-md border border-border bg-card p-3 lg:sticky lg:top-20 lg:self-start">
         <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Prévia do que a IA recebe
         </h2>

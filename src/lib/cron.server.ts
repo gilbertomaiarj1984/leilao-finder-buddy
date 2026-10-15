@@ -279,7 +279,10 @@ export async function handleCron(request: Request): Promise<Response | null> {
       if (!targets.length) {
         // Nada novo a casar: preenche o sugerido por condição das linhas antigas (1 chamada
         // por release, bem mais barato que refazer a busca).
-        const backfill = selectMarketBackfill(marketRows, max);
+        // Uma chamada por disco (sem busca nem estatísticas): lote maior que o do casamento, para as
+        // ~2.500 linhas antigas terminarem em dias, não semanas (40 × ~1,1s cabe no tempo do curl).
+        const backfillMax = Math.min(max * 4, 40);
+        const backfill = selectMarketBackfill(marketRows, backfillMax);
         if (!backfill.length) return json({ done: true, updated: 0 });
         const items = [];
         let failed = 0;
@@ -293,7 +296,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
           }
         }
         const filled = await updateSuggestionMaps(items);
-        return json({ backfilled: filled, failed, done: backfill.length < max });
+        return json({ backfilled: filled, failed, done: backfill.length < backfillMax });
       }
 
       // Um lote por vez e gravando na hora: uma falha do Discogs no 12º não perde os 11 já pagos

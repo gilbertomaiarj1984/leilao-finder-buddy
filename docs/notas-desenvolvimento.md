@@ -27,6 +27,8 @@ VPS único (histórico em `docs/arquivo/`).
 | Grading Disco × Capa, estado pré-leilão                               | `docs/areas/grading-e-estado.md`         | `grading.ts`, `lot-condition.server.ts`                                                      |
 | Histórico de vendas, Vinil Analytics                                  | `docs/areas/vendas-e-analytics.md`       | `lot-sales.server.ts`, `analytics.ts`, `analytics-view.tsx`                                  |
 | IA (avaliação, identificação, provedores, custo)                      | `docs/areas/ia.md`                       | `ai-eval.server.ts`, `ai-provider.server.ts`                                                 |
+| Painel de IA (`/ia-painel`): contexto do prompt, correlação de condições, frete | `docs/areas/ia.md` (seção "Painel de IA") + `docs/areas/ui.md` | `ai-panel-config.ts`, `ai-context.ts`, `condition-text.ts`, `components/vinyl/ai-panel/*` |
+| Testes locais (Postgres real, cadeia de IA com API falsa, painel no navegador) | `tools/local-tests/README.md` | `tools/local-tests/*` |
 | Discogs / mercado                                                     | `docs/areas/discogs.md`                  | `discogs.server.ts`, `lot-market.server.ts`                                                  |
 | Coleção, Sondagem, Compras, De olho                                   | `docs/areas/colecao-sondagem-compras.md` | `collection*.ts`, `wantlist*.ts`, `purchases*.ts`, `lookout*.ts`                             |
 | Exclusão de lotes / "possível lixo"                                   | `docs/areas/exclusao-de-lotes.md`        | `lot-exclusion*.ts`                                                                          |

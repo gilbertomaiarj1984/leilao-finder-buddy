@@ -1,0 +1,88 @@
+# Checklist — painel de IA, contexto do prompt e Discogs (v0.144.0)
+
+Feito em 15/10/2026. O que já foi testado automaticamente e o que **só você consegue testar** (precisa
+do LeilõesBR, do Discogs, da IA e do login Google reais, que o ambiente de desenvolvimento não alcança).
+
+## Já testado (sem rede externa)
+- `bun run check`: lint, typecheck, 212 testes de funções puras e knip.
+- Postgres 16 real: `setup.sql` aplicado 2× (idempotente) e a migração nova; `tools/local-tests/integracao-banco.ts`
+  (19 verificações: jsonb do sugerido por condição, backfill, leitura enxuta de `lot_ai`, painel em `app_state`,
+  contexto lido do banco).
+- Cadeia da avaliação com API falsa da Anthropic (`cadeia-ia.ts`, 19 verificações): o prompt leva estado, Discogs
+  e frete do banco; a configuração do painel muda o prompt (blocos, ordem, campos, frete); o hash não muda sozinho;
+  Batches congela o contexto; falha de contexto grava o hash com `x` e o lote volta para a fila.
+- Painel no Chromium (`painel-e2e.mjs`, 42 verificações; `painel-mobile.mjs`): abas, arrastar e soltar, salvar,
+  recarregar, restaurar padrão, modo da IA gravado, rodapé sem os seletores antigos, sem rolagem horizontal a 390 px.
+- Passos do cron que não dependem de rede (`aieval`, `aiident`, `market`, `condition`, `tracklist`, `fame`, `prune`,
+  `dailydigest`) respondem sem quebrar.
+
+## 1. No deploy (VPS)
+- [ ] O deploy aplica `supabase/setup.sql` sozinho. Conferir a coluna nova:
+  `docker compose exec -T postgres psql -U garimpo -d garimpo -c "\d lot_market" | grep suggested_by_condition`
+- [ ] Rodapé da tela inicial mostra a versão `v0.144.0`.
+- [ ] Nenhuma variável de ambiente nova. `DISCOGS_TOKEN` e as chaves de IA continuam como estão.
+
+## 2. Primeiras rodadas do cron (acompanhar o log do `refresh.yml`)
+- [ ] `step=condition`: **todas as linhas de `lot_condition` serão relidas** (o hash agora leva a versão do leitor e
+  as regras do painel): uma requisição por leilão da janela. Vai levar algumas rodadas.
+- [ ] `step=aieval`: o hash da avaliação mudou, então a base será **reavaliada** (até 800 lotes por rodada; no modo
+  «vigiados + lances» só esses). Há gasto de IA nesta primeira vez.
+- [ ] `step=market`: preenche o sugerido por condição das linhas antigas (até 40 discos por chamada). Acompanhar:
+  `SELECT count(*) FILTER (WHERE suggested_by_condition IS NULL AND matched) AS faltam, count(*) FILTER (WHERE suggested_by_condition IS NOT NULL) AS preenchidas FROM lot_market;`
+  Esperado: `faltam` cai a cada execução. Discos já consultados NÃO são reconsultados (o `basis` antigo continua válido).
+- [ ] No log do servidor, procurar `[discogs] página de venda bloqueada` (aparece uma vez, é esperado) e
+  `[ai-context] falha ao ler o contexto` (não deveria aparecer; se aparecer, a nota sai sem contexto e volta para a fila).
+
+## 3. Testes manuais no app real
+**Painel (`/ia-painel`, atalho «IA» no cabeçalho e «Painel de IA» no rodapé/menu)**
+- [ ] Mudar a ordem dos blocos e tirar um campo, salvar, recarregar a página: continua como salvo.
+- [ ] «Restaurar padrão» + Salvar volta ao padrão.
+- [ ] Aba Modelo e modo: trocar o modo e o modelo; conferir o aviso (toast) e que a troca vale na tela inicial.
+- [ ] Celular: abas rolam, sem rolagem horizontal da página; atalho no menu.
+
+**Veredicto de mercado e frete**
+- [ ] Um lote com Discogs casado mostra «Sugerido (VG+)…», «Lote + frete» e «Oportunidade … (mercado)».
+- [ ] Mesmo disco num leilão do Sudeste e em outra região: o frete muda (R$ 25 / R$ 35) e o veredicto pode mudar.
+- [ ] Lote sem estado informado: aparece «sem estado: usa o padrão G+».
+- [ ] No painel, mudar o frete e salvar: o veredicto dos cards muda sem reavaliar a IA.
+
+**Leitura do estado em português (descrições reais)**
+- [ ] Achar 3 a 5 lotes com «ótimo estado», «estado regular», «riscos que afetam a audição», «sem pulos» e conferir o
+  badge Disco/Capa (ótimo = VG+, regular = G+, risco na audição = G+, «sem pulos» não rebaixa).
+- [ ] Na aba Correlação, criar uma expressão sua (ex.: «muito bem conservado»), salvar, e na rodada seguinte do
+  `condition` conferir em `lot_condition` que os lotes com essa frase mudaram.
+
+**Reavaliar com IA (todos devem usar o contexto)**
+- [ ] ✨ do lote sem nota, «refazer consulta» e «repassar a IA»: a nota volta, **as faixas (tracklist) não somem**.
+- [ ] «Analisar dia», «Analisar casa» e «Analisar vigiados».
+- [ ] Trocar para Gemini no painel e reavaliar um lote com capa: confirmar que a capa ainda é enviada (a URL passa
+  pelo filtro de segurança) e a nota sai.
+
+**Outras telas**
+- [ ] De olho: o card mostra «… vs. mercado» ao lado do «Discogs BR» e da nota; a notificação/e-mail traz o veredicto.
+- [ ] Meus lances: cartões com nota da IA, mercado e estado de conservação.
+- [ ] Resumo diário (`step=dailydigest`): lote «caro vs. mercado» fica de fora do e-mail.
+- [ ] Análise: a «Oportunidade» e o «vs. mercado» não divergem mais.
+
+## 4. Pendências conhecidas
+**Produto (próximas etapas)**
+- [ ] **Calibração** (aba prometida no preview): lotes de referência com nota esperada e erro médio, antes de
+  reavaliar a base toda. Sem ela, qualquer mudança de peso/prompt é testada só olhando lotes.
+- [ ] **Blocos «em breve»**: vendas passadas (casar `lot_sales` ao álbum), perfil do colecionador, descrição completa
+  (coluna nova em `lots`).
+- [ ] **Frete real dos vendedores brasileiros**: a página de venda do Discogs responde 403 (Cloudflare). Alternativas
+  em `docs/pendencias.md` (inventário por vendedor pela API, serviço de scraping).
+- [ ] Cotação USD→BRL derivada da API: só será preciso se aparecer preço em outra moeda.
+
+**Técnicas (não bloqueiam)**
+- [ ] O cliente ainda recebe a tracklist de todos os lotes (`getLotAi`); carregar sob demanda exige mudar o `TracklistHover`.
+- [ ] Duplicações (pool de workers, parser de JSON, lista de modelos), mover funções de `components/` para `src/lib`,
+  teto de 25 do estado por IA sem prioridade, `PROMPT_VERSION` ainda manual para mudanças de ESTRUTURA do contexto.
+- [ ] Testes sem cobertura: `pickBestRelease`/`parseAlbum`/`buildQuery`, `isQuotaError`, `priceRoseSinceEval`.
+- [ ] O fallback de IA do estado e a identificação não usam as regras do painel (só o regex usa).
+
+## 5. Se algo der errado
+- Voltar a configuração: aba «Restaurar padrão» + Salvar (ou `DELETE FROM app_state WHERE key = 'ai_panel';`).
+- Reler o estado com as regras atuais: `DELETE FROM lot_condition;` (o `step=condition` refaz).
+- Reavaliar tudo: subir `PROMPT_VERSION` em `src/lib/ai-context.ts` (ou editar o texto do prompt).
+- Conferir o que a IA recebe: aba «Blocos de contexto» (prévia) e `tools/local-tests/cadeia-ia.ts`.

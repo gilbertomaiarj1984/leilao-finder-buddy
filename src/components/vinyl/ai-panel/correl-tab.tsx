@@ -151,7 +151,7 @@ export function CorrelTab({ draft, setDraft }: Props) {
                         }}
                         className="flex cursor-grab flex-wrap items-center gap-1 rounded border border-border bg-secondary/60 px-1.5 py-1 text-xs"
                       >
-                        <span className="min-w-0 flex-1 break-words">{r.phrase}</span>
+                        <span className="min-w-[5rem] flex-1 break-words">{r.phrase}</span>
                         <button
                           type="button"
                           onClick={() =>
@@ -200,7 +200,7 @@ export function CorrelTab({ draft, setDraft }: Props) {
                           off ? "line-through opacity-50" : ""
                         }`}
                       >
-                        <span className="min-w-0 flex-1 break-words">{r.label}</span>
+                        <span className="min-w-[5rem] flex-1 break-words">{r.label}</span>
                         <EffectTag effect={r.effect} />
                       </button>
                     );

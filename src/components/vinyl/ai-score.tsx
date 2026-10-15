@@ -459,6 +459,11 @@ export function ScoreDetails({
   // Dados do lote para o botão "refazer consulta" — sem eles, o botão simplesmente não aparece.
   lot?: ReevalLot;
 }) {
+  // A oportunidade vale mais calculada AGORA (lote + frete × preço do Discogs na condição do disco,
+  // com a configuração atual do painel) do que a gravada pela IA, que pode ter saído com dado antigo.
+  const marketVerdict = market && price ? marketDeal(price, market) : "indefinido";
+  const fromMarket = marketVerdict !== "indefinido";
+  const opportunity = fromMarket ? marketVerdict : ai.deal;
   return (
     <div className="space-y-1.5 text-xs">
       <div className="flex items-center justify-between gap-1.5">
@@ -475,7 +480,17 @@ export function ScoreDetails({
           <RarityLabel rarity={ai.rarity} />
         </dd>
         <dt>Oportunidade:</dt>
-        <dd className={`font-medium ${dealTone(ai.deal)}`}>{dealLabel(ai.deal)}</dd>
+        <dd
+          className={`font-medium ${dealTone(opportunity)}`}
+          title={
+            fromMarket
+              ? "Calculada agora: lote + frete contra o preço sugerido do Discogs para a condição do disco"
+              : "Avaliação da IA"
+          }
+        >
+          {dealLabel(opportunity)}
+          {fromMarket ? " (mercado)" : ""}
+        </dd>
         {ai.evalPrice ? (
           <>
             <dt>Avaliado a:</dt>

@@ -180,7 +180,7 @@ function LotSummary({
             <RarityLabel rarity={ai.rarity} />
           </span>
         ) : null}
-        {ai.deal && ai.deal !== "indefinido" ? (
+        {mDeal === "indefinido" && ai.deal && ai.deal !== "indefinido" ? (
           <span className={`font-medium ${dealTone(ai.deal)}`}>{dealLabel(ai.deal)}</span>
         ) : null}
         {mDeal !== "indefinido" ? (

@@ -559,12 +559,20 @@ export function useDashboardData() {
     return map;
   }, [lotMarketQuery.data]);
   // Junta a avaliação (por id) com o "casa com meus interesses" (calculado do título).
+  // Chamado por lote em todo render: cacheia o objeto (estável por lote) para o `React.memo` do
+  // `LotCard` funcionar. O mapa recomeça vazio quando as avaliações ou os interesses mudam.
+  const aiCache = useMemo(
+    () => new Map<string, LotAi | undefined>(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [aiById, matchesInterest],
+  );
   const aiFor = (lot: { id: string; title?: string }): LotAi | undefined => {
+    if (aiCache.has(lot.id)) return aiCache.get(lot.id);
     const base = aiById.get(lot.id);
-    if (!base) return undefined;
-    return { ...base, matchesInterests: matchesInterest(lot.title ?? "") };
+    const ai = base ? { ...base, matchesInterests: matchesInterest(lot.title ?? "") } : undefined;
+    aiCache.set(lot.id, ai);
+    return ai;
   };
-  // Mercado com a âncora de preço da CONDIÇÃO do lote (sugerido do Discogs para o estado dele).
   // Estado de conservação (Disco/Capa). Prioriza o CACHE do servidor (`lot_condition`,
   // alimentado pelo descritivo do catálogo — mais rico); cai no parse do TÍTULO quando não
   // há linha no cache ainda (ou ela ficou indefinida).
