@@ -324,7 +324,7 @@ async function throttle(): Promise<void> {
 // lançam `DiscogsTransientError` quando a contagem sobe durante a chamada.
 let transientErrors = 0;
 
-export class DiscogsTransientError extends Error {
+class DiscogsTransientError extends Error {
   constructor() {
     super("Discogs indisponível no momento (erro transitório); nada foi gravado.");
   }
