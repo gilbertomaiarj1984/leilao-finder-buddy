@@ -452,3 +452,5 @@ updatedAt } }` (`house-rating.server.ts`; server fns `getHouseRatings`/`savePreg
 - **Pendente:** ranking das casas e o cabeçalho do detalhe mobile do lote.
 
 - **Valor atual ao vivo (v0.139.1):** `computeLookout` (`applyLivePrices`) sobrescreve `price`/`priceNum` de cada lote por vir com `VALOR_VALUE` do `peca.asp` (`fetchLotDetails`, até 200 lotes por chamada, ordem dia/hora, cache em memória de 3 min); falha = mantém o valor da varredura (`lots.price`, cron 3×/dia, defasado). Vale também para o aviso externo (`lookoutnotify`: "atual" e comparação com o teto).
+
+- **Borda por lance (v0.140.0):** em `/olho`, `useBidsQuery` (mesmo cache da home) vira `bidById` (id do lote → `status`/`myBid`) passado ao `LookoutItemCard`; linha "Por vir" com lance vencendo (`bidIsWinning`) = borda verde, superado (`bidIsCovered`) = vermelha + selo com o valor do meu lance; vence a borda fúcsia de "novo". Só o cartão do disco (não a linha-resumo).

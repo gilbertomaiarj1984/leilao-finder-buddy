@@ -29,7 +29,7 @@ import {
   type LookoutStatus,
 } from "@/lib/lookout-match";
 import type { LookoutPastSale, LookoutUpcoming } from "@/lib/lookout-matches.server";
-import { lotOpenUrl } from "@/lib/vinyl-parse";
+import { bidIsCovered, bidIsWinning, lotOpenUrl } from "@/lib/vinyl-parse";
 
 /** Tipo de arrastar do cartão de um disco (juntar um álbum a outro). */
 const ITEM_DRAG_TYPE = "application/x-lookout-item";
@@ -73,6 +73,7 @@ export function LookoutItemCard({
   upcoming,
   history,
   watchedIds,
+  bidById,
   watchLoading,
   busyWatch,
   mergeOptions,
@@ -95,6 +96,8 @@ export function LookoutItemCard({
   history: LookoutPastSale[];
   /** `idPeca` dos lotes vigiados na conta (mesmo critério da home e da Análise). */
   watchedIds: ReadonlySet<string>;
+  /** Meus lances da conta por id do lote (`${idLeilao}-${idPeca}`): borda verde (vencendo) / vermelha (coberto). */
+  bidById: ReadonlyMap<string, { status: string; myBid: string }>;
   /** Lista de vigiados ainda carregando: o botão espera, para não mostrar "Vigiar" errado. */
   watchLoading: boolean;
   busyWatch: string | null;
@@ -526,6 +529,14 @@ export function LookoutItemCard({
                 const sure = m.confirmed || m.score >= LOOKOUT_CONFIDENT_MIN;
                 const vs = priceVsCeiling(m.priceNum, item.maxPrice);
                 const watching = watchedIds.has(m.idPeca);
+                const bid = bidById.get(m.lotId);
+                const bidKind = !bid
+                  ? null
+                  : bidIsWinning(bid.status)
+                    ? "winning"
+                    : bidIsCovered(bid.status)
+                      ? "covered"
+                      : null;
                 return (
                   <li
                     key={m.lotId}
@@ -535,9 +546,13 @@ export function LookoutItemCard({
                       onOpenLot(m);
                     }}
                     className={`flex cursor-pointer flex-wrap items-center gap-3 rounded border p-2 ${
-                      m.isNew
-                        ? "border-fuchsia-500 bg-fuchsia-500/10 ring-1 ring-fuchsia-500 hover:bg-fuchsia-500/20"
-                        : "border-border bg-background hover:bg-accent/30"
+                      bidKind === "winning"
+                        ? "border-green-500 bg-green-500/5 ring-1 ring-green-500/40 hover:bg-green-500/10"
+                        : bidKind === "covered"
+                          ? "border-red-500 bg-red-500/5 ring-1 ring-red-500/40 hover:bg-red-500/10"
+                          : m.isNew
+                            ? "border-fuchsia-500 bg-fuchsia-500/10 ring-1 ring-fuchsia-500 hover:bg-fuchsia-500/20"
+                            : "border-border bg-background hover:bg-accent/30"
                     }`}
                     title="Clique para abrir o cartão completo do lote"
                   >
@@ -557,6 +572,16 @@ export function LookoutItemCard({
                             title="Foi este lote que você marcou"
                           >
                             origem
+                          </span>
+                        ) : null}
+                        {bidKind && bid ? (
+                          <span
+                            className={`mr-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-white ${
+                              bidKind === "winning" ? "bg-green-500" : "bg-red-500"
+                            }`}
+                            title={`Seu lance: ${bid.myBid}`}
+                          >
+                            {bidKind === "winning" ? "vencendo" : "superado"} · {bid.myBid}
                           </span>
                         ) : null}
                         {m.isNew ? (
