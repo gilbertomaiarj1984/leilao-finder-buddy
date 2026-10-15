@@ -155,8 +155,11 @@ cfg)` respeita `blocks` e `hiddenFields`), **Correlação de condições** (`rul
   consulta por álbum, só nas listas com `fame` null — `needsFame`) preenche a fama quando a IA é
   acionada (ambos no `refresh.yml`). Faixa sem fama aparece com bolinha cinza no `TracklistHover`.
   A avaliação completa **não pede mais tracklist** (`maxTokens` 1200→600) e `upsertLotAi` não zera
-  a existente. **Migração única** (`app_state.tracklist_discogs_migrated`): as tracklists antigas
-  (geradas pela IA, erradas) de `lot_ai` e `collection_items` foram zeradas para refazer pelo Discogs.
+  a existente. **Migração única REMOVIDA (v0.150.1):** as tracklists antigas (geradas pela IA, erradas) eram zeradas
+  uma vez, mas o marcador (`app_state.tracklist_discogs_migrated`, valor booleano) nunca era gravado — o jsonb
+  não aceita boolean no `unsafe` do postgres.js — e o zeramento rodava a CADA chamada de `step=tracklist`,
+  apagando as tracklists de `lot_ai` e da Coleção (sintoma: `remaining` fixo em 254 com `updated: 20`).
+  Atenção: ao gravar primitivos em `app_state.value`, use objeto/array/string, nunca boolean/number puro.
   **Refresh manual** (botão "atualizar" no topo da visão das faixas — hover do card e aba Faixas do
   mobile; `refreshLotTracklistFn` → `refreshLotTracklist`): re-puxa as faixas do Discogs (ignora o
   gravado) e só depois força a fama pela IA; preserva a fama de faixas de mesmo título se a IA faltar/
