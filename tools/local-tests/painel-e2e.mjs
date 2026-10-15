@@ -35,9 +35,9 @@ for (const t of ["Blocos de contexto", "Correlação de condições", "Frete e p
 const shot = async (name) => page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
 // ---- Blocos ----
 const names = await page.locator("main").innerText();
-ok("5 blocos ligados", ["Estado de conservação", "Discogs · mercado em reais", "Frete do leilão", "Descrição completa do lote", "Vendas passadas do mesmo disco"].every((n) => names.includes(n)));
-ok("seção «Em breve» com os 3 planejados", ["Perfil do colecionador", "Tracklist e fama das faixas", "Correções do usuário"].every((n) => names.includes(n)));
-ok("«em breve» x «por ora não» corretos (1 e 2)", (names.match(/em breve/gi) || []).length === 2 /* título + 1 selo */ && (names.match(/por ora não/g) || []).length === 2, { breve: (names.match(/em breve/gi) || []).length });
+ok("6 blocos ligados", ["Estado de conservação", "Discogs · mercado em reais", "Frete do leilão", "Descrição completa do lote", "Vendas passadas do mesmo disco", "Perfil do colecionador"].every((n) => names.includes(n)));
+ok("seção das ideias de fora com as 2 restantes", ["Tracklist e fama das faixas", "Correções do usuário"].every((n) => names.includes(n)));
+ok("só «por ora não» (2), nenhum «em breve» restante", (names.match(/em breve/gi) || []).length === 0 && (names.match(/por ora não/g) || []).length === 2, { breve: (names.match(/em breve/gi) || []).length });
 const pre = () => page.locator("pre").first().innerText();
 let p = await pre();
 ok("prévia traz contexto, estado, mercado e frete", p.includes('"contexto"') && p.includes('"estado"') && p.includes('"mercado_discogs_brl"') && p.includes('"frete_estimado_brl"'), p.slice(0, 200));
@@ -141,7 +141,7 @@ await page.getByRole("button", { name: "Restaurar padrão" }).click();
 await page.getByRole("button", { name: "Salvar" }).click();
 await page.getByText("Painel de IA salvo").waitFor({ timeout: 5000 }).catch(() => {});
 const def = JSON.parse(psql("select value::text from app_state where key='ai_panel'"));
-ok("restaurar padrão + salvar volta tudo ao padrão", def.freight.sudeste === 25 && def.defaultCond === "G+" && def.rules.length === 0 && def.blocks.length === 5 && def.hiddenFields.length === 0, def);
+ok("restaurar padrão + salvar volta tudo ao padrão", def.freight.sudeste === 25 && def.defaultCond === "G+" && def.rules.length === 0 && def.blocks.length === 6 && def.hiddenFields.length === 0, def);
 
 // ---- Rodapé / rotas ----
 await page.goto(BASE + "/", { waitUntil: "domcontentloaded" });

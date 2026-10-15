@@ -20,6 +20,8 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
+import { InterestsDialog } from "@/components/vinyl/interests-dialog";
+import { WantlistMigrationBanner } from "@/components/vinyl/wantlist-migration-banner";
 import { LookoutOwnedDialog } from "@/components/vinyl/lookout-owned-dialog";
 import { LookoutBulkDialog } from "@/components/vinyl/lookout-bulk-dialog";
 import { LookoutItemCard, type LookoutPatch } from "@/components/vinyl/lookout-item-card";
@@ -39,6 +41,7 @@ import {
   unmergeLookout,
   updateLookout,
 } from "@/lib/lookout.functions";
+import { setUserInterests } from "@/lib/ai.functions";
 import { formatFailoverTrail } from "@/lib/ai-provider";
 import {
   lookoutLabel,
@@ -54,6 +57,8 @@ import {
   queryKeys,
   useAnalyticsAliasesQuery,
   useCollectionQuery,
+  useCollectorInterests,
+  useInterestsQuery,
   useLookoutOverviewQuery,
   useBidsQuery,
   useWatchedQuery,
@@ -124,6 +129,19 @@ function OlhoPage() {
   const runUnmerge = useServerFn(unmergeLookout);
   const runArtistGroup = useServerFn(setLookoutArtistGroup);
   const runToggleLookout = useServerFn(toggleLookout);
+  const runSaveInterests = useServerFn(setUserInterests);
+
+  // Perfil do colecionador: «Meus interesses» (manual) + artistas dos discos de olho.
+  const interestsQuery = useInterestsQuery();
+  const collector = useCollectorInterests();
+  const saveInterestsMut = useMutation({
+    mutationFn: (list: string[]) => runSaveInterests({ data: { items: list } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.interests });
+      toast.success("Interesses salvos");
+    },
+    onError: (e: Error) => toast.error(e.message || "Não foi possível salvar"),
+  });
 
   const query = useLookoutOverviewQuery({ history: true });
   const overview = query.data;
@@ -516,7 +534,7 @@ function OlhoPage() {
                 Discos que você quer muito — reconhecidos quando reaparecem em leilões futuros.
               </p>
             </div>
-            <div className="flex w-full items-center gap-2 sm:w-auto">
+            <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:overflow-visible sm:pb-0">
               <span className="text-xs text-muted-foreground">
                 {active.length} disco(s) · {totalUpcoming} match(es) por vir
                 {newCount ? ` (${newCount} novo${newCount === 1 ? "" : "s"})` : ""}
@@ -531,6 +549,12 @@ function OlhoPage() {
                   Já tenho ({ownedHits.length})
                 </Button>
               ) : null}
+              <InterestsDialog
+                interests={interestsQuery.data ?? []}
+                fromLookout={collector.derived}
+                onSave={(list) => saveInterestsMut.mutate(list)}
+                saving={saveInterestsMut.isPending}
+              />
               <Button
                 size="sm"
                 variant="outline"
@@ -570,6 +594,7 @@ function OlhoPage() {
       />
       <LookoutBulkDialog open={bulkOpen} onOpenChange={setBulkOpen} onDone={refresh} />
       <div className="mx-auto max-w-6xl space-y-4 px-4 py-6">
+        <WantlistMigrationBanner onChanged={refresh} />
         {newCount > 0 ? (
           <div
             role="status"

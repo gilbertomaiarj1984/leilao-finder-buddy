@@ -107,8 +107,9 @@ campo editável ali.
 
 - **Vendas passadas (B5):** feito na v0.148.0 (ver `docs/areas/ia.md`). Limite conhecido: lote sem
   identificação (`lot_ident`/`lot_ai.album`) e com título sem "Artista - Álbum" não casa com o Analytics.
-- **Perfil do colecionador (B6):** mandar só o resultado do casamento (interesse, sondagem, "já tenho"),
-  nunca as listas; `wantlist-match.ts` já tem o `scoreWant`.
+- **Perfil do colecionador (B6):** feito na v0.149.0 (De olho + interesses; ver `docs/areas/colecao-sondagem-compras.md`).
+  Pendente: **apagar a tabela `wantlist_items`** (`DROP TABLE public.wantlist_items;` + trecho em `supabase/setup.sql`)
+  depois de conferir a migração no `/olho`.
 - **Reavaliação quando o contexto chega depois:** o hash não leva flags de contexto; um lote avaliado
   antes de ter estado/Discogs só é refeito ao subir `PROMPT_VERSION` ou ao mudar o título. Com a nova
   ordem do cron isso deve ser raro; se incomodar, acrescentar flags grossas (`+e`, `+m`) ao hash.
@@ -130,6 +131,7 @@ campo editável ali.
 ## Revisão de código da IA — itens adiados (15/10/2026)
 
 Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
+
 - **Duplicação:** pool de workers copiado em `evalLotsSync`/`identLotsSync*`/`conditionAiSync`/
   `identCollectionSync` (extrair `runPool`); `identLotsSync` ≈ `identLotsSyncRows`; "primeiro `{` até o
   último `}`" em 5 parsers (`extractJsonObject`); lista de modelos e padrão do Gemini em 4 lugares

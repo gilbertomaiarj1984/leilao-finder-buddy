@@ -186,7 +186,9 @@ ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS num_for_sale_br integer;
 ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS suggested_by_condition jsonb;
 
 -- ---------------------------------------------------------------------
--- wantlist_items — "sondagem": rascunho de obras que o usuário caça.
+-- wantlist_items — "sondagem": DESCONTINUADA na v0.149.0 (migrada para `lookout_items`, o De olho, pela
+-- tela /olho). Fica só como cópia de segurança até o usuário conferir a migração; depois: DROP TABLE.
+-- (histórico) rascunho de obras que o usuário caça.
 -- Importado colando texto (linhas "01. Tim Maia (1970)"), depois editável no
 -- app: pesquisar, editar, marcar `acquired` (já adquiri). Serve de input extra
 -- para a Análise (destaca os lotes que casam com a lista). `norm` = título

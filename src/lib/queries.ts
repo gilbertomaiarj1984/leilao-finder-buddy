@@ -4,9 +4,11 @@
 // valendo a de quem montasse primeiro. Use `queryKeys` para invalidar/`setQueryData`.
 import { useQueries, useQuery, type QueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 
 import { getAiPanel } from "@/lib/ai-panel.functions";
+import { collectorInterests } from "@/lib/collector-profile";
+import { buildInterestMatcher } from "@/lib/lot-score";
 import { getHouseRatings } from "@/lib/house-rating.functions";
 import { EMPTY_RATINGS, type RatingsPayload } from "@/lib/house-rating";
 
@@ -38,7 +40,6 @@ import {
 import { getLookout, getLookoutLinks, getLookoutOverview } from "@/lib/lookout.functions";
 import type { LookoutItem, LookoutLinks } from "@/lib/lookout-match";
 import type { LookoutOverview } from "@/lib/lookout-matches.server";
-import { getWantlist } from "@/lib/wantlist.functions";
 import {
   BIDS_ACCUM_STORAGE_KEY,
   loadAccum,
@@ -66,28 +67,16 @@ export const queryKeys = {
   collection: ["collection"],
   collectionLinks: ["collection-links"],
   collectionFeedback: ["collection-feedback"],
-  wantlist: ["wantlist"],
   lookout: ["lookout"],
   lookoutLinks: ["lookout-links"],
   lookoutOverview: ["lookout-overview"],
+  wantlistMigration: ["wantlist-migration"],
   analyticsAliases: ["analytics-aliases"],
   houseRatings: ["house-ratings"],
 } as const;
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
-
-/** Item da sondagem como a UI consome (espelha `wantlist_items`). */
-export type WantItem = {
-  id: string;
-  raw: string;
-  work: string;
-  year: number | null;
-  note: string;
-  norm: string;
-  acquired: boolean;
-  position: number;
-};
 
 /** Lotes da janela: carrega uma vez ao abrir; não recarrega ao navegar/focar a janela. */
 export function useLotsQuery() {
@@ -244,6 +233,21 @@ export function useInterestsQuery() {
   });
 }
 
+/**
+ * Interesses efetivos do perfil do colecionador: a lista manual + os artistas do De olho
+ * (`collector-profile.ts`). Quem só precisa do teste «combina com meus interesses» usa `matcher`.
+ */
+export function useCollectorInterests() {
+  const manualQuery = useInterestsQuery();
+  const lookoutQuery = useLookoutQuery();
+  const interests = useMemo(
+    () => collectorInterests(manualQuery.data ?? [], lookoutQuery.data ?? []),
+    [manualQuery.data, lookoutQuery.data],
+  );
+  const matcher = useMemo(() => buildInterestMatcher(interests.all), [interests.all]);
+  return { ...interests, matcher, isLoading: manualQuery.isLoading };
+}
+
 export function useAiProviderQuery() {
   const fetchAiProvider = useServerFn(getAiProvider);
   return useQuery({
@@ -317,16 +321,6 @@ export function useCollectionFeedbackQuery() {
     staleTime: HOUR,
     refetchOnWindowFocus: false,
     retry: false,
-  });
-}
-
-export function useWantlistQuery() {
-  const fetchWantlist = useServerFn(getWantlist);
-  return useQuery<WantItem[]>({
-    queryKey: queryKeys.wantlist,
-    queryFn: () => fetchWantlist() as Promise<WantItem[]>,
-    staleTime: HOUR,
-    refetchOnWindowFocus: false,
   });
 }
 

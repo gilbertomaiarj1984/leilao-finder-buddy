@@ -9,7 +9,14 @@ import { COND_KEYS, DEFAULT_COND, type CondKey } from "./discogs-price";
 import { GRADE_ORDER } from "./grading";
 
 /** Blocos do bloco `contexto` do prompt da avaliação (ver `ai-context.ts`). */
-export const CONTEXT_BLOCK_IDS = ["estado", "mercado", "frete", "descricao", "vendas"] as const;
+export const CONTEXT_BLOCK_IDS = [
+  "estado",
+  "mercado",
+  "frete",
+  "descricao",
+  "vendas",
+  "colecionador",
+] as const;
 export type ContextBlockId = (typeof CONTEXT_BLOCK_IDS)[number];
 
 /** Campos de cada bloco, na ordem em que aparecem no JSON do prompt. */
@@ -35,6 +42,12 @@ export const CONTEXT_FIELDS: Record<ContextBlockId, readonly { key: string; labe
     { key: "lote_mais_frete_brl", label: "Lote + frete" },
   ],
   descricao: [{ key: "descricao_do_lote", label: "Texto da descrição" }],
+  colecionador: [
+    { key: "nos_meus_interesses", label: "Combina com meus interesses" },
+    { key: "de_olho", label: "É um disco que estou de olho" },
+    { key: "teto_de_olho_brl", label: "Teto de preço do De olho" },
+    { key: "ja_tenho", label: "Já tenho na Coleção" },
+  ],
   vendas: [
     { key: "n_vendas", label: "Nº de vendas" },
     { key: "menor", label: "Menor preço" },
@@ -54,6 +67,7 @@ export const CONTEXT_BLOCK_NAMES: Record<ContextBlockId, string> = {
   frete: "Frete do leilão",
   descricao: "Descrição completa do lote",
   vendas: "Vendas passadas do mesmo disco",
+  colecionador: "Perfil do colecionador",
 };
 
 /** Blocos que já existiam antes de `blocksSeen`: config salva sem ele conhece só estes. */

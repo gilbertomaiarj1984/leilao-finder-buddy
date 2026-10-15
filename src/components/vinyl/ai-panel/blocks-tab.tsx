@@ -22,6 +22,7 @@ const BLOCK_SRC: Record<ContextBlockId, string> = {
   frete: "frete estimado da casa pela UF (Sudeste ou demais regiões)",
   descricao: "lot_condition.description (texto do catálogo da casa, até 600 caracteres)",
   vendas: "Vinil Analytics (lot_sales com seus apelidos e correções) — mesmo disco, em reais",
+  colecionador: "Meus interesses + De olho + Coleção — só o resultado do casamento deste lote",
 };
 
 /**
@@ -35,14 +36,6 @@ const PLANNED_BLOCKS: {
   missing: string;
   recommended: boolean;
 }[] = [
-  {
-    id: "colecionador",
-    name: "Perfil do colecionador",
-    src: "interesses · sondagem · coleção",
-    missing:
-      "Mandar só o resultado do casamento de cada lote (está nos interesses, casa com a sondagem, já tenho), nunca as listas inteiras.",
-    recommended: true,
-  },
   {
     id: "tracklist",
     name: "Tracklist e fama das faixas",
@@ -76,6 +69,11 @@ const SAMPLES = [
       description:
         "GILBERTO GIL - RAÇA HUMANA - LP 1984 WEA, capa VG+, disco VG+/NM, com encarte. Prensagem original brasileira.",
     },
+    profile: {
+      interesse: true,
+      deOlho: { label: "Gilberto Gil — Raça Humana (1984)", teto: 70, confirmado: false },
+      jaTenho: null,
+    },
     pastSales: {
       artist: "Gilberto Gil",
       album: "Raça Humana",
@@ -103,6 +101,7 @@ const SAMPLES = [
     price: 400,
     uf: "BA",
     condition: null,
+    profile: { interesse: true, deOlho: null, jaTenho: "Tim Maia Racional Vol. 2" },
     pastSales: {
       artist: "Tim Maia",
       album: "Racional Vol. 1",
@@ -171,6 +170,7 @@ export function BlocksTab({ draft, setDraft }: Props) {
         market: s.market,
         uf: s.uf,
         pastSales: "pastSales" in s ? s.pastSales : null,
+        profile: "profile" in s ? s.profile : null,
       },
       draft,
     );
@@ -282,7 +282,7 @@ export function BlocksTab({ draft, setDraft }: Props) {
 
         <section className="rounded-md border border-border bg-card p-3">
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Em breve — ainda não entram no prompt
+            Ideias que ficaram de fora — não entram no prompt
           </h2>
           <div className="space-y-1.5">
             {PLANNED_BLOCKS.map((b) => (
@@ -308,7 +308,7 @@ export function BlocksTab({ draft, setDraft }: Props) {
             ))}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Quando um deles ficar pronto, aparece aqui na lista de blocos para você ligar, ordenar e
+            Se um deles virar realidade, aparece na lista de blocos acima para você ligar, ordenar e
             escolher os campos.
           </p>
         </section>

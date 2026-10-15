@@ -14,7 +14,6 @@ import { watchedDateToKey, type HouseStats } from "@/components/vinyl/grouping";
 import { effectiveTextRules } from "@/lib/condition-text";
 import { type Condition, type Grade, parseConditionFromText, scoreCondition } from "@/lib/grading";
 import {
-  buildInterestMatcher,
   parseAiAlbum,
   toLotAi,
   toLotMarket,
@@ -50,6 +49,7 @@ import { AI_PROVIDER_SHORT, formatFailoverTrail, type AiProvider } from "@/lib/a
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { attachLookout, setLookoutLink, toggleLookout } from "@/lib/lookout.functions";
 import {
+  buildLotIdentity,
   lookoutCandidates,
   LOOKOUT_CONFIDENT_MIN,
   matchLookoutForLot,
@@ -71,7 +71,6 @@ import { BIDS_ACCUM_STORAGE_KEY, saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/
 import {
   bidIsCovered,
   bidIsWinning,
-  COMPILATION_LABEL,
   extractArtist,
   isDiscBundle,
   LOTE_LABEL,
@@ -79,16 +78,13 @@ import {
   parsePrice,
   searchRelevance,
   titleCase,
-  UNCLASSIFIED_LABEL,
   type VinylLot,
 } from "@/lib/vinyl-parse";
 import { priceRoseSinceEval } from "@/lib/ai-reprice";
+import { buildOwnedCandidates } from "@/lib/collector-profile";
 import {
-  lotIdentity,
-  ownedCandidate,
   ownedMatchForLot,
   ownedSignatureFromLot,
-  resolveArtistAlias,
   resolveOwned,
   type CollectionLinks,
   type LotIdentity,
@@ -102,7 +98,7 @@ import {
   useCollectionFeedbackQuery,
   useCollectionLinksQuery,
   useCollectionQuery,
-  useInterestsQuery,
+  useCollectorInterests,
   useLotAiQuery,
   useLotIdentQuery,
   useAiPanelQuery,
@@ -430,7 +426,6 @@ export function useDashboardData() {
   // Identificação simplificada (artista/álbum/ano) — roda para TODOS os lotes, barata.
   // Alimenta a exibição, a busca e o filtro por artista, priorizada sobre o título.
   const lotIdentQuery = useLotIdentQuery();
-  const interestsQuery = useInterestsQuery();
   // Modo da IA automática (controla o gasto de créditos). Fonte da verdade é o servidor.
   const aiModeQuery = useQuery({
     queryKey: queryKeys.aiMode,
@@ -538,10 +533,8 @@ export function useDashboardData() {
     const parsed = parseAiAlbum(albumById.get(lot.id) ?? null).artist;
     return parsed ? titleCase(parsed) : lot.artist;
   };
-  const matchesInterest = useMemo(
-    () => buildInterestMatcher(interestsQuery.data ?? []),
-    [interestsQuery.data],
-  );
+  // Perfil do colecionador: interesses digitados + artistas do De olho.
+  const { matcher: matchesInterest } = useCollectorInterests();
   const lotMarketQuery = useLotMarketQuery();
   const aiPanelQuery = useAiPanelQuery();
   const marketById = useMemo(() => {
@@ -748,23 +741,7 @@ export function useDashboardData() {
   // álbum para dosar a confiança). Ignora buckets ruidosos (Lote/Coletâneas/Não classificados)
   // e artista vazio, que gerariam tokens fracos e falsos positivos.
   const ownedCands = useMemo(
-    () =>
-      (collectionQuery.data ?? [])
-        .filter(
-          (it) =>
-            it.artist &&
-            it.artist !== LOTE_LABEL &&
-            it.artist !== COMPILATION_LABEL &&
-            it.artist !== UNCLASSIFIED_LABEL,
-        )
-        .map((it) =>
-          ownedCandidate({
-            id: it.id,
-            artist: resolveArtistAlias(it.artist, artistAliases),
-            album: it.album,
-            year: it.year,
-          }),
-        ),
+    () => buildOwnedCandidates(collectionQuery.data ?? [], artistAliases),
     [collectionQuery.data, artistAliases],
   );
   // `lot_id` das peças EXATAS já arrematadas → id do item da coleção (casamento 100% preciso).
@@ -779,22 +756,16 @@ export function useDashboardData() {
     const map = new Map<string, LotIdentity>();
     for (const lot of lots.data?.lots ?? []) {
       try {
-        const parsedArtist = parseAiAlbum(albumById.get(lot.id) ?? null).artist;
-        const artist =
-          isDiscBundle(lot.title ?? "") || lot.artist === LOTE_LABEL
-            ? LOTE_LABEL
-            : parsedArtist
-              ? titleCase(parsedArtist)
-              : lot.artist;
         const market = marketById.get(lot.id);
         map.set(
           lot.id,
-          lotIdentity({
+          buildLotIdentity({
             title: lot.title,
-            artist: resolveArtistAlias(artist, artistAliases),
+            artist: lot.artist,
             album: albumById.get(lot.id) ?? null,
             marketTitle: market?.releaseTitle ?? null,
             marketYear: market?.year ?? null,
+            aliases: artistAliases,
           }),
         );
       } catch {

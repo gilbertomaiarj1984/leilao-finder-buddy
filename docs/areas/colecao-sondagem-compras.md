@@ -1,24 +1,32 @@
-# Coleção, Sondagem (obras caçadas) e Compras
+# Coleção, Sondagem (descontinuada → De olho) e Compras
 
 > Parte das notas de desenvolvimento — índice em `docs/notas-desenvolvimento.md`.
 > Atualize esta página ao mudar a mecânica desta área.
 
-## Sondagem — obras caçadas (`wantlist_items`)
+## Sondagem — DESCONTINUADA (v0.149.0); perfil do colecionador = De olho + interesses
 
-- Rascunho de obras que o usuário procura, usado como sinal extra e filtro. Tabela
-  `wantlist_items` (`raw`, `work`, `year`, `note`, `norm`, `acquired`, `position`). Parser puro
-  `parseWantlistText` (`wantlist-parse.ts`, uma obra/linha, tolerante a numeração/ano/nota;
-  client-safe). CRUD `wantlist.server.ts` (`importWantlistText` **acrescenta**, ignora
-  duplicatas). Diálogo "Sondagem" no header da Análise (colar/pesquisar/editar/marcar
-  adquirido/remover).
-- **Casamento probabilístico** `wantlist-match.ts` (puro, sem IA): `scoreWant → 0..1` compara
-  **tokens** da obra contra `lotIdentity` (título + artista + `album` da IA/`lot_ident` +
-  `release_title` do Discogs). **Porta do artista** (nome ausente ×0.4), **ano** (+0.15 casa /
-  −0.25 diferente), fuzzy leve (`withinOneEdit`). Limiar **`WANT_MATCH_THRESHOLD = 0.8`**
-  (`bestWantForLot`) → marca **🎯** no título (tooltip "Sondagem: obra (ano) · NN%") e alimenta
-  o filtro "Só sondagem".
-- **Não pesa na nota da IA** — é só destaque + filtro (como os interesses ⭐). Dar peso real
-  segue em aberto.
+- A **Sondagem** (`wantlist_items`: rascunho de obras caçadas, casamento por saco de palavras) foi
+  **substituída pelo De olho** (`lookout_items`: artista + álbum + ano, confirmação ✓/✕, teto de preço,
+  aviso externo). Removidos: diálogo da Sondagem, `wantlist.server/functions`, `wantlist-parse`, o
+  casamento `scoreWant`/`bestWantForLot` (o resto de `wantlist-match.ts` — `lotIdentity`, `ownedScore`,
+  `resolveOwned` — segue servindo a Coleção e o De olho). Na Análise, 🎯 e o filtro «Só De olho» usam
+  o mesmo casamento do De olho (`matchLookoutForLot` + `buildLotIdentity`, só confiante ≥ 80% ou confirmado).
+- **Migração (uma vez, pela interface):** `/olho` mostra o aviso «A Sondagem foi descontinuada» enquanto
+  houver obra por migrar. O botão **Migrar para o De olho** chama `migrateWantlist` em laço
+  (`wantlist-migration.server.ts`, 8 obras por chamada, 4 em paralelo): cada obra passa pela IA
+  (`addLookoutFromText`, mesma da lista colada) e vira item de olho sem lote de origem (`manual-…`); as
+  **adquiridas** viram itens `acquired`, a **nota** é copiada. Progresso em `app_state.wantlist_migration`
+  (`done`/`failed`/`dismissed`) — retomável e idempotente; as que a IA não resolve ficam listadas (adicionar
+  à mão ou «Dispensar»). No fim, os matches de HOJE dos itens migrados entram como «já avisados» (sem
+  enxurrada de push/e-mail; continuam aparecendo como «novos» na página). A tabela `wantlist_items`
+  **não é apagada** (cópia de segurança); remover depois de conferir (`DROP TABLE`, ver `docs/pendencias.md`).
+- **Meus interesses** moveu para a página `/olho` (botão no cabeçalho). Interesses efetivos
+  (`collector-profile.ts`, `useCollectorInterests`) = lista manual **∪ artistas dos discos de olho ativos**
+  (somente leitura no diálogo, com «fixar» para copiar à lista manual). Vale para o ⭐ da home/Análise e
+  para a IA. Perfil do colecionador = De olho + interesses (+ «já tenho» na Coleção, só para a IA).
+- **IA:** bloco «Perfil do colecionador» (`perfil_do_colecionador`: `nos_meus_interesses`, `de_olho`,
+  `teto_de_olho_brl`, `ja_tenho`) — só o RESULTADO do casamento do lote (`profileForLot`; De olho com
+  `includeOrigin`, Coleção só automático ≥ 80%, sem as decisões manuais do usuário), nunca as listas.
 
 ## Coleção do usuário (`collection_items`)
 
@@ -43,7 +51,7 @@
   `won_price` (**valor pago**), `won_date`, `condition_media`/`condition_sleeve` (grading),
   `notes`, **`description`** (descritivo do disco, buscado pela IA), `tags[]`,
   `market_low`/`market_high` (snapshot Discogs). CRUD em `collection.server.ts` (padrão do
-  `wantlist.server.ts`) exposto por `collection.functions.ts`
+  o antigo CRUD da Sondagem) exposto por `collection.functions.ts`
   (`getCollection`/`scanCollection`/`addCollectionItem`/`updateCollectionItem`/
   `deleteCollectionItem`/`uploadCollectionImage`). Diálogo de edição/adição reusa `ui/dialog`.
   - **Combo de artista:** o campo Artista é um `<input list>` (datalist) com os artistas já

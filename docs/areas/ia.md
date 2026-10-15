@@ -110,18 +110,21 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   `lot_condition.description` (texto do catálogo gravado pelo `step=condition`; vazio quando só repete o
   título). Blocos novos do app entram ligados numa config já salva (`PanelConfig.blocksSeen`).
   **Vendas passadas (v0.148.0):** bloco `vendas` → `vendas_passadas_brl` (`{n_vendas, menor, mediana,
-  maior, ultima_venda, ultima_venda_em, n_estado_parecido, mediana_estado_parecido,
-  razao_preco_vs_mediana}`), calculado por `past-sales.server.ts` (`loadPastSales`, índice do Analytics
+maior, ultima_venda, ultima_venda_em, n_estado_parecido, mediana_estado_parecido,
+razao_preco_vs_mediana}`), calculado por `past-sales.server.ts` (`loadPastSales`, índice do Analytics
   em cache de 30s, descartado quando o usuário grava apelido/correção/exclusão — `app-state.server.ts`).
   O lote é posicionado pelo MESMO `makeSalePlacer` do Analytics (identidade: `lot_ident` > `lot_ai.album`
   > título; sem "Artista - Álbum" no título e sem identificação, não casa). Balaios (não classificados,
-  lote, coletâneas, álbum não identificado) nunca entram. Na UI: `PastSalesBlock` em `ScoreDetails`
-  (`useLotPastSales`, busca ao abrir o detalhe) com o link «ver no Analytics».
-  Ainda fora do prompt: perfil do colecionador, tracklist e correções (ver `docs/pendencias.md`).
+  > lote, coletâneas, álbum não identificado) nunca entram. Na UI: `PastSalesBlock` em `ScoreDetails`
+  > (`useLotPastSales`, busca ao abrir o detalhe) com o link «ver no Analytics».
+  > **Perfil do colecionador (v0.149.0):** bloco `colecionador` → `perfil_do_colecionador` (ver
+  > `docs/areas/colecao-sondagem-compras.md`); `collector-profile.server.ts` lê interesses, De olho (+ vínculos), Coleção
+  > e a lista de termos negados a cada lote de lotes (sem cache) e `profileForLot` devolve só o resultado por lote.
+  > Ainda fora do prompt: tracklist e correções do usuário (ver `docs/pendencias.md`).
 - **Painel de IA — `/ia-painel` (v0.143.0):** configuração em `app_state.ai_panel` (`PanelConfig`,
   `ai-panel-config.ts`; `getAiPanelConfig` com cache de 30s, `setAiPanelConfig` normaliza tudo).
   Abas: **Blocos de contexto** (ordem/campos do bloco `contexto`; `contextForPrompt(ctx, preço,
-  cfg)` respeita `blocks` e `hiddenFields`), **Correlação de condições** (`rules` do usuário —
+cfg)` respeita `blocks` e `hiddenFields`), **Correlação de condições** (`rules` do usuário —
   frase com `*` — somam às `TEXT_RULES` do app, que podem ser desligadas em `disabledRules`; ver
   `docs/areas/grading-e-estado.md`), **Frete e padrões** (`freight`, `defaultCond`) e **Modelo e
   modo** (`AiModeSelect` = `app_state.ai_mode`, `AiModelSelect` = provedor+modelo; gravam na hora,
@@ -207,7 +210,6 @@ image})` chama `evalLotsSync` **direto** (ignora o cache por `title_hash` — é
 - **Custo Gemini (referência):** `gemini-flash-latest` ≈ US$0,75/US$3,75 por 1M tok in/out (mais
   barato que o Haiku 4.5); o alias `-latest` acompanha o Flash mais novo — para fixar, usar
   `GEMINI_MODEL`.
-
 
 ### Revisão de código da IA (v0.143.1)
 

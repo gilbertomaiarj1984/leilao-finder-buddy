@@ -22,6 +22,7 @@ import {
   type PriceAnchor,
 } from "./discogs-price";
 import { normalizeGrade, scoreCondition } from "./grading";
+import type { CollectorProfile } from "./collector-profile";
 import type { PastSales } from "./past-sales";
 
 /**
@@ -86,6 +87,8 @@ export type LotContext = {
   descricao: string | null;
   /** Vendas passadas do mesmo disco (Vinil Analytics, `past-sales.ts`); null = sem histórico. */
   vendas: PastSales | null;
+  /** Relação do colecionador com o lote (interesses, De olho, Coleção); null = nenhuma. */
+  colecionador: CollectorProfile | null;
 };
 
 type ConditionInput = {
@@ -112,6 +115,7 @@ export function buildLotContext(
     market?: MarketInput;
     uf?: string | null;
     pastSales?: PastSales | null;
+    profile?: CollectorProfile | null;
   },
   cfg: PanelConfig = DEFAULT_PANEL_CONFIG,
 ): LotContext {
@@ -156,6 +160,7 @@ export function buildLotContext(
     frete: auctionFreight(input.uf, cfg.freight),
     descricao: cleanLotDescription(c?.description) || null,
     vendas: input.pastSales ?? null,
+    colecionador: input.profile ?? null,
   };
 }
 
@@ -214,6 +219,15 @@ export function contextForPrompt(
             : undefined,
       });
       if (Object.keys(o).length) out["vendas_passadas_brl"] = o;
+    } else if (block === "colecionador" && ctx.colecionador) {
+      const c = ctx.colecionador;
+      const o = pick("colecionador", {
+        nos_meus_interesses: c.interesse ? true : undefined,
+        de_olho: c.deOlho?.label,
+        teto_de_olho_brl: c.deOlho?.teto != null ? Math.round(c.deOlho.teto) : undefined,
+        ja_tenho: c.jaTenho ?? undefined,
+      });
+      if (Object.keys(o).length) out["perfil_do_colecionador"] = o;
     } else if (block === "frete") {
       Object.assign(
         out,

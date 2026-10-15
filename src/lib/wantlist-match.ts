@@ -6,26 +6,13 @@ import {
 } from "@/lib/vinyl-parse";
 
 /**
- * Casamento probabilístico entre uma obra da sondagem e um lote. Em vez de exigir o título
- * escrito exatamente igual, comparamos por TOKENS (palavras normalizadas, sem acento/pontuação)
- * de artista + disco e usamos o ANO como reforço/penalidade. A "identidade" do lote junta o
- * título com sinais mais confiáveis quando existem: o artista extraído, o álbum identificado
- * pela IA e o título/ano do release casado no Discogs.
- *
- * `scoreWant` devolve uma probabilidade 0..1; a UI trata como casamento quando passa de
- * `WANT_MATCH_THRESHOLD` (80%).
+ * Motor de casamento entre um disco (da Coleção ou do De olho) e um lote. A "identidade" do lote
+ * junta o título com sinais mais confiáveis quando existem: o artista extraído, o álbum
+ * identificado pela IA e o título/ano do release casado no Discogs. (A antiga "Sondagem" usava
+ * aqui um casamento por saco de palavras; foi descontinuada em favor do De olho, v0.149.0.)
  */
-const WANT_MATCH_THRESHOLD = 0.8;
 
 const YEAR_RE = /\b(?:19|20)\d{2}\b/g;
-
-/** Obra da sondagem preparada para comparação (tokens significativos do texto). */
-export type WantCandidate = {
-  id: string;
-  work: string;
-  year: number | null;
-  tokens: string[];
-};
 
 /**
  * Identidade do lote: texto normalizado + conjunto de tokens + anos conhecidos (o "saco de
@@ -77,14 +64,6 @@ export function resolveArtistAlias(
   if (!aliases) return name;
   const canonical = aliases[normalizeForMatch(name)];
   return canonical || name;
-}
-
-export function wantCandidate(item: {
-  id: string;
-  work: string;
-  year: number | null;
-}): WantCandidate {
-  return { id: item.id, work: item.work, year: item.year, tokens: significantTokens(item.work) };
 }
 
 export function lotIdentity(parts: {
@@ -187,61 +166,6 @@ function withinOneEdit(a: string, b: string): boolean {
   }
   if (i < la || j < lb) edits++;
   return edits <= 1;
-}
-
-/**
- * Um token da obra "está presente" no lote (igual, como substring, ou ~1 typo de distância).
- * `fuzzyMinLen` = tamanho mínimo para aceitar a correção de 1 letra (padrão 5, conservador). O
- * casamento de ARTISTA usa 4 para tolerar grafias como "Elis"↔"Ellis"; o de álbum mantém 5
- * (evita "arte"↔"parte" e afins inflarem o score).
- */
-function tokenPresent(token: string, id: LotIdentity, fuzzyMinLen = 5): boolean {
-  if (id.tokens.has(token)) return true;
-  if (token.length >= 4 && id.text.includes(token)) return true;
-  if (token.length >= fuzzyMinLen) {
-    for (const t of id.tokens) {
-      if (Math.abs(t.length - token.length) <= 1 && withinOneEdit(t, token)) return true;
-    }
-  }
-  return false;
-}
-
-/** Probabilidade 0..1 de a obra `cand` corresponder ao lote `id`. */
-function scoreWant(cand: WantCandidate, id: LotIdentity): number {
-  if (!cand.tokens.length) return 0;
-
-  let hit = 0;
-  for (const t of cand.tokens) if (tokenPresent(t, id)) hit++;
-  let coverage = hit / cand.tokens.length;
-
-  // Porta do artista: os 1-2 primeiros tokens costumam ser o nome do artista. Se NENHUM
-  // deles aparece, quase certamente não é a obra (evita casar só pelo nome do disco).
-  const head = cand.tokens.slice(0, Math.min(2, cand.tokens.length));
-  if (!head.some((t) => tokenPresent(t, id))) coverage *= 0.4;
-
-  // Ano: reforça quando bate, penaliza quando o lote tem ano DIFERENTE (desambigua
-  // regravações/anos do mesmo artista); neutro quando o lote não informa ano.
-  let adj = 0;
-  if (cand.year && id.years.size) {
-    if (id.years.has(cand.year)) adj = 0.15;
-    else if (id.years.has(cand.year - 1) || id.years.has(cand.year + 1)) adj = 0.05;
-    else adj = -0.25;
-  }
-
-  return Math.max(0, Math.min(1, coverage + adj));
-}
-
-/** Melhor obra da sondagem para o lote, ou null se nenhuma passa do limiar (80%). */
-export function bestWantForLot(
-  cands: WantCandidate[],
-  id: LotIdentity,
-): { cand: WantCandidate; score: number } | null {
-  let best: { cand: WantCandidate; score: number } | null = null;
-  for (const c of cands) {
-    const s = scoreWant(c, id);
-    if (!best || s > best.score) best = { cand: c, score: s };
-  }
-  return best && best.score >= WANT_MATCH_THRESHOLD ? best : null;
 }
 
 /**

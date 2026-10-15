@@ -6,7 +6,10 @@ import {
   contextForPrompt,
   PROMPT_VERSION,
 } from "../src/lib/ai-context";
-import { normalizePanelConfig } from "../src/lib/ai-panel-config";
+import { CONTEXT_BLOCK_IDS, normalizePanelConfig } from "../src/lib/ai-panel-config";
+
+// Blocos acrescentados depois da v0.143 (config antiga, sem `blocksSeen`, os recebe ligados).
+const NEW_BLOCKS = CONTEXT_BLOCK_IDS.filter((b) => !["estado", "mercado", "frete"].includes(b));
 import {
   buildUserPrompt,
   evalHash,
@@ -151,7 +154,7 @@ describe("painel de IA — configuração", () => {
       disabledRules: ["bom-estado", 7],
     });
     // sem `blocksSeen` (config antiga), o bloco novo «descricao» entra ligado
-    expect(cfg.blocks).toEqual(["estado", "descricao", "vendas"]);
+    expect(cfg.blocks).toEqual(["estado", ...NEW_BLOCKS]);
     expect(cfg.hiddenFields).toEqual(["mercado.tem"]);
     expect(cfg.defaultCond).toBe("G+");
     expect(cfg.freight).toEqual({ sudeste: 25, outras: 35 });
@@ -225,7 +228,7 @@ describe("descrição completa do lote", () => {
     expect(contextForPrompt(ctx, null)["descricao_do_lote"]).toBe(ctx.descricao);
     const off = normalizePanelConfig({
       blocks: ["estado", "frete"],
-      blocksSeen: ["estado", "mercado", "frete", "descricao", "vendas"],
+      blocksSeen: [...CONTEXT_BLOCK_IDS],
     });
     expect(contextForPrompt(ctx, null, off)["descricao_do_lote"]).toBeUndefined();
     const hidden = normalizePanelConfig({ hiddenFields: ["descricao.descricao_do_lote"] });
@@ -234,9 +237,9 @@ describe("descrição completa do lote", () => {
 
   test("bloco novo entra ligado numa config antiga; um removido de propósito continua fora", () => {
     const legacy = normalizePanelConfig({ blocks: ["frete", "estado"] }); // salva antes de existir `blocksSeen`
-    expect(legacy.blocks).toEqual(["frete", "estado", "descricao", "vendas"]); // mercado foi tirado antes; os outros são novos
+    expect(legacy.blocks).toEqual(["frete", "estado", ...NEW_BLOCKS]); // mercado foi tirado antes; os outros são novos
     const again = normalizePanelConfig(legacy); // regravada: já conhece tudo
-    expect(again.blocks).toEqual(["frete", "estado", "descricao", "vendas"]);
+    expect(again.blocks).toEqual(["frete", "estado", ...NEW_BLOCKS]);
     const removed = normalizePanelConfig({ ...again, blocks: ["frete", "estado"] });
     expect(removed.blocks).toEqual(["frete", "estado"]);
   });

@@ -146,7 +146,10 @@ const SYSTEM_PROMPT =
   'vários discos). "vendas_passadas_brl" é o que o MESMO disco já arrematou nos leilões ' +
   "acompanhados (menor, mediana e maior em reais; confie mais com mais vendas, e prefira " +
   '"mediana_estado_parecido" quando existir): um preço bem abaixo da mediana é oportunidade. ' +
-  "Sem contexto, estime pelo seu " +
+  '"perfil_do_colecionador" só lista o que se aplica a este disco: "de_olho" é um disco que ' +
+  'o colecionador quer muito (com "teto_de_olho_brl", o máximo que ele pagaria), ' +
+  '"nos_meus_interesses" é artista/álbum que ele curte e "ja_tenho" é um disco da coleção dele ' +
+  "que parece ser este mesmo (vale menos para ele). Sem contexto, estime pelo seu " +
   "conhecimento de música e discografia. Seja realista: a grande maioria dos discos é comum e " +
   "de baixo valor. Responda SOMENTE com um objeto JSON, sem nenhum texto fora do JSON.";
 

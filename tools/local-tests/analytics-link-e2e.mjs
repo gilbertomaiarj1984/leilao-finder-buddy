@@ -29,6 +29,7 @@ const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 
 await page.goto(BASE + "/vinil-analytics?artist=gilberto%20gil&album=raca%20humana", { waitUntil: "networkidle" });
+await page.getByText("Raça Humana").first().waitFor({ timeout: 10000 }).catch(() => {});
 ok("o artista do link abre sozinho", await page.getByText("Raça Humana").first().isVisible());
 ok("o álbum do link fica destacado (borda do grupo)", (await page.locator("div.ring-primary\\/40").count()) === 1);
 ok("o outro álbum aparece, sem destaque", await page.getByText("Refazenda").first().isVisible());

@@ -68,7 +68,7 @@ versão obrigatório em todo PR, atualizar a documentação (página da área + 
   Módulos `*.server.ts` em `src/lib/` só rodam no servidor (convenção de sufixo, reforçada pelo
   `no-restricted-imports` do ESLint em vez do pacote `server-only` do Next.js); os
   `*.functions.ts` expõem essa lógica como server functions do TanStack Start, um arquivo por
-  domínio (`leiloesbr` = lotes/lances/pregão, `ai`, `analytics`, `collection`, `wantlist`,
+  domínio (`leiloesbr` = lotes/lances/pregão, `ai`, `analytics`, `collection`,
   `purchases`, `lot-exclusion`, `leiloesbr-watch`, `auth`).
 - **Endpoint de cron fora das server functions**: `/api/cron` é tratado direto em
   `src/server.ts` (sem CSRF), protegido por `CRON_TOKEN` (header, comparação em tempo
@@ -107,7 +107,7 @@ versão obrigatório em todo PR, atualizar a documentação (página da área + 
   consolidado em `supabase/setup.sql` (nome histórico, mantido — schema puro, sem nada
   específico do Supabase); histórico incremental em `supabase/migrations/`. Tabelas
   principais: `lots`, `known_artists`, `app_state`, `seen_auctions`, `lot_ai`, `lot_ident`,
-  `lot_market`, `lot_condition`, `lot_sales`, `wantlist_items`, `collection_items`.
+  `lot_market`, `lot_condition`, `lot_sales`, `lookout_items`, `collection_items` (a antiga `wantlist_items` — Sondagem — está descontinuada, migrada para o De olho).
 - **Fotos da Coleção**: arquivos em disco (`COLLECTION_DIR`, volume Docker), servidos pelo
   Caddy em produção (`/collection/*`, `Cache-Control` 7 dias) — ver `Caddyfile` e
   `src/lib/collection-storage.server.ts`.
