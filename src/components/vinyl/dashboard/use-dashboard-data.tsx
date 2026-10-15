@@ -565,8 +565,6 @@ export function useDashboardData() {
     return { ...base, matchesInterests: matchesInterest(lot.title ?? "") };
   };
   // Mercado com a âncora de preço da CONDIÇÃO do lote (sugerido do Discogs para o estado dele).
-  const marketFor = (lot: { id: string; uf?: string; title?: string }): LotMarket | undefined =>
-    withConditionAnchor(marketById.get(lot.id), conditionFor(lot).media, lot.uf, aiPanelQuery.data);
   // Estado de conservação (Disco/Capa). Prioriza o CACHE do servidor (`lot_condition`,
   // alimentado pelo descritivo do catálogo — mais rico); cai no parse do TÍTULO quando não
   // há linha no cache ainda (ou ela ficou indefinida).
@@ -595,9 +593,42 @@ export function useDashboardData() {
     () => effectiveTextRules(aiPanelQuery.data?.rules, aiPanelQuery.data?.disabledRules),
     [aiPanelQuery.data],
   );
+  // Os dois helpers abaixo são chamados por lote em todo render. Sem cache, cada chamada refaz o
+  // parse do título e devolve um objeto NOVO, o que anula o `React.memo` do `LotCard`. Os mapas são
+  // recriados (vazios) só quando as entradas mudam; dentro de uma geração o resultado é estável.
+  const conditionFallbackCache = useMemo(
+    () => new Map<string, Condition>(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [textRules],
+  );
   const conditionFor = (lot: { id?: string; title?: string }): Condition => {
     const cached = lot.id ? conditionById.get(lot.id) : undefined;
-    return cached ?? parseConditionFromText(lot.title ?? "", textRules);
+    if (cached) return cached;
+    const key = `${lot.id ?? ""}|${lot.title ?? ""}`;
+    let c = conditionFallbackCache.get(key);
+    if (!c) {
+      c = parseConditionFromText(lot.title ?? "", textRules);
+      conditionFallbackCache.set(key, c);
+    }
+    return c;
+  };
+  // Mercado com a âncora de preço da CONDIÇÃO do lote (sugerido do Discogs para o estado dele).
+  const marketCache = useMemo(
+    () => new Map<string, LotMarket | undefined>(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [marketById, conditionById, textRules, aiPanelQuery.data],
+  );
+  const marketFor = (lot: { id: string; uf?: string; title?: string }): LotMarket | undefined => {
+    const key = `${lot.id}|${lot.uf ?? ""}`;
+    if (marketCache.has(key)) return marketCache.get(key);
+    const m = withConditionAnchor(
+      marketById.get(lot.id),
+      conditionFor(lot).media,
+      lot.uf,
+      aiPanelQuery.data,
+    );
+    marketCache.set(key, m);
+    return m;
   };
   // Lotes já excluídos (ver src/lib/lot-exclusion.server.ts) — alimenta o badge "possível
   // lixo" na listagem. Calculado no CLIENTE (não persistido): volume baixo, sem gasto de IA.

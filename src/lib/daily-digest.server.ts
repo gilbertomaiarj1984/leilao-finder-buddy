@@ -9,7 +9,7 @@ import { buildDigestEmail, type DigestEntry } from "@/lib/email-templates.server
 import { emailEnabled, sendEmail } from "@/lib/email.server";
 import { readLotsRange } from "@/lib/leiloesbr-scrape.server";
 import { getAiPanelConfig } from "@/lib/app-state.server";
-import { getAllLotAi } from "@/lib/lot-ai.server";
+import { getAllLotAiLean } from "@/lib/lot-ai.server";
 import { getAllLotCondition } from "@/lib/lot-condition.server";
 import { getAllLotMarket } from "@/lib/lot-market.server";
 import { shiftDayKey } from "@/lib/day-bar";
@@ -60,7 +60,7 @@ export async function sendDailyDigest(): Promise<{
 
   const [lots, aiRows, marketRows, condRows, panel] = await Promise.all([
     readLotsRange(today, shiftDayKey(today, DIGEST_DAYS - 1)),
-    getAllLotAi(),
+    getAllLotAiLean(),
     getAllLotMarket().catch(() => []),
     getAllLotCondition().catch(() => []),
     getAiPanelConfig(),

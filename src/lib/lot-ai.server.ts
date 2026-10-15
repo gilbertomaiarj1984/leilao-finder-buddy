@@ -41,9 +41,41 @@ function toTags(value: unknown): string[] {
 let allCache: { at: number; rows: LotAiRow[] } | null = null;
 const ALL_TTL_MS = 30_000;
 
+// Variante SEM a tracklist (jsonb com todas as faixas de cada disco): o cron e as rotinas que só
+// precisam de id/hash/nota/álbum não devem puxá-la a cada leitura. `tracklist` vem sempre `null`.
+let leanCache: { at: number; rows: LotAiRow[] } | null = null;
+
 /** Descarta o cache de `getAllLotAi` (escritas feitas fora deste módulo, ex.: retroativo). */
 export function invalidateLotAiCache(): void {
   allCache = null;
+  leanCache = null;
+}
+
+/**
+ * Como `getAllLotAi`, mas sem a coluna `tracklist` (sempre `null` no resultado). Use quando só
+ * importam id, hash, nota, álbum e preço de avaliação — seleção do `aieval`, resumo diário, De olho.
+ */
+export async function getAllLotAiLean(): Promise<LotAiRow[]> {
+  if (leanCache && Date.now() - leanCache.at < ALL_TTL_MS) return leanCache.rows;
+  const { data, error } = await db
+    .from<LotAiRow>("lot_ai")
+    .select("id, title_hash, score, rarity, deal, album, reason, tags, model, eval_price");
+  if (error) throw error;
+  const rows: LotAiRow[] = (data ?? []).map((r) => ({
+    id: r.id,
+    title_hash: r.title_hash,
+    score: r.score,
+    rarity: r.rarity,
+    deal: r.deal,
+    album: r.album,
+    reason: r.reason,
+    tags: toTags(r.tags),
+    model: r.model,
+    eval_price: toPrice(r.eval_price),
+    tracklist: null,
+  }));
+  leanCache = { at: Date.now(), rows };
+  return rows;
 }
 
 /** Lê todas as avaliações (single-user; poucas centenas de linhas). Best-effort. */
@@ -108,6 +140,7 @@ export async function updateLotTags(id: string, tags: string[]): Promise<string[
     throw new Error("Este lote ainda não foi avaliado pela IA — não há como salvar tags nele.");
   }
   allCache = null;
+  leanCache = null;
   // Devolve o que REALMENTE ficou gravado (jsonb), não o array computado.
   return toTags(data[0]?.tags);
 }
@@ -155,11 +188,13 @@ export async function upsertLotAi(rows: LotAiRow[]): Promise<number> {
         throw new Error(`Não foi possível gravar as avaliações: ${retryError.message}`);
       }
       allCache = null;
+      leanCache = null;
       return filtered.length;
     }
     console.error("[lot-ai] falha ao gravar avaliações", error);
     throw new Error(`Não foi possível gravar as avaliações: ${error.message}`);
   }
   allCache = null;
+  leanCache = null;
   return payload.length;
 }

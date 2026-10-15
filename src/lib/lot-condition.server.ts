@@ -203,12 +203,18 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
 
   // Fallback de IA: só os que ficaram INDEFINIDOS pelo regex mas têm texto pra IA ler.
   let aiUsed = 0;
+  const deferred = new Set<string>();
   const { aiConfigured } = await import("./ai-eval.server");
   if (aiConfigured()) {
-    const candidates = rows
-      .filter((r) => r.source === "indefinido" && (textByLotId.get(r.id) ?? "").trim())
+    const withText = rows.filter(
+      (r) => r.source === "indefinido" && (textByLotId.get(r.id) ?? "").trim(),
+    );
+    const candidates = withText
       .slice(0, AI_CONDITION_CAP)
       .map((r) => ({ id: r.id, text: textByLotId.get(r.id)! }));
+    // Os que passaram do teto NÃO são gravados como "indefinido": voltam na rodada seguinte e
+    // ainda passam pela IA (gravados, nunca mais seriam relidos).
+    for (const cut of withText.slice(AI_CONDITION_CAP)) deferred.add(cut.id);
     if (candidates.length) {
       const { resolveAiProvider } = await import("./ai-eval.server");
       const { conditionAiSync } = await import("./ai-condition.server");
@@ -232,7 +238,14 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
     }
   }
 
-  const updated = await upsertLotCondition(rows);
+  const updated = await upsertLotCondition(rows.filter((r) => !deferred.has(r.id)));
   const remaining = Math.max(0, total - batch.length);
-  return { updated, auctions: batch.length, remaining, done: remaining === 0, aiUsed };
+  // Com lotes adiados (teto da IA) ainda há trabalho: o laço do cron chama de novo.
+  return {
+    updated,
+    auctions: batch.length,
+    remaining,
+    done: remaining === 0 && !deferred.size,
+    aiUsed,
+  };
 }

@@ -390,8 +390,8 @@ export const analyzeOnDemand = createServerFn({ method: "POST" })
     const { getAiProvider } = await import("./app-state.server");
     const provider = data.provider ?? (await getAiProvider());
     const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
-    const { getAllLotAi, upsertLotAi } = await import("./lot-ai.server");
-    const [snapshot, aiRows] = await Promise.all([scrapeVinylLots(false), getAllLotAi()]);
+    const { getAllLotAiLean, upsertLotAi } = await import("./lot-ai.server");
+    const [snapshot, aiRows] = await Promise.all([scrapeVinylLots(false), getAllLotAiLean()]);
 
     // Recorta o dia (e a casa, quando informada) e seleciona só o que falta avaliar.
     // Modo `watched`: vigiados ∪ lances — inclui os que NÃO estão na varredura geral (casas

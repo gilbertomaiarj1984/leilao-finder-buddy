@@ -2,7 +2,7 @@ import { toLotMarket } from "@/components/vinyl/ai-score-utils";
 import { getAnalyticsAliases } from "@/lib/app-state.server";
 import type { AnalyticsAliases, SaleRow } from "@/lib/analytics";
 import { shiftDayKey } from "@/lib/day-bar";
-import { getAllLotAi } from "@/lib/lot-ai.server";
+import { getAllLotAiLean } from "@/lib/lot-ai.server";
 import { getAllLotIdent } from "@/lib/lot-ident.server";
 import { getAllLotMarket } from "@/lib/lot-market.server";
 import { getAllLotSales } from "@/lib/lot-sales.server";
@@ -200,7 +200,7 @@ export async function computeLookout(withHistory = true, live = true): Promise<L
     getAnalyticsAliases().catch(() => ({}) as AnalyticsAliases),
     getLookoutLinks(),
     getLookoutSeen(),
-    getAllLotAi().catch(() => []),
+    getAllLotAiLean().catch(() => []),
     getAllLotIdent().catch(() => []),
     getAllLotMarket().catch(() => []),
   ]);

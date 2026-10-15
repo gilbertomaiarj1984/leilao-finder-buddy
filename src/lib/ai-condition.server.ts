@@ -50,7 +50,7 @@ function buildConditionRequest(text: string): AiRequest {
  * `normalizeGrade` — só a escala canônica é aceita (qualquer outra coisa vira null, nunca
  * inventa um grau fora da escala). Null quando não dá para aproveitar nada.
  */
-function parseConditionAiObject(
+export function parseConditionAiObject(
   text: string,
 ): { media: Grade | null; sleeve: Grade | null; insert: InsertState } | null {
   if (!text) return null;

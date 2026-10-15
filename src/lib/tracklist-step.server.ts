@@ -133,7 +133,7 @@ export async function runTracklistBackfill(max = 20): Promise<{
 
   // release_id já casado pelo step=market (poupa a busca no Discogs), por lote.
   const releaseByLot = new Map<string, number>();
-  for (const m of await getAllLotMarket()) {
+  for (const m of await getAllLotMarket(batch.map((r) => r.id))) {
     if (m.matched && m.release_id) releaseByLot.set(m.id, m.release_id);
   }
 

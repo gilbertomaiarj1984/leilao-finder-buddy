@@ -87,7 +87,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
         await import("./app-state.server");
       const { providerSupportsBatch, providerConfigured, isQuotaError } =
         await import("./ai-provider.server");
-      const { getAllLotAi, upsertLotAi } = await import("./lot-ai.server");
+      const { getAllLotAiLean, upsertLotAi } = await import("./lot-ai.server");
 
       // Modo escolhido pelo usuário (controla o gasto de créditos da rodada automática).
       // "off" → não coleta nem submete; a análise sob demanda (botões) continua funcionando.
@@ -129,7 +129,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
 
       // 2) Sem pendente: seleciona os lotes sem avaliação (ou com título mudado).
       const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
-      const [snapshot, aiRows] = await Promise.all([scrapeVinylLots(false), getAllLotAi()]);
+      const [snapshot, aiRows] = await Promise.all([scrapeVinylLots(false), getAllLotAiLean()]);
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 800, 1), 2000);
 
       // Vigiados ∪ lances, lidos com a sessão de servidor (credenciais de ambiente).
@@ -252,7 +252,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
         await import("./discogs.server");
       if (!discogsConfigured()) return json({ skipped: "DISCOGS_TOKEN não configurado" });
       const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
-      const { getAllLotAi } = await import("./lot-ai.server");
+      const { getAllLotAiLean } = await import("./lot-ai.server");
       const { getAllLotIdent } = await import("./lot-ident.server");
       const {
         getAllLotMarket,
@@ -265,7 +265,7 @@ export async function handleCron(request: Request): Promise<Response | null> {
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 12, 1), 40);
       const [snapshot, aiRows, identRows, marketRows] = await Promise.all([
         scrapeVinylLots(false),
-        getAllLotAi(),
+        getAllLotAiLean(),
         getAllLotIdent(),
         getAllLotMarket(),
       ]);

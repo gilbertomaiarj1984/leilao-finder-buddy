@@ -56,16 +56,26 @@ export function titleHash(title: string): string {
   return (h >>> 0).toString(36);
 }
 
+// Impressão do TEXTO do prompt (instruções do sistema + do usuário). Entra no hash: editar o texto
+// reavalia a base sozinho, sem depender de alguém lembrar de subir `PROMPT_VERSION`. É calculada
+// uma vez, depois que as duas constantes existem (ver `PROMPT_FINGERPRINT` abaixo de `SYSTEM_PROMPT`).
+let promptFingerprint: string | null = null;
+function promptFp(): string {
+  promptFingerprint ??= titleHash(SYSTEM_PROMPT + USER_INSTRUCTIONS);
+  return promptFingerprint;
+}
+
 /**
- * Hash de `lot_ai.title_hash`: o do título + a versão do prompt (`.p2`). Subir `PROMPT_VERSION`
- * reavalia tudo; dados que mudam toda hora (have/want, preços) ficam FORA do hash de propósito,
- * senão a base inteira seria reavaliada sem parar. A identificação (`lot_ident`) segue com
- * `titleHash` puro.
+ * Hash de `lot_ai.title_hash`: o do título + a versão do prompt (`.p3`) + a impressão do texto do
+ * prompt. `PROMPT_VERSION` cobre mudanças na ESTRUTURA do contexto (ai-context.ts); o texto das
+ * instruções é coberto pela impressão. Dados que mudam toda hora (have/want, preços) ficam FORA do
+ * hash de propósito, senão a base inteira seria reavaliada sem parar. A identificação
+ * (`lot_ident`) segue com `titleHash` puro.
  */
 export function evalHash(title: string, contextOk = true): string {
   // Sufixo "x": o contexto falhou ao carregar e a nota saiu sem ele — o hash diverge do esperado
   // (`evalHash(title)`), então o lote volta para a fila em vez de ficar sem contexto para sempre.
-  return `${titleHash(title)}.p${PROMPT_VERSION}${contextOk ? "" : "x"}`;
+  return `${titleHash(title)}.p${PROMPT_VERSION}.${promptFp()}${contextOk ? "" : "x"}`;
 }
 
 /**
@@ -125,6 +135,17 @@ const SYSTEM_PROMPT =
   "conhecimento de música e discografia. Seja realista: a grande maioria dos discos é comum e " +
   "de baixo valor. Responda SOMENTE com um objeto JSON, sem nenhum texto fora do JSON.";
 
+/** Instruções fixas do prompt de usuário (as chaves do JSON de resposta). Entram no hash do prompt. */
+const USER_INSTRUCTIONS =
+  "Avalie este disco de vinil e devolva um objeto JSON com EXATAMENTE estas chaves:\n" +
+  '- "score": inteiro 0-100 (interesse geral para um colecionador = raridade + oportunidade)\n' +
+  '- "rarity": um de "comum","interessante","raro","muito_raro"\n' +
+  '- "deal": um de "caro","justo","barato","indefinido" (preço pedido vs. valor estimado; ' +
+  '"indefinido" quando não houver preço)\n' +
+  '- "album": artista e álbum que você identificou (da capa, se houver; "" se não souber)\n' +
+  '- "reason": 1 frase curta em português justificando a nota\n' +
+  '- "tags": array curto de gênero/estilo/época/selo (ex.: ["mpb","1972","odeon"])\n\n';
+
 /**
  * Prompt de usuário (texto) para UM lote. A imagem, quando houver, vai num bloco à parte.
  * `ctx` (estado + mercado Discogs + frete, ver `ai-context.ts`) entra como o bloco "contexto".
@@ -143,17 +164,7 @@ export function buildUserPrompt(
   };
   if (ctx) info["contexto"] = contextForPrompt(ctx, price, cfg);
   return (
-    "Avalie este disco de vinil e devolva um objeto JSON com EXATAMENTE estas chaves:\n" +
-    '- "score": inteiro 0-100 (interesse geral para um colecionador = raridade + oportunidade)\n' +
-    '- "rarity": um de "comum","interessante","raro","muito_raro"\n' +
-    '- "deal": um de "caro","justo","barato","indefinido" (preço pedido vs. valor estimado; ' +
-    '"indefinido" quando não houver preço)\n' +
-    '- "album": artista e álbum que você identificou (da capa, se houver; "" se não souber)\n' +
-    '- "reason": 1 frase curta em português justificando a nota\n' +
-    '- "tags": array curto de gênero/estilo/época/selo (ex.: ["mpb","1972","odeon"])\n\n' +
-    "Disco:\n" +
-    JSON.stringify(info) +
-    "\n\nResponda só com o objeto JSON."
+    USER_INSTRUCTIONS + "Disco:\n" + JSON.stringify(info) + "\n\nResponda só com o objeto JSON."
   );
 }
 
@@ -182,7 +193,7 @@ function buildLotParams(lot: EvalLot, model: string, ctx?: LotContext | null, cf
  * código e a texto ao redor: pega o primeiro `{...}` e valida os campos. Retorna null
  * quando não dá para aproveitar.
  */
-function parseEvalObject(
+export function parseEvalObject(
   text: string,
 ): Omit<LotAiRow, "id" | "title_hash" | "model" | "eval_price"> | null {
   if (!text) return null;
@@ -358,7 +369,7 @@ function buildIdentParams(lot: EvalLot, withImage: boolean, model: string) {
 }
 
 /** Extrai {album, year, confidence} do texto devolvido. Null quando não dá para aproveitar. */
-function parseIdentObject(
+export function parseIdentObject(
   text: string,
 ): { album: string | null; year: number | null; confidence: string | null } | null {
   if (!text) return null;

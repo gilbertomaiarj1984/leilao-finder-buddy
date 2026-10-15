@@ -154,3 +154,9 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
   `isQuotaError`/`isTransientError`, `pickBestRelease`/`parseAlbum`/`buildQuery`, `selectLotsForMarket`/
   `marketBasis`, starvation de `enrichConditions`.
 - `ai-provider-controls.tsx`: trocar provedor+modelo grava em duas server functions (pode gravar só uma).
+
+> Atualização (v0.143.2): já feitos dos itens da revisão — memoização de `marketFor`/`conditionFor`,
+> `getAllLotAiLean`, teto do estado por IA, hash do prompt pelo texto, `basis` normalizado e testes dos
+> parsers de resposta. Continuam abertos: o cliente ainda recebe a tracklist de todos os lotes
+> (`getLotAi`; carregar sob demanda exige mudar o `TracklistHover`), as duplicações/camadas e o
+> restante da lista acima.

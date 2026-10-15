@@ -210,3 +210,15 @@ image})` chama `evalLotsSync` **direto** (ignora o cache por `title_hash` — é
   (serviços do Docker), `.local`/`.internal`, IPv6 literal e 10/8, 127/8, 169.254/16, 172.16/12,
   192.168/16.
 - **Batch preso:** `aieval` abandona o batch pendente com mais de 48h se a coleta lançar erro.
+
+### Ajustes da revisão (v0.143.2)
+
+- **`evalHash`** = `titleHash.p<PROMPT_VERSION>.<impressão do texto do prompt>`. `PROMPT_VERSION` cobre a
+  ESTRUTURA do contexto (`ai-context.ts`); o texto (`SYSTEM_PROMPT` + `USER_INSTRUCTIONS`) é coberto pela
+  impressão, então editar o prompt reavalia a base (até 800 lotes por rodada) automaticamente.
+- **`getAllLotAiLean`** (`lot-ai.server.ts`): leitura sem `tracklist`, para o cron e rotinas internas.
+  A tracklist só é lida onde importa (cliente `getLotAi`, `reevaluateLot`, `repriceLotAi`).
+- **`marketBasis`**: `m2:` + hash do álbum (ou título) normalizado, sem ano nem parênteses. Linhas com o
+  formato antigo continuam válidas (`selectLotsForMarket` aceita os dois).
+- **`step=condition`**: lote que passou do teto de IA do round (`AI_CONDITION_CAP`) NÃO é gravado, volta
+  na próxima chamada (o laço do cron continua enquanto houver adiados).

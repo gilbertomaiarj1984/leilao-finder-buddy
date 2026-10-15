@@ -524,13 +524,25 @@ function AnalisePage() {
     () => effectiveTextRules(aiPanelQuery.data?.rules, aiPanelQuery.data?.disabledRules),
     [aiPanelQuery.data],
   );
-  const marketFor = (lot: VinylLot): LotMarket | undefined =>
-    withConditionAnchor(
+  // Chamado por lote em todo render: cacheia o resultado (objeto estável por lote) para não
+  // refazer o parse do título nem anular o `React.memo` das linhas. O mapa recomeça vazio quando
+  // as entradas mudam.
+  const marketCache = useMemo(
+    () => new Map<string, LotMarket | undefined>(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [marketById, mediaById, textRules, aiPanelQuery.data],
+  );
+  const marketFor = (lot: VinylLot): LotMarket | undefined => {
+    if (marketCache.has(lot.id)) return marketCache.get(lot.id);
+    const m = withConditionAnchor(
       marketById.get(lot.id),
       mediaById.get(lot.id) ?? parseConditionFromText(lot.title, textRules).media,
       lot.uf,
       aiPanelQuery.data,
     );
+    marketCache.set(lot.id, m);
+    return m;
+  };
 
   // Estado por lote (vigia/lance) e o valor "Atual" corrigido para quem está vencendo.
   const isWatched = (lot: VinylLot) => watchedIds.has(lot.idPeca);

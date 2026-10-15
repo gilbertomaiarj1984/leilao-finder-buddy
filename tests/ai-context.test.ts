@@ -93,7 +93,7 @@ describe("contexto da avaliação", () => {
   });
 
   test("o hash de avaliação carrega a versão do prompt; a identificação não", () => {
-    expect(evalHash("ABC")).toBe(`${titleHash("ABC")}.p${PROMPT_VERSION}`);
+    expect(evalHash("ABC").startsWith(`${titleHash("ABC")}.p${PROMPT_VERSION}.`)).toBe(true);
     expect(evalHash("ABC")).not.toBe(titleHash("ABC"));
   });
 });
