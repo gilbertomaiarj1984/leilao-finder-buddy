@@ -143,7 +143,10 @@ const SYSTEM_PROMPT =
   `"razao_lote_vs_sugerido" até ${brBand(DEAL_BAND_CHEAP)} é barato, de ${brBand(DEAL_BAND_CHEAP)} a ${brBand(DEAL_BAND_EXPENSIVE)} é justo e acima de ${brBand(DEAL_BAND_EXPENSIVE)} é caro. ` +
   '"querem" maior que "tem" indica disco procurado. "descricao_do_lote" é o texto completo da ' +
   "casa de leilão: use-o para país, prensagem, edição, defeitos e o que vem junto (encarte, " +
-  "vários discos). Sem contexto, estime pelo seu " +
+  'vários discos). "vendas_passadas_brl" é o que o MESMO disco já arrematou nos leilões ' +
+  "acompanhados (menor, mediana e maior em reais; confie mais com mais vendas, e prefira " +
+  '"mediana_estado_parecido" quando existir): um preço bem abaixo da mediana é oportunidade. ' +
+  "Sem contexto, estime pelo seu " +
   "conhecimento de música e discografia. Seja realista: a grande maioria dos discos é comum e " +
   "de baixo valor. Responda SOMENTE com um objeto JSON, sem nenhum texto fora do JSON.";
 

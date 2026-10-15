@@ -22,6 +22,7 @@ import {
   type PriceAnchor,
 } from "./discogs-price";
 import { normalizeGrade, scoreCondition } from "./grading";
+import type { PastSales } from "./past-sales";
 
 /**
  * Versão do prompt da avaliação. Entra no hash de `lot_ai.title_hash` (ver `evalHash`): subir o
@@ -83,6 +84,8 @@ export type LotContext = {
   frete: number;
   /** Descrição completa do lote (catálogo da casa), já limpa; null = sem descrição além do título. */
   descricao: string | null;
+  /** Vendas passadas do mesmo disco (Vinil Analytics, `past-sales.ts`); null = sem histórico. */
+  vendas: PastSales | null;
 };
 
 type ConditionInput = {
@@ -108,6 +111,7 @@ export function buildLotContext(
     condition?: ConditionInput;
     market?: MarketInput;
     uf?: string | null;
+    pastSales?: PastSales | null;
   },
   cfg: PanelConfig = DEFAULT_PANEL_CONFIG,
 ): LotContext {
@@ -151,6 +155,7 @@ export function buildLotContext(
     mercado,
     frete: auctionFreight(input.uf, cfg.freight),
     descricao: cleanLotDescription(c?.description) || null,
+    vendas: input.pastSales ?? null,
   };
 }
 
@@ -192,6 +197,23 @@ export function contextForPrompt(
       if (Object.keys(o).length) out["mercado_discogs_brl"] = o;
     } else if (block === "descricao" && ctx.descricao) {
       Object.assign(out, pick("descricao", { descricao_do_lote: ctx.descricao }));
+    } else if (block === "vendas" && ctx.vendas) {
+      const v = ctx.vendas;
+      const o = pick("vendas", {
+        n_vendas: v.count,
+        menor: Math.round(v.min),
+        mediana: Math.round(v.median),
+        maior: Math.round(v.max),
+        ultima_venda: v.last ? Math.round(v.last.price) : undefined,
+        ultima_venda_em: v.last?.date ?? undefined,
+        n_estado_parecido: v.similar?.count,
+        mediana_estado_parecido: v.similar ? Math.round(v.similar.median) : undefined,
+        razao_preco_vs_mediana:
+          priceBrl != null && priceBrl > 0 && v.median > 0
+            ? Math.round((priceBrl / v.median) * 100) / 100
+            : undefined,
+      });
+      if (Object.keys(o).length) out["vendas_passadas_brl"] = o;
     } else if (block === "frete") {
       Object.assign(
         out,

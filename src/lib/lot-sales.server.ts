@@ -1,7 +1,7 @@
 import { db } from "@/lib/db-client.server";
 
 import type { CatalogLot } from "./leiloesbr-catalog.server";
-import { deriveAlbum } from "./analytics";
+import { deriveAlbum, UNIDENTIFIED_ALBUM } from "./analytics";
 import { effectiveTextRules, type TextRule } from "./condition-text";
 import { type Condition, parseConditionFromText, scoreCondition } from "./grading";
 import type { LotIdentRow } from "./lot-ident.server";
@@ -996,7 +996,7 @@ export async function reidentifyAllSales(
     const artistKey = normalizeForMatch(artistCanon);
     if (!artistKey) continue;
     const guess = deriveAlbum(s.title, artistCanon);
-    if (!guess || guess === "(álbum não identificado)") continue;
+    if (!guess || guess === UNIDENTIFIED_ALBUM) continue;
     const list = albumsByArtist.get(artistKey) ?? [];
     list.push(guess);
     albumsByArtist.set(artistKey, list);

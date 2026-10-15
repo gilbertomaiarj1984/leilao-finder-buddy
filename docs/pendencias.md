@@ -105,9 +105,8 @@ campo editável ali.
 
 ## IA — blocos de contexto ainda fora do prompt (fase 2, 15/10/2026)
 
-- **Vendas passadas (B5):** `lot_sales` guarda artista/título/preço/estado, mas o casamento com o
-  álbum do lote depende da identificação (`lot_ident`/`reident`) e de uma chave de álbum normalizada.
-  Definir a chave, ignorar `bundle=true` e mandar `{n, mín, mediana, máx}` em reais.
+- **Vendas passadas (B5):** feito na v0.148.0 (ver `docs/areas/ia.md`). Limite conhecido: lote sem
+  identificação (`lot_ident`/`lot_ai.album`) e com título sem "Artista - Álbum" não casa com o Analytics.
 - **Perfil do colecionador (B6):** mandar só o resultado do casamento (interesse, sondagem, "já tenho"),
   nunca as listas; `wantlist-match.ts` já tem o `scoreWant`.
 - **Reavaliação quando o contexto chega depois:** o hash não leva flags de contexto; um lote avaliado

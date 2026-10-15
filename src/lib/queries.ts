@@ -28,7 +28,7 @@ import {
   getLotIdent,
   getUserInterests,
 } from "@/lib/ai.functions";
-import { getAnalyticsAliases } from "@/lib/analytics.functions";
+import { getAnalyticsAliases, getLotPastSales } from "@/lib/analytics.functions";
 import {
   getLotMarket,
   getVinylLots,
@@ -53,6 +53,7 @@ export const queryKeys = {
   watched: ["vinyl-watched"],
   bids: ["vinyl-my-bids"],
   lotAi: ["lot-ai"],
+  lotPastSales: (id: string) => ["lot-past-sales", id] as const,
   lotTracklist: (id: string) => ["lot-tracklist", id] as const,
   lotIdent: ["lot-ident"],
   lotMarket: ["lot-market"],
@@ -197,6 +198,18 @@ export function useLotTracklist(id: string | null | undefined, enabled: boolean)
     queryFn: () => fetchTracklist({ data: { id: id as string } }),
     enabled: enabled && Boolean(id),
     staleTime: 30 * MIN,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Vendas passadas do mesmo disco (Analytics) de UM lote — buscada ao abrir o detalhe da nota. */
+export function useLotPastSales(id: string | null | undefined) {
+  const fetchPastSales = useServerFn(getLotPastSales);
+  return useQuery({
+    queryKey: queryKeys.lotPastSales(id ?? ""),
+    queryFn: () => fetchPastSales({ data: { id: id as string } }),
+    enabled: Boolean(id),
+    staleTime: 30_000, // volta do Analytics já com a correção feita lá
     refetchOnWindowFocus: false,
   });
 }

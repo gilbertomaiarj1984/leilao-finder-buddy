@@ -65,7 +65,10 @@ export function AnalyticsView({
   handlers,
   ai,
   headerExtra,
+  focus,
 }: {
+  /** Grupo para abrir e destacar (link «Ver no Analytics»): chaves do artista e, opcional, do álbum. */
+  focus?: { artist: string; album?: string } | null;
   rows: SaleRow[];
   aliases: AnalyticsAliases | undefined;
   readOnly: boolean;
@@ -88,7 +91,8 @@ export function AnalyticsView({
     "analytics-artist-sort",
     "count",
   );
-  const searchNorm = normalizeForMatch(search);
+  // Quem chega por link vê o grupo, mesmo que a busca guardada o escondesse.
+  const searchNorm = focus ? "" : normalizeForMatch(search);
   const artists = useMemo(() => {
     const filtered = !searchNorm
       ? analytics
@@ -219,6 +223,7 @@ export function AnalyticsView({
               <ArtistRow
                 key={a.key}
                 artist={a}
+                focusAlbumKey={focus?.artist === a.key ? (focus.album ?? null) : undefined}
                 allArtists={analytics}
                 suggestions={suggestions}
                 readOnly={readOnly}

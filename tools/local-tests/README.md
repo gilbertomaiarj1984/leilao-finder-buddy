@@ -31,6 +31,7 @@ tools/local-tests/subir-servidor.sh &                # app em http://127.0.0.1:3
 # Playwright: PLAYWRIGHT_DIR=<pasta com node_modules/playwright>, CHROMIUM_PATH=<executável do Chromium>
 node tools/local-tests/painel-e2e.mjs                # 42 verificações (abas, arrastar e soltar, salvar, recarregar)
 node tools/local-tests/painel-mobile.mjs             # sem rolagem horizontal a 390 px + atalho no menu
+node tools/local-tests/analytics-link-e2e.mjs        # link «ver no Analytics» abre o artista/álbum certos
 ```
 A sessão é gerada com `SESSION_SECRET` (padrão de teste do `subir-servidor.sh`); nunca use o segredo de
 produção. Os testes de navegador apagam `ai_panel` e `ai_mode` de `app_state` ao começar.

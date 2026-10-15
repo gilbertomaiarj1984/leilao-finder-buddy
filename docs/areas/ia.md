@@ -109,8 +109,15 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   **Descrição do lote (v0.147.0):** bloco `descricao` → `descricao_do_lote`, vindo de
   `lot_condition.description` (texto do catálogo gravado pelo `step=condition`; vazio quando só repete o
   título). Blocos novos do app entram ligados numa config já salva (`PanelConfig.blocksSeen`).
-  Ainda fora do prompt: vendas passadas (exige casar `lot_sales` ao álbum identificado), perfil do
-  colecionador, tracklist e correções (ver `docs/pendencias.md`).
+  **Vendas passadas (v0.148.0):** bloco `vendas` → `vendas_passadas_brl` (`{n_vendas, menor, mediana,
+  maior, ultima_venda, ultima_venda_em, n_estado_parecido, mediana_estado_parecido,
+  razao_preco_vs_mediana}`), calculado por `past-sales.server.ts` (`loadPastSales`, índice do Analytics
+  em cache de 30s, descartado quando o usuário grava apelido/correção/exclusão — `app-state.server.ts`).
+  O lote é posicionado pelo MESMO `makeSalePlacer` do Analytics (identidade: `lot_ident` > `lot_ai.album`
+  > título; sem "Artista - Álbum" no título e sem identificação, não casa). Balaios (não classificados,
+  lote, coletâneas, álbum não identificado) nunca entram. Na UI: `PastSalesBlock` em `ScoreDetails`
+  (`useLotPastSales`, busca ao abrir o detalhe) com o link «ver no Analytics».
+  Ainda fora do prompt: perfil do colecionador, tracklist e correções (ver `docs/pendencias.md`).
 - **Painel de IA — `/ia-painel` (v0.143.0):** configuração em `app_state.ai_panel` (`PanelConfig`,
   `ai-panel-config.ts`; `getAiPanelConfig` com cache de 30s, `setAiPanelConfig` normaliza tudo).
   Abas: **Blocos de contexto** (ordem/campos do bloco `contexto`; `contextForPrompt(ctx, preço,

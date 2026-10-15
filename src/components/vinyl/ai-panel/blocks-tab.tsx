@@ -21,6 +21,7 @@ const BLOCK_SRC: Record<ContextBlockId, string> = {
   mercado: "lot_market.suggested_by_condition (preço sugerido do Discogs, em reais)",
   frete: "frete estimado da casa pela UF (Sudeste ou demais regiões)",
   descricao: "lot_condition.description (texto do catálogo da casa, até 600 caracteres)",
+  vendas: "Vinil Analytics (lot_sales com seus apelidos e correções) — mesmo disco, em reais",
 };
 
 /**
@@ -34,14 +35,6 @@ const PLANNED_BLOCKS: {
   missing: string;
   recommended: boolean;
 }[] = [
-  {
-    id: "vendas",
-    name: "Vendas passadas do mesmo disco",
-    src: "lot_sales",
-    missing:
-      "Casar o histórico de vendas ao álbum identificado (artista + álbum normalizados, ignorando kits de vários discos) e mandar menor, mediana e maior preço em reais.",
-    recommended: true,
-  },
   {
     id: "colecionador",
     name: "Perfil do colecionador",
@@ -83,6 +76,18 @@ const SAMPLES = [
       description:
         "GILBERTO GIL - RAÇA HUMANA - LP 1984 WEA, capa VG+, disco VG+/NM, com encarte. Prensagem original brasileira.",
     },
+    pastSales: {
+      artist: "Gilberto Gil",
+      album: "Raça Humana",
+      artistKey: "gilberto gil",
+      albumKey: "raca humana",
+      count: 5,
+      min: 28,
+      median: 45,
+      max: 80,
+      last: { price: 52, date: "2026-09-20" },
+      similar: { count: 3, median: 48 },
+    },
     market: {
       matched: true,
       year: 1984,
@@ -98,6 +103,18 @@ const SAMPLES = [
     price: 400,
     uf: "BA",
     condition: null,
+    pastSales: {
+      artist: "Tim Maia",
+      album: "Racional Vol. 1",
+      artistKey: "tim maia",
+      albumKey: "racional vol 1",
+      count: 1,
+      min: 350,
+      median: 350,
+      max: 350,
+      last: { price: 350, date: "2026-05-11" },
+      similar: null,
+    },
     market: {
       matched: true,
       year: 1975,
@@ -148,7 +165,15 @@ export function BlocksTab({ draft, setDraft }: Props) {
 
   const preview = useMemo(() => {
     const s = SAMPLES[sample]!;
-    const ctx = buildLotContext({ condition: s.condition, market: s.market, uf: s.uf }, draft);
+    const ctx = buildLotContext(
+      {
+        condition: s.condition,
+        market: s.market,
+        uf: s.uf,
+        pastSales: "pastSales" in s ? s.pastSales : null,
+      },
+      draft,
+    );
     const obj = {
       titulo: s.title,
       preco_reais: s.price,

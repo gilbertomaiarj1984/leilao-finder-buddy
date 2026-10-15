@@ -151,7 +151,7 @@ describe("painel de IA — configuração", () => {
       disabledRules: ["bom-estado", 7],
     });
     // sem `blocksSeen` (config antiga), o bloco novo «descricao» entra ligado
-    expect(cfg.blocks).toEqual(["estado", "descricao"]);
+    expect(cfg.blocks).toEqual(["estado", "descricao", "vendas"]);
     expect(cfg.hiddenFields).toEqual(["mercado.tem"]);
     expect(cfg.defaultCond).toBe("G+");
     expect(cfg.freight).toEqual({ sudeste: 25, outras: 35 });
@@ -225,7 +225,7 @@ describe("descrição completa do lote", () => {
     expect(contextForPrompt(ctx, null)["descricao_do_lote"]).toBe(ctx.descricao);
     const off = normalizePanelConfig({
       blocks: ["estado", "frete"],
-      blocksSeen: ["estado", "mercado", "frete", "descricao"],
+      blocksSeen: ["estado", "mercado", "frete", "descricao", "vendas"],
     });
     expect(contextForPrompt(ctx, null, off)["descricao_do_lote"]).toBeUndefined();
     const hidden = normalizePanelConfig({ hiddenFields: ["descricao.descricao_do_lote"] });
@@ -234,9 +234,9 @@ describe("descrição completa do lote", () => {
 
   test("bloco novo entra ligado numa config antiga; um removido de propósito continua fora", () => {
     const legacy = normalizePanelConfig({ blocks: ["frete", "estado"] }); // salva antes de existir `blocksSeen`
-    expect(legacy.blocks).toEqual(["frete", "estado", "descricao"]); // mercado foi tirado antes; descricao é nova
+    expect(legacy.blocks).toEqual(["frete", "estado", "descricao", "vendas"]); // mercado foi tirado antes; os outros são novos
     const again = normalizePanelConfig(legacy); // regravada: já conhece tudo
-    expect(again.blocks).toEqual(["frete", "estado", "descricao"]);
+    expect(again.blocks).toEqual(["frete", "estado", "descricao", "vendas"]);
     const removed = normalizePanelConfig({ ...again, blocks: ["frete", "estado"] });
     expect(removed.blocks).toEqual(["frete", "estado"]);
   });

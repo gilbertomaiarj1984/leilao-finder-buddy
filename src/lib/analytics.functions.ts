@@ -24,6 +24,36 @@ export const getVinylSales = createServerFn({ method: "GET" })
   });
 
 /**
+ * Vendas passadas do MESMO disco de um lote (grupo do Analytics onde ele cai, com os apelidos e
+ * correções do usuário) — a mesma conta que vai no prompt da IA, para a nota mostrar o resumo e o
+ * link «Ver no Analytics». `null` = sem histórico para este disco.
+ */
+export const getLotPastSales = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .inputValidator((input: { id?: string } | undefined) => {
+    if (!input?.id || typeof input.id !== "string") throw new Error("Lote inválido.");
+    return { id: input.id };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    try {
+      const { db } = await import("@/lib/db-client.server");
+      const { loadPastSales } = await import("./past-sales.server");
+      const { data: cond } = await db
+        .from<{ score: number | null }>("lot_condition")
+        .select("score")
+        .eq("id", data.id)
+        .maybeSingle();
+      const found = await loadPastSales([data.id], new Map([[data.id, cond?.score ?? null]]));
+      return found.get(data.id) ?? null;
+    } catch (error) {
+      console.error("[past-sales] não foi possível ler as vendas passadas do lote", error);
+      return null;
+    }
+  });
+
+/**
  * Reidentificação por IA das vendas (mesma rotina do cron `step=reident`): ajusta artista/álbum
  * (texto original/título → IA) e padroniza a grafia dos nomes. Usa o provedor de IA PADRÃO (o
  * selecionado no topo do site).

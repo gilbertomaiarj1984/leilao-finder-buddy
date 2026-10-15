@@ -542,7 +542,14 @@ export async function setAnalyticsSaleOverrides(
     console.error("[app-state] não foi possível gravar a correção da venda", error);
     throw new Error(`Não foi possível gravar a correção da venda: ${error.message}`);
   }
+  await dropPastSalesIndex();
   return { savedAt };
+}
+
+/** O Analytics mudou (apelido, correção, exclusão): a comparação de vendas da IA precisa reler. */
+async function dropPastSalesIndex(): Promise<void> {
+  const { invalidatePastSalesIndex } = await import("./past-sales.server");
+  invalidatePastSalesIndex();
 }
 
 async function saveStringMap(
@@ -557,6 +564,7 @@ async function saveStringMap(
     console.error(`[app-state] não foi possível gravar ${key}`, error);
     throw new Error(`Não foi possível gravar os apelidos: ${error.message}`);
   }
+  await dropPastSalesIndex();
   return { savedAt };
 }
 

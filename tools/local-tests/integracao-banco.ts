@@ -13,18 +13,19 @@ const lai = await import(R + "lot-ai.server");
 const cond = await import(R + "lot-condition.server");
 const ctx = await import(R + "ai-context.server");
 const ctxPrompt = await import(R + "ai-context");
+const pcfg = await import(R + "ai-panel-config");
 const { sql } = { sql: (await import(R + "db.server")).getSql() };
 
 // ---- painel de IA: round trip e normalização ----
 const d0 = await app.getAiPanelConfig();
-ok("painel: padrão sem nada salvo", d0.defaultCond === "G+" && d0.freight.sudeste === 25 && d0.blocks.length === 4, d0);
+ok("painel: padrão sem nada salvo", d0.defaultCond === "G+" && d0.freight.sudeste === 25 && d0.blocks.length === pcfg.CONTEXT_BLOCK_IDS.length, d0);
 const saved = await app.setAiPanelConfig({
   blocks: ["frete", "mercado", "lixo"], hiddenFields: ["mercado.tem", "x.y"], defaultCond: "VG",
   freight: { sudeste: 30, outras: 99999 },
   rules: [{ id: "a", phrase: "muito bem conservado", grade: "VG+", effect: "set" }, { id: "b", phrase: "a*b*c*d*e", grade: "G+", effect: "cap" }],
   disabledRules: ["bom-estado"],
 });
-ok("painel: salvar normaliza (lixo some, frete limitado, asteriscos)", JSON.stringify(saved.config.blocks) === '["frete","mercado","descricao"]' && saved.config.freight.outras === 35 && saved.config.rules.length === 1 && saved.config.defaultCond === "VG", saved.config);
+ok("painel: salvar normaliza (lixo some, frete limitado, asteriscos)", saved.config.blocks.slice(0, 2).join() === "frete,mercado" && saved.config.blocks.length === pcfg.CONTEXT_BLOCK_IDS.length - 1 && saved.config.freight.outras === 35 && saved.config.rules.length === 1 && saved.config.defaultCond === "VG", saved.config);
 const row = (await sql`select value from app_state where key = 'ai_panel'`)[0];
 ok("painel: gravado como jsonb em app_state", row && row.value.defaultCond === "VG", row);
 const back = await app.getAiPanelConfig();
@@ -36,6 +37,12 @@ for (const [id, uf] of [["itest-1", "SP"], ["itest-2", "BA"], ["itest-3", "RJ"]]
   const title = "LP TESTE " + id, url = "http://x.com/" + id;
   await sql`insert into lots (id,id_leilao,id_peca,base,lote,title,url,price,day_key,uf,house) values (${id},'9',${id},'b','1',${title},${url},'R$ 40,00','2026-10-20',${uf},'Casa')`;
 }
+
+// vendas do Analytics usadas mais abaixo (antes de qualquer leitura, que fica em cache por 30s)
+await sql`update lots set artist = 'Gilberto Gil', title = 'GILBERTO GIL RACA HUMANA LP' where id = 'itest-1'`;
+await sql`delete from lot_sales where lot_id like 'isale-%'`;
+for (const [id, price, date, score] of [["isale-1", 30, "2026-05-01", 60], ["isale-2", 50, "2026-09-10", 80], ["isale-3", 90, "2026-07-02", 85]])
+  await sql`insert into lot_sales (lot_id,id_leilao,id_peca,artist,title,sold_price,sold_date,score) values (${id},'1',${id},'Gilberto Gil','Gilberto Gil - Raça Humana',${price},${date},${score})`;
 
 // ---- lot_market: jsonb, leitura, backfill ----
 const n = await mkt.upsertLotMarket([
@@ -95,6 +102,21 @@ ok("contexto itest-1: estado + âncora VG+ + frete SP (30)", c1.estado?.disco ==
 const c2 = byId.get("itest-2");
 ok("contexto itest-1: descrição do catálogo chega ao contexto e ao prompt", c1.descricao === "Prensagem original com encarte" && JSON.stringify(ctxPrompt.contextForPrompt(c1, 40, cfg)).includes("descricao_do_lote"), c1.descricao);
 ok("contexto itest-2: sem mapa → sem mercado; frete BA (35, 'outras' foi limitado)", c2.mercado === null && c2.estado === null && c2.frete === 35, c2);
+
+// ---- vendas passadas (Analytics) → contexto da IA ----
+const past = await import(R + "past-sales.server");
+await sql`update lot_ai set album = 'Gilberto Gil - Raça Humana' where id = 'itest-1'`;
+lai.invalidateLotAiCache();
+const ps = await past.loadPastSales(["itest-1", "itest-2"], new Map([["itest-1", 82]]));
+ok("vendas passadas: lote casa com o grupo do Analytics (3 vendas, mediana 50)", ps.get("itest-1")?.count === 3 && ps.get("itest-1")?.median === 50 && ps.get("itest-1")?.similar?.count === 2, ps.get("itest-1"));
+ok("vendas passadas: lote sem histórico não entra", !ps.has("itest-2"), [...ps.keys()]);
+const ctx2 = await ctx.loadLotContexts(["itest-1"]);
+ok("vendas passadas: chegam ao contexto e ao prompt", ctx2.byId.get("itest-1").vendas?.count === 3 && JSON.stringify(ctxPrompt.contextForPrompt(ctx2.byId.get("itest-1"), 40, ctx2.cfg)).includes("vendas_passadas_brl"), ctx2.byId.get("itest-1").vendas);
+await app.setAnalyticsExcludedSale("isale-3", true, "teste");
+const ps2 = await past.loadPastSales(["itest-1"]);
+ok("vendas passadas: excluir uma venda no Analytics vale na hora (cache invalidado)", ps2.get("itest-1")?.count === 2 && ps2.get("itest-1")?.max === 50, ps2.get("itest-1"));
+await app.setAnalyticsExcludedSale("isale-3", false, "");
+await sql`delete from lot_sales where lot_id like 'isale-%'`;
 
 await sql`delete from lots where id like 'itest-%'`;
 await sql`delete from app_state where key = 'ai_panel'`;

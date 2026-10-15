@@ -69,7 +69,10 @@ do LeilõesBR, do Discogs, da IA e do login Google reais, que o ambiente de dese
 **Produto (próximas etapas)**
 - [ ] **Calibração** (aba prometida no preview): lotes de referência com nota esperada e erro médio, antes de
   reavaliar a base toda. Sem ela, qualquer mudança de peso/prompt é testada só olhando lotes.
-- [ ] **Blocos «em breve»**: vendas passadas (casar `lot_sales` ao álbum), perfil do colecionador.
+- [ ] **Bloco «em breve»**: perfil do colecionador.
+- [ ] **Vendas passadas (0.148.0)**: no detalhe da nota de um lote com histórico aparece «Vendas passadas (Analytics)» com o link
+  «ver no Analytics» (abre o artista/álbum certos); corrigir o disco lá e voltar ao detalhe atualiza o resumo (até 30 s); «repassar a IA»
+  usa a correção. Aba Blocos: o bloco «Vendas passadas do mesmo disco» aparece ligado.
 - [ ] **Descrição do lote (0.147.0)**: depois do deploy o `step=condition` relê os lotes (uma vez) e preenche a descrição; no painel
   (aba Blocos) o bloco «Descrição completa do lote» aparece ligado; conferir `select description from lot_condition limit 5` na VPS.
 - [ ] **Frete real dos vendedores brasileiros**: a página de venda do Discogs responde 403 (Cloudflare). Alternativas

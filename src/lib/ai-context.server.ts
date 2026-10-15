@@ -35,6 +35,14 @@ export async function loadLotContexts(
       read("lot_market", "id, matched, year, num_for_sale, have, want, suggested_by_condition"),
       read("lots", "id, uf"),
     ]);
+    const scoreById = new Map<string, number | null>();
+    for (const id of ids) {
+      const sc = conds.get(id)?.["score"];
+      scoreById.set(id, typeof sc === "number" ? sc : null);
+    }
+    // Vendas passadas (Analytics): best-effort e silencioso — sem elas o bloco só não aparece.
+    const { loadPastSales } = await import("./past-sales.server");
+    const pastSales = await loadPastSales(ids, scoreById);
     for (const id of ids) {
       out.set(
         id,
@@ -43,6 +51,7 @@ export async function loadLotContexts(
             condition: (conds.get(id) as never) ?? null,
             market: (markets.get(id) as never) ?? null,
             uf: (lots.get(id)?.["uf"] as string | undefined) ?? null,
+            pastSales: pastSales.get(id) ?? null,
           },
           cfg,
         ),

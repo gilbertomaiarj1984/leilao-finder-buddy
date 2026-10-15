@@ -35,6 +35,11 @@ import { useAiProviderQuery, useAnalyticsAliasesQuery, queryKeys } from "@/lib/q
 export const Route = createFileRoute("/_authenticated/vinil-analytics")({
   head: () => ({ meta: [{ title: "Vinil Analytics — Garimpo de Vinil" }] }),
   component: VinilAnalyticsPage,
+  // Link «Ver no Analytics» (nota da IA, vendas passadas): chaves do artista e do álbum do grupo.
+  validateSearch: (search: Record<string, unknown>): { artist?: string; album?: string } => ({
+    artist: typeof search["artist"] === "string" && search["artist"] ? search["artist"] : undefined,
+    album: typeof search["album"] === "string" && search["album"] ? search["album"] : undefined,
+  }),
 });
 
 // Página autenticada: busca os dados via server functions protegidas (`requireAuth` +
@@ -43,6 +48,7 @@ export const Route = createFileRoute("/_authenticated/vinil-analytics")({
 // `/vinil-analytics-publico` — ver `src/components/vinyl/analytics-view.tsx`). Único cuidado
 // extra aqui: o botão "Copiar link público" (token diário — `access.server.ts`).
 function VinilAnalyticsPage() {
+  const search = Route.useSearch();
   const [reidentifying, setReidentifying] = useState(false);
   const queryClient = useQueryClient();
   const fetchSales = useServerFn(getVinylSales);
@@ -328,6 +334,7 @@ function VinilAnalyticsPage() {
       onRefetch={() => sales.refetch()}
       handlers={handlers}
       ai={ai}
+      focus={search.artist ? { artist: search.artist, album: search.album } : null}
       headerExtra={
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" asChild className="max-sm:hidden">

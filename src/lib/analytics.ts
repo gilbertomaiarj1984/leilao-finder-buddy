@@ -97,6 +97,9 @@ function avg(values: (number | null)[]): number | null {
   return Math.round(nums.reduce((a, b) => a + b, 0) / nums.length);
 }
 
+/** Álbum agregado sem nome definido — nunca casa com um disco específico. */
+export const UNIDENTIFIED_ALBUM = "(álbum não identificado)";
+
 const FORMAT_PREFIX =
   /^(lps?|disco de vinil|discos?|vinil|compacto|bolacha|ep|[aá]lbum|duplo|triplo)\b[\s:.\-–—]*/i;
 
@@ -137,7 +140,7 @@ export function deriveAlbum(title: string, artist: string): string {
     .trim();
   // Se sobrou só o próprio artista, não há álbum identificável.
   if (!s || (artist && normalizeForMatch(s) === normalizeForMatch(artist))) {
-    return "(álbum não identificado)";
+    return UNIDENTIFIED_ALBUM;
   }
   return s;
 }
@@ -198,32 +201,38 @@ type ArtistBucket = {
 };
 
 /**
- * Agrega o histórico de vendas em artista → álbum.
- *
- * ⚠️ **Padronização de nomes (evita registros duplicados):** o agrupamento é por CHAVE
- * `normalizeForMatch` (sem acento/caixa/pontuação), tanto de artista quanto de álbum, então
- * pequenas diferenças de grafia ("Jorge Ben" vs "Jorge ben ", "Alceu Valença" vs "Alceu
- * Valenca") caem no MESMO grupo. O nome exibido é a melhor grafia entre as variações
- * (`pickCanonical` — mais acentuada, depois mais longa). Isso corrige os casos em que
- * variações mínimas geravam 2 linhas para o mesmo artista/álbum.
+ * Onde UMA venda cai no Analytics: o artista e o álbum finais (pós-derivação, correção por venda e
+ * apelidos) e as chaves normalizadas que identificam o grupo. `null` = a venda não entra (excluída
+ * à mão, outro formato, kit de vários discos…). É a ÚNICA definição de "qual é o mesmo disco" —
+ * usada por `buildAnalytics` e por quem precisa achar o grupo de um lote (`past-sales.ts`).
  */
-export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): ArtistAgg[] {
+export type SalePlacement = {
+  artist: string;
+  album: string;
+  rawArtistKey: string;
+  artistKey: string;
+  artistOverride: string | undefined;
+  rawAlbumKey: string;
+  albumKey: string;
+  albumOverride: string | undefined;
+};
+
+export function makeSalePlacer(aliases?: AnalyticsAliases): (row: SaleRow) => SalePlacement | null {
   const artistAliases = aliases?.artists ?? {};
   const albumAliases = aliases?.albums ?? {};
   const saleOverrides = aliases?.sales ?? {};
   const excludedSales = new Set(Object.keys(aliases?.excludedSales ?? {}));
   const excludedArtists = new Set(Object.keys(aliases?.excludedArtists ?? {}));
-  const byArtist = new Map<string, ArtistBucket>();
-  for (const row of rows) {
+  return (row) => {
     // EXCLUSÃO manual da VENDA (por `lot_id`): oculta por completo (não conta em nenhum grupo).
-    if (excludedSales.has(row.lot_id)) continue;
+    if (excludedSales.has(row.lot_id)) return null;
     // Correção POR VENDA (por `lot_id`): tem precedência sobre a derivação automática. Fixa o
     // artista e/ou o álbum desta venda específica (usada para separar os não identificados).
     const saleOv = saleOverrides[row.lot_id];
     // Exclui do Analytics o que caiu por engano de OUTRO formato (DVD/HQ/revista/livro…),
     // limpando também as linhas já gravadas antes deste filtro — sem precisar re-capturar. A
     // correção manual da venda ISENTA do filtro (o usuário afirmou que é um vinil).
-    if (!saleOv && looksNonVinylSale(`${row.title} ${row.artist}`)) continue;
+    if (!saleOv && looksNonVinylSale(`${row.title} ${row.artist}`)) return null;
     // Oculta LOTES confirmados (conjunto de vários discos): o preço do conjunto não é preço por
     // álbum e polui as estatísticas. Checa o TÍTULO atual e `bundle` (calculado na captura a
     // partir do descritivo bruto do catálogo, preservado mesmo quando a reidentificação por IA
@@ -231,7 +240,7 @@ export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): Art
     // reaparecia com o preço do CONJUNTO inteiro atribuído a um único álbum. A correção manual da
     // venda (saleOv) ISENTA — o usuário pode afirmar que aquela venda é um disco específico. Não
     // deleta nada; só some da leitura.
-    if (!saleOv && (isDiscBundle(row.title) || row.bundle)) continue;
+    if (!saleOv && (isDiscBundle(row.title) || row.bundle)) return null;
     // Coletâneas/novelas → balaio "Coletâneas, Novela e etc" (a menos de correção manual). O
     // "artista" que é de vários intérpretes (isVariousArtists) SEMPRE cai no balaio. A dica no
     // TÍTULO ("sucessos"/"grandes sucessos"/"trilha sonora"…) só conta quando o ARTISTA ainda é
@@ -280,7 +289,7 @@ export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): Art
 
     // EXCLUSÃO manual do ARTISTA: oculta o grupo inteiro. Casa pela chave FINAL (o grupo exibido)
     // ou pela chave ORIGINAL (robusto a mudanças de apelido/fusão).
-    if (excludedArtists.has(artistKey) || excludedArtists.has(rawArtistKey)) continue;
+    if (excludedArtists.has(artistKey) || excludedArtists.has(rawArtistKey)) return null;
 
     const rawAlbumKey = normalizeForMatch(album) || album;
     // Apelido de álbum: chave no escopo do artista FINAL (pós-alias), acompanhando fusões.
@@ -289,6 +298,37 @@ export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): Art
     const albumKey = foldPlural(
       albumOverride ? normalizeForMatch(albumOverride) || rawAlbumKey : rawAlbumKey,
     );
+    return {
+      artist,
+      album,
+      rawArtistKey,
+      artistKey,
+      artistOverride,
+      rawAlbumKey,
+      albumKey,
+      albumOverride,
+    };
+  };
+}
+
+/**
+ * Agrega o histórico de vendas em artista → álbum.
+ *
+ * ⚠️ **Padronização de nomes (evita registros duplicados):** o agrupamento é por CHAVE
+ * `normalizeForMatch` (sem acento/caixa/pontuação), tanto de artista quanto de álbum, então
+ * pequenas diferenças de grafia ("Jorge Ben" vs "Jorge ben ", "Alceu Valença" vs "Alceu
+ * Valenca") caem no MESMO grupo. O nome exibido é a melhor grafia entre as variações
+ * (`pickCanonical` — mais acentuada, depois mais longa). Isso corrige os casos em que
+ * variações mínimas geravam 2 linhas para o mesmo artista/álbum.
+ */
+export function buildAnalytics(rows: SaleRow[], aliases?: AnalyticsAliases): ArtistAgg[] {
+  const place = makeSalePlacer(aliases);
+  const byArtist = new Map<string, ArtistBucket>();
+  for (const row of rows) {
+    const placed = place(row);
+    if (!placed) continue;
+    const { artist, album, rawArtistKey, artistKey, artistOverride } = placed;
+    const { rawAlbumKey, albumKey, albumOverride } = placed;
 
     const aBucket: ArtistBucket = byArtist.get(artistKey) ?? {
       variants: [],
