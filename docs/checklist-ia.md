@@ -78,8 +78,8 @@ do LeilõesBR, do Discogs, da IA e do login Google reais, que o ambiente de dese
 
 **Produto (próximas etapas)**
 
-- [ ] **Calibração** (aba prometida no preview): lotes de referência com nota esperada e erro médio, antes de
-      reavaliar a base toda. Sem ela, qualquer mudança de peso/prompt é testada só olhando lotes.
+- [x] **Calibração**: feita na 0.150.0 com as compras recebidas (ver o item «Calibração (0.150.0)» abaixo). Ideia que
+      ficou de fora: reavaliar as compras com o prompt atual e comparar com a nota do usuário (backtest com custo de IA).
 - [ ] **Vendas passadas (0.148.0)**: no detalhe da nota de um lote com histórico aparece «Vendas passadas (Analytics)» com o link
       «ver no Analytics» (abre o artista/álbum certos); corrigir o disco lá e voltar ao detalhe atualiza o resumo (até 30 s); «repassar a IA»
       usa a correção. Aba Blocos: o bloco «Vendas passadas do mesmo disco» aparece ligado.
@@ -113,3 +113,9 @@ do LeilõesBR, do Discogs, da IA e do login Google reais, que o ambiente de dese
 - [ ] `/olho` → «Meus interesses»: lista manual editável + artistas do De olho (chips «fixar»); o ⭐ da home/Análise vale para ambos.
 - [ ] Análise: 🎯 aparece nos lotes que casam com um disco do De olho; «Só De olho» filtra; não há mais botão «Sondagem».
 - [ ] Painel de IA → Blocos: «Perfil do colecionador» aparece ligado; no prompt só entra o que se aplica ao lote.
+
+**Calibração (0.150.0)**
+- [ ] Em Compras, marque um pregão como «Recebido»; em `/ia-painel` → «Calibração» os discos dele aparecem com o retrato da época.
+- [ ] Preencha estado real, nota e «valeu a pena?» de alguns discos e confira os quatro resumos no topo (e as sugestões, com ≥ 3 discos).
+- [ ] Compras novas: depois do próximo `step=purchases`, a linha nova já deve ter «IA na época» (retrato tirado na compra).
+- [ ] Compras antigas (lote já fora da janela) mostram «sem retrato da época», mas a leitura do texto e o estado real funcionam.

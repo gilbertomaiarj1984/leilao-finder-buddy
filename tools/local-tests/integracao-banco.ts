@@ -118,6 +118,36 @@ ok("vendas passadas: excluir uma venda no Analytics vale na hora (cache invalida
 await app.setAnalyticsExcludedSale("isale-3", false, "");
 await sql`delete from lot_sales where lot_id like 'isale-%'`;
 
+// ---- calibração (compras recebidas) ----
+const cal = await import(R + "calibration.server");
+await sql`delete from purchase_calibration where lot_id like 'itest-%'`;
+await sql`delete from purchases where lot_id like 'itest-%'`;
+await sql`delete from purchase_auctions where id_leilao = '9'`;
+await sql`delete from lot_sales where lot_id like 'itest-%'`;
+await sql`insert into purchases (lot_id,id_peca,id_leilao,title,won_price,won_date,house,uf) values ('itest-1','itest-1','9','LP TESTE itest-1','R$ 40,00','2026-10-01','Casa','SP'), ('itest-2','itest-2','9','LP TESTE itest-2','R$ 15,00','2026-10-01','Casa','BA')`;
+await sql`insert into lot_sales (lot_id,id_leilao,id_peca,artist,title,sold_price,orig_text) values ('itest-1','9','itest-1','Gilberto Gil','Gilberto Gil - Raça Humana',40,'GILBERTO GIL - RAÇA HUMANA - CAPA VG+ - DISCO VG+ - com encarte')`;
+const rows0 = await cal.getCalibrationRows();
+ok("calibração: pregão ainda não recebido → nenhuma linha", rows0.length === 0, rows0.length);
+await sql`insert into purchase_auctions (id_leilao,status,received_at) values ('9','recebido','2026-10-12')`;
+const nSnap = await cal.snapshotPurchases(["itest-1", "itest-2", "itest-nao-existe"]);
+ok("calibração: retrato só dos lotes que ainda existem e têm dado (itest-1 e itest-2)", nSnap >= 1, nSnap);
+ok("calibração: segundo retrato não duplica (já tem)", (await cal.snapshotPurchases(["itest-1"])) === 0);
+const rows1 = await cal.getCalibrationRows();
+const cal1 = rows1.find((x: any) => x.lotId === "itest-1");
+ok("calibração: compra recebida aparece com preço, data e retrato da IA", rows1.length === 2 && cal1?.wonPrice === "R$ 40,00" && cal1?.receivedAt === "2026-10-12" && cal1?.snapshot?.ai?.score === 80, cal1);
+ok("calibração: retrato guarda o estado lido e o veredicto de mercado da época", cal1?.snapshot?.cond?.media === "VG+" && ["barato", "justo", "caro", "indefinido"].includes(cal1?.snapshot?.market?.verdict), cal1?.snapshot);
+ok("calibração: leitura de HOJE vem do descritivo da venda (VG+/VG+)", cal1?.read?.media === "VG+" && cal1?.read?.sleeve === "VG+", cal1?.read);
+await cal.saveCalibration({ lotId: "itest-1", realMedia: "VG", realSleeve: "VG+", realScore: 55, verdict: "ok", note: "chegou com chiado" });
+const cal2 = (await cal.getCalibrationRows()).find((x: any) => x.lotId === "itest-1");
+ok("calibração: opinião salva (disco VG, capa VG+, nota 55, foi ok) sem apagar o retrato", cal2?.real?.media === "VG" && cal2?.real?.sleeve === "VG+" && cal2?.realScore === 55 && cal2?.verdict === "ok" && cal2?.note === "chegou com chiado" && cal2?.snapshot?.ai?.score === 80, cal2);
+await cal.saveCalibration({ lotId: "itest-1", realMedia: "lixo", realSleeve: "", realScore: 999, verdict: "invalido", note: "x" });
+const cal3 = (await cal.getCalibrationRows()).find((x: any) => x.lotId === "itest-1");
+ok("calibração: valores inválidos são limpos (grau/veredicto vazios, nota limitada a 100)", cal3?.real?.media === "" && cal3?.verdict === "" && cal3?.realScore === 100, cal3);
+await sql`delete from purchase_calibration where lot_id like 'itest-%'`;
+await sql`delete from purchases where lot_id like 'itest-%'`;
+await sql`delete from purchase_auctions where id_leilao = '9'`;
+await sql`delete from lot_sales where lot_id like 'itest-%'`;
+
 await sql`delete from lots where id like 'itest-%'`;
 await sql`delete from app_state where key = 'ai_panel'`;
 console.log(fails ? `\n${fails} FALHA(S)` : "\nTODOS OS TESTES DE INTEGRAÇÃO PASSARAM");

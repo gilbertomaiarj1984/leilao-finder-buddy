@@ -6,7 +6,7 @@ import { useQueries, useQuery, type QueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useRef } from "react";
 
-import { getAiPanel } from "@/lib/ai-panel.functions";
+import { getAiPanel, getCalibration } from "@/lib/ai-panel.functions";
 import { collectorInterests } from "@/lib/collector-profile";
 import { buildInterestMatcher } from "@/lib/lot-score";
 import { getHouseRatings } from "@/lib/house-rating.functions";
@@ -63,6 +63,7 @@ export const queryKeys = {
   geminiModel: ["gemini-model"],
   anthropicModel: ["anthropic-model"],
   aiPanel: ["ai-panel"],
+  calibration: ["ai-calibration"],
   aiMode: ["ai-mode"],
   collection: ["collection"],
   collectionLinks: ["collection-links"],
@@ -246,6 +247,17 @@ export function useCollectorInterests() {
   );
   const matcher = useMemo(() => buildInterestMatcher(interests.all), [interests.all]);
   return { ...interests, matcher, isLoading: manualQuery.isLoading };
+}
+
+/** Aba «Calibração» do painel de IA: compras recebidas com o retrato da época e a opinião do usuário. */
+export function useCalibrationQuery() {
+  const fetchCalibration = useServerFn(getCalibration);
+  return useQuery({
+    queryKey: queryKeys.calibration,
+    queryFn: () => fetchCalibration(),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
 }
 
 export function useAiProviderQuery() {

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BlocksTab } from "@/components/vinyl/ai-panel/blocks-tab";
+import { CalibrationTab } from "@/components/vinyl/ai-panel/calibration-tab";
 import { CorrelTab } from "@/components/vinyl/ai-panel/correl-tab";
 import { FreightTab } from "@/components/vinyl/ai-panel/freight-tab";
 import { ModelTab } from "@/components/vinyl/ai-panel/model-tab";
@@ -94,12 +95,13 @@ function IaPainelPage() {
           <Skeleton className="h-64 w-full" />
         ) : (
           <Tabs value={tab} onValueChange={setTab}>
-            {/* No celular as 4 abas não cabem: rolam dentro do contêiner, sem alargar a página. */}
+            {/* No celular as 5 abas não cabem: rolam dentro do contêiner, sem alargar a página. */}
             <div className="mb-4 max-w-full overflow-x-auto">
               <TabsList className="w-max">
                 <TabsTrigger value="blocos">Blocos de contexto</TabsTrigger>
                 <TabsTrigger value="correlacao">Correlação de condições</TabsTrigger>
                 <TabsTrigger value="frete">Frete e padrões</TabsTrigger>
+                <TabsTrigger value="calibracao">Calibração</TabsTrigger>
                 <TabsTrigger value="modelo">Modelo e modo</TabsTrigger>
               </TabsList>
             </div>
@@ -111,6 +113,9 @@ function IaPainelPage() {
             </TabsContent>
             <TabsContent value="frete">
               <FreightTab draft={draft} setDraft={setDraft} />
+            </TabsContent>
+            <TabsContent value="calibracao">
+              <CalibrationTab />
             </TabsContent>
             <TabsContent value="modelo">
               <ModelTab />
