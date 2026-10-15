@@ -100,6 +100,20 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   `muito_raro`), `deal`, `album` ("Artista - Álbum"), `reason`, `tags[]` (`parseEvalObject`,
   tolerante a cercas). **Visão:** capa http(s) vai como bloco `image` (antes do texto) para
   identificar o disco (`usableImage` descarta `data:`).
+- **Contexto no prompt da avaliação (v0.142.0):** `buildUserPrompt(lot, ctx)` junta ao JSON do lote o
+  bloco `contexto` (`ai-context.ts`, puro): `estado` (disco/capa/encarte/nota de `lot_condition`),
+  `mercado_discogs_brl` (preço sugerido da condição do disco — G+ quando o estado é desconhecido —,
+  `want`/`have`, ano, anúncios à venda, de `lot_market.suggested_by_condition`), `frete_estimado_brl`
+  (R$ 25 Sudeste / R$ 35 demais, pela UF de `lots`), `lote_mais_frete_brl` e `razao_lote_vs_sugerido`
+  (≤ 0,7 barato, ≥ 1,15 caro — as mesmas faixas do `marketDeal`). Dado ausente não entra no JSON.
+  Carregado na hora do envio (`loadLotContexts`, por ids; best-effort — falha = prompt sem contexto,
+  como antes); o Batches congela o contexto no submit. **Versão do prompt:** `PROMPT_VERSION`
+  (`ai-context.ts`) vira sufixo do hash (`evalHash` = `titleHash.p2`); subir o número reavalia a
+  base inteira (até 800 lotes por rodada). Dados voláteis (have/want, preços) ficam fora do hash de
+  propósito. **Ordem do cron:** `aieval`/`tracklist`/`fame` rodam depois de `aiident`, `market`,
+  `condition`, `sales` e `reident` (`refresh.yml`) — senão a primeira avaliação sairia sem contexto.
+  Ainda fora do prompt: vendas passadas (exige casar `lot_sales` ao álbum identificado), perfil do
+  colecionador, tracklist e correções (ver `docs/pendencias.md`).
 - **Identificação simples — `lot_ident`** (isolada da avaliação, **sem gate de modo**): passada
   **barata** que preenche só artista/álbum/ano em **toda a base**. Tabela `lot_ident` (`id`,
   `title_hash`, `album`, `year`, `confidence`, `source`, `model`). `buildIdentUserPrompt`/

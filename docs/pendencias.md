@@ -102,3 +102,16 @@ mesmo painel do mercado Discogs. Base já pronta: `condition-text.ts` (regras `s
 `discogs-price.ts` (`gradeToCondKey`). O painel só precisa persistir as regras em `app_state` e
 carregá-las no lugar das constantes. Frete do leilão (R$ 25 Sudeste / R$ 35 demais) também vira
 campo editável ali.
+
+## IA — blocos de contexto ainda fora do prompt (fase 2, 15/10/2026)
+
+- **Vendas passadas (B5):** `lot_sales` guarda artista/título/preço/estado, mas o casamento com o
+  álbum do lote depende da identificação (`lot_ident`/`reident`) e de uma chave de álbum normalizada.
+  Definir a chave, ignorar `bundle=true` e mandar `{n, mín, mediana, máx}` em reais.
+- **Perfil do colecionador (B6):** mandar só o resultado do casamento (interesse, sondagem, "já tenho"),
+  nunca as listas; `wantlist-match.ts` já tem o `scoreWant`.
+- **Reavaliação quando o contexto chega depois:** o hash não leva flags de contexto; um lote avaliado
+  antes de ter estado/Discogs só é refeito ao subir `PROMPT_VERSION` ou ao mudar o título. Com a nova
+  ordem do cron isso deve ser raro; se incomodar, acrescentar flags grossas (`+e`, `+m`) ao hash.
+- **Medir o efeito:** comparar notas antes/depois da v0.142.0 em um punhado de lotes conhecidos antes
+  de reavaliar a base toda (a calibração do painel de IA é o lugar disso).
