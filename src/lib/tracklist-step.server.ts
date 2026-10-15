@@ -65,37 +65,6 @@ function todayKeySaoPaulo(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
 }
 
-const MIGRATION_KEY = "tracklist_discogs_migrated";
-
-/**
- * Migração única (v0.124.0): as tracklists gravadas antes vieram da IA (faixas/ordem erradas).
- * Zera `lot_ai.tracklist` e `collection_items.tracklist` uma vez, para o retroativo / botão
- * "Identificar faixas" refazê-las a partir do Discogs. Marcada em `app_state` só se zerar sem erro.
- */
-async function migrateAiTracklists(): Promise<void> {
-  const { data } = await db
-    .from("app_state")
-    .select("value")
-    .eq("key", MIGRATION_KEY)
-    .maybeSingle();
-  if (data?.value) return;
-  const a = await db.from("lot_ai").update({ tracklist: null }).not("tracklist", "is", null);
-  const b = await db
-    .from("collection_items")
-    .update({ tracklist: null })
-    .not("tracklist", "is", null);
-  if (a.error || b.error) {
-    console.error("[tracklist] migração falhou", a.error ?? b.error);
-    return;
-  }
-  await db
-    .from("app_state")
-    .upsert(
-      { key: MIGRATION_KEY, value: true, updated_at: new Date().toISOString() },
-      { onConflict: "key" },
-    );
-}
-
 /** Faixas do Discogs (sem fama). `null` quando o Discogs não achou o disco. */
 export async function buildTracklist(
   album: string,
@@ -112,7 +81,6 @@ export async function runTracklistBackfill(max = 20): Promise<{
   done: boolean;
 }> {
   if (!discogsConfigured()) return { updated: 0, failed: 0, remaining: 0, done: true };
-  await migrateAiTracklists();
   const today = todayKeySaoPaulo();
   const { data: lotRows, error: lotErr } = await db
     .from<{ id: string }>("lots")
