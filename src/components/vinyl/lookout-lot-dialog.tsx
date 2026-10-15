@@ -2,14 +2,20 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo } from "react";
 
-import { toLotMarket, type LotAi } from "@/components/vinyl/ai-score-utils";
+import {
+  toLotAi,
+  toLotMarket,
+  withConditionAnchor,
+  type LotAi,
+} from "@/components/vinyl/ai-score-utils";
 import { LotCard } from "@/components/vinyl/lot-card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { effectiveTextRules } from "@/lib/condition-text";
 import { parseConditionFromText, scoreCondition, type Grade } from "@/lib/grading";
 import { getLotCondition } from "@/lib/leiloesbr.functions";
 import type { LookoutItem } from "@/lib/lookout-match";
 import type { LookoutUpcoming } from "@/lib/lookout-matches.server";
-import { useLotAiQuery, useLotIdentQuery, useLotMarketQuery } from "@/lib/queries";
+import { useAiPanelQuery, useLotAiQuery, useLotIdentQuery, useLotMarketQuery } from "@/lib/queries";
 
 /**
  * Cartão COMPLETO do lote (o mesmo `LotCard` da home: nota da IA, Discogs, estado Disco/Capa,
@@ -34,6 +40,7 @@ export function LookoutLotDialog({
   const aiQuery = useLotAiQuery();
   const identQuery = useLotIdentQuery();
   const marketQuery = useLotMarketQuery();
+  const aiPanelQuery = useAiPanelQuery();
   const fetchCondition = useServerFn(getLotCondition);
   // Mesma chave da home → compartilha o cache.
   const conditionQuery = useQuery({
@@ -46,20 +53,9 @@ export function LookoutLotDialog({
   const id = lot?.lotId ?? "";
   const ai = useMemo<LotAi | undefined>(() => {
     const r = (aiQuery.data ?? []).find((x) => x.id === id);
-    return r
-      ? {
-          score: r.score,
-          rarity: r.rarity,
-          deal: r.deal,
-          album: r.album,
-          reason: r.reason,
-          tags: r.tags,
-          evalPrice: r.eval_price,
-          tracklist: r.tracklist,
-        }
-      : undefined;
+    return r ? toLotAi(r) : undefined;
   }, [aiQuery.data, id]);
-  const market = useMemo(() => {
+  const marketRaw = useMemo(() => {
     const r = (marketQuery.data ?? []).find((x) => x.id === id);
     return r ? toLotMarket(r) : undefined;
   }, [marketQuery.data, id]);
@@ -87,8 +83,16 @@ export function LookoutLotDialog({
         return { media, sleeve, insert, score, faixa, source: "regex" as const, raw: "" };
       }
     }
-    return parseConditionFromText(lot?.title ?? "");
-  }, [cond, lot?.title]);
+    return parseConditionFromText(
+      lot?.title ?? "",
+      effectiveTextRules(aiPanelQuery.data?.rules, aiPanelQuery.data?.disabledRules),
+    );
+  }, [cond, lot?.title, aiPanelQuery.data]);
+  // Mercado com a âncora de preço da condição (mídia) do lote.
+  const market = useMemo(
+    () => withConditionAnchor(marketRaw, condition.media, lot?.uf, aiPanelQuery.data),
+    [marketRaw, condition.media, lot?.uf, aiPanelQuery.data],
+  );
 
   return (
     <Dialog open={lot != null} onOpenChange={(open) => (open ? undefined : onClose())}>

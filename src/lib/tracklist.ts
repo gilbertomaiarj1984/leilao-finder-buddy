@@ -6,6 +6,8 @@
  * `fame` = quão conhecida é a faixa (ou `null` enquanto a IA não classificou): "alta" (verde, maiores sucessos), "media" (amarelo,
  * conhecidas) e "baixa" (vermelho, pouco conhecidas e/ou lado B).
  */
+import { extractJsonObject } from "./json-extract";
+
 export const TRACK_FAMES = ["alta", "media", "baixa"] as const;
 export type TrackFame = (typeof TRACK_FAMES)[number];
 
@@ -146,21 +148,12 @@ export function buildFamePrompt(album: string, tracks: RawTrack[]): string {
 /** Lê o texto da IA e devolve a fama por posição (`null` onde faltou/veio inválido). */
 export function parseFameText(text: string, count: number): (TrackFame | null)[] {
   const none = Array.from({ length: count }, () => null);
-  if (!text) return none;
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return none;
-  try {
-    const obj = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
-    const arr = obj["fame"];
-    if (!Array.isArray(arr)) return none;
-    return none.map((_, i) => {
-      const raw = typeof arr[i] === "string" ? arr[i].toLowerCase().trim() : "";
-      return (TRACK_FAMES as readonly string[]).includes(raw) ? (raw as TrackFame) : null;
-    });
-  } catch {
-    return none;
-  }
+  const arr = extractJsonObject(text)?.["fame"];
+  if (!Array.isArray(arr)) return none;
+  return none.map((_, i) => {
+    const raw = typeof arr[i] === "string" ? arr[i].toLowerCase().trim() : "";
+    return (TRACK_FAMES as readonly string[]).includes(raw) ? (raw as TrackFame) : null;
+  });
 }
 
 /** Faixas do Discogs sem fama ainda (a IA classifica depois, em passo próprio). */

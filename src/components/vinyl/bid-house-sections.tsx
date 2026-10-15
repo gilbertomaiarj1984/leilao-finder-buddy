@@ -3,9 +3,11 @@ import { ChevronDown, ChevronRight, ChevronUp, ExternalLink } from "lucide-react
 import { HouseLight } from "@/components/vinyl/house-light";
 import { Badge } from "@/components/ui/badge";
 
+import type { Condition } from "@/lib/grading";
 import { catalogUrlFromLot } from "@/lib/vinyl-parse";
 import type { OwnedHit } from "@/lib/wantlist-match";
 
+import type { LotAi, LotMarket } from "./ai-score-utils";
 import { BidStatBadges } from "./badges";
 import { computeBidStats } from "./grouping";
 import { LotCard } from "./lot-card";
@@ -42,6 +44,9 @@ export function BidHouseSections({
   nextBidById,
   albumById,
   soldById,
+  aiFor,
+  marketFor,
+  conditionFor,
   ownedFor,
   onOpenOwned,
   onToggle,
@@ -56,6 +61,10 @@ export function BidHouseSections({
   nextBidById: Map<string, string>;
   albumById?: Map<string, string>;
   soldById?: Map<string, string>;
+  /** Nota da IA, mercado (Discogs) e estado do lote do lance — iguais aos dos cartões das outras abas. */
+  aiFor?: (lot: { id: string; title?: string }) => LotAi | undefined;
+  marketFor?: (lot: { id: string; uf?: string; title?: string }) => LotMarket | undefined;
+  conditionFor?: (lot: { id?: string; title?: string }) => Condition;
   ownedFor?: (lot: { id: string }) => OwnedHit | null;
   onOpenOwned?: (bid: { id: string; title: string }) => void;
   onToggle: (bid: { idPeca: string; idLeilao: string; base: string; watch: boolean }) => void;
@@ -143,6 +152,9 @@ export function BidHouseSections({
                     bidStatus={bid.status}
                     sold={soldById?.get(bid.id)}
                     album={albumById?.get(bid.id) ?? null}
+                    ai={aiFor?.(bid)}
+                    market={marketFor?.(bid)}
+                    condition={conditionFor?.(bid)}
                     owned={ownedFor?.(bid) ?? null}
                     onOpenOwned={
                       onOpenOwned ? () => onOpenOwned({ id: bid.id, title: bid.title }) : undefined

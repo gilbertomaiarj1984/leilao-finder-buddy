@@ -17,11 +17,12 @@ export function useLotTracklistRefresh(lotId?: string | null): TracklistRefresh 
   const mutation = useMutation({
     mutationFn: (id: string) => run({ data: { id } }),
     onSuccess: (res, id) => {
+      queryClient.setQueryData(queryKeys.lotTracklist(id), res.tracklist);
       queryClient.setQueryData(queryKeys.lotAi, (old: unknown) =>
         Array.isArray(old)
           ? old.map((r) =>
               r && (r as { id: string }).id === id
-                ? { ...(r as object), tracklist: res.tracklist }
+                ? { ...(r as object), hasTracklist: Boolean(res.tracklist?.length) }
                 : r,
             )
           : old,

@@ -77,3 +77,96 @@ valer a pena.
   (`refresh.yml`), então o aviso de lance superado chega com atraso de horas. Para ser quase
   imediato precisaria de um agendador mais frequente só para `step=bidnotify` (cuidar da sessão
   única por origem no LeilõesBR).
+
+## Discogs — frete e faixa BR (levantado em 15/10/2026)
+
+- **Faixa BR com frete está morta:** a página de venda do Discogs devolve 403/Cloudflare ao servidor
+  (testado do VPS com o release 555878). Caminhos a avaliar: ler o **inventário por vendedor** pela
+  API (mapear vendedores brasileiros; não confirmado se traz o frete), `GET /marketplace/listings/{id}`
+  (preço, frete e origem de um anúncio, mas exige o id), ou um serviço de scraping pago. Enquanto
+  isso o veredicto usa o sugerido por condição (v0.141.0).
+- **Cotação USD→BRL** derivada da própria API (razão `stats?curr_abbr=BRL` ÷ `curr_abbr=USD`):
+  hoje tudo é BRL, então ainda não é preciso; guardar a taxa se algum preço em outra moeda entrar.
+- **Sugerido vs. estado da capa:** a âncora usa só a condição da mídia; capa muito pior que o disco
+  poderia descontar. Só vale com dado real de calibração (painel de IA planejado).
+- **Painel de gestão da IA:** prévia navegável aprovada em linhas gerais (blocos de contexto
+  arrastáveis, calibração, ordem do cron). Implementação depende da ordem de fases decidida com o
+  usuário; mover `aieval` para depois de `aiident`/`market`/`condition`/`sales` no `refresh.yml` é
+  pré-requisito para a IA enxergar esses dados.
+
+## Painel de IA — correlação de condições (pedido em 15/10/2026)
+
+Tabela visual e editável que relaciona o vocabulário dos leilões (siglas, "ótimo estado", "estado
+regular", "riscos que afetam a audição"…) com a escala do Discogs (M, NM, VG+, VG, G+, G, F, P), no
+mesmo painel do mercado Discogs. Base já pronta: `condition-text.ts` (regras `set`/`cap`) e
+`discogs-price.ts` (`gradeToCondKey`). O painel só precisa persistir as regras em `app_state` e
+carregá-las no lugar das constantes. Frete do leilão (R$ 25 Sudeste / R$ 35 demais) também vira
+campo editável ali.
+
+## IA — blocos de contexto ainda fora do prompt (fase 2, 15/10/2026)
+
+- **Vendas passadas (B5):** feito na v0.148.0 (ver `docs/areas/ia.md`). Limite conhecido: lote sem
+  identificação (`lot_ident`/`lot_ai.album`) e com título sem "Artista - Álbum" não casa com o Analytics.
+- **Perfil do colecionador (B6):** feito na v0.149.0 (De olho + interesses; ver `docs/areas/colecao-sondagem-compras.md`).
+  Pendente: **apagar a tabela `wantlist_items`** (`DROP TABLE public.wantlist_items;` + trecho em `supabase/setup.sql`)
+  depois de conferir a migração no `/olho`.
+- **Reavaliação quando o contexto chega depois:** o hash não leva flags de contexto; um lote avaliado
+  antes de ter estado/Discogs só é refeito ao subir `PROMPT_VERSION` ou ao mudar o título. Com a nova
+  ordem do cron isso deve ser raro; se incomodar, acrescentar flags grossas (`+e`, `+m`) ao hash.
+- **Medir o efeito:** comparar notas antes/depois da v0.142.0 em um punhado de lotes conhecidos antes
+  de reavaliar a base toda (a calibração do painel de IA é o lugar disso).
+
+## Painel de IA — lacunas conhecidas (auditoria de 15/10/2026)
+
+- **"Meus lances"** (`bid-house-sections.tsx` → `LotCard`) não recebe `market`, `ai` nem `condition`:
+  lance sem nota/veredicto/estado. Ausência antiga, não da regra nova; passar `marketFor`/`aiFor`/
+  `conditionFor` se quiser.
+- **De olho** (`lookout-matches.server.ts`): `toLotMarket` cru, `deal: null` na notificação e faixa BR
+  crua no e-mail. Aplicar `withConditionAnchor` + `marketDeal` como no resumo diário.
+- **`ai.deal` gravado vs. "vs. mercado" calculado** aparecem lado a lado em `ai-score.tsx`/`analise.tsx`
+  e podem divergir até a próxima reavaliação.
+- O fallback de IA do estado (`conditionAiSync`) e a identificação não usam as regras do painel (só o
+  regex usa).
+
+## Revisão de código da IA — itens adiados (15/10/2026)
+
+Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
+
+- **Duplicação:** pool de workers copiado em `evalLotsSync`/`identLotsSync*`/`conditionAiSync`/
+  `identCollectionSync` (extrair `runPool`); `identLotsSync` ≈ `identLotsSyncRows`; "primeiro `{` até o
+  último `}`" em 5 parsers (`extractJsonObject`); lista de modelos e padrão do Gemini em 4 lugares
+  (`ai-models.ts`); faixas 0,7/1,15 no texto do prompt e em `marketDeal` (constantes); pipeline
+  "condição em cache ou título → âncora" triplicado em home/Análise/diálogo do De olho (`useLotInsights()`).
+- **Camadas:** `daily-digest.server.ts` e `lookout-ident.server.ts` importam `components/vinyl/ai-score-utils`;
+  mover `parseAiAlbum`, `marketDeal`, `toLotMarket`, `withConditionAnchor` para `src/lib`.
+- **Desempenho:** `marketFor`/`conditionFor` criam objeto novo por lote a cada render (anula
+  `React.memo` do `LotCard`) → `useMemo` dos mapas `id → condição/mercado`; `getAllLotAi` traz o jsonb
+  `tracklist` de todos os lotes (cron e cliente) → projetar colunas e carregar a tracklist sob demanda;
+  regex estáticas em `grading.ts` (cada parse recompila 4-5); `getLotMarket` manda `basis` ao cliente.
+- **Cron:** `AI_CONDITION_CAP=25` grava `indefinido` para quem passou do corte (nunca mais usa o
+  fallback de IA); falha de catálogo reseleciona os mesmos leilões nas 40 voltas; `salesdebug` roda em
+  toda execução; `sleep 60` mesmo no caminho Gemini síncrono; resultado `errored` de lote com capa
+  morta é reenviado a cada rodada (tentar sem imagem).
+- **`PROMPT_VERSION` manual:** editar `SYSTEM_PROMPT` sem subir o número deixa notas defasadas →
+  derivar o hash do texto do prompt.
+- **`basis` do Discogs** usa o texto cru da IA; `lot_ident` → `lot_ai` com álbum diferente reconsulta o
+  Discogs → normalizar com `normalizeForMatch` e tirar o ano.
+- **Testes que faltam:** `parseEvalObject`/`parseIdentObject`/`parseConditionAiObject`, `priceRoseSinceEval`,
+  `isQuotaError`/`isTransientError`, `pickBestRelease`/`parseAlbum`/`buildQuery`, `selectLotsForMarket`/
+  `marketBasis`, starvation de `enrichConditions`.
+- `ai-provider-controls.tsx`: trocar provedor+modelo grava em duas server functions (pode gravar só uma).
+
+> Atualização (v0.143.2): já feitos dos itens da revisão — memoização de `marketFor`/`conditionFor`,
+> `getAllLotAiLean`, teto do estado por IA, hash do prompt pelo texto, `basis` normalizado e testes dos
+> parsers de resposta. (v0.146.0: a tracklist agora é carregada sob demanda — `getLotAi` manda só
+> `hasTracklist`.) Continuam abertos: as duplicações/camadas e o restante da lista acima.
+
+> Atualização (v0.144.0): feitos — «Meus lances» com nota/mercado/estado, De olho com veredicto de mercado, «Oportunidade»
+> de mercado no lugar da gravada pela IA, blocos «em breve» no painel. Lista completa de pendências e dos testes
+> manuais: `docs/checklist-ia.md`.
+
+## Código repetido (marcado com `// DUP(...)`; regra no AGENTS.md)
+
+Achar: `grep -rn "DUP(" src`. Pendentes: `DUP(pool)` — laço de workers com `cursor` em 8 lugares
+(extrair `runPool`); `DUP(modelos)` — lista/padrão dos modelos Gemini em 4 arquivos (`ai-models.ts`).
+Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score.ts`.

@@ -181,9 +181,14 @@ CREATE TABLE IF NOT EXISTS public.lot_market (
 ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS price_low_br    numeric;
 ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS price_high_br   numeric;
 ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS num_for_sale_br integer;
+-- Preço sugerido de TODAS as condições (BRL), ex.: {"NM": 66.27, "VG+": 50.68}. O veredicto usa a
+-- condição do lote. NULL = ainda não coletado (o cron preenche); {} = consultado, sem sugestões.
+ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS suggested_by_condition jsonb;
 
 -- ---------------------------------------------------------------------
--- wantlist_items — "sondagem": rascunho de obras que o usuário caça.
+-- wantlist_items — "sondagem": DESCONTINUADA na v0.149.0 (migrada para `lookout_items`, o De olho, pela
+-- tela /olho). Fica só como cópia de segurança até o usuário conferir a migração; depois: DROP TABLE.
+-- (histórico) rascunho de obras que o usuário caça.
 -- Importado colando texto (linhas "01. Tim Maia (1970)"), depois editável no
 -- app: pesquisar, editar, marcar `acquired` (já adquiri). Serve de input extra
 -- para a Análise (destaca os lotes que casam com a lista). `norm` = título
@@ -228,6 +233,8 @@ CREATE TABLE IF NOT EXISTS public.lot_condition (
 -- Sinais de demanda (VISITAS/QTDLANCE) do catálogo, adicionados depois (idempotente).
 ALTER TABLE public.lot_condition ADD COLUMN IF NOT EXISTS views integer;
 ALTER TABLE public.lot_condition ADD COLUMN IF NOT EXISTS bids  integer;
+-- Descrição completa do lote (tooltip do catálogo da casa), limpa e truncada — vai no prompt da IA.
+ALTER TABLE public.lot_condition ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT '';
 
 -- ---------------------------------------------------------------------
 -- lot_sales — histórico de vendas dos lotes (base do Vinil Analytics).
@@ -430,6 +437,28 @@ CREATE TRIGGER update_purchase_auctions_updated_at BEFORE UPDATE ON public.purch
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- ---------------------------------------------------------------------
+-- purchase_calibration — calibração da IA com as compras RECEBIDAS (v0.150.0, painel de IA).
+-- `snapshot` = o que a IA/o leitor de estado/o Discogs diziam do lote NA ÉPOCA da compra (o lote sai
+-- de `lots` 10 dias depois; sem FK de propósito — a compra sobrevive). `real_*`, `verdict` e `note`
+-- são a opinião do usuário depois que o disco chegou. Histórico:
+-- supabase/migrations/20261015140000_purchase_calibration.sql.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.purchase_calibration (
+  lot_id       text PRIMARY KEY,                       -- = purchases.lot_id
+  snapshot     jsonb NOT NULL DEFAULT '{}'::jsonb,
+  snapshot_at  timestamptz,
+  real_media   text NOT NULL DEFAULT '',               -- estado real do disco ('' = não informado)
+  real_sleeve  text NOT NULL DEFAULT '',
+  real_score   integer,                                -- nota (0–100) que o usuário daria
+  verdict      text NOT NULL DEFAULT '' CHECK (verdict IN ('', 'valeu', 'ok', 'nao_valeu')),
+  note         text NOT NULL DEFAULT '',
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+DROP TRIGGER IF EXISTS update_purchase_calibration_updated_at ON public.purchase_calibration;
+CREATE TRIGGER update_purchase_calibration_updated_at BEFORE UPDATE ON public.purchase_calibration
+FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- ---------------------------------------------------------------------
 -- excluded_lots — lotes excluídos manualmente pelo usuário. `id` é a mesma PK
 -- de `lots.id`: serve de lista negra (o cron nunca reinsere, ver
 -- src/lib/lot-exclusion.server.ts) e sobrevive ao DELETE físico do lote em `lots`
@@ -556,6 +585,7 @@ ALTER TABLE public.shipments          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchase_auctions  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.excluded_lots    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lookout_items    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.purchase_calibration ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.seen_auctions  FROM anon, authenticated;

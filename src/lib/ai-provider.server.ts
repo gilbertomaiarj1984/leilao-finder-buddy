@@ -56,16 +56,8 @@ const ANTHROPIC_DEFAULT_MODEL = "claude-haiku-5-5";
  * no v0.69.3). Espelha `DEFAULT_GEMINI_MODEL` de `ai-provider.ts` (client-safe, mesma lição
  * do v0.24.x: este arquivo não importa de lá).
  */
+// DUP(modelos): lista/padrão dos modelos Gemini repetidos em 4 arquivos — centralizar em `ai-models.ts`.
 const GEMINI_DEFAULT_MODEL = "gemini-3.1-flash-lite";
-/**
- * Modelo de downgrade quando o Gemini configurado/escolhido bate em quota: o Flash-Lite 2.5
- * tem cota gratuita própria (separada de todo o resto) e costuma sobreviver quando o modelo
- * pedido já estourou o free tier do dia — mais barato ainda que o padrão de fábrica acima
- * (mas com desligamento anunciado pra 16/out/2026, daí não ser o padrão). O guard em `runOne`
- * evita o downgrade virar loop quando o usuário já escolheu este mesmo modelo.
- */
-const GEMINI_FREE_FALLBACK_MODEL = "gemini-2.5-flash-lite";
-
 /**
  * Modelo efetivo do provedor. Pro Gemini, `geminiModel` (a escolha do usuário, persistida em
  * `app_state.gemini_model` — ver `resolveGeminiModel` em `ai-eval.server.ts`) tem prioridade;
@@ -254,8 +246,10 @@ type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: str
 async function fetchInlineImage(url: string): Promise<{ mimeType: string; data: string } | null> {
   const dataUrl = url.match(/^data:(image\/[a-z+.-]+);base64,(.+)$/);
   if (dataUrl) return { mimeType: dataUrl[1]!, data: dataUrl[2]! };
+  // A URL da capa pode vir do cliente (reavaliar um lote): nada de rede interna/metadados.
+  if (!isSafeImageUrl(url)) return null;
   try {
-    const resp = await fetch(url);
+    const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) });
     if (!resp.ok) return null;
     const type = (resp.headers.get("content-type") || "").split(";")[0]?.trim();
     const mimeType = type && type.startsWith("image/") ? type : "image/jpeg";
@@ -266,6 +260,34 @@ async function fetchInlineImage(url: string): Promise<{ mimeType: string; data: 
   } catch {
     return null;
   }
+}
+
+/**
+ * Só http(s) para um host público: recusa localhost, nomes sem ponto (serviços do Docker como
+ * `app`/`postgres`), `.local`/`.internal`, IPv6 literal e faixas privadas/metadados (10/8, 127/8,
+ * 169.254/16, 172.16/12, 192.168/16). Não impede DNS que aponte para dentro; reduz o risco (SSRF).
+ */
+export function isSafeImageUrl(raw: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return false;
+  const h = u.hostname.toLowerCase();
+  if (!h.includes(".") || h.includes(":")) return false;
+  if (h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) return false;
+  const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (m) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    if (a === 0 || a === 10 || a === 127) return false;
+    if (a === 169 && b === 254) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+  }
+  return true;
 }
 
 async function runGemini(req: AiRequest, model: string): Promise<string> {
@@ -359,30 +381,7 @@ async function runOne(
   }
   const model = providerModel(provider, geminiModel);
 
-  try {
-    return { text: await runGemini(req, model), model };
-  } catch (error) {
-    // Downgrade DENTRO do Gemini antes de sair pro outro provedor: o Flash-Lite tem cota
-    // gratuita própria (separada do Flash) e costuma atender quando só o Flash estourou.
-    if (isQuotaError(error) && model !== GEMINI_FREE_FALLBACK_MODEL) {
-      console.error(
-        `[ai-provider] gemini (${model}) sem quota — tentando downgrade para ${GEMINI_FREE_FALLBACK_MODEL}`,
-        error,
-      );
-      try {
-        return {
-          text: await runGemini(req, GEMINI_FREE_FALLBACK_MODEL),
-          model: GEMINI_FREE_FALLBACK_MODEL,
-        };
-      } catch (fallbackError) {
-        // O 2.5 desliga em 16/out/2026: se o downgrade falhar, propaga o erro ORIGINAL (quota)
-        // pra o failover de provedor continuar funcionando.
-        console.error("[ai-provider] downgrade do Gemini falhou", fallbackError);
-        throw error;
-      }
-    }
-    throw error;
-  }
+  return { text: await runGemini(req, model), model };
 }
 
 /** Rótulo curto do provedor pra mensagem de erro (evita puxar `ai-provider.ts` client-safe). */

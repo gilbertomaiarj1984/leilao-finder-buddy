@@ -32,6 +32,9 @@ export function BidsTab({ d }: { d: DashboardData }) {
     nextBidById,
     albumById,
     soldById,
+    aiFor,
+    marketFor,
+    conditionFor,
     ownedFor,
     setOwnedPanelLot,
     closedHouseSections,
@@ -117,6 +120,9 @@ export function BidsTab({ d }: { d: DashboardData }) {
                         nextBidById={nextBidById}
                         albumById={albumById}
                         soldById={soldById}
+                        aiFor={aiFor}
+                        marketFor={marketFor}
+                        conditionFor={conditionFor}
                         ownedFor={ownedFor}
                         onOpenOwned={(bid) => setOwnedPanelLot(bid)}
                         isHouseOpen={(house) => !closedHouseSections.has(`bids|${dayKey}|${house}`)}

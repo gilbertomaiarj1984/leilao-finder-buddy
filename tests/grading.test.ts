@@ -22,9 +22,15 @@ describe("parseConditionFromText", () => {
 
   test("prosa em português", () => {
     expect(grades("Disco apresenta-se em estado excelente")).toEqual(["EX", "EX"]);
-    expect(grades("Disco em ótimo estado, capa boa")).toEqual(["EX", "VG"]);
-    expect(grades("Disco bom estado. Capa regular")).toEqual(["VG", "G"]);
+    expect(grades("Disco em ótimo estado, capa boa")).toEqual(["VG+", "VG"]);
+    expect(grades("Disco bom estado. Capa regular")).toEqual(["VG", "G+"]);
     expect(grades("Disco lacrado")).toEqual(["M", "M"]);
+  });
+
+  test("Near Mint solto é NM, não M", () => {
+    expect(grades("LP Fulano | Near Mint")).toEqual(["NM", "NM"]);
+    expect(grades("LP Fulano | Mint")).toEqual(["M", "M"]);
+    expect(grades("LP Fulano | Lacrado")).toEqual(["M", "M"]);
   });
 
   test("sigla embutida em outra palavra não vira nota", () => {

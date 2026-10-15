@@ -9,6 +9,7 @@ import {
   SYNC_CONCURRENCY,
   type SyncOutcome,
 } from "./ai-eval.server";
+import { extractJsonObject } from "./json-extract";
 
 const COLLECTION_IDENT_SYSTEM_PROMPT =
   "Você identifica e descreve discos de vinil de uma coleção, para um colecionador " +
@@ -103,16 +104,8 @@ function buildCollectionRequest(input: CollectionIdentInput): AiRequest {
 
 /** Extrai {album, year, confidence, description} do texto devolvido. Null se nada aproveitável. */
 function parseCollectionIdentObject(text: string): Omit<CollectionIdentResult, "id"> | null {
-  if (!text) return null;
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
-  let obj: Record<string, unknown>;
-  try {
-    obj = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+  const obj = extractJsonObject(text);
+  if (!obj) return null;
   const album =
     typeof obj["album"] === "string" && obj["album"].trim()
       ? obj["album"].trim().slice(0, 200)
@@ -165,6 +158,7 @@ export async function identCollectionSync(
   const tracker = new ProviderTracker();
   let failed = 0;
   let firstError: string | null = null;
+  // DUP(pool): mesmo laço de workers com `cursor` em 8 lugares — extrair `runPool` ao mexer aqui (AGENTS.md, "Código repetido").
   let cursor = 0;
 
   const worker = async () => {

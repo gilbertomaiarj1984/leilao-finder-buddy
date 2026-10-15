@@ -167,6 +167,7 @@ export async function fetchLotDetails(
   const list = [...byId].slice(0, 100).map(([id, v]) => ({ id, idPeca: v.idPeca, url: v.url }));
   const out: Record<string, LotDetails> = {};
   const CONCURRENCY = 8;
+  // DUP(pool): mesmo laço de workers com `cursor` em 8 lugares — extrair `runPool` ao mexer aqui (AGENTS.md, "Código repetido").
   let cursor = 0;
   const worker = async () => {
     while (cursor < list.length) {

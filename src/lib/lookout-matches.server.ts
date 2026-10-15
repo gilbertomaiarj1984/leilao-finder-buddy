@@ -1,8 +1,9 @@
-import { toLotMarket } from "@/components/vinyl/ai-score-utils";
-import { getAnalyticsAliases } from "@/lib/app-state.server";
+import { marketDeal, toLotMarket, withConditionAnchor } from "@/lib/lot-score";
+import { getAiPanelConfig, getAnalyticsAliases } from "@/lib/app-state.server";
 import type { AnalyticsAliases, SaleRow } from "@/lib/analytics";
 import { shiftDayKey } from "@/lib/day-bar";
-import { getAllLotAi } from "@/lib/lot-ai.server";
+import { getAllLotAiLean } from "@/lib/lot-ai.server";
+import { getAllLotCondition } from "@/lib/lot-condition.server";
 import { getAllLotIdent } from "@/lib/lot-ident.server";
 import { getAllLotMarket } from "@/lib/lot-market.server";
 import { getAllLotSales } from "@/lib/lot-sales.server";
@@ -68,6 +69,11 @@ export type LookoutUpcoming = {
   /** Faixa de mercado no Brasil (Discogs), quando casada. */
   marketLowBr: number | null;
   marketHighBr: number | null;
+  /**
+   * "Barato/justo/caro vs. mercado": valor do lote + frete da casa contra o preço sugerido do
+   * Discogs para a condição do disco (mesma conta do resto do app). "indefinido" sem mercado casado.
+   */
+  marketVerdict: "barato" | "justo" | "caro" | "indefinido";
   /** Disco de nome genérico cujo ano não deu para validar (usuário valida com ✓/✕). */
   yearPending?: boolean;
   /** É o lote que o usuário marcou (origem do disco): aparece em "por vir", sem aviso nem "novo". */
@@ -196,14 +202,18 @@ export async function computeLookout(withHistory = true, live = true): Promise<L
     return { items, upcoming: [], history: [], newCount: 0, artistGroups };
   }
 
-  const [fullAliases, links, seen, aiRows, identRows, marketRows] = await Promise.all([
-    getAnalyticsAliases().catch(() => ({}) as AnalyticsAliases),
-    getLookoutLinks(),
-    getLookoutSeen(),
-    getAllLotAi().catch(() => []),
-    getAllLotIdent().catch(() => []),
-    getAllLotMarket().catch(() => []),
-  ]);
+  const [fullAliases, links, seen, aiRows, identRows, marketRows, condRows, panel] =
+    await Promise.all([
+      getAnalyticsAliases().catch(() => ({}) as AnalyticsAliases),
+      getLookoutLinks(),
+      getLookoutSeen(),
+      getAllLotAiLean().catch(() => []),
+      getAllLotIdent().catch(() => []),
+      getAllLotMarket().catch(() => []),
+      getAllLotCondition().catch(() => []),
+      getAiPanelConfig(),
+    ]);
+  const condById = new Map(condRows.map((r) => [r.id, r]));
   const aliases: Record<string, string> = fullAliases.artists ?? {};
   // Os candidatos dependem dos apelidos de artista (grafias fundidas no Analytics).
   const aliased = lookoutCandidates(asItems(items), aliases);
@@ -244,6 +254,16 @@ export async function computeLookout(withHistory = true, live = true): Promise<L
     console.error("[lookout] não foi possível ler vigiados/lances da conta", error);
   }
 
+  // Veredicto "vs. mercado" com a condição do disco (de `lot_condition`) e o frete da casa.
+  const verdictFor = (
+    lot: { id: string; price: string; uf: string },
+    market: ReturnType<typeof toLotMarket> | undefined,
+  ): LookoutUpcoming["marketVerdict"] => {
+    const c = condById.get(lot.id);
+    const anchored = withConditionAnchor(market, c?.media || c?.sleeve || null, lot.uf, panel);
+    return anchored ? marketDeal(lot.price, anchored) : "indefinido";
+  };
+
   const upcoming: LookoutUpcoming[] = [];
   for (const lot of lots) {
     const market = marketById.get(lot.id);
@@ -283,6 +303,7 @@ export async function computeLookout(withHistory = true, live = true): Promise<L
       aiScore: scoreById.get(lot.id) ?? null,
       marketLowBr: market?.priceLowBr ?? null,
       marketHighBr: market?.priceHighBr ?? null,
+      marketVerdict: verdictFor(lot, market),
       yearPending: hit.yearPending || undefined,
       isOrigin: hit.isOrigin || undefined,
     });
@@ -545,7 +566,7 @@ export async function notifyLookoutMatches(): Promise<{
         score: m.score,
         aiScore: up.aiScore,
         rarity: null,
-        deal: null,
+        deal: up.marketVerdict === "indefinido" ? null : up.marketVerdict,
         marketLow: up.marketLowBr,
         marketHigh: up.marketHighBr,
       });

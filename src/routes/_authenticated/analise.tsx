@@ -1,8 +1,9 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
   ArrowLeft,
+  Binoculars,
   ChevronDown,
   ChevronRight,
   ExternalLink,
@@ -34,7 +35,6 @@ import {
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import {
-  buildInterestMatcher,
   dealLabel,
   dealTone,
   discogsUrl,
@@ -43,40 +43,42 @@ import {
   marketDeal,
   RARITY_LEGEND,
   rowStatusTone,
+  toLotAi,
   toLotMarket,
+  withConditionAnchor,
   type LotAi,
   type LotMarket,
 } from "@/components/vinyl/ai-score-utils";
 import { dayLabel } from "@/components/vinyl/grouping";
-import { setLotTags, setUserInterests } from "@/lib/ai.functions";
-import {
-  addWantlistItem,
-  deleteWantlistItem,
-  importWantlist,
-  updateWantlistItem,
-} from "@/lib/wantlist.functions";
+import { setLotTags } from "@/lib/ai.functions";
+import { effectiveTextRules } from "@/lib/condition-text";
+import { normalizeGrade, parseConditionFromText, scoreCondition } from "@/lib/grading";
+import { getLotCondition } from "@/lib/leiloesbr.functions";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
 import { bidIsWinning, formatDayLabel, normalizeForMatch, type VinylLot } from "@/lib/vinyl-parse";
 import { saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
 import {
-  bestWantForLot,
-  lotIdentity,
-  wantCandidate,
-  type WantCandidate,
-} from "@/lib/wantlist-match";
+  buildLotIdentity,
+  lookoutCandidates,
+  matchLookoutForLot,
+  LOOKOUT_CONFIDENT_MIN,
+  type LookoutHit,
+} from "@/lib/lookout-match";
 import {
-  useInterestsQuery,
+  useAnalyticsAliasesQuery,
+  useCollectorInterests,
   useLotAiQuery,
   useLotIdentQuery,
+  useAiPanelQuery,
   useLotMarketQuery,
   useLotsQuery,
-  useWantlistQuery,
+  useLookoutLinksQuery,
+  useLookoutQuery,
   useBidsQuery,
   useWatchedQuery,
   queryKeys,
 } from "@/lib/queries";
-import { InterestsDialog, SondagemDialog } from "@/components/vinyl/analise-dialogs";
 
 export const Route = createFileRoute("/_authenticated/analise")({
   head: () => ({ meta: [{ title: "Análise de Lotes — Garimpo de Vinil" }] }),
@@ -88,27 +90,28 @@ const TOP_N = 30;
 const selectClass =
   "h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
-type WantHit = { work: string; year: number | null; score: number };
+/** Casamento do lote com um disco do De olho (rótulo + confiança) para o 🎯 da linha. */
+type LookoutMark = Pick<LookoutHit, "label" | "score" | "confirmed" | "yearPending">;
 
 function LotTitle({
   lot,
-  want,
+  lookout,
   album,
   marketYear,
 }: {
   lot: VinylLot;
-  want?: WantHit | null;
+  lookout?: LookoutMark | null;
   album?: string | null;
   marketYear?: number | null;
 }) {
-  const wantTitle = want
-    ? `Sondagem: ${want.work}${want.year ? ` (${want.year})` : ""} · ${Math.round(want.score * 100)}%`
+  const wantTitle = lookout
+    ? `De olho: ${lookout.label} · ${lookout.confirmed ? "confirmado" : `${Math.round(lookout.score * 100)}%${lookout.yearPending ? " (a validar)" : ""}`}`
     : undefined;
   // Artista/álbum da IA (mais acertivo) em destaque; o título original vira linha secundária.
   const aiLabel = album ? formatAiAlbum(album, marketYear) : "";
   return (
     <span className="inline-flex items-start gap-1" title={wantTitle}>
-      {want ? (
+      {lookout ? (
         <Target className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-label={wantTitle} />
       ) : null}
       {aiLabel ? (
@@ -175,7 +178,7 @@ function LotSummary({
             <RarityLabel rarity={ai.rarity} />
           </span>
         ) : null}
-        {ai.deal && ai.deal !== "indefinido" ? (
+        {mDeal === "indefinido" && ai.deal && ai.deal !== "indefinido" ? (
           <span className={`font-medium ${dealTone(ai.deal)}`}>{dealLabel(ai.deal)}</span>
         ) : null}
         {mDeal !== "indefinido" ? (
@@ -292,11 +295,6 @@ function AnalisePage() {
   usePersistedScroll("analise", true);
 
   const queryClient = useQueryClient();
-  const saveInterests = useServerFn(setUserInterests);
-  const importWant = useServerFn(importWantlist);
-  const addWant = useServerFn(addWantlistItem);
-  const updateWant = useServerFn(updateWantlistItem);
-  const deleteWant = useServerFn(deleteWantlistItem);
   const runToggle = useServerFn(toggleWatch);
   const saveTags = useServerFn(setLotTags);
 
@@ -307,7 +305,7 @@ function AnalisePage() {
   const [scoreMin, setScoreMin] = usePersistedState("analise-score-min", "");
   const [scoreMax, setScoreMax] = usePersistedState("analise-score-max", "");
   const [rarityFilter, setRarityFilter] = usePersistedState("analise-rarity", "");
-  const [onlyWant, setOnlyWant] = usePersistedState("analise-only-want", false);
+  const [onlyLookout, setOnlyLookout] = usePersistedState("analise-only-lookout", false);
   const [onlyBid, setOnlyBid] = usePersistedState("analise-only-bid", false);
   const [watchedOpen, setWatchedOpen] = usePersistedState("analise-top-open", true);
   const [restOpen, setRestOpen] = usePersistedState("analise-rest-open", true);
@@ -316,9 +314,10 @@ function AnalisePage() {
   const lots = useLotsQuery();
   const lotAiQuery = useLotAiQuery();
   const lotIdentQuery = useLotIdentQuery();
-  const interestsQuery = useInterestsQuery();
   const lotMarketQuery = useLotMarketQuery();
-  const wantlistQuery = useWantlistQuery();
+  const lookoutQuery = useLookoutQuery();
+  const lookoutLinksQuery = useLookoutLinksQuery();
+  const analyticsAliasesQuery = useAnalyticsAliasesQuery();
   // Vigiados + meus lances: alimentam a divisão em dois Tops, o filtro "Com lance", a borda
   // colorida das linhas, o status do lance e o botão de vigiar (mesma mecânica da página
   // principal). MESMO acumulador local de `index.tsx` (`@/lib/watched-accum`, MESMA chave de
@@ -328,57 +327,6 @@ function AnalisePage() {
   // fazendo os vigiados "sumirem depois de um tempo" mesmo sem o usuário ter desvigiado nada.
   const { query: watchedQuery, accumRef: watchedAccumRef } = useWatchedQuery();
   const { query: bidsQuery } = useBidsQuery();
-
-  const saveInterestsMut = useMutation({
-    mutationFn: (items: string[]) => saveInterests({ data: { items } }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.interests });
-      toast.success("Interesses salvos");
-    },
-    onError: (e: Error) => toast.error(e.message || "Não foi possível salvar"),
-  });
-
-  const invalidateWant = () => queryClient.invalidateQueries({ queryKey: queryKeys.wantlist });
-  const importWantMut = useMutation({
-    mutationFn: (text: string) => importWant({ data: { text } }),
-    onSuccess: (r: { added: number }) => {
-      void invalidateWant();
-      toast.success(r.added ? `${r.added} obra(s) importada(s)` : "Nada novo para importar");
-    },
-    onError: (e: Error) => toast.error(e.message || "Falha ao importar"),
-  });
-  const addWantMut = useMutation({
-    mutationFn: (v: { work: string; year: number | null; note: string }) => addWant({ data: v }),
-    onSuccess: () => {
-      void invalidateWant();
-      toast.success("Obra adicionada");
-    },
-    onError: (e: Error) => toast.error(e.message || "Falha ao adicionar"),
-  });
-  const updateWantMut = useMutation({
-    mutationFn: (v: {
-      id: string;
-      work?: string;
-      year?: number | null;
-      note?: string;
-      acquired?: boolean;
-    }) => updateWant({ data: v }),
-    onSuccess: () => void invalidateWant(),
-    onError: (e: Error) => toast.error(e.message || "Falha ao atualizar"),
-  });
-  const deleteWantMut = useMutation({
-    mutationFn: (id: string) => deleteWant({ data: { id } }),
-    onSuccess: () => {
-      void invalidateWant();
-      toast.success("Obra removida");
-    },
-    onError: (e: Error) => toast.error(e.message || "Falha ao remover"),
-  });
-  const wantBusy =
-    importWantMut.isPending ||
-    addWantMut.isPending ||
-    updateWantMut.isPending ||
-    deleteWantMut.isPending;
 
   // Vigiar/desvigiar direto na tabela — sincroniza com o LeilõesBR (igual aos cards).
   const toggle = useMutation({
@@ -441,17 +389,7 @@ function AnalisePage() {
 
   const aiById = useMemo(() => {
     const map = new Map<string, LotAi>();
-    for (const r of lotAiQuery.data ?? [])
-      map.set(r.id, {
-        score: r.score,
-        rarity: r.rarity,
-        deal: r.deal,
-        album: r.album,
-        reason: r.reason,
-        tags: r.tags,
-        evalPrice: r.eval_price,
-        tracklist: r.tracklist,
-      });
+    for (const r of lotAiQuery.data ?? []) map.set(r.id, toLotAi(r));
     return map;
   }, [lotAiQuery.data]);
   // Mapa id→álbum com identidade ESTÁVEL enquanto os álbuns não mudam (assinatura id:album).
@@ -479,10 +417,8 @@ function AnalisePage() {
   // Aviso (toast) quando um lote com lance vira "Coberto" — só com o app aberto, ver
   // `@/lib/bid-alerts`.
   useBidCoveredAlerts(bidsQuery.data, (id) => albumById.get(id) ?? null);
-  const matchesInterest = useMemo(
-    () => buildInterestMatcher(interestsQuery.data ?? []),
-    [interestsQuery.data],
-  );
+  // Perfil do colecionador: interesses digitados + artistas do De olho.
+  const { matcher: matchesInterest } = useCollectorInterests();
   const marketById = useMemo(() => {
     const map = new Map<string, LotMarket>();
     for (const r of lotMarketQuery.data ?? []) map.set(r.id, toLotMarket(r));
@@ -493,7 +429,51 @@ function AnalisePage() {
     if (!base) return undefined;
     return { ...base, matchesInterests: matchesInterest(lot.title) };
   };
-  const marketFor = (lot: VinylLot): LotMarket | undefined => marketById.get(lot.id);
+  // Estado do disco por lote (mesma chave da home → compartilha o cache): a âncora de mercado
+  // usa o preço sugerido do Discogs para a condição dele.
+  const aiPanelQuery = useAiPanelQuery();
+  const fetchCondition = useServerFn(getLotCondition);
+  const lotConditionQuery = useQuery({
+    queryKey: ["lot-condition"] as const,
+    queryFn: () => fetchCondition(),
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const mediaById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of lotConditionQuery.data ?? []) {
+      // Mesma convenção da home: com só um lado conhecido, o outro repete.
+      const media = scoreCondition(
+        normalizeGrade(r.media || null),
+        normalizeGrade(r.sleeve || null),
+      ).media;
+      if (media) map.set(r.id, media);
+    }
+    return map;
+  }, [lotConditionQuery.data]);
+  const textRules = useMemo(
+    () => effectiveTextRules(aiPanelQuery.data?.rules, aiPanelQuery.data?.disabledRules),
+    [aiPanelQuery.data],
+  );
+  // Chamado por lote em todo render: cacheia o resultado (objeto estável por lote) para não
+  // refazer o parse do título nem anular o `React.memo` das linhas. O mapa recomeça vazio quando
+  // as entradas mudam.
+  const marketCache = useMemo(
+    () => new Map<string, LotMarket | undefined>(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [marketById, mediaById, textRules, aiPanelQuery.data],
+  );
+  const marketFor = (lot: VinylLot): LotMarket | undefined => {
+    if (marketCache.has(lot.id)) return marketCache.get(lot.id);
+    const m = withConditionAnchor(
+      marketById.get(lot.id),
+      mediaById.get(lot.id) ?? parseConditionFromText(lot.title, textRules).media,
+      lot.uf,
+      aiPanelQuery.data,
+    );
+    marketCache.set(lot.id, m);
+    return m;
+  };
 
   // Estado por lote (vigia/lance) e o valor "Atual" corrigido para quem está vencendo.
   const isWatched = (lot: VinylLot) => watchedIds.has(lot.idPeca);
@@ -524,33 +504,43 @@ function AnalisePage() {
     [allLots],
   );
 
-  // Casamento probabilístico com a sondagem: obras ainda NÃO adquiridas (as adquiridas saem
-  // do radar). Cada lote é confrontado com todas as obras usando artista + disco + ano; só
-  // conta como casamento quando a melhor obra passa de 80% (bestWantForLot).
-  const wantCands = useMemo<WantCandidate[]>(
-    () => (wantlistQuery.data ?? []).filter((w) => !w.acquired).map(wantCandidate),
-    [wantlistQuery.data],
+  // Casamento com o De olho (mesmo motor da home e da página /olho): artista + álbum + ano, com
+  // os vínculos que o usuário confirmou/descartou. Só discos ativos; o próprio lote marcado não
+  // conta (ele é a origem). Falha num lote nunca derruba a tela.
+  const artistAliases = analyticsAliasesQuery.data?.artists;
+  const lookoutCands = useMemo(
+    () => lookoutCandidates(lookoutQuery.data ?? [], artistAliases),
+    [lookoutQuery.data, artistAliases],
   );
-  const wantByLot = useMemo(() => {
-    const map = new Map<string, WantHit>();
-    if (!wantCands.length) return map;
+  const lookoutByLot = useMemo(() => {
+    const map = new Map<string, LookoutMark>();
+    if (!lookoutCands.length) return map;
     for (const lot of allLots) {
-      const market = marketById.get(lot.id);
-      const identity = lotIdentity({
-        title: lot.title,
-        artist: lot.artist,
-        album: albumById.get(lot.id) ?? null,
-        marketTitle: market?.releaseTitle ?? null,
-        marketYear: market?.year ?? null,
-      });
-      const best = bestWantForLot(wantCands, identity);
-      if (best) map.set(lot.id, { work: best.cand.work, year: best.cand.year, score: best.score });
+      try {
+        const market = marketById.get(lot.id);
+        const hit = matchLookoutForLot(
+          lookoutCands,
+          lot.id,
+          buildLotIdentity({
+            title: lot.title,
+            artist: lot.artist,
+            album: albumById.get(lot.id) ?? null,
+            marketTitle: market?.releaseTitle ?? null,
+            marketYear: market?.year ?? null,
+            aliases: artistAliases,
+          }),
+          lookoutLinksQuery.data,
+        );
+        if (hit && (hit.confirmed || hit.score >= LOOKOUT_CONFIDENT_MIN)) map.set(lot.id, hit);
+      } catch {
+        /* um lote problemático não derruba a Análise */
+      }
     }
     return map;
-  }, [wantCands, allLots, albumById, marketById]);
-  const wantedLot = (lot: VinylLot): WantHit | null => wantByLot.get(lot.id) ?? null;
+  }, [lookoutCands, allLots, albumById, marketById, artistAliases, lookoutLinksQuery.data]);
+  const lookoutOf = (lot: VinylLot): LookoutMark | null => lookoutByLot.get(lot.id) ?? null;
 
-  // Aplica os filtros (busca/casa/nota/sondagem) SEM o dia — a barra de dias mostra a
+  // Aplica os filtros (busca/casa/nota/De olho) SEM o dia — a barra de dias mostra a
   // contagem de cada dia sobre este conjunto.
   const filteredAnyDay = useMemo(() => {
     const q = normalizeForMatch(search);
@@ -561,7 +551,7 @@ function AnalisePage() {
       if (q && !normalizeForMatch(`${l.title} ${albumById.get(l.id) ?? ""}`).includes(q))
         return false;
       if (houseFilter && l.house !== houseFilter) return false;
-      if (onlyWant && !wantByLot.has(l.id)) return false;
+      if (onlyLookout && !lookoutByLot.has(l.id)) return false;
       if (onlyBid && !bidStatusById.has(l.idPeca)) return false;
       if (rarityFilter && (aiById.get(l.id)?.rarity ?? null) !== rarityFilter) return false;
       if (scoreActive) {
@@ -576,14 +566,14 @@ function AnalisePage() {
     allLots,
     search,
     houseFilter,
-    onlyWant,
+    onlyLookout,
     onlyBid,
     rarityFilter,
     scoreMin,
     scoreMax,
     aiById,
     albumById,
-    wantByLot,
+    lookoutByLot,
     bidStatusById,
   ]);
   const filtered = useMemo(
@@ -603,11 +593,8 @@ function AnalisePage() {
   }, [filtered, aiById, watchedIds]);
 
   const evaluated = aiById.size;
-  const wantCount = (wantlistQuery.data ?? []).filter((w) => !w.acquired).length;
-  const wantMatchCount = useMemo(
-    () => (wantCount ? filtered.filter((l) => wantByLot.has(l.id)).length : 0),
-    [filtered, wantByLot, wantCount],
-  );
+  const lookoutCount = lookoutCands.length ? lookoutByLot.size : 0;
+  const lookoutActiveItems = (lookoutQuery.data ?? []).filter((i) => i.status === "active").length;
   const filtersActive = Boolean(
     search ||
     houseFilter ||
@@ -615,7 +602,7 @@ function AnalisePage() {
     scoreMin ||
     scoreMax ||
     rarityFilter ||
-    onlyWant ||
+    onlyLookout ||
     onlyBid,
   );
   const resetFilters = () => {
@@ -625,7 +612,7 @@ function AnalisePage() {
     setScoreMin("");
     setScoreMax("");
     setRarityFilter("");
-    setOnlyWant(false);
+    setOnlyLookout(false);
     setOnlyBid(false);
   };
   const bidCount = bidStatusById.size;
@@ -689,7 +676,7 @@ function AnalisePage() {
                   <td className="px-3 py-2">
                     <LotTitle
                       lot={lot}
-                      want={wantedLot(lot)}
+                      lookout={lookoutOf(lot)}
                       album={albumFor(lot)}
                       marketYear={marketFor(lot)?.year ?? null}
                     />
@@ -768,26 +755,18 @@ function AnalisePage() {
               </div>
               <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
                 Top {TOP_N} dos vigiados e Top {TOP_N} do restante, ranqueados por nota da IA
-                (raridade + oportunidade). ⭐ = combina com seus interesses; 🎯 = casa com a
-                sondagem.{" "}
+                (raridade + oportunidade). ⭐ = combina com seus interesses; 🎯 = é um disco que
+                você está de olho.{" "}
                 {evaluated ? `${evaluated} lote(s) avaliado(s).` : "Ainda sem avaliações."}
               </p>
             </div>
             <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:overflow-visible sm:pb-0">
-              <SondagemDialog
-                items={wantlistQuery.data ?? []}
-                loading={wantlistQuery.isLoading}
-                onImport={(text) => importWantMut.mutate(text)}
-                onAdd={(v) => addWantMut.mutate(v)}
-                onUpdate={(v) => updateWantMut.mutate(v)}
-                onDelete={(id) => deleteWantMut.mutate(id)}
-                busy={wantBusy}
-              />
-              <InterestsDialog
-                interests={interestsQuery.data ?? []}
-                onSave={(items) => saveInterestsMut.mutate(items)}
-                saving={saveInterestsMut.isPending}
-              />
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/olho" title="De olho e meus interesses (perfil do colecionador)">
+                  <Binoculars className="mr-2 h-4 w-4" />
+                  De olho e interesses
+                </Link>
+              </Button>
             </div>
           </div>
         </header>
@@ -898,15 +877,15 @@ function AnalisePage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setOnlyWant((v) => !v)}
-                    disabled={wantCount === 0}
-                    aria-pressed={onlyWant}
-                    className={filterChipClass(onlyWant)}
+                    onClick={() => setOnlyLookout((v) => !v)}
+                    disabled={lookoutActiveItems === 0}
+                    aria-pressed={onlyLookout}
+                    className={filterChipClass(onlyLookout)}
                   >
                     <Target className="h-3.5 w-3.5" />
-                    Só sondagem
-                    {wantCount ? (
-                      <span className="ml-0.5 text-muted-foreground">{wantCount}</span>
+                    Só De olho
+                    {lookoutCount ? (
+                      <span className="ml-0.5 text-muted-foreground">{lookoutCount}</span>
                     ) : null}
                   </button>
                 </div>
@@ -920,8 +899,8 @@ function AnalisePage() {
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">
                   {filtered.length} lote(s) no filtro.
-                  {wantCount
-                    ? ` ${wantMatchCount} casam com a sondagem (${wantCount} obra(s) na lista).`
+                  {lookoutActiveItems
+                    ? ` ${lookoutCount} casam com o De olho (${lookoutActiveItems} disco(s) na lista).`
                     : ""}
                 </p>
                 <RarityLegend />

@@ -217,3 +217,13 @@ Curadoria de **exclusão** (ocultar, NÃO deletar do banco) — reversível, apl
   **"Ocultos do Analytics"** (`HiddenPanel`, colapsável no rodapé) que lista artistas/vendas
   ocultos com **"Reincluir"** (`RotateCcw`). Reincluir um artista remove todas as chaves gravadas
   com o mesmo rótulo (desfaz também as `sourceKeys`).
+
+- **Posicionador de vendas e link para o grupo (v0.148.0):** a decisão "em que artista/álbum cai esta
+  venda" (kits, não-vinil, exclusões, correção por venda, apelidos, singular/plural) saiu do laço de
+  `buildAnalytics` para `makeSalePlacer(aliases)` → `SalePlacement | null` (`analytics.ts`) — uma só
+  definição, usada também pela IA (`past-sales.ts`: vendas passadas do lote). A rota
+  `/vinil-analytics` aceita `?artist=<chave>&album=<chave>` (as chaves normalizadas do grupo,
+  `ArtistAgg.key`/`AlbumAgg.key`): `AnalyticsView` ignora a busca guardada, o artista abre expandido
+  (`ArtistRow.focusAlbumKey`), o álbum abre e ganha borda destacada e a página rola até ele
+  (`useScrollToFocus`). Usado pelo link «ver no Analytics» da nota da IA. `UNIDENTIFIED_ALBUM` é a
+  constante do placeholder "(álbum não identificado)".

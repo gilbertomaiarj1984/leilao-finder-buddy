@@ -3,20 +3,16 @@ import { expect, test } from "bun:test";
 import { deriveAlbum, foldPlural } from "@/lib/analytics";
 import { parseCollectionBulkText } from "@/lib/collection-bulk";
 import { extractKeywords } from "@/lib/lot-exclusion";
-import {
-  bestWantForLot,
-  lotIdentity,
-  ownedCandidate,
-  resolveOwned,
-  wantCandidate,
-} from "@/lib/wantlist-match";
-import { parseWantlistText } from "@/lib/wantlist-parse";
+import { parseLookoutBulk } from "@/lib/lookout-bulk";
+import { lotIdentity, ownedCandidate, resolveOwned } from "@/lib/wantlist-match";
 
-test("parseWantlistText", () => {
-  const items = parseWantlistText("Chico Buarque - Construção (1971)\nRaul Seixas - Gita\n\n");
-  expect(items).toHaveLength(2);
-  expect(items[0]).toMatchObject({ work: "Chico Buarque - Construção", year: 1971 });
-  expect(items[1]).toMatchObject({ work: "Raul Seixas - Gita", year: null });
+test("parseLookoutBulk (lista colada do De olho, que substituiu a Sondagem)", () => {
+  const items = parseLookoutBulk(
+    "01. Chico Buarque - Construção (1971)\nRaul Seixas - Gita\n\nraul seixas - gita\n",
+  );
+  expect(items).toHaveLength(2); // linha vazia e repetida somem
+  expect(items[0]).toMatchObject({ text: "Chico Buarque - Construção (1971)", year: 1971 });
+  expect(items[1]).toMatchObject({ text: "Raul Seixas - Gita", year: null });
 });
 
 test("parseCollectionBulkText", () => {
@@ -53,16 +49,6 @@ test("extractKeywords", () => {
     "philips",
     "funcionando",
   ]);
-});
-
-test("sondagem casa o lote certo", () => {
-  const cands = [
-    wantCandidate({ id: "1", work: "Chico Buarque - Construção", year: 1971 }),
-    wantCandidate({ id: "2", work: "Raul Seixas - Gita", year: null }),
-  ];
-  const hit = bestWantForLot(cands, lotIdentity({ title: "LP Chico Buarque - Construção 1971" }));
-  expect(hit?.cand.id).toBe("1");
-  expect(bestWantForLot(cands, lotIdentity({ title: "LP Roberto Carlos - Detalhes" }))).toBeNull();
 });
 
 test("foldPlural", () => {

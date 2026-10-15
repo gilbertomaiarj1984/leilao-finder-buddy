@@ -144,6 +144,16 @@ async function upsertWonLots(won: WonLot[]): Promise<{ added: number; scanned: n
       throw new Error(`Não foi possível gravar as compras: ${error.message}`);
     }
   }
+  // Retrato do lote (nota da IA, estado lido, mercado) NO MOMENTO da compra, para a calibração do
+  // painel de IA: depois de ~10 dias o lote sai de `lots` e levaria a avaliação junto.
+  if (payload.length) {
+    try {
+      const { snapshotPurchases } = await import("./calibration.server");
+      await snapshotPurchases(payload.map((r) => r.lot_id));
+    } catch (error) {
+      console.error("[purchases] não foi possível guardar o retrato para a calibração", error);
+    }
+  }
   return { added: payload.length, scanned: won.length };
 }
 

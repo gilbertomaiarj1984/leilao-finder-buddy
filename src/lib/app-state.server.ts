@@ -542,7 +542,14 @@ export async function setAnalyticsSaleOverrides(
     console.error("[app-state] não foi possível gravar a correção da venda", error);
     throw new Error(`Não foi possível gravar a correção da venda: ${error.message}`);
   }
+  await dropPastSalesIndex();
   return { savedAt };
+}
+
+/** O Analytics mudou (apelido, correção, exclusão): a comparação de vendas da IA precisa reler. */
+async function dropPastSalesIndex(): Promise<void> {
+  const { invalidatePastSalesIndex } = await import("./past-sales.server");
+  invalidatePastSalesIndex();
 }
 
 async function saveStringMap(
@@ -557,6 +564,7 @@ async function saveStringMap(
     console.error(`[app-state] não foi possível gravar ${key}`, error);
     throw new Error(`Não foi possível gravar os apelidos: ${error.message}`);
   }
+  await dropPastSalesIndex();
   return { savedAt };
 }
 
@@ -720,6 +728,7 @@ export async function setAiProvider(provider: AiProvider): Promise<{ savedAt: st
  * v0.69.0, mais barato ainda, mas desliga em 16/out/2026) e `gemini-flash-latest` (padrão
  * histórico desde o v0.27.0). Precedência: `app_state` → env `GEMINI_MODEL` → padrão de fábrica.
  */
+// DUP(modelos): lista/padrão dos modelos Gemini repetidos em 4 arquivos — centralizar em `ai-models.ts`.
 const GEMINI_MODELS = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"] as const;
 const ANTHROPIC_MODELS = ["claude-haiku-5-5"] as const;
 type AnthropicModel = (typeof ANTHROPIC_MODELS)[number];
@@ -940,4 +949,43 @@ export async function setPendingAiIdentBatch(batch: PendingAiIdentBatch | null):
     console.error("[app-state] não foi possível gravar o batch de identificação", error);
     throw new Error(`Não foi possível gravar o batch de identificação: ${error.message}`);
   }
+}
+
+// --- Painel de IA (v0.143.0) ---------------------------------------------------------------
+const AI_PANEL_KEY = "ai_panel";
+let aiPanelCache: { at: number; cfg: import("./ai-panel-config").PanelConfig } | null = null;
+const AI_PANEL_TTL_MS = 30_000;
+
+/** Configuração do painel de IA (blocos do prompt, correlação de condições, frete). Cache de 30s. */
+export async function getAiPanelConfig(): Promise<import("./ai-panel-config").PanelConfig> {
+  const { normalizePanelConfig } = await import("./ai-panel-config");
+  if (aiPanelCache && Date.now() - aiPanelCache.at < AI_PANEL_TTL_MS) return aiPanelCache.cfg;
+  try {
+    const { data, error } = await db
+      .from("app_state")
+      .select("value")
+      .eq("key", AI_PANEL_KEY)
+      .maybeSingle();
+    if (error) throw error;
+    const cfg = normalizePanelConfig(data?.value);
+    aiPanelCache = { at: Date.now(), cfg };
+    return cfg;
+  } catch (error) {
+    console.error("[app-state] não foi possível ler o painel de IA (usando padrão)", error);
+    return normalizePanelConfig(null);
+  }
+}
+
+export async function setAiPanelConfig(
+  raw: unknown,
+): Promise<{ config: import("./ai-panel-config").PanelConfig; savedAt: string }> {
+  const { normalizePanelConfig } = await import("./ai-panel-config");
+  const config = normalizePanelConfig(raw);
+  const savedAt = new Date().toISOString();
+  const { error } = await db
+    .from("app_state")
+    .upsert({ key: AI_PANEL_KEY, value: config, updated_at: savedAt }, { onConflict: "key" });
+  if (error) throw new Error(`Não foi possível salvar o painel de IA: ${error.message}`);
+  aiPanelCache = { at: Date.now(), cfg: config };
+  return { config, savedAt };
 }

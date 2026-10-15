@@ -1,6 +1,9 @@
 import { db } from "@/lib/db-client.server";
 
 import type { CatalogLot } from "./leiloesbr-catalog.server";
+import { titleHash } from "./ai-eval.server";
+import { cleanLotDescription } from "./ai-context";
+import { effectiveTextRules, type TextRule } from "./condition-text";
 import { parseConditionFromText, scoreCondition } from "./grading";
 import type { VinylLot } from "./vinyl-parse";
 
@@ -22,17 +25,30 @@ type LotConditionRow = {
   source: string; // 'catalog' | 'title' | 'ia' | 'indefinido'
   views: number | null; // VISITAS — demanda (visualizações) do lote pré-leilão
   bids: number | null; // QTDLANCE — demanda (lances) do lote pré-leilão
+  /** Descrição completa (catálogo), limpa/truncada — vai no prompt da IA. Fora de `COND_COLUMNS`. */
+  description?: string;
 };
 
 const COND_COLUMNS =
   "id, title_hash, media, sleeve, insert_state, score, faixa, source, views, bids";
 
-/** Hash estável e curto do título (djb2 → base36), igual ao de `ai-eval.server` (título muda ⇒ re-avalia). */
-function titleHash(title: string): string {
-  let h = 5381;
-  const s = title ?? "";
-  for (let i = 0; i < s.length; i += 1) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  return (h >>> 0).toString(36);
+/**
+ * Versão do leitor de estado. Suba ao mudar `grading.ts`/`condition-text.ts` de forma que o
+ * resultado de um mesmo texto mude: todas as linhas de `lot_condition` são relidas na rodada seguinte.
+ */
+const CONDITION_PARSER_VERSION = 3; // 3: passa a guardar a descrição (relê tudo uma vez)
+
+/**
+ * Hash de `lot_condition.title_hash`: título + versão do leitor + regras do painel de IA em vigor.
+ * Editar uma expressão no painel muda `rulesKey` e relê os lotes com as regras novas.
+ */
+function conditionHash(title: string, rulesKey: string): string {
+  return `${titleHash(title)}.c${CONDITION_PARSER_VERSION}.${rulesKey}`;
+}
+
+/** Impressão curta das regras do painel (usuário + desligadas) para o hash. */
+function rulesFingerprint(rules: readonly unknown[], disabled: readonly string[]): string {
+  return titleHash(JSON.stringify([rules, [...disabled].sort()]));
 }
 
 // Cache curto em memória: `getAllLotCondition` é chamada a cada iteração do laço `condition`
@@ -91,10 +107,15 @@ async function upsertLotCondition(rows: LotConditionRow[]): Promise<number> {
 }
 
 /** Monta a linha de estado de um lote a partir do lote do catálogo (com fallback ao título). */
-function conditionRow(lot: VinylLot, catalog?: CatalogLot): LotConditionRow {
-  const fromCatalog = parseConditionFromText(catalog?.text ?? "");
+function conditionRow(
+  lot: VinylLot,
+  catalog: CatalogLot | undefined,
+  textRules: readonly TextRule[] | undefined,
+  rulesKey: string,
+): LotConditionRow {
+  const fromCatalog = parseConditionFromText(catalog?.text ?? "", textRules);
   const hasCatalog = Boolean(fromCatalog.media || fromCatalog.sleeve || fromCatalog.insert);
-  const cond = hasCatalog ? fromCatalog : parseConditionFromText(lot.title);
+  const cond = hasCatalog ? fromCatalog : parseConditionFromText(lot.title, textRules);
   const source = hasCatalog
     ? "catalog"
     : cond.media || cond.sleeve || cond.insert
@@ -102,21 +123,25 @@ function conditionRow(lot: VinylLot, catalog?: CatalogLot): LotConditionRow {
       : "indefinido";
   return {
     id: lot.id,
-    title_hash: titleHash(lot.title),
+    title_hash: conditionHash(lot.title, rulesKey),
     media: cond.media ?? "",
     sleeve: cond.sleeve ?? "",
     insert_state: cond.insert ?? "",
     score: cond.score,
     faixa: cond.faixa?.label ?? "",
     source,
+    description: cleanLotDescription(catalog?.text, lot.title),
     views: catalog?.views ?? null,
     bids: catalog?.bids ?? null,
   };
 }
 
-// Teto de lotes por rodada que passam pelo fallback de IA (quando o regex fica indefinido
-// mas há texto) — mantém a rodada rápida/barata mesmo com muitos lotes sem sigla no catálogo.
-const AI_CONDITION_CAP = 25;
+// Teto de lotes por rodada que passam pelo fallback de IA (quando o regex fica indefinido mas há
+// texto). O teto existe pelo TEMPO da rodada (chamadas síncronas, 4 em paralelo: 40 lotes levam
+// cerca de 30s), não pelo custo (centavos). Quem passa do teto NÃO é gravado: volta na chamada
+// seguinte, e a ordem é a do leilão mais próximo (ver `urgency` abaixo), então o que fecha primeiro
+// é lido primeiro.
+const AI_CONDITION_CAP = 40;
 
 /**
  * Enriquece o estado (Disco/Capa) dos lotes da janela buscando o **catálogo** de cada leilão
@@ -141,12 +166,17 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
 
   const [snapshot, existing] = await Promise.all([scrapeVinylLots(false), getAllLotCondition()]);
   const known = new Map(existing.map((r) => [r.id, r.title_hash]));
+  // Regras de texto do painel de IA (expressões do usuário + regras do app não desligadas).
+  const { getAiPanelConfig } = await import("./app-state.server");
+  const panel = await getAiPanelConfig();
+  const textRules = effectiveTextRules(panel.rules, panel.disabledRules);
+  const rulesKey = rulesFingerprint(panel.rules, panel.disabledRules);
 
   // Lotes que ainda precisam de estado, agrupados por leilão (domínio + idLeilao).
   const byAuction = new Map<string, { domain: string; idLeilao: string; lots: VinylLot[] }>();
   for (const lot of snapshot.lots) {
     if (!lot.id || !lot.title) continue;
-    if (known.get(lot.id) === titleHash(lot.title)) continue;
+    if (known.get(lot.id) === conditionHash(lot.title, rulesKey)) continue;
     const ref = parseAuctionRef(lot.url);
     if (!ref) continue;
     const key = `${ref.domain}|${ref.idLeilao}`;
@@ -155,7 +185,18 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
     byAuction.set(key, entry);
   }
 
-  const all = [...byAuction.values()].sort((a, b) => a.idLeilao.localeCompare(b.idLeilao));
+  // Urgência: dia + hora do lote. Leilões que fecham antes são lidos primeiro (e, no teto da IA, os
+  // lotes mais próximos primeiro).
+  const urgency = new Map(snapshot.lots.map((l) => [l.id, `${l.dayKey} ${l.time ?? ""}`]));
+  const soonest = (lots: { id: string }[]): string =>
+    lots.reduce(
+      (min, l) => ((urgency.get(l.id) ?? "9") < min ? (urgency.get(l.id) ?? "9") : min),
+      "9",
+    );
+  const all = [...byAuction.values()].sort(
+    (a, b) =>
+      soonest(a.lots).localeCompare(soonest(b.lots)) || a.idLeilao.localeCompare(b.idLeilao),
+  );
   const total = all.length;
   const batch = all.slice(0, maxAuctions);
 
@@ -173,19 +214,26 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
     }
     for (const lot of auction.lots) {
       const catalogLot = catalog.get(lot.idPeca);
-      rows.push(conditionRow(lot, catalogLot));
+      rows.push(conditionRow(lot, catalogLot, textRules, rulesKey));
       textByLotId.set(lot.id, catalogLot?.text || lot.title || "");
     }
   }
 
   // Fallback de IA: só os que ficaram INDEFINIDOS pelo regex mas têm texto pra IA ler.
   let aiUsed = 0;
+  const deferred = new Set<string>();
   const { aiConfigured } = await import("./ai-eval.server");
   if (aiConfigured()) {
-    const candidates = rows
-      .filter((r) => r.source === "indefinido" && (textByLotId.get(r.id) ?? "").trim())
+    const withText = rows.filter(
+      (r) => r.source === "indefinido" && (textByLotId.get(r.id) ?? "").trim(),
+    );
+    withText.sort((a, b) => (urgency.get(a.id) ?? "9").localeCompare(urgency.get(b.id) ?? "9"));
+    const candidates = withText
       .slice(0, AI_CONDITION_CAP)
       .map((r) => ({ id: r.id, text: textByLotId.get(r.id)! }));
+    // Os que passaram do teto NÃO são gravados como "indefinido": voltam na rodada seguinte e
+    // ainda passam pela IA (gravados, nunca mais seriam relidos).
+    for (const cut of withText.slice(AI_CONDITION_CAP)) deferred.add(cut.id);
     if (candidates.length) {
       const { resolveAiProvider } = await import("./ai-eval.server");
       const { conditionAiSync } = await import("./ai-condition.server");
@@ -209,7 +257,14 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
     }
   }
 
-  const updated = await upsertLotCondition(rows);
+  const updated = await upsertLotCondition(rows.filter((r) => !deferred.has(r.id)));
   const remaining = Math.max(0, total - batch.length);
-  return { updated, auctions: batch.length, remaining, done: remaining === 0, aiUsed };
+  // Com lotes adiados (teto da IA) ainda há trabalho: o laço do cron chama de novo.
+  return {
+    updated,
+    auctions: batch.length,
+    remaining,
+    done: remaining === 0 && !deferred.size,
+    aiUsed,
+  };
 }

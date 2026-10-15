@@ -16,7 +16,7 @@ export function Footer() {
       <div className="mx-auto flex max-w-6xl items-center gap-x-2 gap-y-1 px-4 py-2 text-xs text-muted-foreground">
         <span className="hidden shrink-0 xl:inline">Garimpo de Vinil</span>
         {/* Alvo (via portal) para controles específicos da tela atual — ex.: o modo da
-        IA/provedor/"Atualizar tudo" na tela inicial (ver `footerExtraHost` em index.tsx). */}
+        "Atualizar tudo" e o atalho do Painel de IA na tela inicial (ver `footerExtraHost` em index.tsx). */}
         <div
           id="footer-extra"
           className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1"

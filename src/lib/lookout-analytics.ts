@@ -1,4 +1,9 @@
-import { buildAnalytics, type AnalyticsAliases, type SaleRow } from "@/lib/analytics";
+import {
+  buildAnalytics,
+  UNIDENTIFIED_ALBUM,
+  type AnalyticsAliases,
+  type SaleRow,
+} from "@/lib/analytics";
 import {
   buildLotIdentity,
   LOOKOUT_CONFIDENT_MIN,
@@ -31,9 +36,6 @@ type AnalyticsHistoryHit = {
   /** Disco de nome genérico sem ano validável nesta venda: fica "a validar" pelo usuário. */
   pending: boolean;
 };
-
-/** Álbum agregado sem nome definido — nunca casa com um disco específico. */
-const UNIDENTIFIED_ALBUM = "(álbum não identificado)";
 
 export function analyticsHistoryForItems(input: {
   sales: SaleRow[];

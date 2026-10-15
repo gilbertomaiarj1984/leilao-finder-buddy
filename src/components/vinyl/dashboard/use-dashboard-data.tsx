@@ -11,11 +11,13 @@ import {
 import { toast } from "sonner";
 
 import { watchedDateToKey, type HouseStats } from "@/components/vinyl/grouping";
+import { effectiveTextRules } from "@/lib/condition-text";
 import { type Condition, type Grade, parseConditionFromText, scoreCondition } from "@/lib/grading";
 import {
-  buildInterestMatcher,
   parseAiAlbum,
+  toLotAi,
   toLotMarket,
+  withConditionAnchor,
   type LotAi,
   type LotMarket,
 } from "@/components/vinyl/ai-score-utils";
@@ -24,7 +26,6 @@ import {
   getAiMode,
   repriceLotAi,
   runAiident,
-  setAiMode,
   setLotTags,
 } from "@/lib/ai.functions";
 import {
@@ -48,6 +49,7 @@ import { AI_PROVIDER_SHORT, formatFailoverTrail, type AiProvider } from "@/lib/a
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { attachLookout, setLookoutLink, toggleLookout } from "@/lib/lookout.functions";
 import {
+  buildLotIdentity,
   lookoutCandidates,
   LOOKOUT_CONFIDENT_MIN,
   matchLookoutForLot,
@@ -69,7 +71,6 @@ import { BIDS_ACCUM_STORAGE_KEY, saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/
 import {
   bidIsCovered,
   bidIsWinning,
-  COMPILATION_LABEL,
   extractArtist,
   isDiscBundle,
   LOTE_LABEL,
@@ -77,16 +78,13 @@ import {
   parsePrice,
   searchRelevance,
   titleCase,
-  UNCLASSIFIED_LABEL,
   type VinylLot,
 } from "@/lib/vinyl-parse";
 import { priceRoseSinceEval } from "@/lib/ai-reprice";
+import { buildOwnedCandidates } from "@/lib/collector-profile";
 import {
-  lotIdentity,
-  ownedCandidate,
   ownedMatchForLot,
   ownedSignatureFromLot,
-  resolveArtistAlias,
   resolveOwned,
   type CollectionLinks,
   type LotIdentity,
@@ -100,9 +98,10 @@ import {
   useCollectionFeedbackQuery,
   useCollectionLinksQuery,
   useCollectionQuery,
-  useInterestsQuery,
+  useCollectorInterests,
   useLotAiQuery,
   useLotIdentQuery,
+  useAiPanelQuery,
   useLotMarketQuery,
   useLotsQuery,
   useLotsRangeQueries,
@@ -367,7 +366,6 @@ export function useDashboardData() {
   const runSaveTags = useServerFn(setLotTags);
   const fetchLotCondition = useServerFn(getLotCondition);
   const fetchAiMode = useServerFn(getAiMode);
-  const runSetAiMode = useServerFn(setAiMode);
   const runAnalyze = useServerFn(analyzeOnDemand);
   const runApplyDecision = useServerFn(applyCollectionDecision);
   const runToggleLookout = useServerFn(toggleLookout);
@@ -428,33 +426,14 @@ export function useDashboardData() {
   // Identificação simplificada (artista/álbum/ano) — roda para TODOS os lotes, barata.
   // Alimenta a exibição, a busca e o filtro por artista, priorizada sobre o título.
   const lotIdentQuery = useLotIdentQuery();
-  const interestsQuery = useInterestsQuery();
   // Modo da IA automática (controla o gasto de créditos). Fonte da verdade é o servidor.
   const aiModeQuery = useQuery({
-    queryKey: ["ai-mode"] as const,
+    queryKey: queryKeys.aiMode,
     queryFn: () => fetchAiMode(),
     staleTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
   const aiMode: "off" | "all" | "watched" = aiModeQuery.data ?? "watched";
-  const changeAiMode = (mode: "off" | "all" | "watched") => {
-    const prev = aiModeQuery.data;
-    queryClient.setQueryData(["ai-mode"], mode); // otimista: pinta a seleção na hora
-    void runSetAiMode({ data: { mode } })
-      .then(() =>
-        toast.success(
-          mode === "off"
-            ? "IA desligada — não gasta créditos automaticamente"
-            : mode === "all"
-              ? "IA avaliando todos os lotes novos"
-              : "IA avaliando só vigiados e com lance",
-        ),
-      )
-      .catch((error: unknown) => {
-        queryClient.setQueryData(["ai-mode"], prev);
-        toast.error((error as Error)?.message || "Não foi possível salvar o modo da IA");
-      });
-  };
 
   // Provedor de IA PADRÃO (Claude/Gemini). Fonte da verdade é o servidor (`app_state`).
   const aiProviderQuery = useAiProviderQuery();
@@ -530,17 +509,7 @@ export function useDashboardData() {
   };
   const aiById = useMemo(() => {
     const map = new Map<string, LotAi>();
-    for (const r of lotAiQuery.data ?? [])
-      map.set(r.id, {
-        score: r.score,
-        rarity: r.rarity,
-        deal: r.deal,
-        album: r.album,
-        reason: r.reason,
-        tags: r.tags,
-        evalPrice: r.eval_price,
-        tracklist: r.tracklist,
-      });
+    for (const r of lotAiQuery.data ?? []) map.set(r.id, toLotAi(r));
     return map;
   }, [lotAiQuery.data]);
   // Álbum RESOLVIDO por lote: prefere a avaliação completa (`lot_ai`); senão a
@@ -564,23 +533,30 @@ export function useDashboardData() {
     const parsed = parseAiAlbum(albumById.get(lot.id) ?? null).artist;
     return parsed ? titleCase(parsed) : lot.artist;
   };
-  const matchesInterest = useMemo(
-    () => buildInterestMatcher(interestsQuery.data ?? []),
-    [interestsQuery.data],
-  );
+  // Perfil do colecionador: interesses digitados + artistas do De olho.
+  const { matcher: matchesInterest } = useCollectorInterests();
   const lotMarketQuery = useLotMarketQuery();
+  const aiPanelQuery = useAiPanelQuery();
   const marketById = useMemo(() => {
     const map = new Map<string, LotMarket>();
     for (const r of lotMarketQuery.data ?? []) map.set(r.id, toLotMarket(r));
     return map;
   }, [lotMarketQuery.data]);
   // Junta a avaliação (por id) com o "casa com meus interesses" (calculado do título).
+  // Chamado por lote em todo render: cacheia o objeto (estável por lote) para o `React.memo` do
+  // `LotCard` funcionar. O mapa recomeça vazio quando as avaliações ou os interesses mudam.
+  const aiCache = useMemo(
+    () => new Map<string, LotAi | undefined>(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [aiById, matchesInterest],
+  );
   const aiFor = (lot: { id: string; title?: string }): LotAi | undefined => {
+    if (aiCache.has(lot.id)) return aiCache.get(lot.id);
     const base = aiById.get(lot.id);
-    if (!base) return undefined;
-    return { ...base, matchesInterests: matchesInterest(lot.title ?? "") };
+    const ai = base ? { ...base, matchesInterests: matchesInterest(lot.title ?? "") } : undefined;
+    aiCache.set(lot.id, ai);
+    return ai;
   };
-  const marketFor = (lot: { id: string }): LotMarket | undefined => marketById.get(lot.id);
   // Estado de conservação (Disco/Capa). Prioriza o CACHE do servidor (`lot_condition`,
   // alimentado pelo descritivo do catálogo — mais rico); cai no parse do TÍTULO quando não
   // há linha no cache ainda (ou ela ficou indefinida).
@@ -604,9 +580,47 @@ export function useDashboardData() {
     }
     return map;
   }, [lotConditionQuery.data]);
+  // Regras de texto do painel de IA (expressões do usuário + as do app não desligadas).
+  const textRules = useMemo(
+    () => effectiveTextRules(aiPanelQuery.data?.rules, aiPanelQuery.data?.disabledRules),
+    [aiPanelQuery.data],
+  );
+  // Os dois helpers abaixo são chamados por lote em todo render. Sem cache, cada chamada refaz o
+  // parse do título e devolve um objeto NOVO, o que anula o `React.memo` do `LotCard`. Os mapas são
+  // recriados (vazios) só quando as entradas mudam; dentro de uma geração o resultado é estável.
+  const conditionFallbackCache = useMemo(
+    () => new Map<string, Condition>(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [textRules],
+  );
   const conditionFor = (lot: { id?: string; title?: string }): Condition => {
     const cached = lot.id ? conditionById.get(lot.id) : undefined;
-    return cached ?? parseConditionFromText(lot.title ?? "");
+    if (cached) return cached;
+    const key = `${lot.id ?? ""}|${lot.title ?? ""}`;
+    let c = conditionFallbackCache.get(key);
+    if (!c) {
+      c = parseConditionFromText(lot.title ?? "", textRules);
+      conditionFallbackCache.set(key, c);
+    }
+    return c;
+  };
+  // Mercado com a âncora de preço da CONDIÇÃO do lote (sugerido do Discogs para o estado dele).
+  const marketCache = useMemo(
+    () => new Map<string, LotMarket | undefined>(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [marketById, conditionById, textRules, aiPanelQuery.data],
+  );
+  const marketFor = (lot: { id: string; uf?: string; title?: string }): LotMarket | undefined => {
+    const key = `${lot.id}|${lot.uf ?? ""}`;
+    if (marketCache.has(key)) return marketCache.get(key);
+    const m = withConditionAnchor(
+      marketById.get(lot.id),
+      conditionFor(lot).media,
+      lot.uf,
+      aiPanelQuery.data,
+    );
+    marketCache.set(key, m);
+    return m;
   };
   // Lotes já excluídos (ver src/lib/lot-exclusion.server.ts) — alimenta o badge "possível
   // lixo" na listagem. Calculado no CLIENTE (não persistido): volume baixo, sem gasto de IA.
@@ -727,23 +741,7 @@ export function useDashboardData() {
   // álbum para dosar a confiança). Ignora buckets ruidosos (Lote/Coletâneas/Não classificados)
   // e artista vazio, que gerariam tokens fracos e falsos positivos.
   const ownedCands = useMemo(
-    () =>
-      (collectionQuery.data ?? [])
-        .filter(
-          (it) =>
-            it.artist &&
-            it.artist !== LOTE_LABEL &&
-            it.artist !== COMPILATION_LABEL &&
-            it.artist !== UNCLASSIFIED_LABEL,
-        )
-        .map((it) =>
-          ownedCandidate({
-            id: it.id,
-            artist: resolveArtistAlias(it.artist, artistAliases),
-            album: it.album,
-            year: it.year,
-          }),
-        ),
+    () => buildOwnedCandidates(collectionQuery.data ?? [], artistAliases),
     [collectionQuery.data, artistAliases],
   );
   // `lot_id` das peças EXATAS já arrematadas → id do item da coleção (casamento 100% preciso).
@@ -758,22 +756,16 @@ export function useDashboardData() {
     const map = new Map<string, LotIdentity>();
     for (const lot of lots.data?.lots ?? []) {
       try {
-        const parsedArtist = parseAiAlbum(albumById.get(lot.id) ?? null).artist;
-        const artist =
-          isDiscBundle(lot.title ?? "") || lot.artist === LOTE_LABEL
-            ? LOTE_LABEL
-            : parsedArtist
-              ? titleCase(parsedArtist)
-              : lot.artist;
         const market = marketById.get(lot.id);
         map.set(
           lot.id,
-          lotIdentity({
+          buildLotIdentity({
             title: lot.title,
-            artist: resolveArtistAlias(artist, artistAliases),
+            artist: lot.artist,
             album: albumById.get(lot.id) ?? null,
             marketTitle: market?.releaseTitle ?? null,
             marketYear: market?.year ?? null,
+            aliases: artistAliases,
           }),
         );
       } catch {
@@ -1948,7 +1940,6 @@ export function useDashboardData() {
     excludeMutation,
     footerExtraHost,
     aiMode,
-    changeAiMode,
     aiProvider,
     refreshAll,
     refreshingAll,

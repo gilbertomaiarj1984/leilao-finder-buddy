@@ -25,6 +25,14 @@ com **Postgres** próprio como backend e deploy em **VPS** (Docker Compose + Cad
   componentes, fluxos como o de capas da Coleção) e, ao terminar, **avaliar se algo descoberto
   melhora outros pontos do app** — aplicar se for pequeno e seguro, senão registrar em
   `docs/pendencias.md`.
+- **Código repetido (regra permanente):** ao tocar numa área, procure duplicação e **ajuste na mesma
+  entrega** (extraia para um ponto único, com teste) quando for pequeno e seguro. Quando não der
+  (grande demais, sem teste, risco para código que funciona), **deixe a marca `// DUP(<tema>): …`**
+  no código repetido e registre em `docs/pendencias.md` ("Código repetido"). Para achar as marcas:
+  `grep -rn "DUP(" src`. Quem mexer numa cópia marcada deve consolidar todas as cópias do tema.
+  Já consolidado: `titleHash` (`ai-eval.server.ts`), leitura de JSON de resposta de IA
+  (`json-extract.ts`), faixas do veredicto (`lot-score.ts`), e `lot-score.ts` como casa das funções
+  puras de nota/mercado (antes em `components/`, importadas pelo servidor).
 - **Responder em português** ao interagir com o usuário.
 - **Recriar a branch de trabalho a partir de `origin/main` antes de cada tarefa**
   (pós-cutover da Fase 6 — ver aviso acima; `main` é a branch de produção/base agora).

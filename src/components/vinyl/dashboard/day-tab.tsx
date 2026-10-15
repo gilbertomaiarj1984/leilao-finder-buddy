@@ -457,6 +457,9 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
             nextBidById={nextBidById}
             albumById={albumById}
             soldById={soldById}
+            aiFor={aiFor}
+            marketFor={marketFor}
+            conditionFor={conditionFor}
             ownedFor={ownedFor}
             onOpenOwned={(bid) => setOwnedPanelLot(bid)}
             isHouseOpen={(house) => !closedHouseSections.has(`bids-day|${day}|${house}`)}

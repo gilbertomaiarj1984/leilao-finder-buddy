@@ -4,8 +4,11 @@
 // valendo a de quem montasse primeiro. Use `queryKeys` para invalidar/`setQueryData`.
 import { useQueries, useQuery, type QueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 
+import { getAiPanel, getCalibration } from "@/lib/ai-panel.functions";
+import { collectorInterests } from "@/lib/collector-profile";
+import { buildInterestMatcher } from "@/lib/lot-score";
 import { getHouseRatings } from "@/lib/house-rating.functions";
 import { EMPTY_RATINGS, type RatingsPayload } from "@/lib/house-rating";
 
@@ -23,10 +26,11 @@ import {
   getAnthropicModel,
   getGeminiModel,
   getLotAi,
+  getLotTracklist,
   getLotIdent,
   getUserInterests,
 } from "@/lib/ai.functions";
-import { getAnalyticsAliases } from "@/lib/analytics.functions";
+import { getAnalyticsAliases, getLotPastSales } from "@/lib/analytics.functions";
 import {
   getLotMarket,
   getVinylLots,
@@ -36,7 +40,6 @@ import {
 import { getLookout, getLookoutLinks, getLookoutOverview } from "@/lib/lookout.functions";
 import type { LookoutItem, LookoutLinks } from "@/lib/lookout-match";
 import type { LookoutOverview } from "@/lib/lookout-matches.server";
-import { getWantlist } from "@/lib/wantlist.functions";
 import {
   BIDS_ACCUM_STORAGE_KEY,
   loadAccum,
@@ -51,37 +54,30 @@ export const queryKeys = {
   watched: ["vinyl-watched"],
   bids: ["vinyl-my-bids"],
   lotAi: ["lot-ai"],
+  lotPastSales: (id: string) => ["lot-past-sales", id] as const,
+  lotTracklist: (id: string) => ["lot-tracklist", id] as const,
   lotIdent: ["lot-ident"],
   lotMarket: ["lot-market"],
   interests: ["user-interests"],
   aiProvider: ["ai-provider"],
   geminiModel: ["gemini-model"],
   anthropicModel: ["anthropic-model"],
+  aiPanel: ["ai-panel"],
+  calibration: ["ai-calibration"],
+  aiMode: ["ai-mode"],
   collection: ["collection"],
   collectionLinks: ["collection-links"],
   collectionFeedback: ["collection-feedback"],
-  wantlist: ["wantlist"],
   lookout: ["lookout"],
   lookoutLinks: ["lookout-links"],
   lookoutOverview: ["lookout-overview"],
+  wantlistMigration: ["wantlist-migration"],
   analyticsAliases: ["analytics-aliases"],
   houseRatings: ["house-ratings"],
 } as const;
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
-
-/** Item da sondagem como a UI consome (espelha `wantlist_items`). */
-export type WantItem = {
-  id: string;
-  raw: string;
-  work: string;
-  year: number | null;
-  note: string;
-  norm: string;
-  acquired: boolean;
-  position: number;
-};
 
 /** Lotes da janela: carrega uma vez ao abrir; não recarrega ao navegar/focar a janela. */
 export function useLotsQuery() {
@@ -181,6 +177,33 @@ export function useLotAiQuery() {
   });
 }
 
+/**
+ * Tracklist de UM lote, buscada só quando alguém a pede (`enabled`): `getLotAi` não carrega mais as
+ * faixas de todos os discos, só `hasTracklist`. Atualizada por `useLotTracklistRefresh`.
+ */
+export function useLotTracklist(id: string | null | undefined, enabled: boolean) {
+  const fetchTracklist = useServerFn(getLotTracklist);
+  return useQuery({
+    queryKey: queryKeys.lotTracklist(id ?? ""),
+    queryFn: () => fetchTracklist({ data: { id: id as string } }),
+    enabled: enabled && Boolean(id),
+    staleTime: 30 * MIN,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Vendas passadas do mesmo disco (Analytics) de UM lote — buscada ao abrir o detalhe da nota. */
+export function useLotPastSales(id: string | null | undefined) {
+  const fetchPastSales = useServerFn(getLotPastSales);
+  return useQuery({
+    queryKey: queryKeys.lotPastSales(id ?? ""),
+    queryFn: () => fetchPastSales({ data: { id: id as string } }),
+    enabled: Boolean(id),
+    staleTime: 30_000, // volta do Analytics já com a correção feita lá
+    refetchOnWindowFocus: false,
+  });
+}
+
 export function useLotIdentQuery() {
   const fetchLotIdent = useServerFn(getLotIdent);
   return useQuery({
@@ -207,6 +230,32 @@ export function useInterestsQuery() {
     queryKey: queryKeys.interests,
     queryFn: () => fetchInterests(),
     staleTime: HOUR,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * Interesses efetivos do perfil do colecionador: a lista manual + os artistas do De olho
+ * (`collector-profile.ts`). Quem só precisa do teste «combina com meus interesses» usa `matcher`.
+ */
+export function useCollectorInterests() {
+  const manualQuery = useInterestsQuery();
+  const lookoutQuery = useLookoutQuery();
+  const interests = useMemo(
+    () => collectorInterests(manualQuery.data ?? [], lookoutQuery.data ?? []),
+    [manualQuery.data, lookoutQuery.data],
+  );
+  const matcher = useMemo(() => buildInterestMatcher(interests.all), [interests.all]);
+  return { ...interests, matcher, isLoading: manualQuery.isLoading };
+}
+
+/** Aba «Calibração» do painel de IA: compras recebidas com o retrato da época e a opinião do usuário. */
+export function useCalibrationQuery() {
+  const fetchCalibration = useServerFn(getCalibration);
+  return useQuery({
+    queryKey: queryKeys.calibration,
+    queryFn: () => fetchCalibration(),
+    staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
 }
@@ -287,16 +336,6 @@ export function useCollectionFeedbackQuery() {
   });
 }
 
-export function useWantlistQuery() {
-  const fetchWantlist = useServerFn(getWantlist);
-  return useQuery<WantItem[]>({
-    queryKey: queryKeys.wantlist,
-    queryFn: () => fetchWantlist() as Promise<WantItem[]>,
-    staleTime: HOUR,
-    refetchOnWindowFocus: false,
-  });
-}
-
 /** Apelidos de artista/álbum curados no Analytics (também usados no casamento da Coleção). */
 export function useAnalyticsAliasesQuery() {
   const fetchAliases = useServerFn(getAnalyticsAliases);
@@ -372,6 +411,17 @@ export function useHouseRatingsQuery() {
         return EMPTY_RATINGS;
       }
     },
+    staleTime: HOUR,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Configuração do painel de IA (frete, condição padrão, regras de texto, blocos do prompt). */
+export function useAiPanelQuery() {
+  const fetchPanel = useServerFn(getAiPanel);
+  return useQuery({
+    queryKey: queryKeys.aiPanel,
+    queryFn: () => fetchPanel(),
     staleTime: HOUR,
     refetchOnWindowFocus: false,
   });

@@ -1,7 +1,8 @@
 import { db } from "@/lib/db-client.server";
 
 import type { CatalogLot } from "./leiloesbr-catalog.server";
-import { deriveAlbum } from "./analytics";
+import { deriveAlbum, UNIDENTIFIED_ALBUM } from "./analytics";
+import { effectiveTextRules, type TextRule } from "./condition-text";
 import { type Condition, parseConditionFromText, scoreCondition } from "./grading";
 import type { LotIdentRow } from "./lot-ident.server";
 import {
@@ -266,6 +267,7 @@ function salesRowsFromCatalog(
   auction: { idLeilao: string; domain: string; dayKey: string; house: string; uf: string },
   catalog: Map<string, CatalogLot>,
   vinylById: Map<string, VinylInfo>,
+  textRules?: readonly TextRule[],
 ): LotSaleRow[] {
   const rows: LotSaleRow[] = [];
   for (const [idPeca, data] of catalog) {
@@ -275,13 +277,15 @@ function salesRowsFromCatalog(
     if (looksNonVinylSale(`${data.peca ?? ""} ${data.text}`)) continue;
     const lotId = `${auction.idLeilao}-${idPeca}`;
     const known = vinylById.get(lotId);
-    const catCond = parseConditionFromText(data.text);
+    const catCond = parseConditionFromText(data.text, textRules);
     if (!known && !looksVinyl(data.text, catCond)) continue; // desconhecido e não parece vinil → pula
 
     const title = known?.title || bestCatalogTitle(data);
     // Estado: prefere o grau do catálogo; cai no título.
     const cond =
-      catCond.media || catCond.sleeve || catCond.insert ? catCond : parseConditionFromText(title);
+      catCond.media || catCond.sleeve || catCond.insert
+        ? catCond
+        : parseConditionFromText(title, textRules);
     rows.push({
       lot_id: lotId,
       id_leilao: auction.idLeilao,
@@ -650,6 +654,10 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
     .sort((a, b) => b.row.day_key.localeCompare(a.row.day_key));
 
   const batch = pending.slice(0, maxAuctions);
+  // Regras de texto do painel de IA, as mesmas do estado dos lotes pré-leilão.
+  const { getAiPanelConfig } = await import("./app-state.server");
+  const panel = await getAiPanelConfig();
+  const textRules = effectiveTextRules(panel.rules, panel.disabledRules);
   let sales = 0;
   let aiUsed = 0;
   let identUsed = 0;
@@ -667,6 +675,7 @@ export async function captureFinishedSales(maxAuctions = 8): Promise<{
         },
         catalog,
         vinylById,
+        textRules,
       );
 
       // Reident por IA: vendas cujo ARTISTA ficou genérico/lixo ("Colecionismo", "Duplo",
@@ -987,7 +996,7 @@ export async function reidentifyAllSales(
     const artistKey = normalizeForMatch(artistCanon);
     if (!artistKey) continue;
     const guess = deriveAlbum(s.title, artistCanon);
-    if (!guess || guess === "(álbum não identificado)") continue;
+    if (!guess || guess === UNIDENTIFIED_ALBUM) continue;
     const list = albumsByArtist.get(artistKey) ?? [];
     list.push(guess);
     albumsByArtist.set(artistKey, list);

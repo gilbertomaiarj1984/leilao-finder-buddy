@@ -22,6 +22,12 @@ export type LotAiRow = {
   tracklist: Track[] | null;
 };
 
+/**
+ * Linha enviada ao NAVEGADOR: igual à do banco, mas SEM as faixas (jsonb pesado, ~1 KB por disco ×
+ * centenas de lotes). `hasTracklist` só diz se existe; a lista vem sob demanda (`getLotTracklist`).
+ */
+type LotAiClient = Omit<LotAiRow, "tracklist"> & { hasTracklist: boolean };
+
 /** `numeric` do Postgres chega como string (postgres.js) — normaliza para number|null. */
 function toPrice(value: unknown): number | null {
   if (value == null || value === "") return null;
@@ -33,46 +39,97 @@ function toTags(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
-// Cache curto em memória: `getAllLotAi` é chamada a cada iteração dos laços do cron
+// Cache curto em memória: `getAllLotAiLean`/`getAllLotAiClient` são chamadas a cada iteração dos laços do cron
 // (`aieval`/`market`) e a cada abertura de página que mostra a nota da IA — sempre a
 // tabela INTEIRA. Invalidado a cada escrita (`upsertLotAi`/`updateLotTags`), então nunca
 // devolve algo mais velho que a última gravação deste processo. Reduz consultas ao
 // Postgres (ver docs/arquivo/economia-fase-1-egress-e-cpu.md).
-let allCache: { at: number; rows: LotAiRow[] } | null = null;
 const ALL_TTL_MS = 30_000;
 
-/** Descarta o cache de `getAllLotAi` (escritas feitas fora deste módulo, ex.: retroativo). */
+// Variante SEM a tracklist (jsonb com todas as faixas de cada disco): o cron e as rotinas que só
+// precisam de id/hash/nota/álbum não devem puxá-la a cada leitura. `tracklist` vem sempre `null`.
+let leanCache: { at: number; rows: LotAiRow[] } | null = null;
+
+let clientCache: { at: number; rows: LotAiClient[] } | null = null;
+
+/** Descarta os caches de leitura (escritas feitas fora deste módulo, ex.: retroativo). */
 export function invalidateLotAiCache(): void {
-  allCache = null;
+  leanCache = null;
+  clientCache = null;
 }
 
-/** Lê todas as avaliações (single-user; poucas centenas de linhas). Best-effort. */
-export async function getAllLotAi(): Promise<LotAiRow[]> {
-  if (allCache && Date.now() - allCache.at < ALL_TTL_MS) return allCache.rows;
-  const rows: LotAiRow[] = [];
+/** Tira as faixas de uma linha e a marca com `hasTracklist` (o que o navegador recebe). */
+export function toClientRow(r: LotAiRow): LotAiClient {
+  const { tracklist, ...rest } = r;
+  return { ...rest, hasTracklist: Boolean(tracklist?.length) };
+}
+
+/**
+ * Avaliações para o NAVEGADOR (`getLotAi`): sem a tracklist, só com o indicador `hasTracklist`
+ * (calculado no Postgres, sem trafegar o jsonb). A lista de faixas vem por `getLotTracklist`.
+ */
+export async function getAllLotAiClient(): Promise<LotAiClient[]> {
+  if (clientCache && Date.now() - clientCache.at < ALL_TTL_MS) return clientCache.rows;
   const { data, error } = await db
-    .from<LotAiRow>("lot_ai")
+    .from<LotAiRow & { has_tracklist: boolean }>("lot_ai")
     .select(
-      "id, title_hash, score, rarity, deal, album, reason, tags, model, eval_price, tracklist",
+      "id, title_hash, score, rarity, deal, album, reason, tags, model, eval_price, " +
+        "(CASE WHEN jsonb_typeof(tracklist) = 'array' THEN jsonb_array_length(tracklist) > 0 ELSE false END) AS has_tracklist",
     );
   if (error) throw error;
-  const batch = data ?? [];
-  for (const r of batch) {
-    rows.push({
-      id: r.id,
-      title_hash: r.title_hash,
-      score: r.score,
-      rarity: r.rarity,
-      deal: r.deal,
-      album: r.album,
-      reason: r.reason,
-      tags: toTags(r.tags),
-      model: r.model,
-      eval_price: toPrice(r.eval_price),
-      tracklist: normalizeTracklist(r.tracklist),
-    });
-  }
-  allCache = { at: Date.now(), rows };
+  const rows: LotAiClient[] = (data ?? []).map((r) => ({
+    id: r.id,
+    title_hash: r.title_hash,
+    score: r.score,
+    rarity: r.rarity,
+    deal: r.deal,
+    album: r.album,
+    reason: r.reason,
+    tags: toTags(r.tags),
+    model: r.model,
+    eval_price: toPrice(r.eval_price),
+    hasTracklist: r.has_tracklist === true,
+  }));
+  clientCache = { at: Date.now(), rows };
+  return rows;
+}
+
+/** Tracklist (faixas + fama) de UM lote; `null` = sem avaliação ou sem faixas. */
+export async function getLotTracklist(id: string): Promise<Track[] | null> {
+  const { data, error } = await db
+    .from<{ tracklist: unknown }>("lot_ai")
+    .select("tracklist")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  const list = normalizeTracklist(data?.tracklist);
+  return list?.length ? list : null;
+}
+
+/**
+ * Todas as avaliações sem a coluna `tracklist` (sempre `null` no resultado). Use quando só
+ * importam id, hash, nota, álbum e preço de avaliação — seleção do `aieval`, resumo diário, De olho.
+ */
+export async function getAllLotAiLean(): Promise<LotAiRow[]> {
+  if (leanCache && Date.now() - leanCache.at < ALL_TTL_MS) return leanCache.rows;
+  const { data, error } = await db
+    .from<LotAiRow>("lot_ai")
+    .select("id, title_hash, score, rarity, deal, album, reason, tags, model, eval_price");
+  if (error) throw error;
+  const rows: LotAiRow[] = (data ?? []).map((r) => ({
+    id: r.id,
+    title_hash: r.title_hash,
+    score: r.score,
+    rarity: r.rarity,
+    deal: r.deal,
+    album: r.album,
+    reason: r.reason,
+    tags: toTags(r.tags),
+    model: r.model,
+    eval_price: toPrice(r.eval_price),
+    tracklist: null,
+  }));
+  leanCache = { at: Date.now(), rows };
   return rows;
 }
 
@@ -107,7 +164,7 @@ export async function updateLotTags(id: string, tags: string[]): Promise<string[
   if (!data || data.length === 0) {
     throw new Error("Este lote ainda não foi avaliado pela IA — não há como salvar tags nele.");
   }
-  allCache = null;
+  invalidateLotAiCache();
   // Devolve o que REALMENTE ficou gravado (jsonb), não o array computado.
   return toTags(data[0]?.tags);
 }
@@ -154,12 +211,12 @@ export async function upsertLotAi(rows: LotAiRow[]): Promise<number> {
         console.error("[lot-ai] falha ao gravar avaliações", retryError);
         throw new Error(`Não foi possível gravar as avaliações: ${retryError.message}`);
       }
-      allCache = null;
+      invalidateLotAiCache();
       return filtered.length;
     }
     console.error("[lot-ai] falha ao gravar avaliações", error);
     throw new Error(`Não foi possível gravar as avaliações: ${error.message}`);
   }
-  allCache = null;
+  invalidateLotAiCache();
   return payload.length;
 }

@@ -1,18 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Disc3, Loader2, LogOut, RefreshCw, Sparkles } from "lucide-react";
+import { Disc3, Loader2, LogOut, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { Component, useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs } from "@/components/ui/tabs";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
@@ -28,7 +21,6 @@ import { useIsMobile } from "@/lib/use-is-mobile";
 import { LiveAuctions } from "@/components/vinyl/live-auctions";
 import { OwnedPanel } from "@/components/vinyl/owned-panel";
 import { getAccessStatus } from "@/lib/leiloesbr.functions";
-import { AiModelSelect } from "@/components/vinyl/ai-provider-controls";
 import { LookoutAskDialog } from "@/components/vinyl/lookout-ask-dialog";
 import { ExcludeLotDialog } from "@/components/vinyl/exclude-lot-dialog";
 import { matchedAlbumTerms, ownedCandidate } from "@/lib/wantlist-match";
@@ -176,8 +168,6 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     excludeTarget,
     excludeMutation,
     footerExtraHost,
-    aiMode,
-    changeAiMode,
     refreshAll,
     refreshingCollection,
     refreshCollectionMatches,
@@ -323,26 +313,17 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
       {(mobile ? menuExtraHost : footerExtraHost) &&
         createPortal(
           <>
-            <div
-              className="flex items-center gap-1.5"
-              title="Modo da avaliação automática por IA (controla o gasto de créditos). A análise sob demanda, pelos botões nos dias/casas, funciona em qualquer modo."
+            <Button
+              variant="outline"
+              size="sm"
+              asChild
+              title="Modo e modelo da IA, contexto do prompt, condições e frete"
             >
-              <Sparkles className="h-4 w-4 shrink-0 text-primary" />
-              <Select
-                value={aiMode}
-                onValueChange={(value) => changeAiMode(value as "off" | "all" | "watched")}
-              >
-                <SelectTrigger className="h-8 w-[170px] text-xs" aria-label="Modo da IA">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="off">IA: desligada</SelectItem>
-                  <SelectItem value="all">IA: tudo</SelectItem>
-                  <SelectItem value="watched">IA: vigiados + lances</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <AiModelSelect />
+              <Link to="/ia-painel">
+                <SlidersHorizontal className="mr-2 h-4 w-4" />
+                Painel de IA
+              </Link>
+            </Button>
             <Button
               variant="outline"
               size="sm"

@@ -20,6 +20,15 @@ import { priceRoseSinceEval } from "./ai-reprice";
 import type { LotAiRow } from "./lot-ai.server";
 import type { LotIdentRow } from "./lot-ident.server";
 import {
+  contextForPrompt,
+  contextSchemaSignature,
+  PROMPT_VERSION,
+  type LotContext,
+} from "./ai-context";
+import { DEFAULT_PANEL_CONFIG, type PanelConfig } from "./ai-panel-config";
+import { loadLotContexts } from "./ai-context.server";
+import { DEAL_BAND_CHEAP, DEAL_BAND_EXPENSIVE } from "./lot-score";
+import {
   runText,
   resolveAnthropicModel,
   providerConfigured,
@@ -29,6 +38,7 @@ import {
   type AiProvider,
   type AiRequest,
 } from "./ai-provider.server";
+import { extractJsonObject } from "./json-extract";
 
 /** Teto de lotes avaliados por rodada de cron (evita batches gigantes). */
 const MAX_PER_ROUND = 800;
@@ -53,9 +63,31 @@ export function titleHash(title: string): string {
   return (h >>> 0).toString(36);
 }
 
+// Impressão do TEXTO do prompt (instruções do sistema + do usuário). Entra no hash: editar o texto
+// reavalia a base sozinho, sem depender de alguém lembrar de subir `PROMPT_VERSION`. É calculada
+// uma vez, depois que as duas constantes existem (ver `PROMPT_FINGERPRINT` abaixo de `SYSTEM_PROMPT`).
+let promptFingerprint: string | null = null;
+function promptFp(): string {
+  promptFingerprint ??= titleHash(SYSTEM_PROMPT + USER_INSTRUCTIONS + contextSchemaSignature());
+  return promptFingerprint;
+}
+
+/**
+ * Hash de `lot_ai.title_hash`: o do título + a versão do prompt (`.p3`) + a impressão do texto do
+ * prompt. `PROMPT_VERSION` cobre mudanças na ESTRUTURA do contexto (ai-context.ts); o texto das
+ * instruções é coberto pela impressão. Dados que mudam toda hora (have/want, preços) ficam FORA do
+ * hash de propósito, senão a base inteira seria reavaliada sem parar. A identificação
+ * (`lot_ident`) segue com `titleHash` puro.
+ */
+export function evalHash(title: string, contextOk = true): string {
+  // Sufixo "x": o contexto falhou ao carregar e a nota saiu sem ele — o hash diverge do esperado
+  // (`evalHash(title)`), então o lote volta para a fila em vez de ficar sem contexto para sempre.
+  return `${titleHash(title)}.p${PROMPT_VERSION}.${promptFp()}${contextOk ? "" : "x"}`;
+}
+
 /**
  * Seleciona os lotes que ainda precisam de avaliação: sem linha em `lot_ai` ou com
- * `title_hash` divergente (título mudou). Teto por rodada.
+ * `title_hash` divergente (título mudou ou a versão do prompt subiu). Teto por rodada.
  * `repriceIds` (opcional — vigiados + lances): esses lotes também voltam para a fila quando o
  * preço atual subiu o bastante desde a avaliação (`priceRoseSinceEval`, ver `ai-reprice.ts`) —
  * a nota inclui a oportunidade (preço vs. valor), então fica defasada quando os lances sobem.
@@ -65,13 +97,14 @@ export function selectLotsToEvaluate(
   aiRows: (Pick<LotAiRow, "id" | "title_hash"> & { eval_price?: number | null })[],
   max = MAX_PER_ROUND,
   repriceIds?: ReadonlySet<string>,
+  hashOf: (title: string) => string = evalHash,
 ): EvalLot[] {
   const known = new Map(aiRows.map((r) => [r.id, r]));
   const out: EvalLot[] = [];
   for (const lot of lots) {
     if (!lot.id || !lot.title) continue;
     const row = known.get(lot.id);
-    if (row && row.title_hash === titleHash(lot.title)) {
+    if (row && row.title_hash === hashOf(lot.title)) {
       const reprice =
         repriceIds?.has(lot.id) && priceRoseSinceEval(row.eval_price, parsePrice(lot.price));
       if (!reprice) continue;
@@ -93,53 +126,84 @@ function usableImage(url: string | null): string | null {
   return url && /^https?:\/\//i.test(url) ? url : null;
 }
 
+// Faixas do veredicto no formato do texto ("0,7", "1,15").
+const brBand = (n: number): string => String(n).replace(".", ",");
+
 const SYSTEM_PROMPT =
   "Você avalia discos de vinil (LPs, compactos, bolachões) que vão a leilão no Brasil, " +
-  "para um colecionador. Quando houver imagem da capa, use-a para IDENTIFICAR o disco " +
-  "(artista, álbum, selo/gravadora, país e época) — o título do leilão costuma ser " +
-  "incompleto ou genérico. Estime o valor de coleção e se o preço pedido é uma boa " +
-  "oportunidade, usando seu conhecimento de música e discografia. Seja realista: a grande " +
-  "maioria dos discos é comum e de baixo valor. Responda SOMENTE com um objeto JSON, sem " +
-  "nenhum texto fora do JSON.";
+  "para um colecionador brasileiro. Todos os preços são em reais (R$). Quando houver imagem " +
+  "da capa, use-a para IDENTIFICAR o disco (artista, álbum, selo/gravadora, país e época) — " +
+  "o título do leilão costuma ser incompleto ou genérico. Estime o valor de coleção e se o " +
+  'preço pedido é uma boa oportunidade. Quando o disco trouxer o bloco "contexto", use-o ' +
+  'antes do seu palpite: "estado" é a conservação lida da descrição (disco ou capa ruins, ou ' +
+  'riscos que afetam a audição, valem bem menos); "mercado_discogs_brl" é o preço sugerido ' +
+  'do Discogs, em reais, para a condição do disco ("estado_do_lote_conhecido" falso quer ' +
+  'dizer que o estado não foi informado e a referência é G+); "lote_mais_frete_brl" é o valor ' +
+  "do lote somado ao frete da casa. Compare-o com o preço sugerido: " +
+  `"razao_lote_vs_sugerido" até ${brBand(DEAL_BAND_CHEAP)} é barato, de ${brBand(DEAL_BAND_CHEAP)} a ${brBand(DEAL_BAND_EXPENSIVE)} é justo e acima de ${brBand(DEAL_BAND_EXPENSIVE)} é caro. ` +
+  '"querem" maior que "tem" indica disco procurado. "descricao_do_lote" é o texto completo da ' +
+  "casa de leilão: use-o para país, prensagem, edição, defeitos e o que vem junto (encarte, " +
+  'vários discos). "vendas_passadas_brl" é o que o MESMO disco já arrematou nos leilões ' +
+  "acompanhados (menor, mediana e maior em reais; confie mais com mais vendas, e prefira " +
+  '"mediana_estado_parecido" quando existir): um preço bem abaixo da mediana é oportunidade. ' +
+  '"perfil_do_colecionador" só lista o que se aplica a este disco: "de_olho" é um disco que ' +
+  'o colecionador quer muito (com "teto_de_olho_brl", o máximo que ele pagaria), ' +
+  '"nos_meus_interesses" é artista/álbum que ele curte e "ja_tenho" é um disco da coleção dele ' +
+  "que parece ser este mesmo (vale menos para ele). Sem contexto, estime pelo seu " +
+  "conhecimento de música e discografia. Seja realista: a grande maioria dos discos é comum e " +
+  "de baixo valor. Responda SOMENTE com um objeto JSON, sem nenhum texto fora do JSON.";
 
-/** Prompt de usuário (texto) para UM lote. A imagem, quando houver, vai num bloco à parte. */
-function buildUserPrompt(lot: EvalLot): string {
+/** Instruções fixas do prompt de usuário (as chaves do JSON de resposta). Entram no hash do prompt. */
+const USER_INSTRUCTIONS =
+  "Avalie este disco de vinil e devolva um objeto JSON com EXATAMENTE estas chaves:\n" +
+  '- "score": inteiro 0-100 (interesse geral para um colecionador = raridade + oportunidade)\n' +
+  '- "rarity": um de "comum","interessante","raro","muito_raro"\n' +
+  '- "deal": um de "caro","justo","barato","indefinido" (preço pedido vs. valor estimado; ' +
+  '"indefinido" quando não houver preço)\n' +
+  '- "album": artista e álbum que você identificou (da capa, se houver; "" se não souber)\n' +
+  '- "reason": 1 frase curta em português justificando a nota\n' +
+  '- "tags": array curto de gênero/estilo/época/selo (ex.: ["mpb","1972","odeon"])\n\n';
+
+/**
+ * Prompt de usuário (texto) para UM lote. A imagem, quando houver, vai num bloco à parte.
+ * `ctx` (estado + mercado Discogs + frete, ver `ai-context.ts`) entra como o bloco "contexto".
+ */
+export function buildUserPrompt(
+  lot: EvalLot,
+  ctx?: LotContext | null,
+  cfg: PanelConfig = DEFAULT_PANEL_CONFIG,
+): string {
   const price = parsePrice(lot.price);
-  const info = {
+  const info: Record<string, unknown> = {
     titulo: lot.title,
     casa: lot.house,
     preco_reais: price ?? null,
     tem_imagem: Boolean(usableImage(lot.image)),
   };
+  if (ctx) info["contexto"] = contextForPrompt(ctx, price, cfg);
   return (
-    "Avalie este disco de vinil e devolva um objeto JSON com EXATAMENTE estas chaves:\n" +
-    '- "score": inteiro 0-100 (interesse geral para um colecionador = raridade + oportunidade)\n' +
-    '- "rarity": um de "comum","interessante","raro","muito_raro"\n' +
-    '- "deal": um de "caro","justo","barato","indefinido" (preço pedido vs. valor estimado; ' +
-    '"indefinido" quando não houver preço)\n' +
-    '- "album": artista e álbum que você identificou (da capa, se houver; "" se não souber)\n' +
-    '- "reason": 1 frase curta em português justificando a nota\n' +
-    '- "tags": array curto de gênero/estilo/época/selo (ex.: ["mpb","1972","odeon"])\n\n' +
-    "Disco:\n" +
-    JSON.stringify(info) +
-    "\n\nResponda só com o objeto JSON."
+    USER_INSTRUCTIONS + "Disco:\n" + JSON.stringify(info) + "\n\nResponda só com o objeto JSON."
   );
 }
 
 /** Requisição NEUTRA (provedor-agnóstica) para avaliar UM lote. Inclui a capa (visão). */
-function buildEvalRequest(lot: EvalLot): AiRequest {
+function buildEvalRequest(
+  lot: EvalLot,
+  ctx?: LotContext | null,
+  cfg: PanelConfig = DEFAULT_PANEL_CONFIG,
+): AiRequest {
   return {
     system: SYSTEM_PROMPT,
     maxTokens: 600,
-    text: buildUserPrompt(lot),
+    text: buildUserPrompt(lot, ctx, cfg),
     image: usableImage(lot.image),
     json: true,
   };
 }
 
 /** Parâmetros de mensagem (Anthropic) para um lote — usado no request de BATCH. */
-function buildLotParams(lot: EvalLot, model: string) {
-  return toAnthropicMessageParams(buildEvalRequest(lot), model);
+function buildLotParams(lot: EvalLot, model: string, ctx?: LotContext | null, cfg?: PanelConfig) {
+  return toAnthropicMessageParams(buildEvalRequest(lot, ctx, cfg), model);
 }
 
 /**
@@ -147,20 +211,12 @@ function buildLotParams(lot: EvalLot, model: string) {
  * código e a texto ao redor: pega o primeiro `{...}` e valida os campos. Retorna null
  * quando não dá para aproveitar.
  */
-function parseEvalObject(
+export function parseEvalObject(
   text: string,
 ): Omit<LotAiRow, "id" | "title_hash" | "model" | "eval_price"> | null {
-  if (!text) return null;
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
-  let obj: Record<string, unknown>;
-  try {
-    obj = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-  const scoreRaw = Number(obj["score"]);
+  const obj = extractJsonObject(text);
+  if (!obj) return null;
+  const scoreRaw = typeof obj["score"] === "number" ? obj["score"] : Number(obj["score"] ?? NaN);
   const score = Number.isFinite(scoreRaw) ? Math.max(0, Math.min(100, Math.round(scoreRaw))) : null;
   const rarity =
     typeof obj["rarity"] === "string" && (RARITIES as readonly string[]).includes(obj["rarity"])
@@ -213,11 +269,13 @@ export async function submitEvalBatch(lots: EvalLot[]): Promise<SubmitResult> {
   const model = await resolveAnthropicModel();
   const hashes: Record<string, string> = {};
   const prices: Record<string, number> = {};
+  // O Batches congela o contexto (estado, mercado, frete) no momento do envio.
+  const { byId: contexts, cfg, ok: contextOk } = await loadLotContexts(lots.map((l) => l.id));
   const requests = lots.map((lot) => {
-    hashes[lot.id] = titleHash(lot.title);
+    hashes[lot.id] = evalHash(lot.title, contextOk);
     const price = parsePrice(lot.price);
     if (price != null && price > 0) prices[lot.id] = price;
-    return { custom_id: lot.id, params: buildLotParams(lot, model) };
+    return { custom_id: lot.id, params: buildLotParams(lot, model, contexts.get(lot.id), cfg) };
   });
   // O SDK tipa `params` de forma estrita (MessageCreateParams); nosso builder devolve o
   // shape compatível, mas afrouxamos aqui para não duplicar os tipos do SDK.
@@ -321,19 +379,11 @@ function buildIdentParams(lot: EvalLot, withImage: boolean, model: string) {
 }
 
 /** Extrai {album, year, confidence} do texto devolvido. Null quando não dá para aproveitar. */
-function parseIdentObject(
+export function parseIdentObject(
   text: string,
 ): { album: string | null; year: number | null; confidence: string | null } | null {
-  if (!text) return null;
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
-  let obj: Record<string, unknown>;
-  try {
-    obj = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+  const obj = extractJsonObject(text);
+  if (!obj) return null;
   const album =
     typeof obj["album"] === "string" && obj["album"].trim()
       ? obj["album"].trim().slice(0, 200)
@@ -356,7 +406,8 @@ export function selectLotsToIdentify(
   identRows: Pick<LotIdentRow, "id" | "title_hash">[],
   max = MAX_PER_ROUND,
 ): EvalLot[] {
-  return selectLotsToEvaluate(lots, identRows, max);
+  // `lot_ident.title_hash` é o hash puro do título (sem a versão do prompt da avaliação).
+  return selectLotsToEvaluate(lots, identRows, max, undefined, titleHash);
 }
 
 /**
@@ -498,10 +549,12 @@ export async function evalLotsSync(
   if (!lots.length)
     return { rows: [], served: null, switched: false, failed: 0, error: null, attemptErrors: {} };
   const geminiModel = await resolveGeminiModel();
+  const { byId: contexts, cfg, ok: contextOk } = await loadLotContexts(lots.map((l) => l.id));
   const rows: LotAiRow[] = [];
   const tracker = new ProviderTracker();
   let failed = 0;
   let firstError: string | null = null;
+  // DUP(pool): mesmo laço de workers com `cursor` em 8 lugares — extrair `runPool` ao mexer aqui (AGENTS.md, "Código repetido").
   let cursor = 0;
 
   const worker = async () => {
@@ -511,13 +564,17 @@ export async function evalLotsSync(
       const lot = lots[index];
       if (!lot) return;
       try {
-        const r = await runText(buildEvalRequest(lot), provider, geminiModel);
+        const r = await runText(
+          buildEvalRequest(lot, contexts.get(lot.id), cfg),
+          provider,
+          geminiModel,
+        );
         tracker.note(r.provider, r.switched, r.attemptErrors);
         const parsed = parseEvalObject(r.text);
         if (parsed) {
           rows.push({
             id: lot.id,
-            title_hash: titleHash(lot.title),
+            title_hash: evalHash(lot.title, contextOk),
             score: parsed.score,
             rarity: parsed.rarity,
             deal: parsed.deal,
@@ -579,6 +636,7 @@ export async function identLotsSync(
   if (!lots.length) return [];
   const geminiModel = await resolveGeminiModel();
   const rows: IdentResult[] = [];
+  // DUP(pool): mesmo laço de workers com `cursor` em 8 lugares — extrair `runPool` ao mexer aqui (AGENTS.md, "Código repetido").
   let cursor = 0;
 
   const worker = async () => {
@@ -621,6 +679,7 @@ export async function identLotsSyncRows(
   const source: "title" | "image" = withImage ? "image" : "title";
   let failed = 0;
   let firstError: string | null = null;
+  // DUP(pool): mesmo laço de workers com `cursor` em 8 lugares — extrair `runPool` ao mexer aqui (AGENTS.md, "Código repetido").
   let cursor = 0;
 
   const worker = async () => {
@@ -697,6 +756,7 @@ export async function resolveGeminiModel(): Promise<string> {
     return await getGeminiModel();
   } catch (error) {
     console.error("[ai-eval] não foi possível ler o modelo do Gemini (usando padrão)", error);
+    // DUP(modelos): lista/padrão dos modelos Gemini repetidos em 4 arquivos — centralizar em `ai-models.ts`.
     return "gemini-3.1-flash-lite";
   }
 }

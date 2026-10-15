@@ -16,6 +16,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { dealLabel, dealTone } from "@/components/vinyl/ai-score-utils";
 import { HouseLight } from "@/components/vinyl/house-light";
 import { useState } from "react";
 
@@ -624,6 +625,14 @@ export function LookoutItemCard({
                           <span title="Faixa no mercado BR (Discogs, com frete)">
                             Discogs BR {brl(m.marketLowBr)}
                             {m.marketHighBr != null ? `–${brl(m.marketHighBr)}` : ""}
+                          </span>
+                        ) : null}
+                        {m.marketVerdict !== "indefinido" ? (
+                          <span
+                            className={`font-medium ${dealTone(m.marketVerdict)}`}
+                            title="Lote + frete da casa contra o preço sugerido do Discogs para a condição do disco"
+                          >
+                            {dealLabel(m.marketVerdict)} vs. mercado
                           </span>
                         ) : null}
                         {m.aiScore != null ? <span>IA {m.aiScore}</span> : null}

@@ -10,6 +10,7 @@
 import { parse } from "node-html-parser";
 
 import type { DiscCode, DiscogsCodeInfo } from "./disc-code";
+import { parseSuggestionMap, type SuggestionMap } from "./discogs-price";
 import { parseDiscogsTracklist, type RawTrack } from "./tracklist";
 import { normalizeForMatch } from "./vinyl-parse";
 
@@ -32,6 +33,8 @@ type MarketData = {
   currency: string | null;
   suggestedPrice: number | null;
   suggestedCondition: string | null;
+  // Preço sugerido de TODAS as condições (BRL); o veredicto usa a do lote (ver discogs-price.ts).
+  suggestedByCondition: SuggestionMap | null;
   have: number | null;
   want: number | null;
   // Faixa de preço à venda no Discogs considerando SÓ vendedores do Brasil, com o valor
@@ -315,25 +318,43 @@ async function throttle(): Promise<void> {
   lastCallAt = Date.now();
 }
 
+// Falhas TRANSITÓRIAS (rede, 429 após a nova tentativa, 5xx, 401/403) são contadas: um 404 é "não
+// existe" e pode ser gravado como tal, mas uma falha de rede não — gravar `matched=false` (ou `{}`)
+// por causa dela faria o lote nunca mais ser consultado. `fetchMarket` e `fetchSuggestionMap`
+// lançam `DiscogsTransientError` quando a contagem sobe durante a chamada.
+let transientErrors = 0;
+
+class DiscogsTransientError extends Error {
+  constructor() {
+    super("Discogs indisponível no momento (erro transitório); nada foi gravado.");
+  }
+}
+
 async function discogsGet(path: string): Promise<unknown | null> {
   const token = process.env["DISCOGS_TOKEN"];
   if (!token) return null;
   await throttle();
   const url = `${BASE}${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
-  const resp = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
-  if (resp.status === 429) {
-    // Rate limit estourou: espera e tenta uma vez.
-    await new Promise((r) => setTimeout(r, 2000));
-    const retry = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
-    if (!retry.ok) return null;
-    return (await retry.json()) as unknown;
-  }
-  if (resp.status === 404) return null;
-  if (!resp.ok) {
-    console.error(`[discogs] GET ${path} → ${resp.status}`);
+  const headers = { "User-Agent": UA, Accept: "application/json" };
+  try {
+    let resp = await fetch(url, { headers });
+    if (resp.status === 429) {
+      // Rate limit estourou: espera e tenta uma vez.
+      await new Promise((r) => setTimeout(r, 2000));
+      resp = await fetch(url, { headers });
+    }
+    if (resp.status === 404) return null;
+    if (!resp.ok) {
+      console.error(`[discogs] GET ${path} → ${resp.status}`);
+      transientErrors += 1;
+      return null;
+    }
+    return (await resp.json()) as unknown;
+  } catch (error) {
+    console.error(`[discogs] GET ${path} falhou`, (error as Error)?.message);
+    transientErrors += 1;
     return null;
   }
-  return (await resp.json()) as unknown;
 }
 
 /**
@@ -342,9 +363,15 @@ async function discogsGet(path: string): Promise<unknown | null> {
  * por preço. Considera o TOTAL (preço + frete) de cada anúncio. Sem token (página pública);
  * best-effort — devolve tudo nulo se a página não vier/parsear.
  */
+// O Discogs serve essa página atrás de Cloudflare: em servidor ela responde 403 de forma
+// persistente. Depois do primeiro 403 do processo, para de tentar (cada tentativa custaria um
+// intervalo do throttle por lote). Reinicia junto com o app.
+let sellPageBlocked = false;
+
 async function fetchBrListings(
   releaseId: number,
 ): Promise<{ low: number | null; high: number | null; count: number }> {
+  if (sellPageBlocked) return { low: null, high: null, count: 0 };
   await throttle();
   const url =
     `${SITE}/sell/release/${releaseId}` +
@@ -357,6 +384,10 @@ async function fetchBrListings(
         "Accept-Language": "pt-BR,pt;q=0.9",
       },
     });
+    if (resp.status === 403) {
+      sellPageBlocked = true;
+      console.warn("[discogs] página de venda bloqueada (403/Cloudflare): faixa BR desativada");
+    }
     if (!resp.ok) return { low: null, high: null, count: 0 };
     const html = await resp.text();
     return summarizeListings(parseSellPage(html));
@@ -464,6 +495,13 @@ export async function findReleaseByCode(code: DiscCode): Promise<DiscogsCodeInfo
 }
 
 export async function fetchMarket(album: string | null, title: string): Promise<MarketData> {
+  const before = transientErrors;
+  const result = await fetchMarketOnce(album, title);
+  if (transientErrors > before) throw new DiscogsTransientError();
+  return result;
+}
+
+async function fetchMarketOnce(album: string | null, title: string): Promise<MarketData> {
   const empty: MarketData = {
     matched: false,
     releaseId: null,
@@ -474,6 +512,7 @@ export async function fetchMarket(album: string | null, title: string): Promise<
     currency: null,
     suggestedPrice: null,
     suggestedCondition: null,
+    suggestedByCondition: null,
     have: null,
     want: null,
     priceLowBr: null,
@@ -502,9 +541,17 @@ export async function fetchMarket(album: string | null, title: string): Promise<
   } | null;
   if (stats) {
     base.numForSale = typeof stats.num_for_sale === "number" ? stats.num_for_sale : null;
+    // Só aceita BRL: se a API ignorar `curr_abbr` e devolver outra moeda, descarta em vez de
+    // gravar dólar como se fosse real (o rótulo de moeda é um só para os dois valores).
     if (stats.lowest_price && typeof stats.lowest_price.value === "number") {
-      base.lowestPrice = stats.lowest_price.value;
-      base.currency = stats.lowest_price.currency ?? CURRENCY;
+      if ((stats.lowest_price.currency ?? CURRENCY) === CURRENCY) {
+        base.lowestPrice = stats.lowest_price.value;
+        base.currency = CURRENCY;
+      } else {
+        console.warn(
+          `[discogs] release ${releaseId}: menor preço em ${stats.lowest_price.currency}, ignorado`,
+        );
+      }
     }
   }
 
@@ -512,10 +559,19 @@ export async function fetchMarket(album: string | null, title: string): Promise<
     string,
     { value?: number; currency?: string }
   > | null;
-  const picked = pickSuggested(suggestions);
+  const { map, foreign } = parseSuggestionMap(suggestions);
+  if (foreign) console.warn(`[discogs] release ${releaseId}: ${foreign} sugestão(ões) fora de BRL`);
+  base.suggestedByCondition = Object.keys(map).length ? map : null;
+  const picked = pickSuggested(
+    suggestions
+      ? Object.fromEntries(
+          Object.entries(suggestions).filter(([, v]) => !v?.currency || v.currency === CURRENCY),
+        )
+      : null,
+  );
   base.suggestedPrice = picked.price;
   base.suggestedCondition = picked.condition;
-  if (!base.currency && picked.currency) base.currency = picked.currency;
+  if (!base.currency && picked.price !== null) base.currency = CURRENCY;
 
   // Faixa real no mercado (só vendedores BR, total = preço + frete) — scraping da página
   // pública de venda. Best-effort: se não vier, os campos ficam nulos e a UI cai no `stats`.
@@ -526,6 +582,26 @@ export async function fetchMarket(album: string | null, title: string): Promise<
   if ((base.priceLowBr ?? base.priceHighBr) !== null) base.currency = CURRENCY;
 
   return base;
+}
+
+/**
+ * Só o mapa de sugestões por condição de um release já casado (1 chamada) — usado para
+ * preencher linhas antigas de `lot_market` sem refazer a busca/estatísticas.
+ */
+export async function fetchSuggestionMap(releaseId: number): Promise<SuggestionMap | null> {
+  const before = transientErrors;
+  const map = await fetchSuggestionMapOnce(releaseId);
+  if (transientErrors > before) throw new DiscogsTransientError();
+  return map;
+}
+
+async function fetchSuggestionMapOnce(releaseId: number): Promise<SuggestionMap | null> {
+  const suggestions = (await discogsGet(`/marketplace/price_suggestions/${releaseId}`)) as Record<
+    string,
+    { value?: number; currency?: string }
+  > | null;
+  const { map } = parseSuggestionMap(suggestions);
+  return Object.keys(map).length ? map : null;
 }
 
 // --- Capas (seletor de capa da Coleção) -------------------------------------

@@ -1,6 +1,6 @@
 // Linhas, marcadores e controles do Vinil Analytics (artista → álbum → vendas).
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePersistedState } from "@/lib/persisted-state";
 import type { DragEvent } from "react";
 
@@ -273,6 +273,21 @@ function IaAllAlbumsButton({
   );
 }
 
+/**
+ * Rola até o elemento que veio por link («Ver no Analytics»). Espera um instante para vir depois da
+ * restauração de rolagem da página (`usePersistedScroll`).
+ */
+function useScrollToFocus(ref: { current: HTMLElement | null }, active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    const t = setTimeout(
+      () => ref.current?.scrollIntoView({ block: "center", behavior: "smooth" }),
+      350,
+    );
+    return () => clearTimeout(t);
+  }, [ref, active]);
+}
+
 export function ArtistRow({
   artist,
   allArtists,
@@ -286,9 +301,12 @@ export function ArtistRow({
   onReidentAllAlbums,
   onExcludeArtist,
   onExcludeSale,
+  focusAlbumKey,
 }: {
   artist: ArtistAgg;
   allArtists: ArtistAgg[];
+  /** Chegou por link de outra tela («Ver no Analytics»): abre o artista e destaca este álbum. */
+  focusAlbumKey?: string | null;
   suggestions: Suggestions;
   readOnly: boolean;
   onApplyArtist?: (sourceKeys: string[], name: string) => void;
@@ -300,8 +318,10 @@ export function ArtistRow({
   onExcludeArtist?: ExcludeArtist;
   onExcludeSale?: ExcludeSale;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(focusAlbumKey !== undefined);
   const [edit, setEdit] = useState(false);
+  const sectionRef = useRef<HTMLElement>(null);
+  useScrollToFocus(sectionRef, focusAlbumKey === null);
   const [albumSort, setAlbumSort] = usePersistedState<AlbumSort>("analytics-album-sort", "count");
   const canEdit = !readOnly;
 
@@ -319,7 +339,12 @@ export function ArtistRow({
   );
 
   return (
-    <section className="overflow-hidden rounded-md border border-border bg-card">
+    <section
+      ref={sectionRef}
+      className={`overflow-hidden rounded-md border bg-card ${
+        focusAlbumKey === null ? "border-primary ring-2 ring-primary/40" : "border-border"
+      }`}
+    >
       <div className="flex items-center gap-2 px-4 py-3">
         <button
           type="button"
@@ -384,6 +409,7 @@ export function ArtistRow({
               <AlbumRow
                 key={al.key}
                 album={al}
+                focused={focusAlbumKey === al.key}
                 artistKey={artist.key}
                 artistName={artist.artist}
                 siblings={artist.albums}
@@ -415,6 +441,7 @@ export function ArtistRow({
 
 function AlbumRow({
   album,
+  focused = false,
   artistKey,
   artistName,
   siblings,
@@ -426,6 +453,7 @@ function AlbumRow({
   onExcludeSale,
 }: {
   album: AlbumAgg;
+  focused?: boolean;
   artistKey: string;
   artistName: string;
   siblings: AlbumAgg[];
@@ -436,10 +464,12 @@ function AlbumRow({
   onReidentGroup?: ReidentGroup;
   onExcludeSale?: ExcludeSale;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(focused);
   const [detail, setDetail] = useState(false);
   const [edit, setEdit] = useState(false);
   const [dropHover, setDropHover] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+  useScrollToFocus(rowRef, focused);
   const canEdit = !readOnly;
   const albumLotIds = useMemo(() => album.sales.map((s) => s.lot_id), [album.sales]);
   // Faixas do agregador vêm melhor→pior (ordem de FAIXAS). O eixo dos cards abaixo é
@@ -481,7 +511,12 @@ function AlbumRow({
   };
 
   return (
-    <div className="rounded-md border border-border bg-background">
+    <div
+      ref={rowRef}
+      className={`rounded-md border bg-background ${
+        focused ? "border-primary ring-2 ring-primary/40" : "border-border"
+      }`}
+    >
       <div
         onDragOver={handleDragOver}
         onDragEnter={handleDragEnter}

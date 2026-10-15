@@ -1,5 +1,6 @@
 import { titleHash } from "./ai-eval.server";
-import type { VinylLot } from "./vinyl-parse";
+import { normalizeSuggestionMap, type SuggestionMap } from "./discogs-price";
+import { normalizeForMatch, type VinylLot } from "./vinyl-parse";
 
 /** Linha da tabela `lot_market` (âncora de mercado do Discogs por lote). */
 type LotMarketRow = {
@@ -14,6 +15,8 @@ type LotMarketRow = {
   currency: string | null;
   suggested_price: number | null;
   suggested_condition: string | null;
+  /** Sugerido de todas as condições (BRL); null = ainda não coletado. */
+  suggested_by_condition: SuggestionMap | null;
   have: number | null;
   want: number | null;
   price_low_br: number | null;
@@ -24,19 +27,79 @@ type LotMarketRow = {
 type MarketTarget = { id: string; album: string | null; title: string; price: string };
 
 const MARKET_COLS =
-  "id, basis, matched, release_id, release_title, year, num_for_sale, lowest_price, currency, suggested_price, suggested_condition, have, want, price_low_br, price_high_br, num_for_sale_br";
+  "id, basis, matched, release_id, release_title, year, num_for_sale, lowest_price, currency, suggested_price, suggested_condition, suggested_by_condition, have, want, price_low_br, price_high_br, num_for_sale_br";
 
-/** Base de invalidação do cache: hash do que será consultado (album identificado || título). */
+/**
+ * Base de invalidação do cache: o que de fato é consultado no Discogs (o álbum identificado e, sem
+ * ele, o título), normalizado — sem acento, pontuação, parênteses nem ano. A identificação por título
+ * (`lot_ident`) e a avaliação (`lot_ai`) escrevem o MESMO álbum de jeitos ligeiramente diferentes
+ * ("Fulano - Álbum (1984)" × "Fulano – Álbum"); com o texto cru o `basis` mudava e o disco era
+ * consultado de novo (3 a 6 chamadas lentas ao Discogs) à toa. Prefixo `m2:` para distinguir do
+ * formato antigo.
+ */
 export function marketBasis(album: string | null, title: string): string {
+  const raw = (album ?? "").trim() || (title ?? "");
+  const key = normalizeForMatch(raw.replace(/\([^)]*\)/g, " ").replace(/\b(?:19|20)\d{2}\b/g, " "));
+  return `m2:${titleHash(key)}`;
+}
+
+/** Formato antigo do `basis` (texto cru do álbum + título): linhas já gravadas continuam válidas. */
+function legacyMarketBasis(album: string | null, title: string): string {
   return titleHash(`${(album ?? "").trim()}|${title ?? ""}`);
 }
 
-export async function getAllLotMarket(): Promise<LotMarketRow[]> {
+export async function getAllLotMarket(ids?: string[]): Promise<LotMarketRow[]> {
+  if (ids && !ids.length) return [];
   const { db } = await import("@/lib/db-client.server");
   // Postgres direto (postgres.js) não tem o teto de 1000 linhas do PostgREST: 1 consulta só.
-  const { data, error } = await db.from("lot_market").select(MARKET_COLS);
+  // `ids`: só esses lotes (rotinas do cron que já sabem quais precisam, em vez da tabela inteira).
+  let query = db.from("lot_market").select(MARKET_COLS);
+  if (ids) query = query.in("id", ids);
+  const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []) as unknown as LotMarketRow[];
+  return ((data ?? []) as unknown as LotMarketRow[]).map((r) => ({
+    ...r,
+    // `{}` (consultado, sem sugestões) precisa sobreviver: vira "não coletado" se virar null.
+    suggested_by_condition:
+      r.suggested_by_condition == null
+        ? null
+        : (normalizeSuggestionMap(r.suggested_by_condition) ?? {}),
+  }));
+}
+
+/**
+ * Linhas já casadas no Discogs que ainda não têm o mapa de sugestões por condição (coletadas
+ * antes do v0.141.0). O cron refaz só a chamada de sugestões delas (1 requisição por release).
+ */
+export function selectMarketBackfill(
+  rows: Pick<LotMarketRow, "id" | "matched" | "release_id" | "suggested_by_condition">[],
+  max: number,
+): { id: string; release_id: number }[] {
+  const out: { id: string; release_id: number }[] = [];
+  for (const r of rows) {
+    if (!r.matched || !r.release_id || r.suggested_by_condition) continue;
+    out.push({ id: r.id, release_id: r.release_id });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** Grava o mapa de sugestões de várias linhas (backfill) sem mexer no resto da linha. */
+export async function updateSuggestionMaps(
+  items: { id: string; map: SuggestionMap | null }[],
+): Promise<number> {
+  const { db } = await import("@/lib/db-client.server");
+  let n = 0;
+  for (const it of items) {
+    // `{}` marca "consultado, sem sugestões" para não repetir o backfill a cada rodada.
+    const { error } = await db
+      .from("lot_market")
+      .update({ suggested_by_condition: it.map ?? {} })
+      .eq("id", it.id);
+    if (error) console.error("[lot-market] backfill falhou", it.id, error.message);
+    else n += 1;
+  }
+  return n;
 }
 
 export async function upsertLotMarket(rows: LotMarketRow[]): Promise<number> {
@@ -92,7 +155,9 @@ export function selectLotsForMarket(
     if (!albumById.has(lot.id)) continue; // só lotes já avaliados pela IA
     const album = albumById.get(lot.id) ?? null;
     const basis = marketBasis(album, lot.title);
-    if (basisById.get(lot.id) === basis) continue; // já consultado com esta identificação
+    const stored = basisById.get(lot.id);
+    // Já consultado com esta identificação (formato novo ou o antigo, para não reconsultar a base toda).
+    if (stored === basis || stored === legacyMarketBasis(album, lot.title)) continue;
     out.push({ id: lot.id, album, title: lot.title, price: lot.price });
     if (out.length >= max) break;
   }

@@ -34,14 +34,8 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   transitórios ANTES de propagar — útil quando o Gemini é o único provedor. Motivo real:
   `503 UNAVAILABLE "This model is currently experiencing high demand"` do `gemini-flash-latest`.
   Erros não-transitórios/não-quota (400/401/403, prompt bloqueado, parsing) propagam (por-item).
-- **Downgrade de modelo dentro do Gemini antes do failover de provedor:** quando o Gemini
-  escolhido/configurado bate em `isQuotaError`, `runOne` tenta primeiro
-  **`GEMINI_FREE_FALLBACK_MODEL`** (`gemini-2.5-flash-lite`, cota gratuita própria, mais barato
-  que o padrão de fábrica) antes de desistir do Gemini e cair pro Claude — evita queimar o
-  Claude quando o problema é só a cota diária do modelo escolhido (ex.: usuário travou
-  `gemini-flash-latest` e ele estourou quota — tenta o Flash-Lite 2.5 antes de ir pro Claude).
-  Só propaga (e aciona o failover de provedor do `runText`) se o Flash-Lite 2.5 também falhar
-  por quota, ou se o modelo pedido já era ele mesmo (sem loop).
+- ~~Downgrade de modelo dentro do Gemini~~ (removido na v0.143.1): o `gemini-2.5-flash-lite` desliga em
+  16/out/2026; quota estourada vai direto para o failover de provedor.
 - **Provedor PADRÃO** persistido em `app_state.ai_provider` (`getAiProvider`/`setAiProvider`;
   precedência: `app_state` → env `AI_PROVIDER` → `anthropic`). **Seletor único no header**
   (`AiProviderSelect`, na home, Coleção e Vinil Analytics) — é a **ÚNICA** forma de escolher a
@@ -100,6 +94,48 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   `muito_raro`), `deal`, `album` ("Artista - Álbum"), `reason`, `tags[]` (`parseEvalObject`,
   tolerante a cercas). **Visão:** capa http(s) vai como bloco `image` (antes do texto) para
   identificar o disco (`usableImage` descarta `data:`).
+- **Contexto no prompt da avaliação (v0.142.0):** `buildUserPrompt(lot, ctx)` junta ao JSON do lote o
+  bloco `contexto` (`ai-context.ts`, puro): `estado` (disco/capa/encarte/nota de `lot_condition`),
+  `mercado_discogs_brl` (preço sugerido da condição do disco — G+ quando o estado é desconhecido —,
+  `want`/`have`, ano, anúncios à venda, de `lot_market.suggested_by_condition`), `frete_estimado_brl`
+  (R$ 25 Sudeste / R$ 35 demais, pela UF de `lots`), `lote_mais_frete_brl` e `razao_lote_vs_sugerido`
+  (≤ 0,7 barato, ≥ 1,15 caro — as mesmas faixas do `marketDeal`). Dado ausente não entra no JSON.
+  Carregado na hora do envio (`loadLotContexts`, por ids; best-effort — falha = prompt sem contexto,
+  como antes); o Batches congela o contexto no submit. **Versão do prompt:** `PROMPT_VERSION`
+  (`ai-context.ts`) vira sufixo do hash (`evalHash` = `titleHash.p3`); subir o número reavalia a
+  base inteira (até 800 lotes por rodada). Dados voláteis (have/want, preços) ficam fora do hash de
+  propósito. **Ordem do cron:** `aieval`/`tracklist`/`fame` rodam depois de `aiident`, `market`,
+  `condition`, `sales` e `reident` (`refresh.yml`) — senão a primeira avaliação sairia sem contexto.
+  **Descrição do lote (v0.147.0):** bloco `descricao` → `descricao_do_lote`, vindo de
+  `lot_condition.description` (texto do catálogo gravado pelo `step=condition`; vazio quando só repete o
+  título). Blocos novos do app entram ligados numa config já salva (`PanelConfig.blocksSeen`).
+  **Vendas passadas (v0.148.0):** bloco `vendas` → `vendas_passadas_brl` (`{n_vendas, menor, mediana,
+maior, ultima_venda, ultima_venda_em, n_estado_parecido, mediana_estado_parecido,
+razao_preco_vs_mediana}`), calculado por `past-sales.server.ts` (`loadPastSales`, índice do Analytics
+  em cache de 30s, descartado quando o usuário grava apelido/correção/exclusão — `app-state.server.ts`).
+  O lote é posicionado pelo MESMO `makeSalePlacer` do Analytics (identidade: `lot_ident` > `lot_ai.album`
+  > título; sem "Artista - Álbum" no título e sem identificação, não casa). Balaios (não classificados,
+  > lote, coletâneas, álbum não identificado) nunca entram. Na UI: `PastSalesBlock` em `ScoreDetails`
+  > (`useLotPastSales`, busca ao abrir o detalhe) com o link «ver no Analytics».
+  > **Perfil do colecionador (v0.149.0):** bloco `colecionador` → `perfil_do_colecionador` (ver
+  > `docs/areas/colecao-sondagem-compras.md`); `collector-profile.server.ts` lê interesses, De olho (+ vínculos), Coleção
+  > e a lista de termos negados a cada lote de lotes (sem cache) e `profileForLot` devolve só o resultado por lote.
+  > Ainda fora do prompt: tracklist e correções do usuário (ver `docs/pendencias.md`).
+- **Painel de IA — `/ia-painel` (v0.143.0):** configuração em `app_state.ai_panel` (`PanelConfig`,
+  `ai-panel-config.ts`; `getAiPanelConfig` com cache de 30s, `setAiPanelConfig` normaliza tudo).
+  Abas: **Blocos de contexto** (ordem/campos do bloco `contexto`; `contextForPrompt(ctx, preço,
+cfg)` respeita `blocks` e `hiddenFields`), **Correlação de condições** (`rules` do usuário —
+  frase com `*` — somam às `TEXT_RULES` do app, que podem ser desligadas em `disabledRules`; ver
+  `docs/areas/grading-e-estado.md`), **Frete e padrões** (`freight`, `defaultCond`) e **Modelo e
+  modo** (`AiModeSelect` = `app_state.ai_mode`, `AiModelSelect` = provedor+modelo; gravam na hora,
+  fora do botão Salvar). Onde a configuração vale: contexto do prompt (`loadLotContexts`), passo
+  `condition`, `captureFinishedSales` (estado das vendas), fallback de estado no cliente, `marketFor`
+  (home, Análise, diálogo do De olho) e o resumo diário (`dealFor` recalcula o "vs. mercado").
+  **Mudar a configuração não reavalia a base**: o hash só leva `PROMPT_VERSION`. Para refazer as
+  notas com a configuração nova, suba `PROMPT_VERSION` (`ai-context.ts`). Nota gravada com o contexto
+  indisponível leva `x` no hash (`evalHash(title, false)`) e volta para a fila.
+  ⚠️ `lot_ident.title_hash` é o `titleHash` PURO; só `lot_ai` usa `evalHash`. `selectLotsToEvaluate`
+  recebe a função de hash (5º parâmetro) justamente para a identificação não usar a da avaliação.
 - **Identificação simples — `lot_ident`** (isolada da avaliação, **sem gate de modo**): passada
   **barata** que preenche só artista/álbum/ano em **toda a base**. Tabela `lot_ident` (`id`,
   `title_hash`, `album`, `year`, `confidence`, `source`, `model`). `buildIdentUserPrompt`/
@@ -128,6 +164,7 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   **Reavaliar um lote** (`reevaluateLot`: ✨ do lote sem nota, "refazer consulta", ícone da Análise) também roda `refreshLotTracklist` depois da nota (best-effort, só com `DISCOGS_TOKEN` e álbum identificado) — o lote sai com nota, faixas e fama.
   **Clique no ícone sem tracklist** (`TracklistHover` com `lotId`) dispara esse mesmo refresh (v0.127.0); sem linha em `lot_ai` com álbum dá erro explicando. **Medley**: item `index` do Discogs vira a faixa-mãe + partes com `sub: true` (lado herdado); posições planas "A2.1"/"A9.3" (sem mãe com título) ganham uma mãe sintética "Medley" — indentadas com ↳ na UI. Teto de 80 faixas. Listas já gravadas só mudam com o botão "atualizar".
   Normalização/agrupamento puros em `tracklist.ts`; UI em `tracklist-hover.tsx`/`tracklist-refresh.ts`.
+  **Sob demanda (v0.146.0):** o navegador NÃO recebe as faixas na lista de avaliações — `getLotAi` (`getAllLotAiClient`) manda só `hasTracklist`; as faixas vêm de `getLotTracklist(id)` (`useLotTracklist`, chave `queryKeys.lotTracklist(id)`) quando o ícone é tocado/passado o mouse ou a aba "Faixas" abre. Quem grava faixas (refresh, `reevaluateLot`) atualiza as duas chaves do cache. Mapeamento `lot_ai` → `LotAi` da UI: `toLotAi` (`lot-score.ts`).
 - **Lote sem nota (v0.112.0):** o `LotCard` mostra `EvaluateCornerButton` (✨, onde ficaria o selo) que chama `reevaluateLot`; resposta ilegível da IA conta como `failed` em `evalLotsSync` e o toast de `analyzeOnDemand` distingue escopo vazio (login) de "tudo já avaliado".
 - **Modo automático — chave `ai_mode`** (`getAiMode`/`setAiMode`): `"off" | "all" | "watched"`,
   **padrão `"watched"`** (econômico). No `step=aieval`: `off` não coleta/submete; `all` = todos
@@ -173,3 +210,28 @@ image})` chama `evalLotsSync` **direto** (ignora o cache por `title_hash` — é
 - **Custo Gemini (referência):** `gemini-flash-latest` ≈ US$0,75/US$3,75 por 1M tok in/out (mais
   barato que o Haiku 4.5); o alias `-latest` acompanha o Flash mais novo — para fixar, usar
   `GEMINI_MODEL`.
+
+### Revisão de código da IA (v0.143.1)
+
+- **Erros do Discogs** (`discogs.server.ts`): `discogsGet` conta falhas transitórias; `fetchMarket` e
+  `fetchSuggestionMap` lançam `DiscogsTransientError` quando houve alguma e o cron NÃO grava (404 é
+  "não existe" e continua gravando `matched=false`). `step=market` grava lote a lote.
+- **`lot_condition.title_hash`** = `titleHash.c<CONDITION_PARSER_VERSION>.<impressão das regras>`
+  (`lot-condition.server.ts`). Mudou `grading.ts`/`condition-text.ts` de forma que o resultado muda?
+  Suba `CONDITION_PARSER_VERSION`. Editar regras no painel muda a impressão sozinho.
+- **Capa para o Gemini** (`isSafeImageUrl`): só http(s) público; recusa localhost, nomes sem ponto
+  (serviços do Docker), `.local`/`.internal`, IPv6 literal e 10/8, 127/8, 169.254/16, 172.16/12,
+  192.168/16.
+- **Batch preso:** `aieval` abandona o batch pendente com mais de 48h se a coleta lançar erro.
+
+### Ajustes da revisão (v0.143.2)
+
+- **`evalHash`** = `titleHash.p<PROMPT_VERSION>.<impressão do texto do prompt>`. `PROMPT_VERSION` cobre a
+  ESTRUTURA do contexto (`ai-context.ts`); o texto (`SYSTEM_PROMPT` + `USER_INSTRUCTIONS`) é coberto pela
+  impressão, então editar o prompt reavalia a base (até 800 lotes por rodada) automaticamente.
+- **`getAllLotAiLean`** (`lot-ai.server.ts`): leitura sem `tracklist`, para o cron e rotinas internas.
+  A tracklist só é lida onde importa (cliente `getLotAi`, `reevaluateLot`, `repriceLotAi`).
+- **`marketBasis`**: `m2:` + hash do álbum (ou título) normalizado, sem ano nem parênteses. Linhas com o
+  formato antigo continuam válidas (`selectLotsForMarket` aceita os dois).
+- **`step=condition`**: lote que passou do teto de IA do round (`AI_CONDITION_CAP`) NÃO é gravado, volta
+  na próxima chamada (o laço do cron continua enquanto houver adiados).

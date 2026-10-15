@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { ExternalLink, Loader2, Plus, RefreshCw, Sparkles, Star, X } from "lucide-react";
 import { useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
@@ -8,6 +9,8 @@ import { toast } from "sonner";
 import { reevaluateLot } from "@/lib/ai.functions";
 
 import {
+  DEAL_BAND_CHEAP,
+  DEAL_BAND_EXPENSIVE,
   dealLabel,
   dealTone,
   discogsUrl,
@@ -19,7 +22,9 @@ import {
   type LotAi,
   type LotMarket,
 } from "./ai-score-utils";
-import { queryKeys } from "@/lib/queries";
+import { analyticsGroupSearch } from "@/lib/past-sales";
+import { queryKeys, useLotPastSales } from "@/lib/queries";
+import { parsePrice } from "@/lib/vinyl-parse";
 
 /** Dados do lote necessários para refazer a consulta à IA (botão no painel de detalhes). */
 type ReevalLot = {
@@ -66,7 +71,24 @@ function MarketBlock({ market, price }: { market: LotMarket; price?: string }) {
             </dd>
           </>
         ) : null}
-        {market.suggestedPrice !== null ? (
+        {market.freight && price && parsePrice(price) !== null ? (
+          <>
+            <dt>Lote + frete:</dt>
+            <dd className="font-medium text-foreground">
+              {fmtMoney(parsePrice(price)! + market.freight, "BRL")}
+              {` · frete estimado ${fmtMoney(market.freight, "BRL")}`}
+            </dd>
+          </>
+        ) : null}
+        {market.anchor ? (
+          <>
+            <dt>Sugerido ({market.anchor.condition}):</dt>
+            <dd className="font-medium text-foreground">
+              {fmtMoney(market.anchor.price, "BRL")}
+              {market.anchor.exact ? " · condição do lote" : " · sem estado: usa o padrão G+"}
+            </dd>
+          </>
+        ) : market.suggestedPrice !== null ? (
           <>
             <dt>Sugerido:</dt>
             <dd className="font-medium text-foreground">
@@ -94,6 +116,64 @@ function MarketBlock({ market, price }: { market: LotMarket; price?: string }) {
           ver no Discogs <ExternalLink className="h-3 w-3" />
         </a>
       ) : null}
+    </div>
+  );
+}
+
+/** Vendas passadas do mesmo disco (Vinil Analytics) + link para o grupo usado na comparação. */
+function PastSalesBlock({ lotId, price }: { lotId: string; price?: string }) {
+  const { data } = useLotPastSales(lotId);
+  if (!data) return null;
+  const brl = (n: number) => fmtMoney(n, "BRL");
+  const now = price ? parsePrice(price) : null;
+  const ratio = now && data.median > 0 ? now / data.median : null;
+  return (
+    <div className="mt-1 border-t border-border pt-1.5">
+      <div className="flex items-center justify-between font-medium text-foreground">
+        <span>Vendas passadas (Analytics)</span>
+        {ratio !== null ? (
+          <span
+            className={`text-[11px] ${dealTone(
+              ratio <= DEAL_BAND_CHEAP ? "barato" : ratio >= DEAL_BAND_EXPENSIVE ? "caro" : "justo",
+            )}`}
+          >
+            {ratio.toFixed(2).replace(".", ",")}× a mediana
+          </span>
+        ) : null}
+      </div>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-muted-foreground">
+        <dt>{data.count === 1 ? "1 venda:" : `${data.count} vendas:`}</dt>
+        <dd className="font-medium text-foreground">
+          {data.count === 1
+            ? brl(data.median)
+            : `${brl(data.min)} a ${brl(data.max)} · mediana ${brl(data.median)}`}
+        </dd>
+        {data.last && data.count > 1 ? (
+          <>
+            <dt>Última:</dt>
+            <dd className="font-medium text-foreground">
+              {brl(data.last.price)}
+              {data.last.date ? ` em ${data.last.date.split("-").reverse().join("/")}` : ""}
+            </dd>
+          </>
+        ) : null}
+        {data.similar ? (
+          <>
+            <dt>Estado parecido:</dt>
+            <dd className="font-medium text-foreground">
+              mediana {brl(data.similar.median)} ({data.similar.count})
+            </dd>
+          </>
+        ) : null}
+      </dl>
+      <Link
+        to="/vinil-analytics"
+        search={analyticsGroupSearch(data)}
+        className="mt-0.5 inline-flex items-center gap-1 font-medium text-primary hover:underline"
+        title={`Abre «${data.artist} — ${data.album}» no Analytics; se o disco estiver errado, corrija lá`}
+      >
+        ver no Analytics <ExternalLink className="h-3 w-3" />
+      </Link>
     </div>
   );
 }
@@ -441,6 +521,11 @@ export function ScoreDetails({
   // Dados do lote para o botão "refazer consulta" — sem eles, o botão simplesmente não aparece.
   lot?: ReevalLot;
 }) {
+  // A oportunidade vale mais calculada AGORA (lote + frete × preço do Discogs na condição do disco,
+  // com a configuração atual do painel) do que a gravada pela IA, que pode ter saído com dado antigo.
+  const marketVerdict = market && price ? marketDeal(price, market) : "indefinido";
+  const fromMarket = marketVerdict !== "indefinido";
+  const opportunity = fromMarket ? marketVerdict : ai.deal;
   return (
     <div className="space-y-1.5 text-xs">
       <div className="flex items-center justify-between gap-1.5">
@@ -457,7 +542,17 @@ export function ScoreDetails({
           <RarityLabel rarity={ai.rarity} />
         </dd>
         <dt>Oportunidade:</dt>
-        <dd className={`font-medium ${dealTone(ai.deal)}`}>{dealLabel(ai.deal)}</dd>
+        <dd
+          className={`font-medium ${dealTone(opportunity)}`}
+          title={
+            fromMarket
+              ? "Calculada agora: lote + frete contra o preço sugerido do Discogs para a condição do disco"
+              : "Avaliação da IA"
+          }
+        >
+          {dealLabel(opportunity)}
+          {fromMarket ? " (mercado)" : ""}
+        </dd>
         {ai.evalPrice ? (
           <>
             <dt>Avaliado a:</dt>
@@ -478,6 +573,7 @@ export function ScoreDetails({
         </div>
       ) : null}
       {market?.matched ? <MarketBlock market={market} price={price} /> : null}
+      {lot ? <PastSalesBlock lotId={lot.id} price={price} /> : null}
     </div>
   );
 }

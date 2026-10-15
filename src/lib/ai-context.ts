@@ -1,0 +1,242 @@
+/**
+ * Contexto extra que acompanha cada lote no prompt da avaliação (v0.142.0): estado de conservação,
+ * preço sugerido do Discogs para a condição do disco e frete estimado da casa. Funções PURAS
+ * (client-safe, testáveis); a leitura das tabelas fica em `ai-context.server.ts`.
+ *
+ * Tudo em reais, no Brasil. Dado ausente simplesmente não entra no prompt (a IA volta a estimar
+ * pelo próprio conhecimento, como antes).
+ */
+import { auctionFreight } from "./auction-freight";
+import {
+  CONTEXT_BLOCK_IDS,
+  CONTEXT_FIELDS,
+  DEFAULT_PANEL_CONFIG,
+  fieldOn,
+  type ContextBlockId,
+  type PanelConfig,
+} from "./ai-panel-config";
+import {
+  anchorForCondition,
+  gradeToCondKey,
+  normalizeSuggestionMap,
+  type PriceAnchor,
+} from "./discogs-price";
+import { normalizeGrade, scoreCondition } from "./grading";
+import type { CollectorProfile } from "./collector-profile";
+import type { PastSales } from "./past-sales";
+
+/**
+ * Versão do prompt da avaliação. Entra no hash de `lot_ai.title_hash` (ver `evalHash`): subir o
+ * número reavalia todos os lotes na rodada seguinte. Mudou o texto do prompt ou os blocos de
+ * contexto? Suba aqui.
+ */
+export const PROMPT_VERSION = 3;
+
+/** Teto da descrição que vai no prompt (≈ 150 tokens). */
+const DESCRIPTION_MAX = 600;
+
+/**
+ * Descrição do lote para o prompt: o texto do catálogo sem espaços repetidos, truncado numa palavra.
+ * Vazio quando não passa de uma repetição do título (o título já vai no prompt).
+ */
+export function cleanLotDescription(text: string | null | undefined, title = ""): string {
+  const t = String(text ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!t) return "";
+  const norm = (x: string) =>
+    x
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim();
+  if (norm(t) === norm(title)) return "";
+  if (t.length <= DESCRIPTION_MAX) return t;
+  const cut = t.slice(0, DESCRIPTION_MAX);
+  const sp = cut.lastIndexOf(" ");
+  return `${(sp > DESCRIPTION_MAX * 0.6 ? cut.slice(0, sp) : cut).trimEnd()}…`;
+}
+
+/**
+ * Descrição textual da ESTRUTURA do contexto (blocos e campos que o prompt pode levar). Entra no hash
+ * da avaliação: acrescentar, renomear ou remover um bloco/campo em `ai-panel-config.ts` muda este
+ * texto e reavalia a base sozinho. O que NÃO é coberto (e por isso ainda pede subir `PROMPT_VERSION`):
+ * mudança na LÓGICA que calcula um valor (ex.: outra âncora, outro arredondamento) sem mudar nomes.
+ */
+export function contextSchemaSignature(): string {
+  return CONTEXT_BLOCK_IDS.map((b) => `${b}:${CONTEXT_FIELDS[b].map((f) => f.key).join(",")}`).join(
+    "|",
+  );
+}
+
+export type LotContext = {
+  estado: {
+    disco: string | null;
+    capa: string | null;
+    encarte: "sim" | "nao" | null;
+    nota_estado: number | null;
+  } | null;
+  mercado: {
+    anchor: PriceAnchor;
+    ano: number | null;
+    querem: number | null;
+    tem: number | null;
+    anuncios_a_venda: number | null;
+  } | null;
+  frete: number;
+  /** Descrição completa do lote (catálogo da casa), já limpa; null = sem descrição além do título. */
+  descricao: string | null;
+  /** Vendas passadas do mesmo disco (Vinil Analytics, `past-sales.ts`); null = sem histórico. */
+  vendas: PastSales | null;
+  /** Relação do colecionador com o lote (interesses, De olho, Coleção); null = nenhuma. */
+  colecionador: CollectorProfile | null;
+};
+
+type ConditionInput = {
+  media?: string | null;
+  sleeve?: string | null;
+  insert_state?: string | null;
+  score?: number | null;
+  description?: string | null;
+} | null;
+
+type MarketInput = {
+  matched?: boolean | null;
+  year?: number | null;
+  num_for_sale?: number | null;
+  have?: number | null;
+  want?: number | null;
+  suggested_by_condition?: unknown;
+} | null;
+
+/** Monta o contexto de um lote a partir das linhas de `lot_condition`, `lot_market` e da UF. */
+export function buildLotContext(
+  input: {
+    condition?: ConditionInput;
+    market?: MarketInput;
+    uf?: string | null;
+    pastSales?: PastSales | null;
+    profile?: CollectorProfile | null;
+  },
+  cfg: PanelConfig = DEFAULT_PANEL_CONFIG,
+): LotContext {
+  const c = input.condition;
+  const mediaRaw = c?.media ? normalizeGrade(c.media) : null;
+  const sleeveRaw = c?.sleeve ? normalizeGrade(c.sleeve) : null;
+  const insert: "sim" | "nao" | null =
+    c?.insert_state === "sim" ? "sim" : c?.insert_state === "nao" ? "nao" : null;
+  const estado =
+    mediaRaw || sleeveRaw
+      ? {
+          disco: mediaRaw,
+          capa: sleeveRaw,
+          encarte: insert,
+          nota_estado: typeof c?.score === "number" ? c.score : null,
+        }
+      : null;
+
+  // Convenção do app: com só um lado conhecido, o outro repete (scoreCondition espelha).
+  const grade = scoreCondition(mediaRaw, sleeveRaw).media;
+  const m = input.market;
+  const anchor = m?.matched
+    ? anchorForCondition(
+        normalizeSuggestionMap(m.suggested_by_condition),
+        gradeToCondKey(grade),
+        cfg.defaultCond,
+      )
+    : null;
+  const mercado =
+    m && anchor
+      ? {
+          anchor,
+          ano: m.year ?? null,
+          querem: m.want ?? null,
+          tem: m.have ?? null,
+          anuncios_a_venda: m.num_for_sale ?? null,
+        }
+      : null;
+  return {
+    estado,
+    mercado,
+    frete: auctionFreight(input.uf, cfg.freight),
+    descricao: cleanLotDescription(c?.description) || null,
+    vendas: input.pastSales ?? null,
+    colecionador: input.profile ?? null,
+  };
+}
+
+/**
+ * Objeto `contexto` que vai no JSON do prompt, na ordem dos blocos da configuração e sem os campos
+ * desligados. `priceBrl` é o valor atual do lote (sem frete); com ele e a âncora do Discogs entram
+ * o total com frete e a razão entre os dois, o número que a IA precisa para dizer "barato" ou
+ * "caro" (mesmas faixas do `marketDeal` do app).
+ */
+export function contextForPrompt(
+  ctx: LotContext,
+  priceBrl: number | null,
+  cfg: PanelConfig = DEFAULT_PANEL_CONFIG,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const total = priceBrl != null && priceBrl > 0 ? priceBrl + ctx.frete : null;
+  const pick = (block: ContextBlockId, all: Record<string, unknown>) =>
+    Object.fromEntries(
+      Object.entries(all).filter(([k, v]) => v !== undefined && fieldOn(cfg, block, k)),
+    );
+
+  for (const block of cfg.blocks) {
+    if (block === "estado" && ctx.estado) {
+      const o = pick("estado", { ...ctx.estado });
+      if (Object.keys(o).length) out["estado"] = o;
+    } else if (block === "mercado" && ctx.mercado) {
+      const { anchor, ano, querem, tem, anuncios_a_venda } = ctx.mercado;
+      const o = pick("mercado", {
+        preco_sugerido: Math.round(anchor.price),
+        condicao_de_referencia: anchor.condition,
+        estado_do_lote_conhecido: anchor.exact,
+        ano: ano ?? undefined,
+        querem: querem ?? undefined,
+        tem: tem ?? undefined,
+        anuncios_a_venda: anuncios_a_venda ?? undefined,
+        razao_lote_vs_sugerido:
+          total != null ? Math.round((total / anchor.price) * 100) / 100 : undefined,
+      });
+      if (Object.keys(o).length) out["mercado_discogs_brl"] = o;
+    } else if (block === "descricao" && ctx.descricao) {
+      Object.assign(out, pick("descricao", { descricao_do_lote: ctx.descricao }));
+    } else if (block === "vendas" && ctx.vendas) {
+      const v = ctx.vendas;
+      const o = pick("vendas", {
+        n_vendas: v.count,
+        menor: Math.round(v.min),
+        mediana: Math.round(v.median),
+        maior: Math.round(v.max),
+        ultima_venda: v.last ? Math.round(v.last.price) : undefined,
+        ultima_venda_em: v.last?.date ?? undefined,
+        n_estado_parecido: v.similar?.count,
+        mediana_estado_parecido: v.similar ? Math.round(v.similar.median) : undefined,
+        razao_preco_vs_mediana:
+          priceBrl != null && priceBrl > 0 && v.median > 0
+            ? Math.round((priceBrl / v.median) * 100) / 100
+            : undefined,
+      });
+      if (Object.keys(o).length) out["vendas_passadas_brl"] = o;
+    } else if (block === "colecionador" && ctx.colecionador) {
+      const c = ctx.colecionador;
+      const o = pick("colecionador", {
+        nos_meus_interesses: c.interesse ? true : undefined,
+        de_olho: c.deOlho?.label,
+        teto_de_olho_brl: c.deOlho?.teto != null ? Math.round(c.deOlho.teto) : undefined,
+        ja_tenho: c.jaTenho ?? undefined,
+      });
+      if (Object.keys(o).length) out["perfil_do_colecionador"] = o;
+    } else if (block === "frete") {
+      Object.assign(
+        out,
+        pick("frete", {
+          frete_estimado_brl: ctx.frete,
+          lote_mais_frete_brl: total ?? undefined,
+        }),
+      );
+    }
+  }
+  return out;
+}

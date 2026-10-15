@@ -176,7 +176,7 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   egress do `reident`, ver `docs/economia-fase-1-egress-e-cpu.md`). Em vez de uma RPC de
   anti-join (exigiria migration nova), a correção foi um **cache curto em memória (TTL 30s)**
   na própria instância de function: `scrapeVinylLots(false)` (`leiloesbr-scrape.server.ts`,
-  `memCache`) e `getAllLotAi`/`getAllLotIdent` (`lot-ai.server.ts`/`lot-ident.server.ts`,
+  `memCache`) e `getAllLotAiLean`/`getAllLotAiClient`/`getAllLotIdent` (`lot-ai.server.ts`/`lot-ident.server.ts`,
   `allCache`) devolvem o resultado já lido em vez de reconsultar o banco, dentro do TTL.
   Invalidado a cada escrita (`upsertLotAi`/`updateLotTags`/`upsertLotIdent`) para nunca servir
   algo mais velho que a última gravação **desta instância**. Como o laço do cron chama esses

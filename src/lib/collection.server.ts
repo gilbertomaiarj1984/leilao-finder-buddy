@@ -1,4 +1,4 @@
-import { parseAiAlbum } from "@/components/vinyl/ai-score-utils";
+import { parseAiAlbum } from "@/lib/lot-score";
 import { db } from "@/lib/db-client.server";
 import {
   collectionPathFromUrl,

@@ -15,6 +15,8 @@
  *   graus (arredondada). Ver `scoreCondition`.
  */
 
+import { matchTextRules, type TextRule } from "./condition-text";
+
 /** Graus canônicos, do melhor (M) ao pior (F/P). A ordem define o eixo pior→melhor do Analytics. */
 export const GRADE_ORDER = ["M", "NM", "EX", "VG+", "VG", "VG-", "G+", "G", "G-", "F/P"] as const;
 
@@ -148,11 +150,13 @@ export function normalizeGrade(raw: string | null | undefined): Grade | null {
   // "Quase Novo" antes de "Mint"/"Perfeito"/"Novo"; "Muito Bom/Boa" antes de "Bom/Boa"…).
   if (/\bNEAR\s*MINT\b|\bQUASE\s*PERFEIT[OA]\b|\bQUASE\s*NOVO\b/.test(s)) return "NM";
   if (/\b(MINT|LACRAD[OA]|SELAD[OA]|IMPECAVEL|PERFEIT[OA]|NOVO)\b/.test(s)) return "M";
-  if (/\bEXCELENTE\b|\bEXCELLENT\b|\bOTIM[OA]\b/.test(s)) return "EX";
+  if (/\bEXCELENTE\b|\bEXCELLENT\b/.test(s)) return "EX";
+  if (/\bOTIM[OA]\b/.test(s)) return "VG+";
   if (/\bMUITO\s*BOM\b|\bMUITO\s*BOA\b|\bVERY\s*GOOD\s*PLUS\b/.test(s)) return "VG+";
   if (/\bVERY\s*GOOD\b|\bBOM\b|\bBOA\b/.test(s)) return "VG";
   if (/\bGOOD\s*PLUS\b/.test(s)) return "G+";
-  if (/\bGOOD\b|\bREGULAR\b|\bRAZOAVEL\b/.test(s)) return "G";
+  if (/\bREGULAR\b|\bRAZOAVEL\b/.test(s)) return "G+";
+  if (/\bGOOD\b/.test(s)) return "G";
   if (/\bFAIR\b|\bPOOR\b|\bRUIM\b|\bPESSIM[OA]\b|\bDANIFICAD[OA]\b/.test(s)) return "F/P";
   return null;
 }
@@ -201,7 +205,7 @@ function gradeAfterLabel(foldedText: string, labels: string, stopLabels = ""): G
   const stop = stopLabels ? `(?!${stopLabels})` : "";
   const filler = `(?:${stop}[^.;!?]){0,40}?`;
   const re = new RegExp(
-    `(?:${labels})${filler}[:\\-–=]?\\s*\\(?\\s*(?<!NAO\\s)(?<!SEM\\s)(?<![A-Z0-9])(${GRADE_TOKEN})(?![A-Z0-9])`,
+    `(?:${labels})${filler}[:\\-–=]?\\s*\\(?\\s*(?<!NAO\\s)(?<!SEM\\s)(?<![A-Z0-9])(${GRADE_TOKEN})(?![A-Z0-9])(?!-[A-Z])`,
     "i",
   );
   const m = foldedText.match(re);
@@ -242,7 +246,10 @@ function detectInsert(text: string): InsertState {
  * Nunca inventa: sem sinal → `source: 'indefinido'`. O resultado final passa por
  * `scoreCondition`, que ESPELHA o grau quando só um lado foi encontrado (ver seu doc).
  */
-export function parseConditionFromText(text: string | null | undefined): Condition {
+export function parseConditionFromText(
+  text: string | null | undefined,
+  textRules?: readonly TextRule[],
+): Condition {
   const rawTrim = (text ?? "").trim();
   if (!rawTrim) return { ...EMPTY_CONDITION };
   const folded = foldUpper(rawTrim);
@@ -259,12 +266,16 @@ export function parseConditionFromText(text: string | null | undefined): Conditi
       sleeve = overall;
     } else {
       // (3) palavra de item inteiro sem rótulo.
-      if (/\b(MINT|LACRAD[OA]|SELAD[OA]|IMPECAVEL)\b/.test(folded)) {
+      if (/(?<!NEAR\s*)\b(MINT|LACRAD[OA]|SELAD[OA]|IMPECAVEL)\b/.test(folded)) {
         media = "M";
         sleeve = "M";
+      } else if (/\bNEAR\s*MINT\b/.test(folded)) {
+        media = "NM";
+        sleeve = "NM";
       } else {
         // (4) uma única sigla forte solta (evita M/G/F/P sozinhos, ambíguos demais).
-        const STRONG = /\b(VG\+\+|VG\+|VG-|M-|NM|EX|G\+|G-|F\/P)\b/g;
+        // `ex-Beatle`/`ex-Cassino`: EX colado a outra palavra por hífen não é grau.
+        const STRONG = /(?<![A-Z0-9])(VG\+\+|VG\+|VG-|M-|NM|EX|G\+|G-|F\/P)(?![A-Z0-9]|-[A-Z])/g;
         const found = new Set<Grade>();
         for (const m of folded.matchAll(STRONG)) {
           const g = normalizeGrade(m[1]!);
@@ -274,6 +285,19 @@ export function parseConditionFromText(text: string | null | undefined): Conditi
       }
     }
   }
+
+  // Frases brasileiras sem grau ("em ótimo estado", "estado regular") e defeitos audíveis
+  // ("riscos que afetam a audição", "pula"): ver condition-text.ts.
+  const hits = matchTextRules(folded, textRules);
+  if (!media && !sleeve) {
+    const set = hits.find((h) => h.rule.effect === "set");
+    if (set) {
+      media = set.rule.grade;
+      sleeve = set.rule.grade;
+    }
+  }
+  const cap = hits.find((h) => h.rule.effect === "cap");
+  if (cap && (!media || GRADE_SCORES[media] > GRADE_SCORES[cap.rule.grade])) media = cap.rule.grade;
 
   const insert = detectInsert(rawTrim);
   const { media: m, sleeve: s, score, faixa } = scoreCondition(media, sleeve);
