@@ -91,8 +91,8 @@ export function LookoutLotDialog({
   }, [cond, lot?.title]);
   // Mercado com a âncora de preço da condição (mídia) do lote.
   const market = useMemo(
-    () => withConditionAnchor(marketRaw, condition.media),
-    [marketRaw, condition.media],
+    () => withConditionAnchor(marketRaw, condition.media, lot?.uf),
+    [marketRaw, condition.media, lot?.uf],
   );
 
   return (

@@ -18,13 +18,19 @@
   só aceita `currency=BRL`; outra moeda é descartada, nunca tratada como real). O veredicto
   (`marketDeal`, `ai-score-utils.ts`) usa a âncora da condição (mídia) do lote, anexada por
   `withConditionAnchor` (home, Análise e diálogo do De olho leem `lot_condition`): condição do
-  lote → condição mais próxima (empate: a pior) → VG+ quando o estado é desconhecido. Ordem da
+  lote → condição mais próxima (empate: a pior) → **G+** quando o estado é desconhecido (v0.141.1). Ordem da
   âncora: sugerido da condição → faixa BR → sugerido VG+ → menor global (só último recurso, é o
   anúncio mais barato do mundo em qualquer condição). Linhas antigas (`suggested_by_condition`
   NULL) são preenchidas pelo `step=market` quando não há lote novo a casar (`selectMarketBackfill`,
   1 chamada de sugestões por release); `{}` = consultado sem sugestões. Medido em produção
   (15/10/2026): 2.546 linhas em BRL, 0 com faixa BR; a API respeita `curr_abbr` (R$ 5,60 vs
   US$ 1,11) e o sugerido já vem em BRL (conta do token); sugerido ÷ menor global tem mediana 1,73.
+- **Conta justa com o frete do leilão (v0.141.1):** as casas brasileiras sempre cobram frete, então
+  `marketDeal` compara `valor do lote + frete` com a âncora (`auction-freight.ts`: R$ 25 no Sudeste —
+  SP, RJ, MG, ES —, R$ 35 nas demais UFs e quando a UF é desconhecida). `withConditionAnchor(m,
+  media, uf)` anexa `anchor` e `freight` ao mercado; o `MarketBlock` mostra "Lote + frete". Valores
+  fixos no código (viram configuração no painel de IA). Preço de mercado só em BRL; outra moeda é
+  descartada (decisão: o Brasil é a referência, outros países são outras realidades).
 - **⚠️ Página de venda bloqueada (15/10/2026):** `www.discogs.com/sell/release/<id>` responde
   **403 com desafio Cloudflare** a partir do VPS, então `price_low_br`/`price_high_br`/
   `num_for_sale_br` nunca foram preenchidos em produção. `fetchBrListings` desliga a tentativa

@@ -15,6 +15,8 @@
  *   graus (arredondada). Ver `scoreCondition`.
  */
 
+import { matchTextRules } from "./condition-text";
+
 /** Graus canônicos, do melhor (M) ao pior (F/P). A ordem define o eixo pior→melhor do Analytics. */
 export const GRADE_ORDER = ["M", "NM", "EX", "VG+", "VG", "VG-", "G+", "G", "G-", "F/P"] as const;
 
@@ -148,11 +150,13 @@ export function normalizeGrade(raw: string | null | undefined): Grade | null {
   // "Quase Novo" antes de "Mint"/"Perfeito"/"Novo"; "Muito Bom/Boa" antes de "Bom/Boa"…).
   if (/\bNEAR\s*MINT\b|\bQUASE\s*PERFEIT[OA]\b|\bQUASE\s*NOVO\b/.test(s)) return "NM";
   if (/\b(MINT|LACRAD[OA]|SELAD[OA]|IMPECAVEL|PERFEIT[OA]|NOVO)\b/.test(s)) return "M";
-  if (/\bEXCELENTE\b|\bEXCELLENT\b|\bOTIM[OA]\b/.test(s)) return "EX";
+  if (/\bEXCELENTE\b|\bEXCELLENT\b/.test(s)) return "EX";
+  if (/\bOTIM[OA]\b/.test(s)) return "VG+";
   if (/\bMUITO\s*BOM\b|\bMUITO\s*BOA\b|\bVERY\s*GOOD\s*PLUS\b/.test(s)) return "VG+";
   if (/\bVERY\s*GOOD\b|\bBOM\b|\bBOA\b/.test(s)) return "VG";
   if (/\bGOOD\s*PLUS\b/.test(s)) return "G+";
-  if (/\bGOOD\b|\bREGULAR\b|\bRAZOAVEL\b/.test(s)) return "G";
+  if (/\bREGULAR\b|\bRAZOAVEL\b/.test(s)) return "G+";
+  if (/\bGOOD\b/.test(s)) return "G";
   if (/\bFAIR\b|\bPOOR\b|\bRUIM\b|\bPESSIM[OA]\b|\bDANIFICAD[OA]\b/.test(s)) return "F/P";
   return null;
 }
@@ -274,6 +278,19 @@ export function parseConditionFromText(text: string | null | undefined): Conditi
       }
     }
   }
+
+  // Frases brasileiras sem grau ("em ótimo estado", "estado regular") e defeitos audíveis
+  // ("riscos que afetam a audição", "pula"): ver condition-text.ts.
+  const hits = matchTextRules(folded);
+  if (!media && !sleeve) {
+    const set = hits.find((h) => h.rule.effect === "set");
+    if (set) {
+      media = set.rule.grade;
+      sleeve = set.rule.grade;
+    }
+  }
+  const cap = hits.find((h) => h.rule.effect === "cap");
+  if (cap && (!media || GRADE_SCORES[media] > GRADE_SCORES[cap.rule.grade])) media = cap.rule.grade;
 
   const insert = detectInsert(rawTrim);
   const { media: m, sleeve: s, score, faixa } = scoreCondition(media, sleeve);

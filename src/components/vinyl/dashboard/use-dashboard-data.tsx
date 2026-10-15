@@ -582,8 +582,8 @@ export function useDashboardData() {
     return { ...base, matchesInterests: matchesInterest(lot.title ?? "") };
   };
   // Mercado com a âncora de preço da CONDIÇÃO do lote (sugerido do Discogs para o estado dele).
-  const marketFor = (lot: { id: string }): LotMarket | undefined =>
-    withConditionAnchor(marketById.get(lot.id), conditionById.get(lot.id)?.media);
+  const marketFor = (lot: { id: string; uf?: string }): LotMarket | undefined =>
+    withConditionAnchor(marketById.get(lot.id), conditionById.get(lot.id)?.media, lot.uf);
   // Estado de conservação (Disco/Capa). Prioriza o CACHE do servidor (`lot_condition`,
   // alimentado pelo descritivo do catálogo — mais rico); cai no parse do TÍTULO quando não
   // há linha no cache ainda (ou ela ficou indefinida).

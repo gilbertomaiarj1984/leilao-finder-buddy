@@ -93,3 +93,12 @@ valer a pena.
   arrastáveis, calibração, ordem do cron). Implementação depende da ordem de fases decidida com o
   usuário; mover `aieval` para depois de `aiident`/`market`/`condition`/`sales` no `refresh.yml` é
   pré-requisito para a IA enxergar esses dados.
+
+## Painel de IA — correlação de condições (pedido em 15/10/2026)
+
+Tabela visual e editável que relaciona o vocabulário dos leilões (siglas, "ótimo estado", "estado
+regular", "riscos que afetam a audição"…) com a escala do Discogs (M, NM, VG+, VG, G+, G, F, P), no
+mesmo painel do mercado Discogs. Base já pronta: `condition-text.ts` (regras `set`/`cap`) e
+`discogs-price.ts` (`gradeToCondKey`). O painel só precisa persistir as regras em `app_state` e
+carregá-las no lugar das constantes. Frete do leilão (R$ 25 Sudeste / R$ 35 demais) também vira
+campo editável ali.

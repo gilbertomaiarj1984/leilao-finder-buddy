@@ -20,6 +20,7 @@ import {
   type LotMarket,
 } from "./ai-score-utils";
 import { queryKeys } from "@/lib/queries";
+import { parsePrice } from "@/lib/vinyl-parse";
 
 /** Dados do lote necessários para refazer a consulta à IA (botão no painel de detalhes). */
 type ReevalLot = {
@@ -66,12 +67,21 @@ function MarketBlock({ market, price }: { market: LotMarket; price?: string }) {
             </dd>
           </>
         ) : null}
+        {market.freight && price && parsePrice(price) !== null ? (
+          <>
+            <dt>Lote + frete:</dt>
+            <dd className="font-medium text-foreground">
+              {fmtMoney(parsePrice(price)! + market.freight, "BRL")}
+              {` · frete estimado ${fmtMoney(market.freight, "BRL")}`}
+            </dd>
+          </>
+        ) : null}
         {market.anchor ? (
           <>
             <dt>Sugerido ({market.anchor.condition}):</dt>
             <dd className="font-medium text-foreground">
               {fmtMoney(market.anchor.price, "BRL")}
-              {market.anchor.exact ? " · condição do lote" : " · estado do lote desconhecido"}
+              {market.anchor.exact ? " · condição do lote" : " · sem estado: usa o padrão G+"}
             </dd>
           </>
         ) : market.suggestedPrice !== null ? (

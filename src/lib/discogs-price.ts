@@ -15,8 +15,8 @@ export type CondKey = (typeof COND_KEYS)[number];
 /** Preço sugerido (BRL) por condição; só as condições que o Discogs informou. */
 export type SuggestionMap = Partial<Record<CondKey, number>>;
 
-/** Condição de referência quando o estado do lote é desconhecido. */
-const DEFAULT_COND: CondKey = "VG+";
+/** Condição de referência quando o estado do lote é desconhecido (decisão do usuário: G+). */
+const DEFAULT_COND: CondKey = "G+";
 
 const API_NAMES: Record<string, CondKey> = {
   "Mint (M)": "M",

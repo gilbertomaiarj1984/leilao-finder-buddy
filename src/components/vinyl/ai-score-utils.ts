@@ -1,3 +1,4 @@
+import { auctionFreight } from "@/lib/auction-freight";
 import {
   anchorForCondition,
   gradeToCondKey,
@@ -160,6 +161,8 @@ export type LotMarket = {
   suggestedByCondition: SuggestionMap | null;
   /** Âncora para a condição do lote (preenchida por `withConditionAnchor`). */
   anchor?: PriceAnchor | null;
+  /** Frete estimado do leilão (por UF), somado ao valor do lote no veredicto. */
+  freight?: number | null;
   have: number | null;
   want: number | null;
   // Faixa real no mercado, só vendedores do Brasil, com TOTAL (preço + frete). BRL.
@@ -225,9 +228,11 @@ export function marketDeal(
   m: LotMarket | undefined,
 ): "barato" | "justo" | "caro" | "indefinido" {
   if (!m || !m.matched) return "indefinido";
-  const p = parsePrice(price);
+  const hammer = parsePrice(price);
+  // Conta justa: o lote custa o valor + o frete da casa (as casas brasileiras sempre cobram).
+  const p = hammer === null ? null : hammer + (m.freight ?? 0);
   // Âncora, da mais para a menos confiável: sugerido da CONDIÇÃO do lote; menor total (preço +
-  // frete) de vendedor BR; sugerido padrão (VG+); e só por último o menor global, que é o
+  // frete) de vendedor BR; sugerido padrão (G+); e só por último o menor global, que é o
   // anúncio mais barato do mundo em qualquer condição (ou, em disco raro, um lacrado caro).
   const ref = m.anchor?.price ?? m.priceLowBr ?? m.suggestedPrice ?? m.lowestPrice;
   if (p === null || ref === null || ref <= 0) return "indefinido";
@@ -236,15 +241,19 @@ export function marketDeal(
   return "justo";
 }
 
-/** Anexa ao mercado a âncora de preço da condição (mídia) do lote; sem condição, usa VG+. */
+/**
+ * Anexa ao mercado o contexto do lote: a âncora de preço da condição (mídia; sem condição usa
+ * G+) e o frete estimado do leilão pela UF.
+ */
 export function withConditionAnchor(
   m: LotMarket | undefined,
   media: Grade | string | null | undefined,
+  uf?: string | null,
 ): LotMarket | undefined {
   if (!m) return m;
   const grade = media ? normalizeGrade(media) : null;
   const anchor = anchorForCondition(m.suggestedByCondition, gradeToCondKey(grade));
-  return anchor ? { ...m, anchor } : m;
+  return { ...m, ...(anchor ? { anchor } : {}), freight: auctionFreight(uf) };
 }
 
 /** URL pública do release no Discogs (para tornar a âncora de mercado clicável em todo lugar). */

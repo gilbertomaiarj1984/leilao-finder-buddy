@@ -50,3 +50,17 @@ Cache de estado (Disco/Capa) por lote para os **cards pré-leilão**, alimentado
   `ConditionBadges` no `LotCard` é o mesmo — agora com estado mais rico.
 - **Cobertura:** preenche ao longo das rodadas do cron, como IA/mercado; casas fora do padrão de
   catálogo simplesmente ficam `indefinido`.
+
+
+## Texto em português corrente → grau (v0.141.1)
+
+`condition-text.ts` guarda as regras (dados puros, base da futura tabela editável do painel de IA) e
+`parseConditionFromText` as aplica sobre o texto dobrado (`foldUpper`):
+- **`set`** (só quando o texto não traz Disco/Capa rotulados): "excelente estado" = EX, "ótimo estado" =
+  VG+, "muito bom estado" = VG+, "bom estado" = VG, "estado regular/razoável" = G+. Vale para os dois lados.
+- **`cap`** (limita o DISCO a G+, mesmo com outro grau no texto): "riscos que afetam/prejudicam a
+  audição", "afeta a reprodução", "problemas na audição", "pula/pulos/trava", "riscos profundos/fundos".
+  Negação até 40 caracteres antes ("sem pulos", "não pula") anula.
+- `normalizeGrade`: "ótimo/ótima" = **VG+** (era EX) e "regular/razoável" = **G+** (era G).
+- Linhas já gravadas em `lot_condition` só mudam quando o título/descrição muda; para reler tudo:
+  `DELETE FROM lot_condition;` e deixar o `step=condition` refazer.

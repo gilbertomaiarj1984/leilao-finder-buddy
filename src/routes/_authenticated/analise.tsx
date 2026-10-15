@@ -510,7 +510,7 @@ function AnalisePage() {
     return map;
   }, [lotConditionQuery.data]);
   const marketFor = (lot: VinylLot): LotMarket | undefined =>
-    withConditionAnchor(marketById.get(lot.id), mediaById.get(lot.id));
+    withConditionAnchor(marketById.get(lot.id), mediaById.get(lot.id), lot.uf);
 
   // Estado por lote (vigia/lance) e o valor "Atual" corrigido para quem está vencendo.
   const isWatched = (lot: VinylLot) => watchedIds.has(lot.idPeca);

@@ -22,8 +22,8 @@ describe("parseConditionFromText", () => {
 
   test("prosa em português", () => {
     expect(grades("Disco apresenta-se em estado excelente")).toEqual(["EX", "EX"]);
-    expect(grades("Disco em ótimo estado, capa boa")).toEqual(["EX", "VG"]);
-    expect(grades("Disco bom estado. Capa regular")).toEqual(["VG", "G"]);
+    expect(grades("Disco em ótimo estado, capa boa")).toEqual(["VG+", "VG"]);
+    expect(grades("Disco bom estado. Capa regular")).toEqual(["VG", "G+"]);
     expect(grades("Disco lacrado")).toEqual(["M", "M"]);
   });
 

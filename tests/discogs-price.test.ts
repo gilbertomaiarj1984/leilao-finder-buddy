@@ -52,14 +52,15 @@ describe("discogs-price — sugerido por condição", () => {
     expect(gradeToCondKey(null)).toBeNull();
   });
 
-  test("anchorForCondition usa a condição do lote; sem condição, VG+ (não exata)", () => {
-    const { map } = parseSuggestionMap(RAW);
-    expect(anchorForCondition(map, "NM")).toEqual({ price: 66.27, condition: "NM", exact: true });
-    expect(anchorForCondition(map, null)).toEqual({
-      price: 50.68,
-      condition: "VG+",
-      exact: false,
+  test("anchorForCondition usa a condição do lote; sem condição, G+ (não exata)", () => {
+    const { map } = parseSuggestionMap({
+      ...RAW,
+      "Good Plus (G+)": { currency: "BRL", value: 22.4 },
     });
+    expect(anchorForCondition(map, "NM")).toEqual({ price: 66.27, condition: "NM", exact: true });
+    expect(anchorForCondition(map, null)).toEqual({ price: 22.4, condition: "G+", exact: false });
+    // Sem G+ no mapa, cai na mais próxima (VG).
+    expect(anchorForCondition(parseSuggestionMap(RAW).map, null)?.condition).toBe("VG");
   });
 
   test("anchorForCondition cai na condição mais próxima; empate vai para a pior", () => {
@@ -86,7 +87,7 @@ describe("marketDeal — âncora por condição", () => {
     currency: "BRL",
     suggestedPrice: 50,
     suggestedCondition: "Very Good Plus (VG+)",
-    suggestedByCondition: { NM: 66, "VG+": 50, VG: 35 },
+    suggestedByCondition: { NM: 66, "VG+": 50, VG: 35, "G+": 25 },
     have: null,
     want: null,
     priceLowBr: null,
@@ -94,17 +95,29 @@ describe("marketDeal — âncora por condição", () => {
     numForSaleBr: null,
   };
 
-  test("o menor global (R$ 5,60) não ancora mais o veredicto: lote a R$ 40 é justo, não caro", () => {
-    // Antes: 40 >= 5,6 × 1,15 → "caro". Agora a âncora é o sugerido (VG+ = 50).
-    expect(marketDeal("R$ 40,00", base)).toBe("justo");
+  test("o menor global (R$ 5,60) não ancora mais o veredicto", () => {
+    // Antes: qualquer lote acima de R$ 6,44 era "caro" (vs. o menor global de R$ 5,60).
+    // Agora a âncora é o sugerido da condição (VG+ = 50): R$ 25 + R$ 25 de frete = 50, justo.
+    const vgp = withConditionAnchor(base, "VG+", "SP")!;
+    expect(marketDeal("R$ 25,00", vgp)).toBe("justo");
   });
 
   test("usa a condição do lote: o mesmo preço é barato para um NM e caro para um VG", () => {
-    const nm = withConditionAnchor(base, "NM")!;
-    const vg = withConditionAnchor(base, "VG")!;
+    const nm = withConditionAnchor(base, "NM", "SP")!;
+    const vg = withConditionAnchor(base, "VG", "SP")!;
     expect(nm.anchor).toEqual({ price: 66, condition: "NM", exact: true });
-    expect(marketDeal("R$ 45,00", nm)).toBe("barato"); // 45 <= 66 × 0,7
-    expect(marketDeal("R$ 45,00", vg)).toBe("caro"); // 45 >= 35 × 1,15
+    expect(marketDeal("R$ 20,00", nm)).toBe("barato"); // 20 + 25 = 45 <= 66 × 0,7 = 46,2
+    expect(marketDeal("R$ 20,00", vg)).toBe("caro"); // 45 >= 35 × 1,15
+  });
+
+  test("o frete do leilão entra na conta: Sudeste R$ 25, fora R$ 35", () => {
+    const se = withConditionAnchor(base, "NM", "RJ")!;
+    const ne = withConditionAnchor(base, "NM", "BA")!;
+    expect(se.freight).toBe(25);
+    expect(ne.freight).toBe(35);
+    // 21 + 25 = 46 <= 46,2 (barato no Sudeste); 21 + 35 = 56 > 46,2 (justo fora dele).
+    expect(marketDeal("R$ 21,00", se)).toBe("barato");
+    expect(marketDeal("R$ 21,00", ne)).toBe("justo");
   });
 
   test("sem mapa por condição (linha antiga) cai no sugerido, depois no menor global", () => {
@@ -114,11 +127,11 @@ describe("marketDeal — âncora por condição", () => {
     expect(marketDeal("R$ 40,00", { ...old, matched: false })).toBe("indefinido");
   });
 
-  test("withConditionAnchor aceita a sigla do disco e ignora lixo", () => {
+  test("withConditionAnchor aceita a sigla do disco; sem estado usa G+", () => {
     expect(withConditionAnchor(base, "EX")?.anchor?.condition).toBe("VG+");
     expect(withConditionAnchor(base, "xyz")?.anchor).toEqual({
-      price: 50,
-      condition: "VG+",
+      price: 25,
+      condition: "G+",
       exact: false,
     });
     expect(withConditionAnchor(undefined, "NM")).toBeUndefined();
