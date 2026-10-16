@@ -304,7 +304,7 @@ describe("palavras extras do usuário (v0.118.0)", () => {
   });
 });
 
-describe("similarLookoutItems — só pergunta quando há dúvida", () => {
+describe("similarLookoutItems — lista os discos do artista para escolher", () => {
   const tm = item({ id: "tm", lotId: "1-1", artist: "Tim Maia", album: "Tim Maia", year: 1972 });
   const input = (album: string, year: number | null) => ({
     artist: "Tim Maia",
@@ -321,8 +321,15 @@ describe("similarLookoutItems — só pergunta quando há dúvida", () => {
     expect(similarLookoutItems([tm], input("", 1971))).toHaveLength(1);
     expect(similarLookoutItems([tm], input("Tim Maia Racional", null))).toHaveLength(1);
   });
-  test("mesmo artista, disco claramente diferente → não pergunta", () => {
-    expect(similarLookoutItems([tm], input("Nobre Vagabundo", 1980))).toHaveLength(0);
+  test("mesmo artista, disco claramente diferente → ainda lista, para o usuário escolher", () => {
+    expect(similarLookoutItems([tm], input("Nobre Vagabundo", 1980))).toHaveLength(1);
+  });
+  test("parecidos vêm primeiro; idêntico existente → sem pergunta", () => {
+    const nv = item({ id: "nv", lotId: "2-2", artist: "Tim Maia", album: "Nobre Vagabundo" });
+    expect(
+      similarLookoutItems([nv, tm], input("Tim Maia Racional", null)).map((i) => i.id),
+    ).toEqual(["tm", "nv"]);
+    expect(similarLookoutItems([nv, tm], input("Tim Maia", 1972))).toHaveLength(0);
   });
   test("outro artista → não pergunta", () => {
     expect(
