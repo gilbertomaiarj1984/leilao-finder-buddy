@@ -315,7 +315,7 @@ export function LotDetailSheet(
                           : "text-red-600 dark:text-red-400"
                       }
                     >
-                      {bidStatus}
+                      {st.bidStatus}
                     </span>
                   </Row>
                 ) : null}

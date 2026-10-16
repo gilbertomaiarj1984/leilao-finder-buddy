@@ -24,6 +24,7 @@ import {
   bidIsSold,
   bidIsWinning,
   decodeHtmlEntities,
+  effectiveBidStatus,
   splitRecordSpec,
   lotOpenUrl,
   parsePrice,
@@ -56,7 +57,7 @@ function LotCardDesktop({
   busy,
   onToggle,
   showDate = false,
-  bidStatus,
+  bidStatus: rawBidStatus,
   sold,
   ai,
   market,
@@ -153,6 +154,8 @@ function LotCardDesktop({
   const aiLabel = album ? formatAiAlbum(decodeHtmlEntities(album), market?.year) : "";
   // Cores (mesma regra do painel): meu lance ganhando = verde; meu lance coberto = vermelho;
   // apenas vigiado = amarelo; caso contrário, borda neutra.
+  // "Vencendo" defasado + vendido por mais que o meu lance → coberto (ver effectiveBidStatus).
+  const bidStatus = effectiveBidStatus(rawBidStatus, lot.myBid, sold);
   const hasBid = bidStatus !== undefined && bidStatus !== null && bidStatus !== "";
   const winning = hasBid && bidIsWinning(bidStatus as string);
   // Vendido: `lot_sales` (mais informativo, com preço) OU o status do lance já mostra

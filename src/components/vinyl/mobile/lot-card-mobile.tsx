@@ -202,7 +202,7 @@ export function LotCardMobile(props: LotCardProps) {
                     : "bg-red-500/15 text-red-700 dark:text-red-400",
                 )}
               >
-                {bidStatus}
+                {st.bidStatus}
               </span>
             ) : null}
             {hit ? (

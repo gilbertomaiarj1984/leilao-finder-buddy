@@ -247,6 +247,26 @@ export function bidIsCovered(status: string): boolean {
 }
 
 /**
+ * Status do meu lance corrigido pelo preço de venda. A página "Meus lances" pode seguir
+ * mostrando "Vencendo" depois que o lote foi arrematado por MAIS que o meu lance (o status
+ * só atualiza com atraso); quando o valor de venda conhecido (`lot_sales`/peca.asp) supera o
+ * meu lance, eu fui coberto — vira "Coberto e Vendido". Só mexe em "Vencendo" (nunca em
+ * "Vencedor"/"Arrematado", que já são resultado final) e só com os dois valores numéricos.
+ */
+export function effectiveBidStatus(
+  status: string | null | undefined,
+  myBid: string | undefined,
+  sold: string | null | undefined,
+): string | null | undefined {
+  if (!status || /arremat|arrebat|\bvencedor\b|cobert/i.test(status) || !/venc/i.test(status)) {
+    return status;
+  }
+  const mine = parsePrice(myBid ?? "");
+  const soldFor = parsePrice(sold ?? "");
+  return mine !== null && soldFor !== null && soldFor > mine ? "Coberto e Vendido" : status;
+}
+
+/**
  * Converte um preço em texto BR ("R$ 1.234,56": ponto de milhar, vírgula decimal)
  * para número. Retorna null quando não há valor numérico (ex.: "sem valor", "--").
  */

@@ -1,4 +1,4 @@
-import { auctionStarted, bidIsSold, bidIsWinning } from "@/lib/vinyl-parse";
+import { auctionStarted, bidIsSold, bidIsWinning, effectiveBidStatus } from "@/lib/vinyl-parse";
 
 // Estado visual do cartão de lote no celular — mesma regra do `LotCard` do desktop (precedência
 // lance > vigia > de olho; guarda "leilão que ainda não começou não tem lote vendido"; quando
@@ -17,19 +17,21 @@ export function lotCardState(input: {
   lookoutActive: boolean;
 }): {
   hasBid: boolean;
+  /** Status do lance já corrigido pelo preço de venda (ver `effectiveBidStatus`). */
+  bidStatus?: string | null;
   winning: boolean;
   tone: LotCardTone;
   soldLabel?: string;
   currentPrice: string;
 } {
-  const hasBid =
-    input.bidStatus !== undefined && input.bidStatus !== null && input.bidStatus !== "";
-  const winning = hasBid && bidIsWinning(input.bidStatus as string);
+  const bidStatus = effectiveBidStatus(input.bidStatus, input.myBid, input.sold);
+  const hasBid = bidStatus !== undefined && bidStatus !== null && bidStatus !== "";
+  const winning = hasBid && bidIsWinning(bidStatus as string);
   const notStartedYet =
     Boolean(input.dayKey && input.time) && !auctionStarted(input.dayKey, input.time);
   const soldLabel = notStartedYet
     ? undefined
-    : input.sold || (hasBid && bidIsSold(input.bidStatus as string) ? "Vendido" : undefined);
+    : input.sold || (hasBid && bidIsSold(bidStatus as string) ? "Vendido" : undefined);
   const tone: LotCardTone = hasBid
     ? winning
       ? "win"
@@ -40,7 +42,7 @@ export function lotCardState(input: {
         ? "eye"
         : "none";
   const currentPrice = winning && input.myBid ? input.myBid : input.price;
-  return { hasBid, winning, tone, soldLabel, currentPrice };
+  return { hasBid, bidStatus, winning, tone, soldLabel, currentPrice };
 }
 
 /** Classes da borda esquerda do cartão por tom. */

@@ -21,6 +21,24 @@ describe("lotCardState", () => {
     expect(s.tone).toBe("lose");
     expect(s.currentPrice).toBe("R$ 100,00");
   });
+  test("Vencendo defasado + vendido por mais que meu lance → coberto (vermelho)", () => {
+    const s = lotCardState({
+      ...base,
+      bidStatus: "Vencendo",
+      myBid: "R$ 50,00",
+      sold: "R$ 70,00",
+    });
+    expect(s.tone).toBe("lose");
+    expect(s.bidStatus).toBe("Coberto e Vendido");
+    expect(s.soldLabel).toBe("R$ 70,00");
+    // vendido pelo MEU valor (ou sem preço) continua vencendo
+    expect(
+      lotCardState({ ...base, bidStatus: "Vencendo", myBid: "R$ 70,00", sold: "R$ 70,00" }).tone,
+    ).toBe("win");
+    expect(
+      lotCardState({ ...base, bidStatus: "Vencendo", myBid: "R$ 50,00", sold: "Vendido" }).tone,
+    ).toBe("win");
+  });
   test("vigia vence de olho; de olho; nada", () => {
     expect(lotCardState({ ...base, watched: true, lookoutActive: true }).tone).toBe("watch");
     expect(lotCardState({ ...base, lookoutActive: true }).tone).toBe("eye");
