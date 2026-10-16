@@ -11,8 +11,8 @@ import {
 import { lookoutLabel, type LookoutItem } from "@/lib/lookout-match";
 
 /**
- * Ao marcar "de olho" um disco PARECIDO com um que já está na lista (mesmo artista e álbum/ano
- * semelhante), pergunta se é um disco novo ou o mesmo — só quando há dúvida.
+ * Ao marcar "de olho" um disco de um artista que já tem discos na lista, deixa escolher entre
+ * inserir em um deles (os parecidos primeiro) ou criar um disco novo.
  */
 export function LookoutAskDialog({
   label,
@@ -32,11 +32,11 @@ export function LookoutAskDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Binoculars className="h-5 w-5 text-fuchsia-600 dark:text-fuchsia-400" />
-            Já existe algo parecido de olho
+            Este artista já está de olho
           </DialogTitle>
           <DialogDescription>
-            {label ? `"${label}"` : ""} é o mesmo disco de algum destes? Inserir no existente junta
-            os dois (o De olho reconhece os dois nomes).
+            {label ? `"${label}"` : ""} é o mesmo disco de algum destes ou é um disco novo? Inserir
+            no existente junta os dois (o De olho reconhece os dois nomes).
           </DialogDescription>
         </DialogHeader>
         <ul className="space-y-2">

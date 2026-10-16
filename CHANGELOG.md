@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.151.4** — De olho: ao marcar o binóculo, a pergunta "inserir em / criar novo" agora lista TODOS os discos do artista já de olho (parecidos primeiro) em vez de só os parecidos; `similarLookoutItems`.
 - **0.151.3** — De olho: clicar no binóculo de um lote cujo disco (artista+álbum) já estava de olho, mas sem aquele lote (ex.: cadastrado manualmente), não fazia nada; agora `addLookoutFromLot` vincula o lote ao item existente (como álbum juntado) e ele passa a aparecer em "Por vir".
 - **0.151.2** — Card de lote: "Vencendo" defasado na página de lances deixava vendido-por-mais (ex.: meu lance R$ 50, vendido R$ 70) verde; agora `effectiveBidStatus` (`vinyl-parse.ts`) vira "Coberto e Vendido" (vermelho) quando o valor de venda supera o meu lance, no card desktop e mobile.
 - **0.151.1** — `/olho`: editar, arquivar e remover disco refletem na hora (atualização otimista do cache `lookoutOverview`, com rollback em erro); antes a tela esperava o recálculo completo dos matches no servidor.

@@ -150,10 +150,11 @@ function words(text: string): string[] {
 }
 
 /**
- * Itens de olho ATIVOS do MESMO artista que PODEM ser o mesmo disco do lote que o usuário vai
- * marcar — para perguntar "criar novo ou inserir no existente?" só quando há dúvida. Não inclui o
- * idêntico (mesmo artista+álbum: o servidor reaproveita sozinho). Há dúvida quando falta o álbum
- * (de um lado), os nomes compartilham palavra distintiva ou um contém o outro, ou o ano é o mesmo.
+ * Itens de olho ATIVOS do MESMO artista do lote que o usuário vai marcar — para perguntar "criar
+ * novo ou inserir em um existente?". Lista TODOS os discos do artista (o usuário escolhe), com os
+ * que PODEM ser o mesmo disco primeiro (falta o álbum de um lado, nomes com palavra distintiva em
+ * comum ou um contendo o outro, ou o mesmo ano). Vazio quando o disco idêntico (mesmo
+ * artista+álbum) já existe — o servidor reaproveita sozinho — ou o lote já está no item.
  */
 export function similarLookoutItems(
   items: readonly LookoutItem[],
@@ -168,13 +169,14 @@ export function similarLookoutItems(
   }
   const albumWords = words(input.album);
   const albumKey = albumWords.join(" ");
-  const out: LookoutItem[] = [];
+  const similar: LookoutItem[] = [];
+  const others: LookoutItem[] = [];
   for (const it of items) {
     if (it.status !== "active") continue;
     if (words(it.artist).join(" ") !== artistKey) continue;
     const known = [it, ...(it.merged ?? [])];
-    if (known.some((k) => k.lotId === input.lotId)) continue;
-    if (known.some((k) => words(k.album).join(" ") === albumKey && albumKey)) continue; // idêntico
+    if (known.some((k) => k.lotId === input.lotId)) return [];
+    if (known.some((k) => words(k.album).join(" ") === albumKey && albumKey)) return []; // idêntico
     const doubt = known.some((k) => {
       const kw = words(k.album);
       if (!kw.length || !albumWords.length) return true;
@@ -183,9 +185,9 @@ export function similarLookoutItems(
       if (kw.some((w) => w.length >= 3 && albumWords.includes(w))) return true;
       return input.year != null && k.year === input.year;
     });
-    if (doubt) out.push(it);
+    (doubt ? similar : others).push(it);
   }
-  return out;
+  return [...similar, ...others];
 }
 
 /**

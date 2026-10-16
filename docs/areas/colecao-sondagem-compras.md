@@ -272,8 +272,9 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   item, sem passar pelo filtro de ano de disco genérico. Vale em lotes por vir, vendas anteriores e
   home (mesmo motor); "Juntar" soma as palavras. UI: campo "Palavras p/ agrupar" no cartão (chips com ✕).
 - **Pergunta "novo ou existente" (v0.118.0):** ao marcar o binóculos de um lote sem item idêntico,
-  `similarLookoutItems` (puro) acha itens ativos do MESMO artista com dúvida (álbum ausente, nomes que
-  se contêm/compartilham palavra, ou mesmo ano); se houver, `LookoutAskDialog` oferece "Inserir em: …"
+  `similarLookoutItems` (puro) lista TODOS os itens ativos do MESMO artista (v0.151.4; os com dúvida —
+  álbum ausente, nomes que se contêm/compartilham palavra, ou mesmo ano — vêm primeiro); se houver,
+  `LookoutAskDialog` oferece "Inserir em: …"
   (`attachLookout` → `attachLookoutLot`, vira álbum juntado) ou "Criar novo disco". Idêntico = o servidor
   reaproveita sem perguntar. **Página `/olho`:** linhas-resumo (`LookoutSummaryRow`, arrastar sobre outra
   junta); clicar abre o `LookoutItemCard` completo num `Dialog`.
