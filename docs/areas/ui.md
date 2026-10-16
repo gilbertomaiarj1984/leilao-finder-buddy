@@ -211,6 +211,7 @@ z-20`, `-rotate-[32deg]`, `pointer-events-none`) por cima de tudo, sem bloquear 
   500 ids) → `getAllLotSales({ids, withOrig:false})`. Query `["sold-lots", <ids ordenados>]` no
   `index.tsx` (mesmo padrão de `nextBidTargets`/`getNextBids`), mapa `soldById` passado a todo
   `LotCard` direto e a `BidHouseSections` (prop `soldById`).
+  - **Vencendo defasado (v0.151.2):** `effectiveBidStatus` (`vinyl-parse.ts`) troca "Vencendo" por "Coberto e Vendido" quando o valor de venda conhecido (`sold`) supera o meu lance (`myBid`); usado por `LotCard` e `lotCardState` (mobile). Não mexe em "Vencedor"/"Arrematado"/"Coberto" nem sem os dois valores numéricos.
   - **Sinal mais rápido para quem tem LANCE (v0.50.1):** `lot_sales` só chega depois que o cron
     `step=sales` varre o catálogo da casa (atraso) — então `LotCard` TAMBÉM olha o `bidStatus`
     (já vem em tempo real de "Meus lances", `l=4`): `bidIsSold(status)` (`vinyl-parse.ts`) casa
