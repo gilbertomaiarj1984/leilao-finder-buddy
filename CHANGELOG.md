@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.151.3** — De olho: clicar no binóculo de um lote cujo disco (artista+álbum) já estava de olho, mas sem aquele lote (ex.: cadastrado manualmente), não fazia nada; agora `addLookoutFromLot` vincula o lote ao item existente (como álbum juntado) e ele passa a aparecer em "Por vir".
 - **0.151.2** — Card de lote: "Vencendo" defasado na página de lances deixava vendido-por-mais (ex.: meu lance R$ 50, vendido R$ 70) verde; agora `effectiveBidStatus` (`vinyl-parse.ts`) vira "Coberto e Vendido" (vermelho) quando o valor de venda supera o meu lance, no card desktop e mobile.
 - **0.151.1** — `/olho`: editar, arquivar e remover disco refletem na hora (atualização otimista do cache `lookoutOverview`, com rollback em erro); antes a tela esperava o recálculo completo dos matches no servidor.
 - **0.151.0** — Fim da Sondagem: a tabela `wantlist_items` foi apagada do banco depois da migração conferida; saem do `setup.sql` a tabela, o índice, o trigger, o RLS e os REVOKE/GRANT (senão o deploy a recriaria vazia) e sai o código da migração (`wantlist-migration.server.ts`, aviso em `/olho`, 3 server functions, `queryKeys.wantlistMigration`). Testes locais ajustados (`cadeia-ia.ts`, `olho-interesses-e2e.mjs`).

@@ -186,15 +186,21 @@ export async function addLookoutFromLot(input: AddLookoutInput): Promise<Lookout
         )
       : undefined);
   if (found) {
-    if (found.status === "active") return found;
-    const { data, error } = await db
-      .from("lookout_items")
-      .update({ status: "active" })
-      .eq("id", found.id)
-      .select(COLS)
-      .single();
-    if (error) throw new Error(`Não foi possível reativar o item: ${error.message}`);
-    return toRow(data as DbRow);
+    // O mesmo disco (artista+álbum) vindo de OUTRO lote: vincula o lote ao item existente, senão
+    // o clique não teria efeito (o item já está ativo) e o lote nunca apareceria em "Por vir".
+    const known = found.lotId === input.lotId || found.merged.some((m) => m.lotId === input.lotId);
+    if (found.status === "active" && known) return found;
+    return await attachLookoutLot(found.id, {
+      lotId: input.lotId,
+      artist: input.artist.trim(),
+      album: input.album.trim(),
+      year: input.year,
+      title: input.title,
+      house: input.house,
+      image: input.image,
+      url: input.url,
+      dayKey: input.dayKey,
+    });
   }
   const { data, error } = await db
     .from("lookout_items")
