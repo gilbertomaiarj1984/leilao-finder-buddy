@@ -279,6 +279,25 @@ describe("juntar álbuns e lote de origem (v0.117.0)", () => {
     const hit = matchLookoutForLot(cands, "100-1", id, undefined, { includeOrigin: true });
     expect(hit).toMatchObject({ itemId: "it1", confirmed: true, isOrigin: true });
   });
+
+  test("includeOrigin: vínculo antigo (✕ ou outro item) não tira o lote de origem do seu item", () => {
+    const cands = lookoutCandidates([item(), item({ id: "it2", lotId: "5-5", album: "Outro" })]);
+    const id = ident(
+      "LP Chico Buarque Construção 1971",
+      "Chico Buarque",
+      "Chico Buarque - Construção",
+    );
+    for (const link of [false as const, "it2"]) {
+      const hit = matchLookoutForLot(
+        cands,
+        "100-1",
+        id,
+        { "100-1": link },
+        { includeOrigin: true },
+      );
+      expect(hit).toMatchObject({ itemId: "it1", isOrigin: true });
+    }
+  });
 });
 
 describe("palavras extras do usuário (v0.118.0)", () => {

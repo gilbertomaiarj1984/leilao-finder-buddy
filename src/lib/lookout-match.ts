@@ -313,6 +313,20 @@ export function matchLookoutForLot(
   links?: LookoutLinks,
   opts?: { yearGate?: boolean; includeOrigin?: boolean },
 ): LookoutHit | null {
+  // O lote que o usuário marcou é, por definição, o próprio disco: vale mais que qualquer vínculo
+  // antigo (ex.: um ✕ "não é este disco" dado quando o lote ainda pertencia a outro item).
+  if (opts?.includeOrigin) {
+    const origin = cands.find((c) => c.item.lotId === lotId)?.item;
+    if (origin) {
+      return {
+        itemId: origin.id,
+        label: lookoutLabel(origin),
+        score: 1,
+        confirmed: true,
+        isOrigin: true,
+      };
+    }
+  }
   const link = links?.[lotId];
   if (link === false) return null;
   if (typeof link === "string") {

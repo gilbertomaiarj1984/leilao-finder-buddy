@@ -271,6 +271,8 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   só citado no título → 0,8) e cujo texto normalizado contém alguma frase inteira do usuário casa com o
   item, sem passar pelo filtro de ano de disco genérico. Vale em lotes por vir, vendas anteriores e
   home (mesmo motor); "Juntar" soma as palavras. UI: campo "Palavras p/ agrupar" no cartão (chips com ✕).
+- **Lote de origem em "Por vir" (v0.151.5):** com `includeOrigin`, `matchLookoutForLot` casa a origem ANTES dos
+  vínculos (`lookout_links`), então ✕/confirmação antiga não a esconde; ela aparece com o selo "origem".
 - **Pergunta "novo ou existente" (v0.118.0):** ao marcar o binóculos de um lote sem item idêntico,
   `similarLookoutItems` (puro) lista TODOS os itens ativos do MESMO artista (v0.151.4; os com dúvida —
   álbum ausente, nomes que se contêm/compartilham palavra, ou mesmo ano — vêm primeiro); se houver,
