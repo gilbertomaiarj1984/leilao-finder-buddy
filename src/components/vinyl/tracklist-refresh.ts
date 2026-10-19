@@ -18,7 +18,7 @@ export function useLotTracklistRefresh(lotId?: string | null): TracklistRefresh 
     mutationFn: (id: string) => run({ data: { id } }),
     onSuccess: (res, id) => {
       queryClient.setQueryData(queryKeys.lotTracklist(id), res.tracklist);
-      queryClient.setQueryData(queryKeys.lotAi, (old: unknown) =>
+      queryClient.setQueriesData({ queryKey: queryKeys.lotAi }, (old: unknown) =>
         Array.isArray(old)
           ? old.map((r) =>
               r && (r as { id: string }).id === id

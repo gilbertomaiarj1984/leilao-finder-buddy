@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -54,7 +54,6 @@ import { FUTURE_LABEL, FUTURE_TAB, isFutureDay } from "@/lib/day-bar";
 import { setLotTags } from "@/lib/ai.functions";
 import { effectiveTextRules } from "@/lib/condition-text";
 import { normalizeGrade, parseConditionFromText, scoreCondition } from "@/lib/grading";
-import { getLotCondition } from "@/lib/leiloesbr.functions";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
 import { bidIsWinning, formatDayLabel, normalizeForMatch, type VinylLot } from "@/lib/vinyl-parse";
@@ -70,6 +69,7 @@ import {
   useAnalyticsAliasesQuery,
   useCollectorInterests,
   useLotAiQuery,
+  useLotConditionQuery,
   useLotIdentQuery,
   useAiPanelQuery,
   useLotMarketQuery,
@@ -352,7 +352,7 @@ function AnalisePage() {
 
   // Edição manual de tags: atualiza o cache queryKeys.lotAi de forma otimista e persiste.
   const patchTags = (id: string, tags: string[]) =>
-    queryClient.setQueryData(queryKeys.lotAi, (old: unknown) =>
+    queryClient.setQueriesData({ queryKey: queryKeys.lotAi }, (old: unknown) =>
       Array.isArray(old)
         ? old.map((r) => (r && (r as { id: string }).id === id ? { ...r, tags } : r))
         : old,
@@ -430,16 +430,10 @@ function AnalisePage() {
     if (!base) return undefined;
     return { ...base, matchesInterests: matchesInterest(lot.title) };
   };
-  // Estado do disco por lote (mesma chave da home → compartilha o cache): a âncora de mercado
+  // Estado do disco por lote (`useLotConditionQuery`, tabela inteira): a âncora de mercado
   // usa o preço sugerido do Discogs para a condição dele.
   const aiPanelQuery = useAiPanelQuery();
-  const fetchCondition = useServerFn(getLotCondition);
-  const lotConditionQuery = useQuery({
-    queryKey: ["lot-condition"] as const,
-    queryFn: () => fetchCondition(),
-    staleTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const lotConditionQuery = useLotConditionQuery();
   const mediaById = useMemo(() => {
     const map = new Map<string, string>();
     for (const r of lotConditionQuery.data ?? []) {

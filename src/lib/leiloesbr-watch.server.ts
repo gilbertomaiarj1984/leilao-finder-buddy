@@ -1,4 +1,5 @@
 import { authFetch, BASE_URL, loginEmail, MAX_ACCOUNT_PAGES } from "./leiloesbr-auth.server";
+import { createAccountCache } from "./account-cache.server";
 import { extractArtist } from "./vinyl-parse";
 
 type WatchTarget = { idPeca: string; idLeilao: string; base: string };
@@ -97,8 +98,24 @@ function parseWatchedChunk(chunk: string): WatchedLot | null {
   };
 }
 
+const watchedCache = createAccountCache(readWatchedFromSite);
+
+/**
+ * Vigiados da conta (conta_site.asp?l=8). `maxAgeMs` > 0 aceita a última leitura com até essa
+ * idade (telas: `ACCOUNT_CACHE_MS`); 0 (padrão: cron/alertas) só reaproveita uma leitura em
+ * andamento. Ver `account-cache.server.ts`.
+ */
+export function listWatchedFromSite(opts: { maxAgeMs?: number } = {}): Promise<WatchedLot[]> {
+  return watchedCache.get(opts.maxAgeMs ?? 0);
+}
+
+/** Descarta o cache de vigiados (depois de vigiar/desvigiar pelo app). */
+export function invalidateWatchedCache(): void {
+  watchedCache.invalidate();
+}
+
 /** Reads every watched lot straight from the account page (conta_site.asp?l=8). */
-export async function listWatchedFromSite(): Promise<WatchedLot[]> {
+async function readWatchedFromSite(): Promise<WatchedLot[]> {
   const seen = new Set<string>();
   const out: WatchedLot[] = [];
 

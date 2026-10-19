@@ -49,7 +49,11 @@ export function BidsTab({ d, futureOnly = false }: { d: DashboardData; futureOnl
     toggleHouseSection,
     closeAllHouseSections,
     toggle,
+    tab,
   } = d;
+  // Aba fechada: pula o filtro/agrupamento (mesmo atalho do `DayTab`/`WatchedTab`, v0.155.0).
+  if (tab !== (futureOnly ? FUTURE_TAB : "bids"))
+    return <TabsContent value={futureOnly ? FUTURE_TAB : "bids"} />;
   return (
     <TabsContent value={futureOnly ? FUTURE_TAB : "bids"} className="space-y-4">
       {futureOnly ? <h2 className="text-base font-semibold text-foreground">Lances</h2> : null}

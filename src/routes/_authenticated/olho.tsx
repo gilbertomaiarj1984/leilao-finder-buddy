@@ -146,11 +146,24 @@ function OlhoPage() {
     onError: (e: Error) => toast.error(e.message || "Não foi possível salvar"),
   });
 
-  const query = useLookoutOverviewQuery({ history: true });
-  const overview = query.data;
+  // Duas etapas (v0.155.0): a versão leve (sem valor ao vivo nem histórico — a mesma do contador
+  // do menu, normalmente já em cache) aparece primeiro; a completa a substitui quando chega.
+  // Os patches otimistas (`patchOverview`) e as invalidações já atingem as duas pela chave base.
+  const lightQuery = useLookoutOverviewQuery({ history: false });
+  const fullQuery = useLookoutOverviewQuery({ history: true });
+  const overview = fullQuery.data ?? lightQuery.data;
+  const query = {
+    isLoading: !overview && (lightQuery.isLoading || fullQuery.isLoading),
+    isError: !overview && (lightQuery.isError || fullQuery.isError),
+    isFetching: lightQuery.isFetching || fullQuery.isFetching,
+    refetch: () => Promise.all([lightQuery.refetch(), fullQuery.refetch()]),
+  };
+  // Só a versão leve na tela: valores da varredura e sem aparições passadas por enquanto.
+  const completing = Boolean(overview) && !fullQuery.data;
   const items = useMemo(() => overview?.items ?? [], [overview]);
-  const active = items.filter((i) => i.status === "active");
-  const archived = items.filter((i) => i.status !== "active");
+  // Memorizados: sem isso `groups` (abaixo) era recalculado a cada render (ex.: cada tecla na busca).
+  const active = useMemo(() => items.filter((i) => i.status === "active"), [items]);
+  const archived = useMemo(() => items.filter((i) => i.status !== "active"), [items]);
 
   // Busca por artista (botão/Enter aplica) e combo de artistas — ambos filtram os grupos.
   const [searchText, setSearchText] = useState("");
@@ -703,6 +716,13 @@ function OlhoPage() {
               Marcar como vistos
             </Button>
           </div>
+        ) : null}
+        {completing ? (
+          <p className="text-xs text-muted-foreground">
+            {fullQuery.isError
+              ? "Não foi possível ler os valores ao vivo e o histórico — mostrando os valores da última varredura."
+              : "Carregando valores ao vivo e aparições passadas…"}
+          </p>
         ) : null}
         {query.isLoading ? (
           <>

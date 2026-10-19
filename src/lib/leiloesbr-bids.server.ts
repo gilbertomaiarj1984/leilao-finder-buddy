@@ -1,3 +1,4 @@
+import { createAccountCache } from "./account-cache.server";
 import { authFetch, BASE_URL, MAX_ACCOUNT_PAGES } from "./leiloesbr-auth.server";
 
 /**
@@ -69,11 +70,27 @@ function parseBidChunk(chunk: string): MyBid | null {
   };
 }
 
+const bidsCache = createAccountCache(readMyBidsFromSite);
+
+/**
+ * Lances da conta (conta_site.asp?l=4). `maxAgeMs` > 0 aceita a última leitura com até essa
+ * idade (telas: `ACCOUNT_CACHE_MS`); 0 (padrão: cron/alertas) só reaproveita uma leitura em
+ * andamento. Ver `account-cache.server.ts`.
+ */
+export function listMyBidsFromSite(opts: { maxAgeMs?: number } = {}): Promise<MyBid[]> {
+  return bidsCache.get(opts.maxAgeMs ?? 0);
+}
+
+/** Descarta o cache de lances (o lance traz `watched`: vigiar/desvigiar também o invalida). */
+export function invalidateMyBidsCache(): void {
+  bidsCache.invalidate();
+}
+
 /**
  * Lê todos os lances do usuário direto da conta (conta_site.asp?l=4).
  * t=0 (peças), s=0 (leilões em andamento), b=0 (base LeilõesBR). Best-effort.
  */
-export async function listMyBidsFromSite(): Promise<MyBid[]> {
+async function readMyBidsFromSite(): Promise<MyBid[]> {
   const seen = new Set<string>();
   const out: MyBid[] = [];
 
