@@ -6,8 +6,10 @@
 ## Scraping do LeilõesBR
 
 - **Varredura geral é PÚBLICA** (sem login) via `publicFetch` — evita o 500 que o site dá
-  logado sob carga. Categoria fixada por `tp=|446973636F2064652076696E696C|` (hex de "Disco de
-  vinil") → **todo lote já é vinil**; não exigir palavra-chave no título, só descartar CD/DVD/LD (Laser Disc)/K7
+  logado sob carga. Categoria fixada por `tp=|446973636F732064652056696E696C|` (hex de "Discos de
+  Vinil" — o site renomeou de "Disco de vinil" em 2026-10; o `tp=` antigo devolve "Nenhum", 0 lotes,
+  sem erro: **se a varredura "zerar", confira o nome da categoria na lista `tipo…` da listagem**)
+  → **todo lote já é vinil**; não exigir palavra-chave no título, só descartar CD/DVD/LD (Laser Disc)/K7
   (`looksNonVinyl`, em `vinyl-parse.ts`).
 - **Login (`authFetch`)** só para a **conta**: env `LEILOESBR_EMAIL` / `LEILOESBR_SENHA`.
   - **Vigias**: `conta_site.asp?l=8` → `listWatchedFromSite` (cards `.oc-item`,
@@ -100,6 +102,18 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   vende como disco mas a LeilõesBR não categoriza). Achado: no dia 13 o banco tinha 0 lotes de
   Alberto Lopes (246 no site), Das Antigas (359) e Charisma, e 1 da Abreu (90). `isVinylTitle`
   também aceita a ficha "Álbum: … | Código: …" (CD/LD seguem fora).
+
+## Categoria "Música" (v0.152.0)
+
+- Casas como **Ana Mello**, Catálogo Amigo, Antig e Antiguidade Nacional não têm LP em "Discos de
+  Vinil": põem os LPs em **"Música"** (`tp=|4DFA73696361|`, hex latin1 de "Música"), misturados com
+  CD/DVD/K7. Medido em 2026-10-19: Música = 1843 lotes em 43 casas, 413 com título de vinil
+  (Ana Mello sozinha 153, nos dias 19–23/10).
+- `galleryscan` agora usa a **união** das galerias de "Discos de Vinil" e de "Música"
+  (`mergeGalleries`) e ganhou a passada **1b**: `tp=` Música + `isVinylTitle` (estrito, pois ali CD/K7/DVD
+  vêm juntos). Casa que só está na lista de Música roda **só** essa passada (a passada 2, sem `tp`,
+  varreria o acervo inteiro à toa).
+- A varredura geral (`chunk`) segue só em "Discos de Vinil"; Música entra pelo `galleryscan`.
 
 ## Regra: nunca bloquear casa (v0.112.1)
 
