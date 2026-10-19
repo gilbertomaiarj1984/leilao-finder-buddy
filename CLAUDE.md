@@ -40,9 +40,10 @@ bun run check               # lint + typecheck + test + knip (rodar antes de tod
 ```
 
 Testes cobrem só funções puras (parsing, grading, matching) — ao mexer nelas, acrescente um
-caso em `tests/`. **Scraping/lance não são testáveis neste ambiente** (sem rede para os sites de
-leilão) — validar por análise estática; quem testa contra o site real é o usuário, na prévia ou
-produção.
+caso em `tests/`. O ambiente tem **acesso irrestrito à internet**: scraping e consultas
+podem ser testados contra o site real (LeilõesBR e casas parceiras) durante a implementação.
+Login/lance só com credenciais fornecidas pelo usuário; nunca dar lance nem alterar a conta sem
+pedido explícito.
 
 ## Convenções de trabalho
 

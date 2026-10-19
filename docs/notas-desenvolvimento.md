@@ -46,8 +46,12 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
 
 ## Restrições do ambiente
 
-- **Não dá para testar scraping/lance daqui** (sem rede aos sites de leilão) — validar por
-  análise estática + testes de funções puras; o **usuário** testa na prévia/produção.
+- **Acesso irrestrito à internet** (desde a v0.151.6): as sessões de agente alcançam o LeilõesBR e
+  as casas parceiras (confirmado: `https://www.leiloesbr.com.br/` → HTTP 200), além do Discogs etc.
+  Scraping e consultas podem — e devem — ser validados contra o site real durante a implementação
+  (requisições públicas; `publicFetch`). Login/lance só com credenciais fornecidas pelo usuário, e
+  nunca dar lance nem alterar a conta sem pedido explícito. Complementar com testes de funções
+  puras; o **usuário** segue testando a prévia/produção.
 - **`bun install` funciona** (`bunfig.toml` → npm público). **`bun run check`** roda tudo o que
   dá pra validar localmente: `lint` + `typecheck` (app e `tests/`, com `noUnusedLocals`) +
   `bun test` (testes de funções puras em `tests/*.test.ts` — acrescente um caso ao mexer em
