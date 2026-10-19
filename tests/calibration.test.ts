@@ -146,7 +146,7 @@ describe("calibração — snapshot do banco", () => {
       takenAt: "2026-10-01T00:00:00Z",
       price: "R$ 40,00",
       ai: { score: 77, deal: "justo", extra: 1 },
-      cond: { media: "VG+", sleeve: "VG", insert: "sim", score: 70, source: "catalog" },
+      cond: { media: "VG+", sleeve: "VG", insert: "sim", score: 70, source: "catalog", text: "" },
       market: { verdict: "estranho", anchorCondition: "VG+", anchorPrice: 50, freight: 25 },
       pastSales: { count: 0, median: 0 },
     });
