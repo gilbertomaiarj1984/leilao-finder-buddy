@@ -79,7 +79,7 @@ export async function snapshotPurchases(lotIds: string[]): Promise<number> {
     for (const r of l ?? []) lots.set(r.id, r);
     const { data: c, error: e2 } = await db
       .from<Record<string, unknown> & { id: string }>("lot_condition")
-      .select("id, media, sleeve, insert_state, score, source")
+      .select("id, media, sleeve, insert_state, score, source, description")
       .in("id", part);
     if (e2) throw e2;
     for (const r of c ?? []) conds.set(r.id, r);
@@ -129,6 +129,7 @@ export async function snapshotPurchases(lotIds: string[]): Promise<number> {
               insert: String(c["insert_state"] ?? ""),
               score: (c["score"] as number | null) ?? null,
               source: String(c["source"] ?? ""),
+              text: String(c["description"] ?? ""),
             }
           : null,
         market: lotMarket
@@ -147,6 +148,29 @@ export async function snapshotPurchases(lotIds: string[]): Promise<number> {
   const { error } = await db.from("purchase_calibration").upsert(payload, { onConflict: "lot_id" });
   if (error) throw error;
   return payload.length;
+}
+
+/**
+ * Retratos gravados antes do descritivo ser guardado (`cond.text`): copia o texto de
+ * `lot_condition` enquanto o lote ainda existe. Atualiza `cal` em memória e o banco (best-effort).
+ */
+async function backfillSnapshotText(
+  cal: Map<string, CalDbRow>,
+  descById: Map<string, string>,
+): Promise<void> {
+  const payload: { lot_id: string; snapshot: CalibrationSnapshot; snapshot_at: string | null }[] =
+    [];
+  for (const [id, row] of cal) {
+    const snap = normalizeSnapshot(row.snapshot);
+    const text = descById.get(id);
+    if (!snap?.cond || snap.cond.text || !text) continue;
+    const next = { ...snap, cond: { ...snap.cond, text } };
+    row.snapshot = next;
+    payload.push({ lot_id: id, snapshot: next, snapshot_at: row.snapshot_at });
+  }
+  if (!payload.length) return;
+  const { error } = await db.from("purchase_calibration").upsert(payload, { onConflict: "lot_id" });
+  if (error) console.error("[calibration] não foi possível completar o texto dos retratos", error);
 }
 
 /** Compras de pregões marcados como «recebido», com retrato, opinião e leitura atual do estado. */
@@ -172,6 +196,16 @@ export async function getCalibrationRows(): Promise<CalibrationRow[]> {
     import("./collection.server"),
     import("./app-state.server"),
   ]);
+  // Descritivo atual do lote (quando ainda está na janela) — fonte extra para ler o estado.
+  const descById = new Map<string, string>();
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { data } = await db
+      .from<{ id: string; description: string }>("lot_condition")
+      .select("id, description")
+      .in("id", ids.slice(i, i + CHUNK));
+    for (const r of data ?? []) if (r.description) descById.set(r.id, r.description);
+  }
+  await backfillSnapshotText(cal, descById);
   const [sales, collection, panel] = await Promise.all([
     getAllLotSales({ ids, withOrig: true }),
     getAllCollection(),
@@ -189,8 +223,33 @@ export async function getCalibrationRows(): Promise<CalibrationRow[]> {
     const c = cal.get(p.lotId);
     const sale = saleById.get(p.lotId);
     const item = collByLot.get(p.lotId);
-    // Leitura ATUAL: o descritivo da venda (texto do catálogo) lido com as regras de hoje.
-    const read = parseConditionFromText(sale?.orig_text || sale?.title || p.title, rules);
+    const snap = normalizeSnapshot(c?.snapshot);
+    // Leitura ATUAL: o primeiro descritivo disponível (venda, retrato, lote ainda na janela,
+    // Coleção) lido com as regras de hoje; sem texto com estado, cai no que o app leu na época.
+    const texts = [
+      sale?.orig_text,
+      snap?.cond?.text,
+      descById.get(p.lotId),
+      item?.description,
+      sale?.title,
+      p.title,
+    ];
+    let read = parseConditionFromText(undefined, rules);
+    for (const t of texts) {
+      if (!t) continue;
+      const r = parseConditionFromText(t, rules);
+      if (r.media || r.sleeve) {
+        read = r;
+        break;
+      }
+    }
+    if (!read.media && !read.sleeve && snap?.cond) {
+      read = {
+        ...read,
+        media: normalizeGrade(snap.cond.media),
+        sleeve: normalizeGrade(snap.cond.sleeve),
+      };
+    }
     const verdict = (VERDICTS as readonly string[]).includes(c?.verdict ?? "")
       ? (c!.verdict as Verdict)
       : "";
@@ -204,7 +263,7 @@ export async function getCalibrationRows(): Promise<CalibrationRow[]> {
       wonPrice: p.wonPrice,
       wonDate: p.wonDate,
       receivedAt: received.get(p.idLeilao) ?? null,
-      snapshot: normalizeSnapshot(c?.snapshot),
+      snapshot: snap,
       read: { media: read.media ?? "", sleeve: read.sleeve ?? "" },
       real: {
         media: c?.real_media || normalizeGrade(item?.conditionMedia) || "",
