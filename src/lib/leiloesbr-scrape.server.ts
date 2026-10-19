@@ -14,7 +14,13 @@ import {
   type VinylLot,
 } from "./vinyl-parse";
 
-export const VINYL_CATEGORY = "|446973636F2064652076696E696C|";
+// Hex de "Discos de Vinil". Até o fim de 2026-10 era "Disco de vinil" (446973636F2064652076696E696C);
+// o site renomeou a categoria (plural, V maiúsculo) e o `tp=` antigo passou a devolver "Nenhum" (0 lotes).
+export const VINYL_CATEGORY = "|446973636F732064652056696E696C|";
+
+// Categoria "Música" (hex da string em latin1: "Música"). Casas como a Ana Mello não têm a
+// categoria "Disco de Vinil": os LPs ficam soltos ali, misturados com CD/DVD/K7 (v0.152.0).
+const MUSIC_CATEGORY = "|4DFA73696361|";
 
 const PER_PAGE = 126;
 
@@ -277,6 +283,20 @@ export async function fetchPageSearch(
 
 type GalleryEntry = { code: string; name: string; count: number | null };
 
+/** Junta listas de galerias sem repetir código (a ordem da 1ª lista vem primeiro). */
+export function mergeGalleries(...lists: GalleryEntry[][]): GalleryEntry[] {
+  const seen = new Set<string>();
+  const merged: GalleryEntry[] = [];
+  for (const list of lists) {
+    for (const gallery of list) {
+      if (seen.has(gallery.code)) continue;
+      seen.add(gallery.code);
+      merged.push(gallery);
+    }
+  }
+  return merged;
+}
+
 /**
  * Diagnóstico (Fase 1 da investigação de descoberta por "galeria" — ver
  * docs/arquivo/pendencias-resolvidas.md): busca a página 1 de `busca_andamento.asp`
@@ -362,6 +382,7 @@ type GalleryScanStats = {
 async function listGalleryAuctions(
   galleryCode: string,
   deadline = Number.POSITIVE_INFINITY,
+  musicOnly = false,
 ): Promise<{ lots: VinylLot[]; stats: Omit<GalleryScanStats, "code" | "name"> }> {
   const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
@@ -382,6 +403,9 @@ async function listGalleryAuctions(
   //     eram descartados pelo filtro estrito (centenas de lotes sumiam).
   //  2. SEM `tp=` (como antes) com `isVinylTitle` (estrito) — pega o que a casa vende como disco
   //     mas a LeilõesBR não categoriza como "Disco de Vinil" (ex.: Abreu Colecionismo).
+  //  1b. COM `tp=` "Música" + `isVinylTitle` (v0.152.0): casas sem categoria de vinil que põem os
+  //     LPs em "Música" junto com CD/DVD/K7 (Ana Mello). Poucas páginas (só música da casa), por
+  //     isso roda antes da passada 2, que varre a galeria inteira.
   // Sem `tp=` uma galeria generalista pode ter dezenas de páginas e, com o intervalo obrigatório
   // entre requisições (`listingFetch`), cada uma custa ~3-4s. A listagem vem do dia mais distante
   // (página 1) pro mais próximo (última), e varremos da última pra trás: depois de 2 páginas
@@ -389,9 +413,12 @@ async function listGalleryAuctions(
   // orçamento do bloco (`scanGalleries`) estourar — a passada 1 (a que importa) roda primeiro.
   const passes: { tp: string | null; accept: (title: string) => boolean }[] = [
     { tp: VINYL_CATEGORY, accept: (title) => !looksNonVinyl(title) },
+    { tp: MUSIC_CATEGORY, accept: isVinylTitle },
     { tp: null, accept: isVinylTitle },
   ];
-  for (const pass of passes) {
+  // Galeria que só aparece na lista de "Música" (sem nenhum lote em "Discos de Vinil") não precisa
+  // das outras passadas — os LPs dela estão em Música; a passada 2 varreria o acervo inteiro à toa.
+  for (const pass of musicOnly ? passes.filter((p) => p.tp === MUSIC_CATEGORY) : passes) {
     if (truncated) break;
     const firstHtml = await fetchPageSearch(1, "", pass.tp, galleryCode);
     const total = lastPage(firstHtml);
@@ -447,7 +474,14 @@ export async function scanGalleries(
   persisted: boolean;
   galleries: GalleryScanStats[];
 }> {
-  const { galleries } = await listGalleries(tp);
+  // Na varredura padrão (categoria vinil) as galerias vêm da união "Disco de Vinil" + "Música":
+  // casa sem nenhum lote categorizado como vinil (Ana Mello) só aparece na lista de "Música".
+  const vinylGalleries = (await listGalleries(tp)).galleries;
+  const withMusic = tp === VINYL_CATEGORY;
+  const galleries = withMusic
+    ? mergeGalleries(vinylGalleries, (await listGalleries(MUSIC_CATEGORY)).galleries)
+    : vinylGalleries;
+  const vinylCodes = new Set(vinylGalleries.map((g) => g.code));
   const total = galleries.length;
   const start = Math.max(0, offset);
   const batch = galleries.slice(start, start + count);
@@ -468,7 +502,11 @@ export async function scanGalleries(
     if (processed > 0 && Date.now() - started > CHUNK_BUDGET_MS * 0.6) break;
     processed += 1;
     try {
-      const { lots, stats: s } = await listGalleryAuctions(gallery.code, hardDeadline);
+      const { lots, stats: s } = await listGalleryAuctions(
+        gallery.code,
+        hardDeadline,
+        withMusic && !vinylCodes.has(gallery.code),
+      );
       stats.push({ code: gallery.code, name: gallery.name, ...s });
       for (const lot of lots) {
         byId.set(lot.id, lot);
