@@ -255,7 +255,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   (o álbum agregado junta vários anos). Vale também para lotes futuros ("?" + dica no tooltip).
 - **Sem repetição e "Juntar" (v0.117.0):** `addLookoutFromLot` reaproveita o item existente quando o lote
   (de origem de um item/álbum juntado) ou o artista+álbum normalizado já está cadastrado
-  (`lookoutIdentityKey`; reativa se estava arquivado). **Juntar** (`mergeLookout` →
+  (`lookoutIdentityKey`; reativa se estava arquivado). **Mover lote (v0.153.0):** arrastar uma linha de "Por vir" (não a de origem) sobre outro cartão/linha chama `moveLookoutLot` → `lookout_links[lotId]=destino` + `lot_ident` (`source/model='manual'`, `"Artista - Álbum"`+ano do destino, confiança alta; só se o lote existe em `lots`). **Juntar** (`mergeLookout` →
   `mergeLookoutItems`): o item absorvido vira snapshot em `lookout_items.merged` (jsonb) do destino
   e é apagado; `lookoutCandidates` expande cada álbum juntado em candidato extra com o MESMO id do
   item (casa com qualquer um dos nomes). UI: arrastar o cartão sobre outro ou botão "Juntar"

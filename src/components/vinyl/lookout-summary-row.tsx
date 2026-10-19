@@ -6,6 +6,8 @@ import type { LookoutUpcoming } from "@/lib/lookout-matches.server";
 
 /** Tipo de arrastar entre cartões (o mesmo do cartão detalhado). */
 const LOOKOUT_DRAG_TYPE = "application/x-lookout-item";
+/** Lote "por vir" arrastado de um cartão (o mesmo do cartão detalhado). */
+const LOT_DRAG_TYPE = "application/x-lookout-lot";
 
 /**
  * Linha-resumo de um disco "de olho" na página `/olho`: clicar abre o cartão detalhado (diálogo)
@@ -18,6 +20,7 @@ export function LookoutSummaryRow({
   compact = false,
   onOpen,
   onMerge,
+  onMoveLot,
 }: {
   item: LookoutItem;
   upcoming: LookoutUpcoming[];
@@ -26,6 +29,8 @@ export function LookoutSummaryRow({
   compact?: boolean;
   onOpen: () => void;
   onMerge: (sourceId: string) => void;
+  /** Lote arrastado de outro disco e solto aqui (corrige o casamento errado). */
+  onMoveLot: (lotId: string) => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
   const archived = item.status !== "active";
@@ -51,7 +56,14 @@ export function LookoutSummaryRow({
         e.dataTransfer.effectAllowed = "move";
       }}
       onDragOver={(e) => {
-        if (archived || !e.dataTransfer.types.includes(LOOKOUT_DRAG_TYPE)) return;
+        if (
+          archived ||
+          !(
+            e.dataTransfer.types.includes(LOOKOUT_DRAG_TYPE) ||
+            e.dataTransfer.types.includes(LOT_DRAG_TYPE)
+          )
+        )
+          return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
         setDragOver(true);
@@ -59,6 +71,12 @@ export function LookoutSummaryRow({
       onDragLeave={() => setDragOver(false)}
       onDrop={(e) => {
         setDragOver(false);
+        const lotId = e.dataTransfer.getData(LOT_DRAG_TYPE);
+        if (lotId) {
+          e.preventDefault();
+          if (!archived && !upcoming.some((m) => m.lotId === lotId)) onMoveLot(lotId);
+          return;
+        }
         const sourceId = e.dataTransfer.getData(LOOKOUT_DRAG_TYPE);
         if (archived || !sourceId || sourceId === item.id) return;
         e.preventDefault();

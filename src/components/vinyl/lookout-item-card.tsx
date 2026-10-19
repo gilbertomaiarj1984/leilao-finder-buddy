@@ -34,6 +34,7 @@ import { bidIsCovered, bidIsWinning, lotOpenUrl } from "@/lib/vinyl-parse";
 
 /** Tipo de arrastar do cartão de um disco (juntar um álbum a outro). */
 const ITEM_DRAG_TYPE = "application/x-lookout-item";
+const LOT_DRAG_TYPE = "application/x-lookout-lot";
 
 /** Patch enviado ao servidor ao editar um item (teto/nota/identidade/status). */
 export type LookoutPatch = {
@@ -82,6 +83,7 @@ export function LookoutItemCard({
   onAcquire,
   onDelete,
   onMerge,
+  onMoveLot,
   onUnmerge,
   onWatch,
   onOpenLot,
@@ -112,6 +114,8 @@ export function LookoutItemCard({
   onMerge: (sourceId: string) => void;
   /** Separa um álbum juntado (volta a ser um disco próprio). */
   onUnmerge: (lotId: string) => void;
+  /** Lote arrastado de outro cartão e solto neste: passa a ser deste disco (corrige o casamento). */
+  onMoveLot: (lotId: string) => void;
   onWatch: (m: LookoutUpcoming) => void;
   /** Abre o cartão completo do lote (clicar na linha do lote por vir). */
   onOpenLot: (m: LookoutUpcoming) => void;
@@ -232,7 +236,14 @@ export function LookoutItemCard({
         e.dataTransfer.effectAllowed = "move";
       }}
       onDragOver={(e) => {
-        if (archived || !e.dataTransfer.types.includes(ITEM_DRAG_TYPE)) return;
+        if (
+          archived ||
+          !(
+            e.dataTransfer.types.includes(ITEM_DRAG_TYPE) ||
+            e.dataTransfer.types.includes(LOT_DRAG_TYPE)
+          )
+        )
+          return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
         setDragOver(true);
@@ -240,6 +251,12 @@ export function LookoutItemCard({
       onDragLeave={() => setDragOver(false)}
       onDrop={(e) => {
         setDragOver(false);
+        const lotId = e.dataTransfer.getData(LOT_DRAG_TYPE);
+        if (lotId) {
+          e.preventDefault();
+          if (!archived && !upcoming.some((m) => m.lotId === lotId)) onMoveLot(lotId);
+          return;
+        }
         const sourceId = e.dataTransfer.getData(ITEM_DRAG_TYPE);
         if (archived || !sourceId || sourceId === item.id) return;
         e.preventDefault();
@@ -541,6 +558,13 @@ export function LookoutItemCard({
                 return (
                   <li
                     key={m.lotId}
+                    draggable={!m.isOrigin}
+                    onDragStart={(e) => {
+                      e.stopPropagation();
+                      e.dataTransfer.setData(LOT_DRAG_TYPE, m.lotId);
+                      e.dataTransfer.setData("text/plain", m.title);
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
                     onClick={(e) => {
                       // Clicar no lote (fora dos botões/links) abre o cartão completo dele.
                       if ((e.target as HTMLElement).closest("button, a")) return;
@@ -555,7 +579,11 @@ export function LookoutItemCard({
                             ? "border-fuchsia-500 bg-fuchsia-500/10 ring-1 ring-fuchsia-500 hover:bg-fuchsia-500/20"
                             : "border-border bg-background hover:bg-accent/30"
                     }`}
-                    title="Clique para abrir o cartão completo do lote"
+                    title={
+                      m.isOrigin
+                        ? "Clique para abrir o cartão completo do lote"
+                        : "Clique para abrir o cartão completo do lote (ou arraste para outro disco se casou errado)"
+                    }
                   >
                     {m.image ? (
                       <img
