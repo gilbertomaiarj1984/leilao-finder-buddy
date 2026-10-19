@@ -40,6 +40,8 @@ export type CalibrationSnapshot = {
     insert: string;
     score: number | null;
     source: string;
+    /** Descritivo do lote na época (sobrevive à saída do lote; relido com as regras de hoje). */
+    text: string;
   } | null;
   market: {
     verdict: "barato" | "justo" | "caro" | "indefinido";
@@ -76,6 +78,7 @@ export function normalizeSnapshot(raw: unknown): CalibrationSnapshot | null {
         insert: str(raw["cond"]["insert"]),
         score: num(raw["cond"]["score"]),
         source: str(raw["cond"]["source"]),
+        text: str(raw["cond"]["text"]),
       }
     : null;
   const verdicts = ["barato", "justo", "caro", "indefinido"] as const;

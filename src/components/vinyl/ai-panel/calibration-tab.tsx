@@ -107,7 +107,7 @@ function CalibrationCard({ row }: { row: CalibrationRow }) {
                 {deal ? ` · ${deal}` : ""}
               </b>
             </span>
-            <span title="Estado que o app leu da descrição (com as regras de hoje)">
+            <span title="Estado lido do descritivo (regras de hoje); sem texto, o que o app leu na época">
               Leitura do texto:{" "}
               <b>
                 {row.read.media || "—"} / {row.read.sleeve || "—"}
