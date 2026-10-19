@@ -42,14 +42,17 @@ export const getLookoutLinks = createServerFn({ method: "GET" })
 /** Página `/olho` e contador do menu: itens + matches futuros + histórico de aparições. */
 export const getLookoutOverview = createServerFn({ method: "GET" })
   .middleware([requireAuth])
-  .inputValidator((input: { history?: boolean } | undefined) => ({
-    history: input?.history !== false,
-  }))
+  // `live`: valor ao vivo (`peca.asp`) dos lotes por vir — padrão = `history`. O contador do menu
+  // e a 1ª etapa de `/olho` pedem sem (v0.155.0); ver `useLookoutOverviewQuery`.
+  .inputValidator((input: { history?: boolean; live?: boolean } | undefined) => {
+    const history = input?.history !== false;
+    return { history, live: typeof input?.live === "boolean" ? input.live : history };
+  })
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { computeLookout } = await import("./lookout-matches.server");
-    return await computeLookout(data.history);
+    return await computeLookout(data.history, data.live);
   });
 
 /** Ficar de olho / desfazer, a partir de um lote (liga/desliga: já existe → remove). */

@@ -2,13 +2,16 @@ import { createServerFn } from "@tanstack/react-start";
 
 import { requireAuth } from "@/lib/auth-middleware";
 
+/** Vigiados da conta. Cache de `ACCOUNT_CACHE_MS` no servidor; `force` (botão Atualizar) lê de novo. */
 export const listWatched = createServerFn({ method: "GET" })
   .middleware([requireAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: { force?: boolean } | undefined) => ({ force: input?.force === true }))
+  .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { listWatchedFromSite } = await import("./leiloesbr-watch.server");
-    return await listWatchedFromSite();
+    const { ACCOUNT_CACHE_MS } = await import("./account-cache.server");
+    return await listWatchedFromSite({ maxAgeMs: data.force ? 0 : ACCOUNT_CACHE_MS });
   });
 
 export const toggleWatch = createServerFn({ method: "POST" })
@@ -25,10 +28,18 @@ export const toggleWatch = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
-    const { toggleWatchOnSite } = await import("./leiloesbr-watch.server");
-    const watched = await toggleWatchOnSite(
-      { idPeca: data.idPeca, idLeilao: data.idLeilao, base: data.base },
-      data.watch,
-    );
-    return { watched };
+    const { toggleWatchOnSite, invalidateWatchedCache } = await import("./leiloesbr-watch.server");
+    const { invalidateMyBidsCache } = await import("./leiloesbr-bids.server");
+    try {
+      const watched = await toggleWatchOnSite(
+        { idPeca: data.idPeca, idLeilao: data.idLeilao, base: data.base },
+        data.watch,
+      );
+      return { watched };
+    } finally {
+      // Senão a próxima leitura (até `ACCOUNT_CACHE_MS`) devolveria a conta de antes do toggle e
+      // o acumulador da tela traria de volta o lote recém-desvigiado.
+      invalidateWatchedCache();
+      invalidateMyBidsCache();
+    }
   });

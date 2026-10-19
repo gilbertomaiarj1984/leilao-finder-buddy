@@ -420,7 +420,7 @@ function useReevaluate(lot: ReevalLot) {
   const mutation = useMutation({
     mutationFn: () => runReevaluate({ data: lot }),
     onSuccess: (res: { row: { id: string } }) => {
-      queryClient.setQueryData(queryKeys.lotAi, (old: unknown) =>
+      queryClient.setQueriesData({ queryKey: queryKeys.lotAi }, (old: unknown) =>
         Array.isArray(old)
           ? old.some((r) => r && (r as { id: string }).id === res.row.id)
             ? old.map((r) => ((r as { id: string })?.id === res.row.id ? res.row : r))

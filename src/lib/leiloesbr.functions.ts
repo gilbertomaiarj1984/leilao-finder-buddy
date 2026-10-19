@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { requireAuth } from "@/lib/auth-middleware";
+import { parseLotScope, type LotScope } from "@/lib/lot-scope";
 
 export const getAccessStatus = createServerFn({ method: "GET" })
   .middleware([requireAuth])
@@ -183,15 +184,20 @@ export const runCondition = createServerFn({ method: "POST" })
     return await enrichConditions(data.max);
   });
 
-/** Lances dados pelo usuário (conta_site.asp?l=4). Best-effort: [] em erro. */
+/**
+ * Lances dados pelo usuário (conta_site.asp?l=4). Best-effort: [] em erro. Cache de
+ * `ACCOUNT_CACHE_MS` no servidor; `force` (botão Atualizar) lê de novo.
+ */
 export const listMyBids = createServerFn({ method: "GET" })
   .middleware([requireAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: { force?: boolean } | undefined) => ({ force: input?.force === true }))
+  .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     try {
       const { listMyBidsFromSite } = await import("./leiloesbr-bids.server");
-      return await listMyBidsFromSite();
+      const { ACCOUNT_CACHE_MS } = await import("./account-cache.server");
+      return await listMyBidsFromSite({ maxAgeMs: data.force ? 0 : ACCOUNT_CACHE_MS });
     } catch (error) {
       console.error("[leiloesbr] não foi possível ler os lances", error);
       return [];
@@ -262,12 +268,14 @@ export const setVerifiedHouses = createServerFn({ method: "POST" })
 /** Estado de conservação (Disco/Capa) por lote p/ os cards (`lot_condition`). Best-effort: [] em erro. */
 export const getLotCondition = createServerFn({ method: "GET" })
   .middleware([requireAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: { scope?: LotScope } | undefined) => ({ scope: parseLotScope(input) }))
+  .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     try {
       const { getAllLotCondition } = await import("./lot-condition.server");
-      return await getAllLotCondition();
+      const { filterByLotScope } = await import("./lot-scope.server");
+      return await filterByLotScope(await getAllLotCondition(), data.scope);
     } catch (error) {
       console.error("[lot-condition] não foi possível ler o estado dos lotes", error);
       return [];
@@ -306,12 +314,14 @@ export const getSoldLots = createServerFn({ method: "POST" })
 /** Âncora de mercado do Discogs por lote (preço/demanda). Best-effort: [] em erro. */
 export const getLotMarket = createServerFn({ method: "GET" })
   .middleware([requireAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: { scope?: LotScope } | undefined) => ({ scope: parseLotScope(input) }))
+  .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     try {
       const { getAllLotMarket } = await import("./lot-market.server");
-      return await getAllLotMarket();
+      const { filterByLotScope } = await import("./lot-scope.server");
+      return await filterByLotScope(await getAllLotMarket(), data.scope);
     } catch (error) {
       console.error("[lot-market] não foi possível ler o mercado", error);
       return [];

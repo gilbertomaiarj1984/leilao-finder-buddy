@@ -1,5 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { useMemo } from "react";
 
 import {
@@ -12,10 +10,15 @@ import { LotCard } from "@/components/vinyl/lot-card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { effectiveTextRules } from "@/lib/condition-text";
 import { parseConditionFromText, scoreCondition, type Grade } from "@/lib/grading";
-import { getLotCondition } from "@/lib/leiloesbr.functions";
 import type { LookoutItem } from "@/lib/lookout-match";
 import type { LookoutUpcoming } from "@/lib/lookout-matches.server";
-import { useAiPanelQuery, useLotAiQuery, useLotIdentQuery, useLotMarketQuery } from "@/lib/queries";
+import {
+  useAiPanelQuery,
+  useLotAiQuery,
+  useLotConditionQuery,
+  useLotIdentQuery,
+  useLotMarketQuery,
+} from "@/lib/queries";
 
 /**
  * Cartão COMPLETO do lote (o mesmo `LotCard` da home: nota da IA, Discogs, estado Disco/Capa,
@@ -41,14 +44,7 @@ export function LookoutLotDialog({
   const identQuery = useLotIdentQuery();
   const marketQuery = useLotMarketQuery();
   const aiPanelQuery = useAiPanelQuery();
-  const fetchCondition = useServerFn(getLotCondition);
-  // Mesma chave da home → compartilha o cache.
-  const conditionQuery = useQuery({
-    queryKey: ["lot-condition"] as const,
-    queryFn: () => fetchCondition(),
-    staleTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const conditionQuery = useLotConditionQuery();
 
   const id = lot?.lotId ?? "";
   const ai = useMemo<LotAi | undefined>(() => {

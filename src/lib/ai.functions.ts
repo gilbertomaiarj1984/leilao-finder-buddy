@@ -3,6 +3,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { requireAuth } from "@/lib/auth-middleware";
+import { parseLotScope, type LotScope } from "@/lib/lot-scope";
 import {
   isAiProvider,
   isAnthropicModel,
@@ -52,12 +53,14 @@ export const setUserInterests = createServerFn({ method: "POST" })
 /** Avaliações da IA por lote (score/raridade/oportunidade/motivo/tags). Best-effort: [] em erro. */
 export const getLotAi = createServerFn({ method: "GET" })
   .middleware([requireAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: { scope?: LotScope } | undefined) => ({ scope: parseLotScope(input) }))
+  .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     try {
       const { getAllLotAiClient } = await import("./lot-ai.server");
-      return await getAllLotAiClient();
+      const { filterByLotScope } = await import("./lot-scope.server");
+      return await filterByLotScope(await getAllLotAiClient(), data.scope);
     } catch (error) {
       console.error("[lot-ai] não foi possível ler as avaliações", error);
       return [];
@@ -81,12 +84,14 @@ export const getLotTracklist = createServerFn({ method: "GET" })
 /** Identificação simplificada da IA por lote (artista/álbum/ano). Best-effort: [] em erro. */
 export const getLotIdent = createServerFn({ method: "GET" })
   .middleware([requireAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: { scope?: LotScope } | undefined) => ({ scope: parseLotScope(input) }))
+  .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     try {
       const { getAllLotIdent } = await import("./lot-ident.server");
-      return await getAllLotIdent();
+      const { filterByLotScope } = await import("./lot-scope.server");
+      return await filterByLotScope(await getAllLotIdent(), data.scope);
     } catch (error) {
       console.error("[lot-ident] não foi possível ler as identificações", error);
       return [];

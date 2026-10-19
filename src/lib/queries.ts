@@ -4,7 +4,7 @@
 // valendo a de quem montasse primeiro. Use `queryKeys` para invalidar/`setQueryData`.
 import { useQueries, useQuery, type QueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getAiPanel, getCalibration } from "@/lib/ai-panel.functions";
 import { collectorInterests } from "@/lib/collector-profile";
@@ -32,6 +32,7 @@ import {
 } from "@/lib/ai.functions";
 import { getAnalyticsAliases, getLotPastSales } from "@/lib/analytics.functions";
 import {
+  getLotCondition,
   getLotMarket,
   getVinylLots,
   getVinylLotsRange,
@@ -40,7 +41,9 @@ import {
 import { getLookout, getLookoutLinks, getLookoutOverview } from "@/lib/lookout.functions";
 import type { LookoutItem, LookoutLinks } from "@/lib/lookout-match";
 import type { LookoutOverview } from "@/lib/lookout-matches.server";
+import type { LotScope } from "@/lib/lot-scope";
 import {
+  accumSnapshot,
   BIDS_ACCUM_STORAGE_KEY,
   loadAccum,
   mergeWatchedAccum,
@@ -58,6 +61,7 @@ export const queryKeys = {
   lotTracklist: (id: string) => ["lot-tracklist", id] as const,
   lotIdent: ["lot-ident"],
   lotMarket: ["lot-market"],
+  lotCondition: ["lot-condition"],
   interests: ["user-interests"],
   aiProvider: ["ai-provider"],
   geminiModel: ["gemini-model"],
@@ -133,37 +137,55 @@ export function patchLotsCaches(
 // só sai quando o usuário desvigia (quem chama remove do `accumRef` e grava), quando o dia sai da
 // janela, ou quando some do fetch fresco com o leilão ainda aberto. As telas que leem estas
 // chaves TÊM de usar estes hooks — um `queryFn` sem mesclar sobrescreveria o acumulado.
-export function useWatchedQuery() {
-  const fetchWatched = useServerFn(listWatched);
-  const accumRef = useRef<Map<string, WatchedLot> | null>(null);
-  if (accumRef.current === null)
-    accumRef.current = loadAccum<WatchedLot>(WATCHED_ACCUM_STORAGE_KEY);
+//
+// `placeholderData` (v0.155.0): enquanto a conta é lida, a tela mostra o acumulado do
+// `localStorage` (`accumSnapshot`) — abre na hora com o último estado e se corrige sozinha.
+// `refetchFresh()` (botões "Atualizar") pula o cache de 60s do servidor (`account-cache.server`).
+function useAccountQuery<T extends { id: string; date: string; time?: string }>(
+  queryKey: readonly string[],
+  storageKey: string,
+  fetchFresh: (force: boolean) => Promise<T[]>,
+) {
+  const accumRef = useRef<Map<string, T> | null>(null);
+  if (accumRef.current === null) accumRef.current = loadAccum<T>(storageKey);
+  const forceRef = useRef(false);
+  // Lido do `localStorage` só DEPOIS de montar (o HTML do SSR não tem o acumulado: ler no 1º
+  // render quebraria a hidratação) e uma vez só (referência estável entre renders).
+  const [placeholder, setPlaceholder] = useState<T[] | undefined>(undefined);
+  useEffect(() => {
+    setPlaceholder(accumSnapshot(accumRef.current!));
+  }, []);
   const query = useQuery({
-    queryKey: queryKeys.watched,
+    queryKey,
     queryFn: async () => {
-      const fresh = await fetchWatched();
-      return mergeWatchedAccum(accumRef.current!, fresh, WATCHED_ACCUM_STORAGE_KEY);
+      const force = forceRef.current;
+      forceRef.current = false;
+      const fresh = await fetchFresh(force);
+      return mergeWatchedAccum(accumRef.current!, fresh, storageKey);
     },
+    placeholderData: placeholder,
     staleTime: 5 * MIN,
     refetchOnWindowFocus: false,
   });
-  return { query, accumRef };
+  const refetchFresh = () => {
+    forceRef.current = true;
+    return query.refetch({ throwOnError: true });
+  };
+  return { query, accumRef, refetchFresh };
+}
+
+export function useWatchedQuery() {
+  const fetchWatched = useServerFn(listWatched);
+  return useAccountQuery<WatchedLot>(queryKeys.watched, WATCHED_ACCUM_STORAGE_KEY, (force) =>
+    fetchWatched({ data: { force } }),
+  );
 }
 
 export function useBidsQuery() {
   const fetchBids = useServerFn(listMyBids);
-  const accumRef = useRef<Map<string, MyBid> | null>(null);
-  if (accumRef.current === null) accumRef.current = loadAccum<MyBid>(BIDS_ACCUM_STORAGE_KEY);
-  const query = useQuery({
-    queryKey: queryKeys.bids,
-    queryFn: async () => {
-      const fresh = await fetchBids();
-      return mergeWatchedAccum(accumRef.current!, fresh, BIDS_ACCUM_STORAGE_KEY);
-    },
-    staleTime: 5 * MIN,
-    refetchOnWindowFocus: false,
-  });
-  return { query, accumRef };
+  return useAccountQuery<MyBid>(queryKeys.bids, BIDS_ACCUM_STORAGE_KEY, (force) =>
+    fetchBids({ data: { force } }),
+  );
 }
 
 export function useLotAiQuery() {
@@ -221,6 +243,87 @@ export function useLotMarketQuery() {
     staleTime: 10 * MIN,
     refetchOnWindowFocus: false,
   });
+}
+
+/** Estado de conservação (Disco/Capa) de todos os lotes (`lot_condition`). */
+export function useLotConditionQuery() {
+  const fetchLotCondition = useServerFn(getLotCondition);
+  return useQuery({
+    queryKey: queryKeys.lotCondition,
+    queryFn: () => fetchLotCondition(),
+    staleTime: 10 * MIN,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * Home (v0.155.0): as tabelas por lote (`lot_ai`, `lot_ident`, `lot_market`, `lot_condition`)
+ * vêm em DUAS partes — `core` (lotes de 2 dias atrás até o fim da janela padrão, o que a home
+ * mostra ao abrir) e, só depois que ela chega, `rest` (histórico mais antigo e dias futuros
+ * além da janela). As telas abrem com menos dados e o resto completa em segundo plano. Chaves
+ * `[...base, "core" | "rest"]`: `invalidateQueries`/`setQueriesData` com a chave base atingem
+ * as partes e a versão inteira (outras telas) de uma vez. Ver `lot-scope.server.ts`.
+ */
+function useScopedLotRows<T extends { id: string }>(
+  baseKey: readonly string[],
+  fetchScope: (scope: LotScope) => Promise<T[]>,
+  staleTime: number,
+) {
+  const core = useQuery({
+    queryKey: [...baseKey, "core"],
+    queryFn: () => fetchScope("core"),
+    staleTime,
+    refetchOnWindowFocus: false,
+  });
+  const rest = useQuery({
+    queryKey: [...baseKey, "rest"],
+    queryFn: () => fetchScope("rest"),
+    enabled: core.isSuccess,
+    staleTime,
+    refetchOnWindowFocus: false,
+  });
+  const data = useMemo(() => {
+    if (!core.data) return undefined;
+    if (!rest.data?.length) return core.data;
+    // Um patch (`setQueriesData`) pode ter acrescentado a mesma linha às duas partes.
+    const byId = new Map<string, T>();
+    for (const r of rest.data) byId.set(r.id, r);
+    for (const r of core.data) byId.set(r.id, r);
+    return [...byId.values()];
+  }, [core.data, rest.data]);
+  return { data, isLoading: core.isLoading };
+}
+
+export function useHomeLotAiQuery() {
+  const fetchLotAi = useServerFn(getLotAi);
+  return useScopedLotRows(queryKeys.lotAi, (scope) => fetchLotAi({ data: { scope } }), 10 * MIN);
+}
+
+export function useHomeLotIdentQuery() {
+  const fetchLotIdent = useServerFn(getLotIdent);
+  return useScopedLotRows(
+    queryKeys.lotIdent,
+    (scope) => fetchLotIdent({ data: { scope } }),
+    10 * MIN,
+  );
+}
+
+export function useHomeLotMarketQuery() {
+  const fetchLotMarket = useServerFn(getLotMarket);
+  return useScopedLotRows(
+    queryKeys.lotMarket,
+    (scope) => fetchLotMarket({ data: { scope } }),
+    10 * MIN,
+  );
+}
+
+export function useHomeLotConditionQuery() {
+  const fetchLotCondition = useServerFn(getLotCondition);
+  return useScopedLotRows(
+    queryKeys.lotCondition,
+    (scope) => fetchLotCondition({ data: { scope } }),
+    10 * MIN,
+  );
 }
 
 export function useInterestsQuery() {
@@ -384,14 +487,19 @@ export function useLookoutLinksQuery() {
 
 /**
  * Matches por vir + histórico + contador de novos (cálculo no servidor, `lookout-matches.server`).
- * Alimenta a página `/olho` (com histórico) e o contador do menu (`history: false`, mais leve —
- * chave própria para não misturar os dois formatos).
+ * Duas versões, com chaves próprias:
+ * - `history: false` ("light"): sem histórico e SEM valor ao vivo (`peca.asp`) — o contador do
+ *   menu (só usa `newCount`, que não depende de preço) e a 1ª etapa de `/olho` (v0.155.0).
+ * - `history: true` ("full"): com histórico de vendas e valor ao vivo — 2ª etapa de `/olho`.
  */
 export function useLookoutOverviewQuery(opts: { history: boolean }) {
   const fetchOverview = useServerFn(getLookoutOverview);
   return useQuery<LookoutOverview>({
     queryKey: [...queryKeys.lookoutOverview, opts.history ? "full" : "light"],
-    queryFn: () => fetchOverview({ data: { history: opts.history } }) as Promise<LookoutOverview>,
+    queryFn: () =>
+      fetchOverview({
+        data: { history: opts.history, live: opts.history },
+      }) as Promise<LookoutOverview>,
     staleTime: 15 * MIN,
     refetchOnWindowFocus: false,
     retry: false,

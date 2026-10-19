@@ -33,7 +33,7 @@ const HISTORY_DAYS = BAR_HISTORY_DAYS;
 const FORWARD_DAYS = BAR_FORWARD_DAYS;
 
 /** Dias (offset em relação a hoje, em horário de São Paulo) → dayKey `YYYY-MM-DD`. */
-function dayKeyAt(offset: number): string {
+export function dayKeyAt(offset: number): string {
   const back = offset < 0 ? recentDayKeys(-offset + 1) : upcomingDayKeys(offset + 1);
   return back[back.length - 1]!;
 }

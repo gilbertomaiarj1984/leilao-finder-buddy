@@ -28,54 +28,49 @@ function brDateToDayKey(value: string): string | null {
   return iso;
 }
 
-// `reident` esbarra em dezenas de órfãos por rodada: evita reler a conta (2 logins/fetches) a cada uma.
-let accountCache: { at: number; lots: Promise<VinylLot[]> } | null = null;
-const ACCOUNT_TTL_MS = 60_000;
-
 /**
- * Lotes da CONTA (vigiados + com lance) no formato da varredura, com cache de 60s. Lance sem data
- * válida é ignorado. Vigiado vence lance (traz hora/preço/casa). Falha de leitura = lista vazia.
+ * Lotes da CONTA (vigiados + com lance) no formato da varredura. Lance sem data válida é
+ * ignorado. Vigiado vence lance (traz hora/preço/casa). Falha de leitura = lista vazia. As
+ * leituras da conta vêm do cache compartilhado (`ACCOUNT_CACHE_MS`, `account-cache.server.ts`):
+ * `reident` esbarra em dezenas de órfãos por rodada e o De olho lê isto a cada abertura.
  */
 export async function getAccountLots(): Promise<VinylLot[]> {
-  if (accountCache && Date.now() - accountCache.at <= ACCOUNT_TTL_MS) return accountCache.lots;
-  const load = async (): Promise<VinylLot[]> => {
-    const [{ listWatchedFromSite }, { listMyBidsFromSite }, { extractArtist }] = await Promise.all([
+  const [{ listWatchedFromSite }, { listMyBidsFromSite }, { extractArtist }, { ACCOUNT_CACHE_MS }] =
+    await Promise.all([
       import("./leiloesbr-watch.server"),
       import("./leiloesbr-bids.server"),
       import("./vinyl-parse"),
+      import("./account-cache.server"),
     ]);
-    const [watched, bids] = await Promise.all([
-      listWatchedFromSite().catch(() => []),
-      listMyBidsFromSite().catch(() => []),
-    ]);
-    const out = new Map<string, VinylLot>();
-    for (const l of [...watched, ...bids]) {
-      if (out.has(l.id)) continue;
-      const dayKey = brDateToDayKey(l.date);
-      if (!dayKey) continue;
-      out.set(l.id, {
-        id: l.id,
-        idPeca: l.idPeca,
-        idLeilao: l.idLeilao,
-        base: l.base,
-        lote: l.lote,
-        watched: true,
-        title: l.title,
-        url: l.url,
-        image: l.image,
-        price: "price" in l ? l.price : "",
-        dayKey,
-        time: "time" in l ? l.time : "",
-        uf: l.uf,
-        house: l.house,
-        houseUrl: "houseUrl" in l ? l.houseUrl : "",
-        artist: "artist" in l ? l.artist : extractArtist(l.title),
-      });
-    }
-    return [...out.values()];
-  };
-  accountCache = { at: Date.now(), lots: load() };
-  return accountCache.lots;
+  const [watched, bids] = await Promise.all([
+    listWatchedFromSite({ maxAgeMs: ACCOUNT_CACHE_MS }).catch(() => []),
+    listMyBidsFromSite({ maxAgeMs: ACCOUNT_CACHE_MS }).catch(() => []),
+  ]);
+  const out = new Map<string, VinylLot>();
+  for (const l of [...watched, ...bids]) {
+    if (out.has(l.id)) continue;
+    const dayKey = brDateToDayKey(l.date);
+    if (!dayKey) continue;
+    out.set(l.id, {
+      id: l.id,
+      idPeca: l.idPeca,
+      idLeilao: l.idLeilao,
+      base: l.base,
+      lote: l.lote,
+      watched: true,
+      title: l.title,
+      url: l.url,
+      image: l.image,
+      price: "price" in l ? l.price : "",
+      dayKey,
+      time: "time" in l ? l.time : "",
+      uf: l.uf,
+      house: l.house,
+      houseUrl: "houseUrl" in l ? l.houseUrl : "",
+      artist: "artist" in l ? l.artist : extractArtist(l.title),
+    });
+  }
+  return [...out.values()];
 }
 
 /**

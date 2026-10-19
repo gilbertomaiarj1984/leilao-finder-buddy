@@ -152,8 +152,12 @@ async function confirmPendingByDescription(
 
 /** Teto de lotes por vir consultados ao vivo (1 requisição por lote, 100 por chamada). */
 const LIVE_PRICE_MAX = 200;
-/** Cache curto do valor ao vivo por lote — evita refazer ~200 requisições a cada abertura da página. */
-const LIVE_PRICE_TTL_MS = 3 * 60 * 1000;
+/**
+ * Cache do valor ao vivo por lote — evita refazer ~200 requisições a cada abertura da página.
+ * Pregão de HOJE: 3 min (o valor muda rápido); dias seguintes: 10 min (v0.155.0).
+ */
+const LIVE_PRICE_TTL_TODAY_MS = 3 * 60 * 1000;
+const LIVE_PRICE_TTL_LATER_MS = 10 * 60 * 1000;
 const livePriceCache = new Map<string, { at: number; value: string | null }>();
 
 /**
@@ -164,10 +168,11 @@ const livePriceCache = new Map<string, { at: number; value: string | null }>();
  */
 async function applyLivePrices(upcoming: LookoutUpcoming[]): Promise<void> {
   const now = Date.now();
+  const today = upcomingDayKeys(1)[0]!;
+  const ttl = (u: LookoutUpcoming) =>
+    u.dayKey <= today ? LIVE_PRICE_TTL_TODAY_MS : LIVE_PRICE_TTL_LATER_MS;
   const targets = upcoming
-    .filter(
-      (u) => u.idPeca && u.url && (livePriceCache.get(u.lotId)?.at ?? 0) + LIVE_PRICE_TTL_MS < now,
-    )
+    .filter((u) => u.idPeca && u.url && (livePriceCache.get(u.lotId)?.at ?? 0) + ttl(u) < now)
     .slice(0, LIVE_PRICE_MAX)
     .map((u) => ({ id: u.lotId, idPeca: u.idPeca, url: u.url }));
   try {

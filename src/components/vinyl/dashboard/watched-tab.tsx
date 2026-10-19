@@ -52,8 +52,10 @@ const chipClass = (active: boolean) =>
       : "border-border text-muted-foreground hover:border-primary hover:text-primary"
   }`;
 
-/** Intervalo do auto-refresh de vigiados + lances enquanto a aba Vigiados está aberta. */
+/** Intervalo do auto-refresh enquanto a aba Vigiados está aberta (ver o efeito no componente). */
 const AUTO_REFRESH_MS = 60_000;
+/** A cada quantos ticks do auto-refresh a lista da conta é relida (os outros só atualizam valores). */
+const ACCOUNT_REFRESH_EVERY = 3;
 
 const smallButtonClass =
   "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary";
@@ -105,21 +107,29 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
     tab,
     refreshWatchedAndBids,
     refreshingWatchedAndBids,
+    refreshLotDetails,
     statFilter,
     clearStatFilter,
     toggleStatFilter,
   } = d;
-  // Enquanto a aba Vigiados está aberta, atualiza vigiados + lances a cada minuto (silencioso).
-  // A ref evita recriar o intervalo a cada render (a função fecha sobre as queries atuais).
-  const refreshRef = useRef(refreshWatchedAndBids);
-  refreshRef.current = refreshWatchedAndBids;
+  // Enquanto a aba Vigiados está aberta, atualiza em silêncio a cada minuto: o valor atual/próximo
+  // lance (`peca.asp`) todo minuto e a LISTA da conta (vigiados + lances, até 100 páginas cada) só
+  // a cada `ACCOUNT_REFRESH_EVERY` minutos (v0.155.0; antes relia a conta todo minuto).
+  // A ref evita recriar o intervalo a cada render (as funções fecham sobre as queries atuais).
+  const isActiveTab = tab === (futureOnly ? FUTURE_TAB : "watched");
+  const refreshRef = useRef({ account: refreshWatchedAndBids, details: refreshLotDetails });
+  refreshRef.current = { account: refreshWatchedAndBids, details: refreshLotDetails };
   useEffect(() => {
-    if (tab !== (futureOnly ? FUTURE_TAB : "watched")) return;
+    if (!isActiveTab) return;
+    let tick = 0;
     const id = window.setInterval(() => {
-      if (!document.hidden) refreshRef.current(true);
+      if (document.hidden) return;
+      tick += 1;
+      if (tick % ACCOUNT_REFRESH_EVERY === 0) refreshRef.current.account(true);
+      else refreshRef.current.details();
     }, AUTO_REFRESH_MS);
     return () => window.clearInterval(id);
-  }, [tab, futureOnly]);
+  }, [isActiveTab]);
   // Último dia da barra de dias: o que vem depois é "Dias Futuros".
   const lastBarDay = barDays[barDays.length - 1];
   const isFuture = (dayKey: string) => isFutureDay(dayKey, lastBarDay);
@@ -224,6 +234,9 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
         toast.error((error as Error)?.message || "Não foi possível desfazer a correção");
       });
   };
+  // Aba fechada: o Radix não monta o conteúdo, mas o filtro/agrupamento abaixo (dentro do JSX)
+  // rodaria do mesmo jeito a cada render da home — mesmo atalho do `DayTab` (v0.155.0).
+  if (!isActiveTab) return <TabsContent value={futureOnly ? FUTURE_TAB : "watched"} />;
   return (
     <TabsContent value={futureOnly ? FUTURE_TAB : "watched"} className="space-y-4">
       {futureOnly ? <h2 className="text-base font-semibold text-foreground">Vigiados</h2> : null}

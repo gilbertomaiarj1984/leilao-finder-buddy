@@ -40,7 +40,6 @@ import {
 } from "@/lib/collection.functions";
 import {
   enrichLotes,
-  getLotCondition,
   getLotDetails,
   getSoldLots,
   getVerifiedHouses,
@@ -104,10 +103,11 @@ import {
   useCollectionLinksQuery,
   useCollectionQuery,
   useCollectorInterests,
-  useLotAiQuery,
-  useLotIdentQuery,
+  useHomeLotAiQuery,
+  useHomeLotConditionQuery,
+  useHomeLotIdentQuery,
   useAiPanelQuery,
-  useLotMarketQuery,
+  useHomeLotMarketQuery,
   useLotsQuery,
   useLotsRangeQueries,
   useLookoutLinksQuery,
@@ -376,7 +376,6 @@ export function useDashboardData() {
   const runRepriceLotAi = useServerFn(repriceLotAi);
   const fetchSoldLots = useServerFn(getSoldLots);
   const runSaveTags = useServerFn(setLotTags);
-  const fetchLotCondition = useServerFn(getLotCondition);
   const fetchAiMode = useServerFn(getAiMode);
   const runAnalyze = useServerFn(analyzeOnDemand);
   const runApplyDecision = useServerFn(applyCollectionDecision);
@@ -430,14 +429,19 @@ export function useDashboardData() {
   // (`queryKeys.watched`/`queryKeys.bids`, compartilhada no `QueryClient` do app inteiro) —
   // ela usa esta MESMA função, senão a versão dela (sem mesclar) sobrescreve o acumulado
   // desta rota ao navegar entre as duas.
-  const { query: watched, accumRef: watchedAccumRef } = useWatchedQuery();
-  const { query: bids, accumRef: bidsAccumRef } = useBidsQuery();
+  const {
+    query: watched,
+    accumRef: watchedAccumRef,
+    refetchFresh: refetchWatchedFresh,
+  } = useWatchedQuery();
+  const { query: bids, accumRef: bidsAccumRef, refetchFresh: refetchBidsFresh } = useBidsQuery();
   // Avaliações da IA (score/raridade/oportunidade) e interesses do usuário: alimentam o
   // badge de nota no canto do card. Best-effort — sem avaliação, o card fica como hoje.
-  const lotAiQuery = useLotAiQuery();
+  // Na home vêm em duas partes (janela primeiro, resto depois — `useScopedLotRows`, v0.155.0).
+  const lotAiQuery = useHomeLotAiQuery();
   // Identificação simplificada (artista/álbum/ano) — roda para TODOS os lotes, barata.
   // Alimenta a exibição, a busca e o filtro por artista, priorizada sobre o título.
-  const lotIdentQuery = useLotIdentQuery();
+  const lotIdentQuery = useHomeLotIdentQuery();
   // Modo da IA automática (controla o gasto de créditos). Fonte da verdade é o servidor.
   const aiModeQuery = useQuery({
     queryKey: queryKeys.aiMode,
@@ -547,7 +551,7 @@ export function useDashboardData() {
   };
   // Perfil do colecionador: interesses digitados + artistas do De olho.
   const { matcher: matchesInterest } = useCollectorInterests();
-  const lotMarketQuery = useLotMarketQuery();
+  const lotMarketQuery = useHomeLotMarketQuery();
   const aiPanelQuery = useAiPanelQuery();
   const marketById = useMemo(() => {
     const map = new Map<string, LotMarket>();
@@ -572,12 +576,7 @@ export function useDashboardData() {
   // Estado de conservação (Disco/Capa). Prioriza o CACHE do servidor (`lot_condition`,
   // alimentado pelo descritivo do catálogo — mais rico); cai no parse do TÍTULO quando não
   // há linha no cache ainda (ou ela ficou indefinida).
-  const lotConditionQuery = useQuery({
-    queryKey: ["lot-condition"] as const,
-    queryFn: () => fetchLotCondition(),
-    staleTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const lotConditionQuery = useHomeLotConditionQuery();
   const conditionById = useMemo(() => {
     const map = new Map<string, Condition>();
     for (const r of lotConditionQuery.data ?? []) {
@@ -1240,7 +1239,7 @@ export function useDashboardData() {
     void (async () => {
       setRefreshingWatched(true);
       try {
-        const result = await watched.refetch({ throwOnError: true });
+        const result = await refetchWatchedFresh();
         if (result.error) throw result.error;
         toast.success("Vigiados atualizados");
       } catch (error) {
@@ -1257,7 +1256,7 @@ export function useDashboardData() {
     void (async () => {
       setRefreshingBids(true);
       try {
-        const result = await bids.refetch({ throwOnError: true });
+        const result = await refetchBidsFresh();
         if (result.error) throw result.error;
         toast.success("Lances atualizados");
       } catch (error) {
@@ -1281,10 +1280,12 @@ export function useDashboardData() {
     void (async () => {
       setRefreshingWatchedAndBids(true);
       try {
-        const results = await Promise.all([
-          watched.refetch({ throwOnError: true }),
-          bids.refetch({ throwOnError: true }),
-        ]);
+        // Manual: lê a conta de novo (pula o cache de 60s do servidor). Automático: aceita o cache.
+        const results = await Promise.all(
+          silent
+            ? [watched.refetch({ throwOnError: true }), bids.refetch({ throwOnError: true })]
+            : [refetchWatchedFresh(), refetchBidsFresh()],
+        );
         for (const r of results) if (r.error) throw r.error;
         if (!silent) toast.success("Vigiados e lances atualizados");
       } catch (error) {
@@ -1298,6 +1299,13 @@ export function useDashboardData() {
         void queryClient.invalidateQueries({ queryKey: ["sold-lots"] });
       }
     })();
+  };
+
+  // Auto-refresh da aba Vigiados nos minutos em que a conta NÃO é relida (v0.155.0): só o valor
+  // atual/próximo lance (`peca.asp`, queries `lot-details`) e o status de vendido.
+  const refreshLotDetails = () => {
+    void queryClient.invalidateQueries({ queryKey: ["lot-details"] });
+    void queryClient.invalidateQueries({ queryKey: ["sold-lots"] });
   };
 
   const [refreshingAll, setRefreshingAll] = useState(false);
@@ -1500,7 +1508,7 @@ export function useDashboardData() {
   // Edição manual de tags da IA (add/remove ao passar o mouse): atualiza o cache queryKeys.lotAi
   // otimisticamente e persiste no banco.
   const patchTags = (id: string, tags: string[]) =>
-    queryClient.setQueryData(queryKeys.lotAi, (old: unknown) =>
+    queryClient.setQueriesData({ queryKey: queryKeys.lotAi }, (old: unknown) =>
       Array.isArray(old)
         ? old.map((r) => (r && (r as { id: string }).id === id ? { ...r, tags } : r))
         : old,
@@ -1764,7 +1772,7 @@ export function useDashboardData() {
           const { rows } = await runRepriceLotAi({ data: { lots } });
           if (!rows.length) continue;
           const byId = new Map(rows.map((r) => [r.id, r]));
-          queryClient.setQueryData(queryKeys.lotAi, (old: unknown) =>
+          queryClient.setQueriesData({ queryKey: queryKeys.lotAi }, (old: unknown) =>
             Array.isArray(old)
               ? [
                   ...old.map((r) => byId.get((r as { id: string })?.id) ?? r),
@@ -1900,6 +1908,7 @@ export function useDashboardData() {
     refreshBids,
     refreshingBids,
     refreshWatchedAndBids,
+    refreshLotDetails,
     refreshingWatchedAndBids,
     statFilter,
     clearStatFilter,
