@@ -382,7 +382,7 @@ type GalleryScanStats = {
 async function listGalleryAuctions(
   galleryCode: string,
   deadline = Number.POSITIVE_INFINITY,
-  musicOnly = false,
+  scope: { core: boolean; music: boolean } = { core: true, music: false },
 ): Promise<{ lots: VinylLot[]; stats: Omit<GalleryScanStats, "code" | "name"> }> {
   const days = upcomingDayKeys(WINDOW_DAYS);
   const windowStart = days[0]!;
@@ -416,9 +416,12 @@ async function listGalleryAuctions(
     { tp: MUSIC_CATEGORY, accept: isVinylTitle },
     { tp: null, accept: isVinylTitle },
   ];
-  // Galeria que só aparece na lista de "Música" (sem nenhum lote em "Discos de Vinil") não precisa
-  // das outras passadas — os LPs dela estão em Música; a passada 2 varreria o acervo inteiro à toa.
-  for (const pass of musicOnly ? passes.filter((p) => p.tp === MUSIC_CATEGORY) : passes) {
+  // `scope.music`: só a casa que aparece na lista de "Música" roda a passada de Música (as demais,
+  // ex.: Abreu, gastariam orçamento de tempo à toa e cortariam a passada 2). `scope.core`: só a casa
+  // que aparece na lista de "Discos de Vinil" roda as outras passadas — quem só está em Música tem
+  // os LPs lá, e a passada 2 varreria o acervo inteiro à toa.
+  const active = passes.filter((p) => (p.tp === MUSIC_CATEGORY ? scope.music : scope.core));
+  for (const pass of active) {
     if (truncated) break;
     const firstHtml = await fetchPageSearch(1, "", pass.tp, galleryCode);
     const total = lastPage(firstHtml);
@@ -478,10 +481,10 @@ export async function scanGalleries(
   // casa sem nenhum lote categorizado como vinil (Ana Mello) só aparece na lista de "Música".
   const vinylGalleries = (await listGalleries(tp)).galleries;
   const withMusic = tp === VINYL_CATEGORY;
-  const galleries = withMusic
-    ? mergeGalleries(vinylGalleries, (await listGalleries(MUSIC_CATEGORY)).galleries)
-    : vinylGalleries;
+  const musicGalleries = withMusic ? (await listGalleries(MUSIC_CATEGORY)).galleries : [];
+  const galleries = mergeGalleries(vinylGalleries, musicGalleries);
   const vinylCodes = new Set(vinylGalleries.map((g) => g.code));
+  const musicCodes = new Set(musicGalleries.map((g) => g.code));
   const total = galleries.length;
   const start = Math.max(0, offset);
   const batch = galleries.slice(start, start + count);
@@ -502,11 +505,10 @@ export async function scanGalleries(
     if (processed > 0 && Date.now() - started > CHUNK_BUDGET_MS * 0.6) break;
     processed += 1;
     try {
-      const { lots, stats: s } = await listGalleryAuctions(
-        gallery.code,
-        hardDeadline,
-        withMusic && !vinylCodes.has(gallery.code),
-      );
+      const { lots, stats: s } = await listGalleryAuctions(gallery.code, hardDeadline, {
+        core: !withMusic || vinylCodes.has(gallery.code),
+        music: musicCodes.has(gallery.code),
+      });
       stats.push({ code: gallery.code, name: gallery.name, ...s });
       for (const lot of lots) {
         byId.set(lot.id, lot);

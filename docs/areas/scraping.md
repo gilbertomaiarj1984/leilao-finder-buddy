@@ -111,8 +111,10 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   (Ana Mello sozinha 153, nos dias 19–23/10).
 - `galleryscan` agora usa a **união** das galerias de "Discos de Vinil" e de "Música"
   (`mergeGalleries`) e ganhou a passada **1b**: `tp=` Música + `isVinylTitle` (estrito, pois ali CD/K7/DVD
-  vêm juntos). Casa que só está na lista de Música roda **só** essa passada (a passada 2, sem `tp`,
-  varreria o acervo inteiro à toa).
+  vêm juntos). A passada de Música só roda para casa que está na lista de Música
+  (v0.152.1 — antes rodava em todas e comia o orçamento de 75 s/chamada de casas grandes como a Abreu,
+  cortando a passada 2). Casa que só está na lista de Música roda **só** essa passada (a passada 2,
+  sem `tp`, varreria o acervo inteiro à toa).
 - A varredura geral (`chunk`) segue só em "Discos de Vinil"; Música entra pelo `galleryscan`.
 
 ## Regra: nunca bloquear casa (v0.112.1)

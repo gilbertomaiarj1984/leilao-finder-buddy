@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.152.1** — `galleryscan`: a passada de "Música" só roda nas casas que aparecem na lista de Música (`scope.music`/`scope.core`). Na v0.152.0 rodava em todas e, em casas grandes como a Abreu Colecionismo (que não tem item em Música), gastava o orçamento de tempo do bloco e cortava (`truncated`) a passada 2.
 - **0.152.0** — Categoria **"Música"** na varredura e correção do `tp=` de vinil. (1) O site renomeou "Disco de vinil" → "Discos de Vinil"; o hex antigo devolvia 0 lotes — `VINYL_CATEGORY` atualizado. (2) Casas que põem os LPs em "Música" junto com CD/K7 (Ana Mello: 153 LPs em 19–23/10; também Catálogo Amigo, Antig, Antiguidade Nacional…) não apareciam: `galleryscan` une as galerias de vinil + música e ganhou a passada Música com `isVinylTitle`. Teste: `merge-galleries.test.ts`.
 - **0.151.6** — Documentação: o ambiente de desenvolvimento passou a ter acesso irrestrito à internet; scraping e consultas podem ser testados contra o LeilõesBR e casas parceiras (restrição antiga removida de `CLAUDE.md` e `docs/notas-desenvolvimento.md`).
 - **0.151.5** — De olho: o lote de origem do disco sempre aparece em "Por vir" (com o selo "origem"): um vínculo antigo (✕ "não é este disco" ou confirmação em outro item) não o esconde mais; `matchLookoutForLot` checa a origem antes dos vínculos.
