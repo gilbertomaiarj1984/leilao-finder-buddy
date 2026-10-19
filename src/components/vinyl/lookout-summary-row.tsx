@@ -1,3 +1,4 @@
+import { useDragAutoScroll } from "@/components/vinyl/use-drag-autoscroll";
 import { Binoculars, GripVertical } from "lucide-react";
 import { useState } from "react";
 
@@ -33,6 +34,7 @@ export function LookoutSummaryRow({
   onMoveLot: (lotId: string) => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
+  const autoScroll = useDragAutoScroll();
   const archived = item.status !== "active";
   const news = upcoming.filter((m) => m.isNew).length;
   const watching = upcoming.filter((m) => watchedIds.has(m.idPeca)).length;
@@ -51,6 +53,7 @@ export function LookoutSummaryRow({
         }
       }}
       onDragStart={(e) => {
+        autoScroll.start();
         e.dataTransfer.setData(LOOKOUT_DRAG_TYPE, item.id);
         e.dataTransfer.setData("text/plain", lookoutLabel(item));
         e.dataTransfer.effectAllowed = "move";

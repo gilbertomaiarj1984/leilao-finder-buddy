@@ -1,5 +1,8 @@
 export const BASE_URL = "https://leiloesbr.com.br";
 
+/** Teto de páginas lidas nas listas da conta (vigias/lances): ordenadas por data, os leilões mais distantes ficam no fim. O laço já para sozinho quando acaba a paginação. */
+export const MAX_ACCOUNT_PAGES = 100;
+
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36";
 

@@ -1,3 +1,4 @@
+import { useDragAutoScroll } from "@/components/vinyl/use-drag-autoscroll";
 import { useMemo, useState, type DragEvent } from "react";
 import { X } from "lucide-react";
 
@@ -55,6 +56,7 @@ function EffectTag({ effect }: { effect: "set" | "cap" }) {
 }
 
 export function CorrelTab({ draft, setDraft }: Props) {
+  const autoScroll = useDragAutoScroll();
   const [dragId, setDragId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<CondKey | null>(null);
   const [phrase, setPhrase] = useState("");
@@ -138,6 +140,7 @@ export function CorrelTab({ draft, setDraft }: Props) {
                         draggable
                         onDragStart={(e) => {
                           setDragId(r.id);
+                          autoScroll.start();
                           e.dataTransfer.effectAllowed = "move";
                           try {
                             e.dataTransfer.setData("text/plain", r.id);

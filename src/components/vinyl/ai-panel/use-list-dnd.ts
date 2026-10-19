@@ -1,5 +1,7 @@
 import { useState, type DragEvent } from "react";
 
+import { useDragAutoScroll } from "@/components/vinyl/use-drag-autoscroll";
+
 /**
  * Reordenação por arrastar e soltar (HTML5 nativo, o mesmo padrão do resto do app). `item(id, i)`
  * devolve as props do elemento arrastável; `before(i)` diz se a linha de inserção vai antes do item
@@ -8,6 +10,7 @@ import { useState, type DragEvent } from "react";
 export function useListDnd(onMove: (id: string, toIndex: number) => void) {
   const [drag, setDrag] = useState<string | null>(null);
   const [over, setOver] = useState<number | null>(null);
+  const autoScroll = useDragAutoScroll();
   const reset = () => {
     setDrag(null);
     setOver(null);
@@ -19,6 +22,7 @@ export function useListDnd(onMove: (id: string, toIndex: number) => void) {
       draggable: true,
       onDragStart: (e: DragEvent) => {
         setDrag(id);
+        autoScroll.start();
         e.dataTransfer.effectAllowed = "move";
         try {
           e.dataTransfer.setData("text/plain", id);

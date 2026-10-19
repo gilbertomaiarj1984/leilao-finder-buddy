@@ -1,4 +1,4 @@
-import { authFetch, BASE_URL } from "./leiloesbr-auth.server";
+import { authFetch, BASE_URL, MAX_ACCOUNT_PAGES } from "./leiloesbr-auth.server";
 
 /**
  * Um lance dado pelo usuário, lido da página "Meus lances" (conta_site.asp?l=4).
@@ -77,7 +77,7 @@ export async function listMyBidsFromSite(): Promise<MyBid[]> {
   const seen = new Set<string>();
   const out: MyBid[] = [];
 
-  for (let page = 1; page <= 20; page++) {
+  for (let page = 1; page <= MAX_ACCOUNT_PAGES; page++) {
     const html = await authFetch(
       `${BASE_URL}/conta_site.asp?l=4&t=0&s=0&b=0&id=0&p=&order=0&pag=${page}`,
       {},
