@@ -50,6 +50,7 @@ import {
   type LotMarket,
 } from "@/components/vinyl/ai-score-utils";
 import { dayLabel } from "@/components/vinyl/grouping";
+import { FUTURE_LABEL, FUTURE_TAB, isFutureDay } from "@/lib/day-bar";
 import { setLotTags } from "@/lib/ai.functions";
 import { effectiveTextRules } from "@/lib/condition-text";
 import { normalizeGrade, parseConditionFromText, scoreCondition } from "@/lib/grading";
@@ -493,7 +494,9 @@ function AnalisePage() {
 
   const days = useMemo(() => lots.data?.days ?? [], [lots.data]);
   // Dia salvo que saiu da janela vira "Todos" (senão a lista ficaria vazia sem aba ativa).
-  const activeDay = days.includes(dayFilter) ? dayFilter : "";
+  // Último dia da janela: o que vier depois cai no último botão, "Dias Futuros".
+  const lastDay = days[days.length - 1];
+  const activeDay = days.includes(dayFilter) || dayFilter === FUTURE_TAB ? dayFilter : "";
   const allLots = useMemo(() => lots.data?.lots ?? [], [lots.data]);
 
   const houses = useMemo(
@@ -577,8 +580,13 @@ function AnalisePage() {
     bidStatusById,
   ]);
   const filtered = useMemo(
-    () => (activeDay ? filteredAnyDay.filter((l) => l.dayKey === activeDay) : filteredAnyDay),
-    [filteredAnyDay, activeDay],
+    () =>
+      !activeDay
+        ? filteredAnyDay
+        : activeDay === FUTURE_TAB
+          ? filteredAnyDay.filter((l) => isFutureDay(l.dayKey, lastDay))
+          : filteredAnyDay.filter((l) => l.dayKey === activeDay),
+    [filteredAnyDay, activeDay, lastDay],
   );
 
   // Dois Tops: vigiados × demais lotes. Só lotes já avaliados, maior nota primeiro.
@@ -940,6 +948,15 @@ function AnalisePage() {
                     </TabsTrigger>
                   );
                 })}
+                <TabsTrigger
+                  value={FUTURE_TAB}
+                  className="shrink-0 bg-sky-500/10 text-sky-700 data-[state=active]:bg-sky-500/25 data-[state=active]:text-sky-800 dark:text-sky-300 dark:data-[state=active]:text-sky-200"
+                >
+                  {FUTURE_LABEL}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {filteredAnyDay.filter((l) => isFutureDay(l.dayKey, lastDay)).length}
+                  </span>
+                </TabsTrigger>
               </TabsList>
             </Tabs>
 

@@ -10,7 +10,12 @@ import {
 } from "@/lib/persisted-state";
 import { toast } from "sonner";
 
-import { watchedDateToKey, type HouseStats } from "@/components/vinyl/grouping";
+import {
+  bidMatchesSearch,
+  watchedDateToKey,
+  watchedMatchesSearch,
+  type HouseStats,
+} from "@/components/vinyl/grouping";
 import { effectiveTextRules } from "@/lib/condition-text";
 import { type Condition, type Grade, parseConditionFromText, scoreCondition } from "@/lib/grading";
 import {
@@ -112,7 +117,14 @@ import {
   useWatchedQuery,
   queryKeys,
 } from "@/lib/queries";
-import { BAR_PAGES, buildBarDays, DAY_PAGE, TODAY_INDEX, TODAY_PAGE } from "@/lib/day-bar";
+import {
+  BAR_PAGES,
+  buildBarDays,
+  DAY_PAGE,
+  isFutureDay,
+  TODAY_INDEX,
+  TODAY_PAGE,
+} from "@/lib/day-bar";
 
 /** Tamanho de cada bloco da busca de detalhes (peca.asp) — o servidor aceita até 100. */
 const LOT_DETAILS_CHUNK = 50;
@@ -1568,6 +1580,18 @@ export function useDashboardData() {
   }, [lots.data]);
   const bidDayKey = (bid: { id: string; date: string }) =>
     dayKeyByLotId.get(bid.id) || watchedDateToKey(bid.date) || bid.date || "";
+  // "Dias Futuros": vigiados + lances de leilões DEPOIS do último dia da barra (hoje+14), que
+  // não têm botão de dia próprio (respeita a busca principal).
+  const lastBarDay = barDays[barDays.length - 1];
+  const futureCount =
+    (watched.data ?? []).filter(
+      (w) =>
+        isFutureDay(watchedDateToKey(w.date), lastBarDay) &&
+        watchedMatchesSearch(w, searchNorm, albumFor(w)),
+    ).length +
+    (bids.data ?? []).filter(
+      (b) => isFutureDay(bidDayKey(b), lastBarDay) && bidMatchesSearch(b, searchNorm, albumFor(b)),
+    ).length;
   // Horário do leilão por `${dia}|casa` — "Meus lances" não traz o horário (só a data do
   // lance), então casamos pelo dia+casa com a varredura geral e os vigiados, pra ordenar os
   // lances por horário do leilão igual às outras telas.
@@ -1865,6 +1889,7 @@ export function useDashboardData() {
     bidsViewDay,
     bidsWithHouseUrl,
     bidDayKey,
+    futureCount,
     dayBarHost,
     refreshDay,
     refreshingDay,

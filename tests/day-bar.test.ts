@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
 import { shiftSavedDayTab } from "../src/lib/persisted-state";
-import { BAR_PAGES, buildBarDays, shiftDayKey, TODAY_INDEX, TODAY_PAGE } from "../src/lib/day-bar";
+import {
+  BAR_PAGES,
+  buildBarDays,
+  isFutureDay,
+  shiftDayKey,
+  TODAY_INDEX,
+  TODAY_PAGE,
+} from "../src/lib/day-bar";
 
 describe("day-bar", () => {
   test("shiftDayKey atravessa mês e ano", () => {
@@ -17,6 +24,18 @@ describe("day-bar", () => {
     expect(days[24]).toBe("2026-10-13");
     expect(BAR_PAGES).toBe(5);
     expect(TODAY_PAGE).toBe(2);
+  });
+});
+
+describe("isFutureDay", () => {
+  test("só o que vem depois do último dia do seletor; sem data nunca é futuro", () => {
+    const last = buildBarDays("2026-10-19")[24];
+    expect(last).toBe("2026-11-02");
+    expect(isFutureDay("2026-11-03", last)).toBe(true);
+    expect(isFutureDay("2026-11-02", last)).toBe(false);
+    expect(isFutureDay("2026-10-19", last)).toBe(false);
+    expect(isFutureDay("", last)).toBe(false);
+    expect(isFutureDay("2026-11-03", undefined)).toBe(false);
   });
 });
 

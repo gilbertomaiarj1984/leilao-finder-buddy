@@ -21,3 +21,12 @@ export function buildBarDays(todayKey: string): string[] {
     shiftDayKey(todayKey, i - BAR_HISTORY_DAYS),
   );
 }
+
+/** Valor da aba/chip que reúne tudo o que vem DEPOIS do último dia de um seletor de dias. */
+export const FUTURE_TAB = "future";
+export const FUTURE_LABEL = "Dias Futuros";
+
+/** `dayKey` vem depois de `lastDayKey` (último dia do seletor)? Sem data (`""`) nunca é futuro. */
+export function isFutureDay(dayKey: string, lastDayKey: string | undefined): boolean {
+  return Boolean(dayKey && lastDayKey && dayKey > lastDayKey);
+}

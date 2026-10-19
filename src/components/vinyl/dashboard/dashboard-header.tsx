@@ -16,7 +16,14 @@ import { Button } from "@/components/ui/button";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { bidMatchesSearch, dayLabel, watchedMatchesSearch } from "@/components/vinyl/grouping";
-import { BAR_PAGES, DAY_PAGE, TODAY_INDEX, TODAY_PAGE } from "@/lib/day-bar";
+import {
+  BAR_PAGES,
+  DAY_PAGE,
+  FUTURE_LABEL,
+  FUTURE_TAB,
+  TODAY_INDEX,
+  TODAY_PAGE,
+} from "@/lib/day-bar";
 import { useLookoutOverviewQuery } from "@/lib/queries";
 import { isManuallyFinished } from "@/lib/manually-finished-auctions";
 import { auctionDayPassed } from "@/lib/vinyl-parse";
@@ -56,6 +63,7 @@ export function DashboardHeader({
     albumFor,
     bids,
     setFinishedToggleHost,
+    futureCount,
   } = d;
   // Janela de dias visíveis (5 por vez, página `dayPage`); as setas paginam de 5 em 5 por
   // 2 páginas de histórico, a de hoje e 2 de futuro (`day-bar.ts`).
@@ -220,6 +228,13 @@ export function DashboardHeader({
                 </TabsTrigger>
               );
             })}
+            <TabsTrigger
+              value={FUTURE_TAB}
+              className="shrink-0 bg-sky-500/10 text-sky-700 data-[state=active]:bg-sky-500/25 data-[state=active]:text-sky-800 dark:text-sky-300 dark:data-[state=active]:text-sky-200"
+            >
+              {FUTURE_LABEL}
+              <span className="ml-2 text-xs text-muted-foreground">{futureCount}</span>
+            </TabsTrigger>
             <TabsTrigger value="watched" className="shrink-0">
               Vigiados
               <span className="ml-2 text-xs text-muted-foreground">

@@ -309,7 +309,7 @@ const PREFIX_PATTERNS: RegExp[] = [
   /^lote\s*(n?[ºo°]?\s*\d+)?\s*[-:–]?\s*/i,
   /^\d+\s*(lps?|discos?|vinis|compactos?)\b\s*[-:–]?\s*/i,
   /^(belissimo|belíssimo|belo|raro|rarissimo|raríssimo|antigo|otimo|ótimo|excelente)\s+/i,
-  /^(lps?|long\s*play|discos?\s*de\s*vinil|disco\s*de\s*vinil|discos?|vinis|vinil|compactos?|compacto|bolach[aã]o|album|álbum)\b\s*[-:–,.]?\s*/i,
+  /^(lps?|long\s*play|discos?\s*de\s*vinil|disco\s*de\s*vinil|discos?|vinis|vinil|compactos?|compacto|bolach[aã]o|album|álbum)\b\s*[-:–,.]?\s*(?:(?:de|do|da|dos|das)\s+(?=\S))?/i,
 ];
 
 /** Rótulo do "artista" para lotes que são um conjunto/coleção de vários discos. */

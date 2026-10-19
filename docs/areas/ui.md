@@ -179,6 +179,13 @@
   desde o início do 1º dia; "encerrado" só 3h depois do último horário do último dia. O título
   do catálogo é só "Catálogo <idLeilao>" (o nome do leilão não é capturado). Filtro de dia é
   estado local (volta a "Todos" ao trocar de aba). `watchedDayOpen` (abertura por dia) foi removido.
+- **"Dias Futuros" (v0.154.0):** último botão de todo seletor de dias, com `FUTURE_TAB`/`FUTURE_LABEL`/
+  `isFutureDay` (`day-bar.ts`). Corte = último dia do seletor (barra da home: hoje+14; `/analise`: último
+  dia da janela). **Home:** aba `future` (desktop `TabsTrigger` e chip "Dias Futuros" no mobile), conteúdo =
+  `<WatchedTab futureOnly/>` + `<BidsTab futureOnly/>` (um chip/seção por dia); contador `futureCount`
+  (`use-dashboard-data.tsx`, respeita a busca). **Vigiados:** os dias depois da barra viram UM chip final;
+  **Lances:** uma seção final "Dias Futuros". Vigiado/lance nunca é podado por estar fora da faixa
+  (`mergeWatchedAccum`) — só some o que a conta deixou de listar (teto de 100 páginas, `MAX_ACCOUNT_PAGES`).
 - **Split do `index.tsx`:** lógica em `src/components/vinyl/` — `grouping.ts` (puros + tipos),
   `badges.tsx`, `filters.tsx`, `lot-card.tsx`, `bid-house-sections.tsx`, `live-auctions.tsx`,
   `ai-score.tsx` (UI) + `ai-score-utils.ts` (puros/client-safe — `parseAiAlbum`/`formatAiAlbum`,

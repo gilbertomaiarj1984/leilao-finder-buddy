@@ -4,6 +4,8 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.154.0** — botão final **"Dias Futuros"** em todo seletor de dias (barra da home desktop/mobile, chips de Vigiados, seções de Lances, barra da Análise): reúne vigiados/lances de leilões depois do último dia do seletor; `extractArtist` não deixa mais "de/do/da" colado em "LP de X - …" (virava "De X").
+
 - **0.153.2** — Vigias e lances da conta: limite de leitura sobe de 20 para 100 páginas (`MAX_ACCOUNT_PAGES`); lotes de leilões distantes (fim da lista) não ficavam como "Vigiando" no De olho.  Arrastar-e-soltar em todo o app (De olho: cartão, linha resumida, lote por vir, artista; correlação da IA; listas reordenáveis) passa a rolar a tela nas bordas (`useDragAutoScroll`), como no Analytics.
 - **0.153.1** — `/olho`: ✓ "é este disco", ✕ "não é" (lote por vir e aparições), "Descartar todas" e mover lote agora refletem na hora (atualização otimista do cache `lookoutOverview` via `applyLookoutLinks`, com rollback em erro), como o Vigiar; o recálculo pesado segue em segundo plano. Teste: `lookout-overview-patch.test.ts`.
 - **0.153.0** — De olho: dá para **arrastar um lote "Por vir"** de um álbum para outro cartão (ou linha resumida) quando o casamento o pôs no disco errado. `moveLookoutLot` fixa o vínculo no destino (tira do cartão antigo) e grava `lot_ident` manual com artista/álbum/ano do destino; Discogs/IA seguem a partir daí. Lote de origem não arrasta.

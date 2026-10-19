@@ -39,6 +39,7 @@ import {
   setAnalyticsArtistAlias,
   setAnalyticsSaleOverrides,
 } from "@/lib/analytics.functions";
+import { FUTURE_LABEL, FUTURE_TAB, isFutureDay } from "@/lib/day-bar";
 import { queryKeys, useAnalyticsAliasesQuery } from "@/lib/queries";
 
 import type { DashboardData } from "./use-dashboard-data";
@@ -66,12 +67,18 @@ function daysRangeLabel(dayKeys: string[]): string {
   return first === last ? fmt(first) : `${fmt(first)} a ${fmt(last)}`;
 }
 
-export function WatchedTab({ d }: { d: DashboardData }) {
+/**
+ * `futureOnly`: versão da aba "Dias Futuros" da barra de dias — só os vigiados que caem DEPOIS
+ * do último dia da barra, com um chip por dia. Sem ele (aba Vigiados), esses dias ficam juntos
+ * num último chip "Dias Futuros".
+ */
+export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; futureOnly?: boolean }) {
   const {
     watched,
     searchNorm,
     albumFor,
     days,
+    barDays,
     closeAllHouseSections,
     openAllHouseSections,
     closedHouseSections,
@@ -107,13 +114,21 @@ export function WatchedTab({ d }: { d: DashboardData }) {
   const refreshRef = useRef(refreshWatchedAndBids);
   refreshRef.current = refreshWatchedAndBids;
   useEffect(() => {
-    if (tab !== "watched") return;
+    if (tab !== (futureOnly ? FUTURE_TAB : "watched")) return;
     const id = window.setInterval(() => {
       if (!document.hidden) refreshRef.current(true);
     }, AUTO_REFRESH_MS);
     return () => window.clearInterval(id);
-  }, [tab]);
-  const [selectedDay, setSelectedDay] = usePersistedState<string>("watched-selected-day", "all");
+  }, [tab, futureOnly]);
+  // Último dia da barra de dias: o que vem depois é "Dias Futuros".
+  const lastBarDay = barDays[barDays.length - 1];
+  const isFuture = (dayKey: string) => isFutureDay(dayKey, lastBarDay);
+  const hasDay = (c: { dayKeys: string[] }, day: string) =>
+    day === FUTURE_TAB ? c.dayKeys.some(isFuture) : catalogHasDay(c, day);
+  const [selectedDay, setSelectedDay] = usePersistedState<string>(
+    futureOnly ? "watched-future-selected-day" : "watched-selected-day",
+    "all",
+  );
   // Visão: "casa" (padrão, casa → catálogo) ou "artista" (artista → cards com barra de origem).
   const [view, setView] = usePersistedState<"casa" | "artista">("watched-view", "casa");
   // Correção do nome do artista (renomear/juntar) — mesmos apelidos do Analytics.
@@ -210,7 +225,8 @@ export function WatchedTab({ d }: { d: DashboardData }) {
       });
   };
   return (
-    <TabsContent value="watched" className="space-y-4">
+    <TabsContent value={futureOnly ? FUTURE_TAB : "watched"} className="space-y-4">
+      {futureOnly ? <h2 className="text-base font-semibold text-foreground">Vigiados</h2> : null}
       {watched.isLoading ? (
         <Skeleton className="h-40 w-full" />
       ) : watched.isError ? (
@@ -226,9 +242,17 @@ export function WatchedTab({ d }: { d: DashboardData }) {
           // atravessa quando o organizador por dia está filtrando.
           const filtered = (watched.data ?? []).filter(
             (lot) =>
+              (!futureOnly || isFuture(watchedDateToKey(lot.date))) &&
               watchedMatchesSearch(lot, searchNorm, albumFor(lot)) &&
               matchesStatFilter(lot.idPeca, watchedIds, bidStatusById, statFilter),
           );
+          if (filtered.length === 0 && futureOnly && searchNorm === "" && statFilter.size === 0) {
+            return (
+              <p className="text-sm text-muted-foreground">
+                Nenhum lote vigiado depois de {lastBarDay ? dayLabel(lastBarDay, 99) : "hoje"}.
+              </p>
+            );
+          }
           if (filtered.length === 0) {
             return (
               <p className="text-sm text-muted-foreground">
@@ -246,16 +270,22 @@ export function WatchedTab({ d }: { d: DashboardData }) {
             );
           }
           const houses = groupWatchedByHouseCatalog(filtered);
-          const dayKeys = [
+          const allDayKeys = [
             ...new Set(houses.flatMap((h) => h.catalogs.flatMap((c) => c.dayKeys))),
           ].sort();
-          const activeDay = dayKeys.includes(selectedDay) ? selectedDay : "all";
+          // Aba Vigiados: dias depois da barra viram um chip só ("Dias Futuros", sempre o último).
+          const hasFutureDays = !futureOnly && allDayKeys.some(isFuture);
+          const dayKeys = futureOnly ? allDayKeys : allDayKeys.filter((k) => !isFuture(k));
+          const activeDay =
+            dayKeys.includes(selectedDay) || (hasFutureDays && selectedDay === FUTURE_TAB)
+              ? selectedDay
+              : "all";
           const lotCount = (day: string) =>
             houses.reduce(
               (sum, h) =>
                 sum +
                 h.catalogs
-                  .filter((c) => day === "all" || catalogHasDay(c, day))
+                  .filter((c) => day === "all" || hasDay(c, day))
                   .reduce((n, c) => n + c.lots.length, 0),
               0,
             );
@@ -263,7 +293,7 @@ export function WatchedTab({ d }: { d: DashboardData }) {
             .map((h) => ({
               ...h,
               multi: h.catalogs.length > 1,
-              shown: h.catalogs.filter((c) => activeDay === "all" || catalogHasDay(c, activeDay)),
+              shown: h.catalogs.filter((c) => activeDay === "all" || hasDay(c, activeDay)),
             }))
             .filter((h) => h.shown.length > 0);
           const catalogCount = visible.reduce((n, h) => n + h.shown.length, 0);
@@ -279,7 +309,10 @@ export function WatchedTab({ d }: { d: DashboardData }) {
             filtered.filter(
               (lot) =>
                 activeDay === "all" ||
-                (catalogDays.get(`${lot.house}|${lot.idLeilao}`) ?? []).includes(activeDay),
+                hasDay(
+                  { dayKeys: catalogDays.get(`${lot.house}|${lot.idLeilao}`) ?? [] },
+                  activeDay,
+                ),
             ),
             curation,
           );
@@ -432,6 +465,17 @@ export function WatchedTab({ d }: { d: DashboardData }) {
                     </button>
                   );
                 })}
+                {hasFutureDays ? (
+                  <button
+                    type="button"
+                    aria-pressed={activeDay === FUTURE_TAB}
+                    onClick={() => setSelectedDay(FUTURE_TAB)}
+                    className={chipClass(activeDay === FUTURE_TAB)}
+                  >
+                    {FUTURE_LABEL}
+                    <span className="text-xs tabular-nums opacity-80">{lotCount(FUTURE_TAB)}</span>
+                  </button>
+                ) : null}
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs text-muted-foreground">
