@@ -237,6 +237,10 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
                 <DayTab key={day} d={d} day={day} index={index} />
               ))}
 
+              {/* "Dias Futuros": vigiados e lances depois do último dia da barra. */}
+              <WatchedTab d={d} futureOnly />
+              <BidsTab d={d} futureOnly />
+
               <WatchedTab d={d} />
 
               <BidsTab d={d} />

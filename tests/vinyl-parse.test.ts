@@ -95,6 +95,12 @@ describe("isDiscBundle", () => {
 });
 
 describe("extractArtist", () => {
+  test('tira "de/do/da" colado ao tipo ("LP de X - Álbum")', () => {
+    expect(
+      extractArtist("LP de Creedence Clearwater Revival - Green River (1969); Em bom estado."),
+    ).toBe("Creedence Clearwater Revival");
+    expect(extractArtist("Disco de Vinil de Pink Floyd - The Wall")).toBe("Pink Floyd");
+  });
   test("artista antes do separador", () => {
     expect(extractArtist("LP Chico Buarque - Construção")).toBe("Chico Buarque");
     expect(extractArtist("Disco de Vinil Raul Seixas - Krig-ha, Bandolo!")).toBe("Raul Seixas");

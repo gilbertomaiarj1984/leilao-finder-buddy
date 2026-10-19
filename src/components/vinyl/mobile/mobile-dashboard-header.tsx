@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { bidMatchesSearch, watchedMatchesSearch } from "@/components/vinyl/grouping";
-import { DAY_PAGE, TODAY_INDEX, TODAY_PAGE } from "@/lib/day-bar";
+import { DAY_PAGE, FUTURE_TAB, TODAY_INDEX, TODAY_PAGE } from "@/lib/day-bar";
 import { isManuallyFinished } from "@/lib/manually-finished-auctions";
 import { auctionDayPassed } from "@/lib/vinyl-parse";
 import { cn } from "@/lib/utils";
@@ -63,6 +63,7 @@ export function MobileDashboardHeader({
     bidsViewDay,
     setWatchedViewDay,
     setBidsViewDay,
+    futureCount,
   } = d;
   const [searching, setSearching] = useState(false);
   const [draft, setDraft] = useState(search);
@@ -234,6 +235,27 @@ export function MobileDashboardHeader({
                     </button>
                   );
                 })}
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === FUTURE_TAB}
+                  onClick={() => onSelectTab(FUTURE_TAB)}
+                  className={cn(
+                    "flex min-h-[52px] min-w-[54px] shrink-0 flex-col items-center justify-center rounded-xl border border-transparent bg-sky-500/10 px-2 py-1 leading-tight text-sky-700 dark:text-sky-300",
+                    tab === FUTURE_TAB && "border-primary bg-primary text-primary-foreground",
+                  )}
+                >
+                  <span className="text-[10px] font-medium uppercase tracking-wide">Dias</span>
+                  <span className="text-base font-bold">Futuros</span>
+                  <span
+                    className={cn(
+                      "text-[10px] tabular-nums",
+                      tab === FUTURE_TAB ? "text-primary-foreground/80" : "text-muted-foreground",
+                    )}
+                  >
+                    {futureCount} item{futureCount === 1 ? "" : "s"}
+                  </span>
+                </button>
               </div>
             ) : (
               <h2 className="min-w-0 flex-1 truncate pl-1 text-base font-bold text-foreground">
