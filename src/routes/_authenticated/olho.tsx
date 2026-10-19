@@ -1,3 +1,4 @@
+import { useDragAutoScroll } from "@/components/vinyl/use-drag-autoscroll";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
@@ -286,6 +287,7 @@ function OlhoPage() {
     onError: (error: unknown) =>
       toast.error((error as Error)?.message || "Não foi possível juntar os artistas"),
   });
+  const autoScroll = useDragAutoScroll();
   const [artistDropKey, setArtistDropKey] = useState<string | null>(null);
   const moveLotMut = useMutation({
     mutationFn: async (vars: { lotId: string; itemId: string }) => await runMoveLot({ data: vars }),
@@ -817,6 +819,7 @@ function OlhoPage() {
                       <div
                         draggable={group.key !== "~"}
                         onDragStart={(e) => {
+                          autoScroll.start();
                           e.dataTransfer.setData(ARTIST_DRAG_TYPE, group.artist);
                           e.dataTransfer.setData("text/plain", group.artist);
                           e.dataTransfer.effectAllowed = "move";

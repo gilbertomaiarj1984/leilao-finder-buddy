@@ -1,4 +1,4 @@
-import { authFetch, BASE_URL, loginEmail } from "./leiloesbr-auth.server";
+import { authFetch, BASE_URL, loginEmail, MAX_ACCOUNT_PAGES } from "./leiloesbr-auth.server";
 import { extractArtist } from "./vinyl-parse";
 
 type WatchTarget = { idPeca: string; idLeilao: string; base: string };
@@ -102,7 +102,7 @@ export async function listWatchedFromSite(): Promise<WatchedLot[]> {
   const seen = new Set<string>();
   const out: WatchedLot[] = [];
 
-  for (let page = 1; page <= 20; page++) {
+  for (let page = 1; page <= MAX_ACCOUNT_PAGES; page++) {
     const html = await authFetch(
       `${BASE_URL}/conta_site.asp?l=8&t=0&s=0&b=0&id=0&p=&order=0&pag=${page}`,
       {},

@@ -12,7 +12,7 @@
   → **todo lote já é vinil**; não exigir palavra-chave no título, só descartar CD/DVD/LD (Laser Disc)/K7
   (`looksNonVinyl`, em `vinyl-parse.ts`).
 - **Login (`authFetch`)** só para a **conta**: env `LEILOESBR_EMAIL` / `LEILOESBR_SENHA`.
-  - **Vigias**: `conta_site.asp?l=8` → `listWatchedFromSite` (cards `.oc-item`,
+  - **Vigias** (lê até `MAX_ACCOUNT_PAGES`=100 páginas): `conta_site.asp?l=8` → `listWatchedFromSite` (cards `.oc-item`,
     `data-watch="idPeca,email,idLeilao,base"`, preço em `<b class="pb-1">`).
   - **Meus lances**: `conta_site.asp?l=4` → `listMyBidsFromSite` (mesmos `.oc-item`; **meu
     lance** em `.product-price b.pb-1`; **status** na classe/ícone `lstatus`:

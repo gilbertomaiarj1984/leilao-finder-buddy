@@ -149,6 +149,7 @@
   `setAnalyticsSaleOverrides` (lote único numa leitura-e-escrita; preserva o álbum já corrigido);
   também aparece no Analytics; "Desfazer correção" remove. **Arrastar** (HTML5 DnD; não funciona em
   touch — use o botão/lápis): artista ou card de lote sobre o cabeçalho de outro artista →
+  (v0.153.2: `useDragAutoScroll` também em todo drag do De olho, na correlação da IA e em `useListDnd`.)
   `ConfirmMoveDialog` → mesma ação. Durante o arrastar, `useDragAutoScroll` rola a janela quando o
   ponteiro chega a ~90px do topo/rodapé (v0.98.1; o mesmo hook vale para arrastar venda → álbum
   no Analytics). Não há subgrupo de álbum em Vigiados.

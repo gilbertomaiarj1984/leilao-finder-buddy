@@ -1,3 +1,4 @@
+import { useDragAutoScroll } from "@/components/vinyl/use-drag-autoscroll";
 import {
   ArrowDown,
   ArrowUp,
@@ -130,6 +131,7 @@ export function LookoutItemCard({
   onIdentify: () => void;
   identifying: boolean;
 }) {
+  const autoScroll = useDragAutoScroll();
   const [editing, setEditing] = useState(false);
   const [merging, setMerging] = useState(false);
   const [termText, setTermText] = useState("");
@@ -231,6 +233,7 @@ export function LookoutItemCard({
       onDragStart={(e) => {
         // Só o cartão em si arrasta (não campos de texto selecionados dentro dele).
         if (e.target !== e.currentTarget) return;
+        autoScroll.start();
         e.dataTransfer.setData(ITEM_DRAG_TYPE, item.id);
         e.dataTransfer.setData("text/plain", lookoutLabel(item));
         e.dataTransfer.effectAllowed = "move";
@@ -561,6 +564,7 @@ export function LookoutItemCard({
                     draggable={!m.isOrigin}
                     onDragStart={(e) => {
                       e.stopPropagation();
+                      autoScroll.start();
                       e.dataTransfer.setData(LOT_DRAG_TYPE, m.lotId);
                       e.dataTransfer.setData("text/plain", m.title);
                       e.dataTransfer.effectAllowed = "move";
