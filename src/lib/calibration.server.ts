@@ -150,6 +150,29 @@ export async function snapshotPurchases(lotIds: string[]): Promise<number> {
   return payload.length;
 }
 
+/**
+ * Retratos gravados antes do descritivo ser guardado (`cond.text`): copia o texto de
+ * `lot_condition` enquanto o lote ainda existe. Atualiza `cal` em memória e o banco (best-effort).
+ */
+async function backfillSnapshotText(
+  cal: Map<string, CalDbRow>,
+  descById: Map<string, string>,
+): Promise<void> {
+  const payload: { lot_id: string; snapshot: CalibrationSnapshot; snapshot_at: string | null }[] =
+    [];
+  for (const [id, row] of cal) {
+    const snap = normalizeSnapshot(row.snapshot);
+    const text = descById.get(id);
+    if (!snap?.cond || snap.cond.text || !text) continue;
+    const next = { ...snap, cond: { ...snap.cond, text } };
+    row.snapshot = next;
+    payload.push({ lot_id: id, snapshot: next, snapshot_at: row.snapshot_at });
+  }
+  if (!payload.length) return;
+  const { error } = await db.from("purchase_calibration").upsert(payload, { onConflict: "lot_id" });
+  if (error) console.error("[calibration] não foi possível completar o texto dos retratos", error);
+}
+
 /** Compras de pregões marcados como «recebido», com retrato, opinião e leitura atual do estado. */
 export async function getCalibrationRows(): Promise<CalibrationRow[]> {
   const { getAllPurchases } = await import("./purchases.server");
@@ -182,6 +205,7 @@ export async function getCalibrationRows(): Promise<CalibrationRow[]> {
       .in("id", ids.slice(i, i + CHUNK));
     for (const r of data ?? []) if (r.description) descById.set(r.id, r.description);
   }
+  await backfillSnapshotText(cal, descById);
   const [sales, collection, panel] = await Promise.all([
     getAllLotSales({ ids, withOrig: true }),
     getAllCollection(),
