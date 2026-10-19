@@ -25,6 +25,7 @@ import { LookoutOwnedDialog } from "@/components/vinyl/lookout-owned-dialog";
 import { LookoutBulkDialog } from "@/components/vinyl/lookout-bulk-dialog";
 import { LookoutItemCard, type LookoutPatch } from "@/components/vinyl/lookout-item-card";
 import { LookoutLotDialog } from "@/components/vinyl/lookout-lot-dialog";
+import { applyLookoutLinks } from "@/lib/lookout-overview-patch";
 import { LookoutSummaryRow } from "@/components/vinyl/lookout-summary-row";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
@@ -288,12 +289,19 @@ function OlhoPage() {
   const [artistDropKey, setArtistDropKey] = useState<string | null>(null);
   const moveLotMut = useMutation({
     mutationFn: async (vars: { lotId: string; itemId: string }) => await runMoveLot({ data: vars }),
+    onMutate: async (vars) => {
+      const prev = await optimistic();
+      patchOverview((o) => applyLookoutLinks(o, [vars.lotId], vars.itemId));
+      return { prev };
+    },
     onSuccess: () => {
       toast.success("Lote movido — identificação ajustada para este disco");
       refresh();
     },
-    onError: (error: unknown) =>
-      toast.error((error as Error)?.message || "Não foi possível mover o lote"),
+    onError: (error: unknown, _vars, ctx) => {
+      rollback(ctx?.prev);
+      toast.error((error as Error)?.message || "Não foi possível mover o lote");
+    },
   });
   const unmergeMut = useMutation({
     mutationFn: async (vars: { itemId: string; lotId: string }) => await runUnmerge({ data: vars }),
@@ -307,19 +315,33 @@ function OlhoPage() {
   const dismissPendingMut = useMutation({
     mutationFn: async (lotIds: string[]) =>
       await runLinksBatch({ data: { lotIds, value: false as const } }),
+    onMutate: async (lotIds) => {
+      const prev = await optimistic();
+      patchOverview((o) => applyLookoutLinks(o, lotIds, false));
+      return { prev };
+    },
     onSuccess: () => {
       toast.success("Aparições descartadas");
       refresh();
     },
-    onError: (error: unknown) =>
-      toast.error((error as Error)?.message || "Não foi possível descartar"),
+    onError: (error: unknown, _ids, ctx) => {
+      rollback(ctx?.prev);
+      toast.error((error as Error)?.message || "Não foi possível descartar");
+    },
   });
   const resolveMut = useMutation({
     mutationFn: async (vars: { lotId: string; value: string | false }) =>
       await runLink({ data: vars }),
+    onMutate: async (vars) => {
+      const prev = await optimistic();
+      patchOverview((o) => applyLookoutLinks(o, [vars.lotId], vars.value));
+      return { prev };
+    },
     onSuccess: refresh,
-    onError: (error: unknown) =>
-      toast.error((error as Error)?.message || "Não foi possível salvar"),
+    onError: (error: unknown, _vars, ctx) => {
+      rollback(ctx?.prev);
+      toast.error((error as Error)?.message || "Não foi possível salvar");
+    },
   });
 
   // "Criar novo álbum de olho" a partir de um lote por vir: o diálogo pede artista/álbum/ano

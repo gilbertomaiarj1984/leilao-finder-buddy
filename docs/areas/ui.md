@@ -192,7 +192,7 @@
   Precedência: **lance vence vigia**. **Fúcsia** = "De olho" (v0.107.0: o lote marcado ou um lote
   futuro que casa com um disco marcado — ver `colecao-sondagem-compras.md`); perde para lance e
   vigia. O ícone `Binoculars` fica na linha de ações do card, ao lado de Vigiar.
-- **Ações otimistas em `/olho` (v0.151.1):** `updateMut`/`deleteMut` (olho.tsx) alteram o cache `lookoutOverview` em `onMutate` (rollback em erro) e só então `refresh()` refaz o cálculo pesado em segundo plano. Juntar/identificar/vínculos ainda esperam o servidor.
+- **Ações otimistas em `/olho` (v0.151.1):** `updateMut`/`deleteMut` (olho.tsx) alteram o cache `lookoutOverview` em `onMutate` (rollback em erro) e só então `refresh()` refaz o cálculo pesado em segundo plano. v0.153.1: vínculos (✓/✕, "Descartar todas", mover lote) também são otimistas (`applyLookoutLinks`, `lookout-overview-patch.ts`). Juntar/separar/identificar/juntar artistas ainda esperam o servidor (artistas: `lookoutArtistKey` duplicada em `lookout.server.ts`/`lookout-match.ts`, impede o patch local simples).
 - **Destaque de novos no "De olho" (v0.128.0):** em `/olho`, enquanto houver lote `isNew`
   (v0.132.1: o "visto" só é gravado — `markLookoutSeen` — ao clicar em "Marcar como vistos";
   abrir a página ou resolver outro lote com ✓/✕ não apaga os novos), aparece uma faixa no topo
