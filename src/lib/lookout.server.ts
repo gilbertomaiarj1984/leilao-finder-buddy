@@ -381,6 +381,39 @@ export async function attachLookoutLot(
   return toRow(data as DbRow);
 }
 
+/**
+ * Move UM lote para o disco `itemId` (arrastar o lote de um cartão para outro, quando o casamento
+ * o pôs no álbum errado): fixa o vínculo (✓ no destino, que também tira o lote do cartão antigo)
+ * e corrige a identificação básica (`lot_ident`: "Artista - Álbum" + ano do destino, fonte
+ * `manual`) para Discogs/IA partirem do disco certo. Sem linha em `lots` (lote só da conta) só o
+ * vínculo é gravado.
+ */
+export async function moveLookoutLot(lotId: string, itemId: string): Promise<void> {
+  const all = await getAllLookout();
+  const item = all.find((i) => i.id === itemId);
+  if (!item) throw new Error("Disco não encontrado");
+  await setLookoutLink(lotId, itemId);
+  const artist = item.artist.trim();
+  const album = item.album.trim();
+  if (!artist || !album) return;
+  const { data } = await db.from("lots").select("title").eq("id", lotId).maybeSingle();
+  const title = (data as { title?: string } | null)?.title;
+  if (!title) return;
+  const { titleHash } = await import("./ai-eval.server");
+  const { upsertLotIdent } = await import("./lot-ident.server");
+  await upsertLotIdent([
+    {
+      id: lotId,
+      title_hash: titleHash(title),
+      album: `${artist} - ${album}`,
+      year: item.year,
+      confidence: "alta",
+      source: "manual",
+      model: "manual",
+    },
+  ]);
+}
+
 /** Desfaz a junção de UM álbum: ele volta a ser um item próprio (ativo). */
 export async function unmergeLookoutItem(itemId: string, lotId: string): Promise<void> {
   const all = await getAllLookout();

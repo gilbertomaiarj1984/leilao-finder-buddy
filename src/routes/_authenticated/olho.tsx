@@ -33,6 +33,7 @@ import {
   identifyLookout,
   markLookoutSeen,
   mergeLookout,
+  moveLookoutLot,
   setLookoutLink,
   setLookoutArtistGroup,
   toggleLookout,
@@ -126,6 +127,7 @@ function OlhoPage() {
   const runLinksBatch = useServerFn(setLookoutLinksBatch);
   const runMerge = useServerFn(mergeLookout);
   const runUnmerge = useServerFn(unmergeLookout);
+  const runMoveLot = useServerFn(moveLookoutLot);
   const runArtistGroup = useServerFn(setLookoutArtistGroup);
   const runToggleLookout = useServerFn(toggleLookout);
   const runSaveInterests = useServerFn(setUserInterests);
@@ -284,6 +286,15 @@ function OlhoPage() {
       toast.error((error as Error)?.message || "Não foi possível juntar os artistas"),
   });
   const [artistDropKey, setArtistDropKey] = useState<string | null>(null);
+  const moveLotMut = useMutation({
+    mutationFn: async (vars: { lotId: string; itemId: string }) => await runMoveLot({ data: vars }),
+    onSuccess: () => {
+      toast.success("Lote movido — identificação ajustada para este disco");
+      refresh();
+    },
+    onError: (error: unknown) =>
+      toast.error((error as Error)?.message || "Não foi possível mover o lote"),
+  });
   const unmergeMut = useMutation({
     mutationFn: async (vars: { itemId: string; lotId: string }) => await runUnmerge({ data: vars }),
     onSuccess: () => {
@@ -479,6 +490,7 @@ function OlhoPage() {
           mergeMut.mutate({ targetId: it.id, sourceId });
         }}
         onUnmerge={(lotId) => unmergeMut.mutate({ itemId: it.id, lotId })}
+        onMoveLot={(lotId) => moveLotMut.mutate({ lotId, itemId: it.id })}
         onIdentify={() => identifyMut.mutate(it.id)}
         identifying={identifyingId === it.id}
         onDismissPending={(lotIds) => dismissPendingMut.mutate(lotIds)}
@@ -900,6 +912,9 @@ function OlhoPage() {
                                   onMerge={(sourceId) =>
                                     mergeMut.mutate({ targetId: item.id, sourceId })
                                   }
+                                  onMoveLot={(lotId) =>
+                                    moveLotMut.mutate({ lotId, itemId: item.id })
+                                  }
                                 />
                               )}
                             </div>
@@ -933,6 +948,7 @@ function OlhoPage() {
                       watchedIds={watchedIds}
                       onOpen={() => setOpenId(item.id)}
                       onMerge={() => undefined}
+                      onMoveLot={() => undefined}
                     />
                   ),
                 )}

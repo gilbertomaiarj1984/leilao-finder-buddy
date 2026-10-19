@@ -284,6 +284,22 @@ export const setLookoutLink = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
+/** Move um lote para outro disco de olho (corrige o casamento) e ajusta a identificação dele. */
+export const moveLookoutLot = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { lotId?: string; itemId?: string } | undefined) => {
+    if (!input?.lotId || typeof input.lotId !== "string") throw new Error("lotId obrigatório");
+    if (!input.itemId || typeof input.itemId !== "string") throw new Error("itemId obrigatório");
+    return { lotId: input.lotId, itemId: input.itemId };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { moveLookoutLot: move } = await import("./lookout.server");
+    await move(data.lotId, data.itemId);
+    return { ok: true as const };
+  });
+
 /** Marca matches como vistos (ao abrir a página): zera o contador "novos" do menu. */
 export const markLookoutSeen = createServerFn({ method: "POST" })
   .middleware([requireAuth])
