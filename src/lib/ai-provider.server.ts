@@ -226,9 +226,14 @@ function anthropicText(message: { content?: Array<{ type: string; text?: string 
     .join("");
 }
 
+/** Teto de uma chamada síncrona à IA: sem ele, um provedor travado segura o cron até o `curl` do workflow desistir. */
+const AI_CALL_TIMEOUT_MS = 60_000;
+
 async function runAnthropic(req: AiRequest, model: string): Promise<string> {
   const client = await getAnthropicClient();
-  const message = await client.messages.create(toAnthropicMessageParams(req, model));
+  const message = await client.messages.create(toAnthropicMessageParams(req, model), {
+    timeout: AI_CALL_TIMEOUT_MS,
+  });
   return anthropicText(message);
 }
 
@@ -333,7 +338,9 @@ async function runGemini(req: AiRequest, model: string): Promise<string> {
 
   let resp: Response;
   for (let attempt = 0; ; attempt += 1) {
-    resp = await fetch(url, init);
+    // O estouro do tempo vira "…aborted due to timeout", que `isTransientError` já trata como
+    // transitório (retry e, se persistir, failover para o outro provedor).
+    resp = await fetch(url, { ...init, signal: AbortSignal.timeout(AI_CALL_TIMEOUT_MS) });
     if (resp.ok) break;
     const detail = await resp.text().catch(() => "");
     // Propaga com status para o `isQuotaError`/`isTransientError` reconhecerem e agirem.

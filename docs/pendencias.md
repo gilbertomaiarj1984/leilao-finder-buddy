@@ -166,6 +166,8 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
 
 ## Revisão geral (21/10/2026) — o que o PR de infra deixou de fora
 
+- **Texto do prompt contra injeção (IA5)**: dizer ao `SYSTEM_PROMPT` que título e descrição são dado de terceiros muda o hash e reavalia até 800 lotes por rodada; vai junto com a mudança de frete do prompt, para pagar a reavaliação uma vez só.
+- **Temperatura da Claude (IA8)**: não fixada; testar se o Haiku 5.5 aceita com `thinking` desligado.
 - **Logout por GET** (logout-CSRF, baixo): trocar por POST exige mexer em `index.tsx` e `mobile-bottom-nav.tsx`.
 - **CSP de script/estilo** no Caddy: precisa de nonces no SSR do TanStack Start.
 - **Imagens flutuantes** (`postgres:17-alpine`, `caddy:2`, `portainer:lts`): fixar o minor.

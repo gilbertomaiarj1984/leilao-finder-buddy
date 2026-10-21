@@ -227,6 +227,10 @@ image})` chama `evalLotsSync` **direto** (ignora o cache por `title_hash` — é
   192.168/16.
 - **Batch preso:** `aieval` abandona o batch pendente com mais de 48h se a coleta lançar erro.
 
+### Timeouts (v0.166.0)
+
+Chamadas síncronas à IA têm teto de 60 s (`AI_CALL_TIMEOUT_MS` em `ai-provider.server.ts`): `AbortSignal.timeout` no `fetch` do Gemini (o estouro é "transitório" → retry e failover) e `timeout` por requisição no SDK da Anthropic. A temperatura da Claude segue a padrão do SDK (o Gemini usa 0,2); fixá-la exige testar se o Haiku 5.5 aceita o parâmetro com `thinking` desligado.
+
 ### Ajustes da revisão (v0.143.2)
 
 - **`evalHash`** = `titleHash.p<PROMPT_VERSION>.<impressão do texto do prompt>`. `PROMPT_VERSION` cobre a

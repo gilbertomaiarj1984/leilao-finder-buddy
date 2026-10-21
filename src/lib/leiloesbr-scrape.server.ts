@@ -576,7 +576,9 @@ async function persistLots(fresh: VinylLot[]): Promise<void> {
   }));
   // Upsert por id: atualiza preço/campos dos lotes que ainda estão no site e
   // ACRESCENTA os novos, sem apagar os que já não aparecem (merge durável).
-  const { error } = await db.from("lots").upsert(rows, { onConflict: "id" });
+  // `lote`: a listagem geral não traz o nº do lote (o `enrich` preenche depois); uma varredura não
+  // pode zerar o que já foi preenchido, por isso o valor vazio não sobrescreve.
+  const { error } = await db.from("lots").upsert(rows, { onConflict: "id", keepIfEmpty: ["lote"] });
   if (error) throw error;
   try {
     const { recordAuctions } = await import("./leiloesbr-auctions.server");
