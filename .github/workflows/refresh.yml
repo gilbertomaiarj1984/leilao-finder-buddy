@@ -73,9 +73,11 @@ jobs:
           # DATABASE_URL). O campo `persisted:false` na resposta agora expõe isso: aborta a
           # run (mesmo padrão do trap ERR) em vez de seguir raspando sem nunca gravar nada.
           from="null"
+          chunk_scraped=0
           for i in $(seq 1 80); do
             res="$(call "/api/cron?step=chunk&fromPage=$from&size=15")"
             echo "chunk $i: $res"
+            chunk_scraped=$((chunk_scraped + $(echo "$res" | jq -r '.scraped // 0')))
             if [ "$(echo "$res" | jq -r '.persisted')" = "false" ]; then
               echo "chunk $i: persisted=false — banco não gravou o bloco, abortando"
               ping_healthcheck fail; exit 1
@@ -84,6 +86,14 @@ jobs:
             [ "$next" = "null" ] && break
             from="$next"
           done
+          # Canário: se o site mudar (categoria renomeada, HTML novo) a varredura volta 200 com 0 lotes e
+          # nada mais falha — o banco só ficaria velho em silêncio. Zero lotes em TODA a varredura é
+          # anomalia (a janela de hoje sempre tem lotes), então derruba a run e avisa o healthchecks.
+          if [ "$chunk_scraped" -eq 0 ]; then
+            echo "CANÁRIO: a varredura em blocos não trouxe nenhum lote — o site pode ter mudado. Abortando."
+            ping_healthcheck fail; exit 1
+          fi
+          echo "chunk: $chunk_scraped lotes lidos no total"
 
           echo "== Descoberta por galeria (categorização da casa não bate com tp= da LeilõesBR) =="
           # Fecha o gap achado v0.69.31-37 (docs/arquivo/pendencias-resolvidas.md): a categoria
@@ -98,9 +108,11 @@ jobs:
           # requisições (limite de taxa da LeilõesBR) e cada chamada respeita um orçamento de
           # tempo — pode processar menos de 3 galerias; `nextOffset` segue de onde parou.
           off=0
+          gallery_scraped=0
           for i in $(seq 1 70); do
             res="$(call "/api/cron?step=galleryscan&offset=$off&count=3")"
             echo "galleryscan $i (offset $off): $res"
+            gallery_scraped=$((gallery_scraped + $(echo "$res" | jq -r '.scraped // 0')))
             if [ "$(echo "$res" | jq -r '.persisted')" = "false" ]; then
               echo "galleryscan $i: persisted=false — banco não gravou o bloco, abortando"
               ping_healthcheck fail; exit 1
@@ -110,6 +122,10 @@ jobs:
             off="$(echo "$res" | jq -r '.nextOffset')"
             [ "$off" = "null" ] && break
           done
+          if [ "$gallery_scraped" -eq 0 ]; then
+            echo "CANÁRIO: a descoberta por galeria não leu nenhum lote — o formato da página pode ter mudado; run marcada como falha no final"
+            soft_failed=1
+          fi
 
           echo "== Preenchimento de nº de lote (catálogos) =="
           off=0

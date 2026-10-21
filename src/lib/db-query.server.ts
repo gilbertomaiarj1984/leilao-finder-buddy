@@ -15,6 +15,23 @@ function ident(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
+/** Cláusula `SET` do `ON CONFLICT DO UPDATE` de um upsert (exportada para teste). */
+export function upsertUpdateSet(
+  table: string,
+  cols: readonly string[],
+  conflict: string,
+  keepIfEmpty: readonly string[] = [],
+): string {
+  return cols
+    .filter((c) => c !== conflict)
+    .map((c) =>
+      keepIfEmpty.includes(c)
+        ? `${ident(c)} = COALESCE(NULLIF(EXCLUDED.${ident(c)}, ''), ${ident(table)}.${ident(c)})`
+        : `${ident(c)} = EXCLUDED.${ident(c)}`,
+    )
+    .join(", ");
+}
+
 class ParamBuilder {
   params: unknown[] = [];
   push(v: unknown): string {
@@ -102,6 +119,7 @@ class QueryBuilder<T = Row, M extends Mode = "list"> {
   private updateRow: Row | null = null;
   private upsertRows: Row[] | null = null;
   private upsertConflict = "";
+  private upsertKeepIfEmpty: string[] = [];
 
   constructor(table: string) {
     this.table = table;
@@ -199,10 +217,16 @@ class QueryBuilder<T = Row, M extends Mode = "list"> {
     this.mode = "delete";
     return this;
   }
-  upsert(rows: Row | Row[], opts: { onConflict: string }): this {
+  /**
+   * `keepIfEmpty`: colunas de texto que, num conflito, só são sobrescritas quando o valor novo não
+   * é vazio (`COALESCE(NULLIF(novo,''), atual)`) — uma varredura que não traz o campo não apaga o
+   * que outro passo já preencheu.
+   */
+  upsert(rows: Row | Row[], opts: { onConflict: string; keepIfEmpty?: string[] }): this {
     this.mode = "upsert";
     this.upsertRows = Array.isArray(rows) ? rows : [rows];
     this.upsertConflict = opts.onConflict;
+    this.upsertKeepIfEmpty = opts.keepIfEmpty ?? [];
     return this;
   }
 
@@ -343,8 +367,12 @@ class QueryBuilder<T = Row, M extends Mode = "list"> {
     const valuesSql = rows
       .map((row) => `(${cols.map((c) => pb.push(c in row ? row[c] : null)).join(", ")})`)
       .join(", ");
-    const updateCols = cols.filter((c) => c !== this.upsertConflict);
-    const updateSet = updateCols.map((c) => `${ident(c)} = EXCLUDED.${ident(c)}`).join(", ");
+    const updateSet = upsertUpdateSet(
+      this.table,
+      cols,
+      this.upsertConflict,
+      this.upsertKeepIfEmpty,
+    );
     const returning = this.returningCols ? `RETURNING ${this.returningCols}` : "";
     const query = `INSERT INTO ${ident(this.table)} (${colList}) VALUES ${valuesSql} ON CONFLICT (${ident(
       this.upsertConflict,

@@ -38,10 +38,10 @@ import {
   useHouseRatingsQuery,
   useLookoutLinksQuery,
   useLookoutQuery,
-  useLotAiQuery,
-  useLotConditionQuery,
-  useLotIdentQuery,
-  useLotMarketQuery,
+  useHomeLotAiQuery,
+  useHomeLotConditionQuery,
+  useHomeLotIdentQuery,
+  useHomeLotMarketQuery,
   useTrashDenylistQuery,
 } from "@/lib/queries";
 import type { VinylLot } from "@/lib/vinyl-parse";
@@ -73,14 +73,17 @@ export type LotInsight = {
  * (Disco/Capa), demanda do catálogo, "já tenho" (Coleção), De olho e semáforo da casa.
  * Leituras só — nenhuma mutação. O mapa tem identidade estável enquanto os dados não mudam.
  *
+ * Lê as tabelas por lote em duas partes (`core` primeiro, `rest` depois), as mesmas queries da
+ * home: a Análise abre com a janela de hoje e reaproveita o cache ao navegar entre as telas.
+ *
  * As peças puras (estado, demanda, identidade, "já tenho") vêm de `lot-insight-build.ts`, as
  * mesmas que a home usa em `use-dashboard-data.tsx` com as queries escopadas dela.
  */
 export function useLotInsights(allLots: VinylLot[]) {
-  const lotAiQuery = useLotAiQuery();
-  const lotIdentQuery = useLotIdentQuery();
-  const lotMarketQuery = useLotMarketQuery();
-  const lotConditionQuery = useLotConditionQuery();
+  const lotAiQuery = useHomeLotAiQuery();
+  const lotIdentQuery = useHomeLotIdentQuery();
+  const lotMarketQuery = useHomeLotMarketQuery();
+  const lotConditionQuery = useHomeLotConditionQuery();
   const aiPanelQuery = useAiPanelQuery();
   const aliasesQuery = useAnalyticsAliasesQuery();
   const ratingsQuery = useHouseRatingsQuery();

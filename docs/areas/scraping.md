@@ -178,6 +178,7 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   vendas pela IA), `cleannonvinyl` (limpeza retroativa de itens não-disco já capturados,
   `dryRun` por padrão — `&apply=1` apaga de fato; uso manual único, não entra no laço do
   `refresh.yml`), `salesdebug`/`catdebug` (diagnósticos).
+- **Canário da varredura (v0.166.0):** o `refresh.yml` soma `scraped` dos blocos de `chunk`; zero em TODA a varredura derruba a run e avisa o healthchecks (site mudou: categoria renomeada, HTML novo — antes o cron seguia com 200 e o banco só envelhecia). `galleryscan` com zero lotes marca a run como falha ao final (`soft_failed`). `persistLots` grava com `keepIfEmpty: ["lote"]` (`COALESCE(NULLIF(novo,''), atual)`): a listagem geral não traz o nº do lote e uma varredura não o apaga mais.
 - **GitHub Actions** `.github/workflows/refresh.yml`: `cron: "10 3,11,19 * * *"` (UTC = BRT
   00:10/08:10/16:10) + `workflow_dispatch`. Reduzido de 4x/dia (v0.60.0 e antes) para 2x/dia em
   v0.60.1 — a Fluid Active CPU da Vercel estava estourando a cota do plano Hobby (ver
