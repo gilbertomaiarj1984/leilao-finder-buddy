@@ -4,7 +4,7 @@
  * hora, fuso de São Paulo); o andamento, do polling do presencial (`getPresencialNow`), que só
  * existe para casas da plataforma. `time` é o início do PREGÃO da casa, não do lote.
  */
-import { auctionStartMs, isLotePassed } from "./vinyl-parse";
+import { auctionStartMs, bidIsSold, isLotePassed } from "./vinyl-parse";
 
 /** Minutos até o início (negativo = já começou); `null` sem horário legível. */
 export function startsInMinutes(dayKey: string, time: string, nowMs: number): number | null {
@@ -91,4 +91,27 @@ export function auctionChip(input: {
     tone: "warn",
     title: "Este lote está no pregão",
   };
+}
+
+/**
+ * O lote JÁ ACABOU para quem decide lance? Então não faz sentido na Análise, nem vigiado:
+ * dia do pregão anterior a hoje; meu lance com resultado final ("Vendido", "Vencedor",
+ * "Arrematado", "Não vendido"); pregão da casa terminado; ou pregão em andamento que já passou
+ * deste lote (o lote do pregão é maior que o seu). Sem andamento conhecido, só vale o que o dia e
+ * o status do lance dizem.
+ */
+export function lotIsClosed(input: {
+  dayKey: string;
+  todayKey: string;
+  lote: string;
+  bidStatus: string | null;
+  progress: AuctionProgress | null;
+}): boolean {
+  if (input.dayKey && input.todayKey && input.dayKey < input.todayKey) return true;
+  const bid = input.bidStatus ?? "";
+  if (bid && (bidIsSold(bid) || /n[ãa]o\s+vendid/i.test(bid))) return true;
+  const p = input.progress;
+  if (!p) return false;
+  if (p.status === "ended") return true;
+  return Boolean(p.currentLote && input.lote && isLotePassed(input.lote, p.currentLote));
 }

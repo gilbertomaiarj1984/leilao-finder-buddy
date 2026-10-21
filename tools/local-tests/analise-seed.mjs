@@ -17,9 +17,14 @@ const ROWS = [
   ["Rita Lee", "Fruto Proibido", 1975, "Beta Leilões", "RJ", 1, "18:00h", "R$ 45,00", 72, "interessante", 120, "VG+", "VG", 540, 880, 1],
   ["Led Zeppelin", "IV", 1971, "Delta Leilões", "SP", 1, "20:00h", "R$ 300,00", 40, "comum", 260, "VG+", "VG+", 5100, 7300, 12],
   ["Secos & Molhados", "Secos & Molhados", 1973, "Casa Alfa Leilões", "SP", 1, "19:30h", "R$ 110,00", 83, "raro", 300, "G+", "G", 980, 710, 4],
+  // Dia 8 (2ª página da barra) e dia 20 (depois da barra: "Dias Futuros").
+  ["Caetano Veloso", "Transa", 1972, "Delta Leilões", "SP", 8, "20:00h", "R$ 90,00", 85, "raro", 330, "VG+", "VG", 900, 500, 2],
+  ["Gilberto Gil", "Expresso 2222", 1972, "Beta Leilões", "RJ", 20, "19:00h", "R$ 70,00", 78, "raro", 260, "VG", "VG", 700, 400, 1],
+  // Parecido com um lote já excluído (veja `excluded_lots` abaixo): "possível lixo".
+  ["Singer", "Máquina de costura", 1960, "Gama Antiguidades", "MG", 0, "20:15h", "R$ 150,00", 35, "comum", 90, "VG", "VG", 20, 300, 0],
 ];
 
-psql("delete from lots; delete from lot_ai; delete from lot_market; delete from lot_condition; delete from lot_sales;");
+psql("delete from lots; delete from lot_ai; delete from lot_market; delete from lot_condition; delete from lot_sales; delete from excluded_lots;");
 ROWS.forEach(([artist, album, year, house, uf, d, time, price, score, rar, sugg, media, sleeve, want, have, bids], i) => {
   const id = `9000${i}-1000${i}`;
   const title = `LP ${artist} - ${album} ${year}`;
@@ -34,6 +39,9 @@ ROWS.forEach(([artist, album, year, house, uf, d, time, price, score, rar, sugg,
   psql(`insert into lot_condition(id,title_hash,media,sleeve,insert_state,score,faixa,source,views,bids)
     values('${id}','c','${media}','${sleeve}','sim',70,'Bom','regex',200,${bids})`);
 });
+psql(`insert into excluded_lots(id,title,house,artist,reason,keywords,excluded_by)
+  values('7000-1','Máquina de costura Singer antiga com pedal','Gama Antiguidades','', 'máquina de costura', '{maquina,costura,singer}', 'teste@example.com')`);
+
 // Dois lotes de hoje AINDA SEM NOTA (sem linha em lot_ai): alimentam "Analisar pendentes".
 [["Cartola", "Cartola", "R$ 55,00"], ["Novos Baianos", "Acabou Chorare", "R$ 130,00"]].forEach(([artist, album, price], k) => {
   const id = `9100${k}-1100${k}`;

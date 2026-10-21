@@ -6,6 +6,7 @@ import {
   bidIsWinning,
   catalogUrlFromLot,
   LOTE_LABEL,
+  brDateToDayKey,
   normalizeForMatch,
   parsePrice,
   presencialUrlFromLot,
@@ -222,8 +223,7 @@ export function artistOptions(lots: VinylLot[]): { artist: string; count: number
 
 /** "dd/mm/yyyy" (vigiados) -> "yyyy-mm-dd" (dayKey). */
 export function watchedDateToKey(value: string): string {
-  const [dd, mm, yy] = value.split("/");
-  return yy && mm && dd ? `${yy}-${mm}-${dd}` : "";
+  return brDateToDayKey(value);
 }
 
 /**

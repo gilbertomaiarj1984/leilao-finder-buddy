@@ -102,3 +102,5 @@
   chama `dismissTrashMutation` (`index.tsx`) com atualização OTIMISTA de
   `["trash-keyword-denylist"]` — o badge some da tela na hora, antes mesmo da resposta do
   servidor, e reverte com toast de erro se a gravação falhar.
+
+> v0.163.0: o cálculo do "possível lixo" virou `possibleTrashMap` (`lot-exclusion.ts`), usado pela home e pela Análise (`useLotInsights`); a Análise ganhou o badge, o filtro "Ocultar possível lixo" e o botão de excluir.

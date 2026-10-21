@@ -829,6 +829,12 @@ export function isLotePassed(lote: string | null, currentLote: string): boolean 
   return Number.isFinite(n) && Number.isFinite(cur) && n < cur;
 }
 
+/** "dd/mm/yyyy" (formato das páginas da conta: vigiados) → "yyyy-mm-dd" (dayKey); `""` se ilegível. */
+export function brDateToDayKey(value: string): string {
+  const [dd, mm, yy] = value.split("/");
+  return yy && mm && dd ? `${yy}-${mm}-${dd}` : "";
+}
+
 /** Sinais do acompanhamento lote a lote do pregão (ver `useAuctionStatus`). */
 type AuctionTracking = {
   /** peça atual < total (pregão com peças pela frente). */

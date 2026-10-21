@@ -4,6 +4,7 @@
  * O envio e o dedupe em `app_state` ficam em `watch-alerts.server.ts`.
  */
 import { startsInMinutes } from "./analise-time";
+import { brDateToDayKey } from "./vinyl-parse";
 
 export type WatchedForAlert = {
   idLeilao: string;
@@ -26,11 +27,6 @@ type StartingAuction = {
 const ALERT_WINDOW_MIN = 30;
 const ALERT_LATE_TOLERANCE_MIN = 10;
 
-function dateToDayKey(date: string): string {
-  const [dd, mm, yy] = date.split("/");
-  return yy && mm && dd ? `${yy}-${mm}-${dd}` : "";
-}
-
 /** Pregões com vigiados que começam em até `ALERT_WINDOW_MIN` min (ou começaram há pouco) e não foram avisados. */
 export function pickStartingAuctions(
   watched: readonly WatchedForAlert[],
@@ -39,7 +35,7 @@ export function pickStartingAuctions(
 ): StartingAuction[] {
   const byKey = new Map<string, StartingAuction>();
   for (const w of watched) {
-    const dayKey = dateToDayKey(w.date);
+    const dayKey = brDateToDayKey(w.date);
     if (!dayKey || !w.idLeilao) continue;
     const startsIn = startsInMinutes(dayKey, w.time, nowMs);
     if (startsIn === null || startsIn > ALERT_WINDOW_MIN || startsIn < -ALERT_LATE_TOLERANCE_MIN)

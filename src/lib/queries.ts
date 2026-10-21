@@ -41,6 +41,7 @@ import {
   getVinylLotsRange,
   listMyBids,
 } from "@/lib/leiloesbr.functions";
+import { getExcludedLotsForMatching, getTrashKeywordDenylist } from "@/lib/lot-exclusion.functions";
 import { getLookout, getLookoutLinks, getLookoutOverview } from "@/lib/lookout.functions";
 import type { LookoutItem, LookoutLinks } from "@/lib/lookout-match";
 import type { LookoutOverview } from "@/lib/lookout-matches.server";
@@ -103,11 +104,18 @@ export function useLotsQuery() {
  * Lotes já gravados de páginas de dias fora da janela padrão (histórico e futuro), buscados só
  * quando a página é aberta na barra de dias (`pages`: intervalo `[from, to]` por página, ou null).
  */
-export function useLotsRangeQueries(pages: ({ from: string; to: string } | null)[]) {
+export function useLotsRangeQueries(
+  pages: ({ from: string; to: string; beyond?: boolean } | null)[],
+) {
   const fetchRange = useServerFn(getVinylLotsRange);
   return useQueries({
     queries: pages.map((range) => ({
-      queryKey: [...queryKeys.lotsRange, range?.from ?? "", range?.to ?? ""],
+      queryKey: [
+        ...queryKeys.lotsRange,
+        range?.from ?? "",
+        range?.to ?? "",
+        range?.beyond ?? false,
+      ],
       queryFn: () => fetchRange({ data: range! }),
       enabled: range !== null,
       staleTime: 2 * HOUR,
@@ -482,6 +490,31 @@ export function useCollectionKeywordDenylistQuery() {
     staleTime: 30 * MIN,
     refetchOnWindowFocus: false,
     retry: false,
+  });
+}
+
+/**
+ * Lotes já excluídos (título, motivo, palavras-chave): base do sinal "possível lixo". Calculado no
+ * cliente, sem IA. Mesma chave da home.
+ */
+export function useExcludedLotsQuery() {
+  const fetchExcluded = useServerFn(getExcludedLotsForMatching);
+  return useQuery({
+    queryKey: ["excluded-lots"] as const,
+    queryFn: () => fetchExcluded(),
+    staleTime: 30 * MIN,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Termos que o usuário já negou ("isto não é lixo"); filtrados do casamento nos dois lados. */
+export function useTrashDenylistQuery() {
+  const fetchDenylist = useServerFn(getTrashKeywordDenylist);
+  return useQuery({
+    queryKey: ["trash-keyword-denylist"] as const,
+    queryFn: () => fetchDenylist(),
+    staleTime: 30 * MIN,
+    refetchOnWindowFocus: false,
   });
 }
 

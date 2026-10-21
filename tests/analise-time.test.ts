@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { auctionChip, startsInMinutes } from "@/lib/analise-time";
+import { auctionChip, lotIsClosed, startsInMinutes } from "@/lib/analise-time";
 
 // 2026-10-21 18:40 em São Paulo (UTC-3)
 const NOW = new Date("2026-10-21T21:40:00Z").getTime();
@@ -58,5 +58,43 @@ describe("auctionChip", () => {
     ).toBe("pregão encerrado");
     expect(auctionChip(started)?.label).toBe("ao vivo");
     expect(auctionChip({ ...started, dayKey: "2026-10-20" })).toBeNull(); // > 6 h atrás, sem sinal
+  });
+});
+
+describe("lotIsClosed", () => {
+  const base = {
+    dayKey: "2026-10-21",
+    todayKey: "2026-10-21",
+    lote: "88",
+    bidStatus: null,
+    progress: null,
+  };
+  const live = (cur: string) => ({
+    status: "live" as const,
+    currentLote: cur,
+    total: 120,
+    peca: 41,
+  });
+  test("dia anterior a hoje acabou, mesmo vigiado", () => {
+    expect(lotIsClosed({ ...base, dayKey: "2026-10-20" })).toBe(true);
+    expect(lotIsClosed(base)).toBe(false);
+    expect(lotIsClosed({ ...base, dayKey: "" })).toBe(false);
+  });
+  test("meu lance com resultado final encerra; lance em disputa não", () => {
+    for (const s of ["Vendido", "Coberto e Vendido", "Vencedor", "Arrematado", "Não vendido"])
+      expect(lotIsClosed({ ...base, bidStatus: s })).toBe(true);
+    for (const s of ["Vencendo", "Coberto"])
+      expect(lotIsClosed({ ...base, bidStatus: s })).toBe(false);
+  });
+  test("pregão terminado ou que já passou deste lote encerra; lote à frente não", () => {
+    expect(
+      lotIsClosed({
+        ...base,
+        progress: { status: "ended", currentLote: null, total: null, peca: null },
+      }),
+    ).toBe(true);
+    expect(lotIsClosed({ ...base, progress: live("120") })).toBe(true);
+    expect(lotIsClosed({ ...base, progress: live("41") })).toBe(false);
+    expect(lotIsClosed({ ...base, lote: "", progress: live("41") })).toBe(false);
   });
 });

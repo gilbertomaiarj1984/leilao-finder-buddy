@@ -56,13 +56,8 @@ import {
 } from "@/lib/lookout-match";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
 import type { CollectionItem } from "@/lib/collection.server";
-import {
-  dismissPossibleTrash,
-  excludeLot,
-  getExcludedLotsForMatching,
-  getTrashKeywordDenylist,
-} from "@/lib/lot-exclusion.functions";
-import { buildTrashModel, matchPossibleTrash, trashProfile } from "@/lib/lot-exclusion";
+import { dismissPossibleTrash, excludeLot } from "@/lib/lot-exclusion.functions";
+import { possibleTrashMap } from "@/lib/lot-exclusion";
 import { BIDS_ACCUM_STORAGE_KEY, saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
 import {
   bidIsCovered,
@@ -95,6 +90,8 @@ import {
   useCollectionLinksQuery,
   useCollectionKeywordDenylistQuery,
   useCollectionQuery,
+  useExcludedLotsQuery,
+  useTrashDenylistQuery,
   useCollectorInterests,
   useHomeLotAiQuery,
   useHomeLotConditionQuery,
@@ -376,8 +373,6 @@ export function useDashboardData() {
   const runAttachLookout = useServerFn(attachLookout);
   const runDismissCollectionMatch = useServerFn(dismissCollectionMatchTerms);
   const runExcludeLot = useServerFn(excludeLot);
-  const fetchExcludedLots = useServerFn(getExcludedLotsForMatching);
-  const fetchTrashDenylist = useServerFn(getTrashKeywordDenylist);
   const runDismissTrash = useServerFn(dismissPossibleTrash);
 
   const baseLots = useLotsQuery();
@@ -559,46 +554,25 @@ export function useDashboardData() {
   };
   // Lotes já excluídos (ver src/lib/lot-exclusion.server.ts) — alimenta o badge "possível
   // lixo" na listagem. Calculado no CLIENTE (não persistido): volume baixo, sem gasto de IA.
-  const excludedLotsQuery = useQuery({
-    queryKey: ["excluded-lots"] as const,
-    queryFn: () => fetchExcludedLots(),
-    staleTime: 30 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  const excludedLotsQuery = useExcludedLotsQuery();
   // Termos que o usuário já negou ("isto não é lixo" — clique no badge, ver
   // `onDismissTrash`/`dismissPossibleTrash`). Filtrados de AMBOS os lados do casamento por
   // palavras-chave, então o aprendizado vale globalmente, não só pro lote clicado.
-  const trashDenylistQuery = useQuery({
-    queryKey: ["trash-keyword-denylist"] as const,
-    queryFn: () => fetchTrashDenylist(),
-    staleTime: 30 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-  // "Possível lixo": cada lote vira um perfil (termos do título SEM artista/álbum do próprio
-  // lote, indicadores de tipo de objeto, sinal forte de vinil) e é comparado com o MOTIVO de
-  // cada lote excluído (motivo digitado, indicador DVD/CD/livro…, ou termos raros) — ver
-  // `buildTrashModel`/`matchPossibleTrash` em `lot-exclusion.ts`. A própria listagem serve de
-  // corpus para saber quais termos são comuns demais para indicar lixo.
-  const possibleTrashById = useMemo(() => {
-    const excluded = excludedLotsQuery.data ?? [];
-    const map = new Map<string, ReturnType<typeof matchPossibleTrash>>();
-    if (!excluded.length) return map;
-    const all = lots.data?.lots ?? [];
-    const profiles = all.map((lot) => {
-      const album = albumById.get(lot.id) ?? null;
-      return trashProfile({
-        title: lot.title,
-        artist: lot.artist,
-        content: [parseAiAlbum(album).artist, album, marketById.get(lot.id)?.releaseTitle],
-      });
-    });
-    const model = buildTrashModel(excluded, profiles, new Set(trashDenylistQuery.data ?? []));
-    all.forEach((lot, i) => {
-      const signal = matchPossibleTrash(profiles[i]!, model);
-      if (signal) map.set(lot.id, signal);
-    });
-    return map;
-  }, [excludedLotsQuery.data, trashDenylistQuery.data, lots.data, albumById, marketById]);
+  const trashDenylistQuery = useTrashDenylistQuery();
+  // "Possível lixo": ver `possibleTrashMap` em `lot-exclusion.ts` (também usada pela Análise).
+  const possibleTrashById = useMemo(
+    () =>
+      possibleTrashMap(
+        lots.data?.lots ?? [],
+        (id) => {
+          const album = albumById.get(id) ?? null;
+          return [parseAiAlbum(album).artist, album, marketById.get(id)?.releaseTitle];
+        },
+        excludedLotsQuery.data ?? [],
+        new Set(trashDenylistQuery.data ?? []),
+      ),
+    [excludedLotsQuery.data, trashDenylistQuery.data, lots.data, albumById, marketById],
+  );
   const possibleTrashFor = (lot: { id: string }) => possibleTrashById.get(lot.id) ?? null;
   const dismissTrashMutation = useMutation({
     mutationFn: async (terms: string[]) => await runDismissTrash({ data: { terms } }),

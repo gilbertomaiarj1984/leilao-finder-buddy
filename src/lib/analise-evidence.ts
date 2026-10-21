@@ -34,6 +34,8 @@ export type EvidenceInput = {
   interest: boolean;
   owned: { score: number } | null;
   ownedConfidentMin: number;
+  /** Título de um lote excluído parecido com este ("possível lixo"). */
+  trashLike: string | null;
 };
 
 export function buildEvidence(i: EvidenceInput): Evidence[] {
@@ -108,5 +110,10 @@ export function buildEvidence(i: EvidenceInput): Evidence[] {
           : "Possível cópia na sua Coleção",
     });
   }
+  if (i.trashLike)
+    out.push({
+      tone: "bad",
+      text: `Possível lixo: parecido com um lote que você excluiu («${i.trashLike}»)`,
+    });
   return out;
 }

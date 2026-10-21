@@ -27,6 +27,7 @@ const base: EvidenceInput = {
   interest: false,
   owned: null,
   ownedConfidentMin: 0.8,
+  trashLike: null,
 };
 const tones = (e: ReturnType<typeof buildEvidence>) => e.map((x) => x.tone);
 
@@ -61,6 +62,12 @@ describe("buildEvidence", () => {
     });
     expect(tones(e).slice(1, 4)).toEqual(["none", "none", "none"]);
     expect(e.some((x) => x.text.startsWith("Procura"))).toBe(false);
+  });
+  test("possível lixo vira evidência ruim com o título do lote excluído", () => {
+    const e = buildEvidence({ ...base, trashLike: "Máquina de costura Singer" });
+    const t = e.find((x) => x.text.startsWith("Possível lixo"));
+    expect(t?.tone).toBe("bad");
+    expect(t?.text).toContain("Máquina de costura Singer");
   });
   test("já tenho: confiante x provável; estado fraco é ruim", () => {
     const sure = buildEvidence({ ...base, owned: { score: 0.9 }, media: "G+" });

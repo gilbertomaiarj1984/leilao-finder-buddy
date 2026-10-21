@@ -34,16 +34,16 @@ export const getVinylLots = createServerFn({ method: "GET" })
 /** Lotes já gravados de um intervalo de dias (histórico/futuro), sem varrer o site. */
 export const getVinylLotsRange = createServerFn({ method: "GET" })
   .middleware([requireAuth])
-  .inputValidator((data: { from: string; to: string }) => {
+  .inputValidator((data: { from: string; to: string; beyond?: boolean }) => {
     const ok = (v: unknown) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
     if (!ok(data?.from) || !ok(data?.to)) throw new Error("intervalo de dias inválido");
-    return { from: data.from, to: data.to };
+    return { from: data.from, to: data.to, beyond: data.beyond === true };
   })
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { readLotsRange } = await import("./leiloesbr-scrape.server");
-    return { lots: await readLotsRange(data.from, data.to) };
+    return { lots: await readLotsRange(data.from, data.to, data.beyond) };
   });
 
 export const scrapeVinylChunk = createServerFn({ method: "POST" })

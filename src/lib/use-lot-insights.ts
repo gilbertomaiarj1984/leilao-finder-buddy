@@ -11,6 +11,8 @@ import { buildOwnedCandidates } from "@/lib/collector-profile";
 import { effectiveTextRules } from "@/lib/condition-text";
 import { parseConditionFromText, scoreCondition, type Condition, type Grade } from "@/lib/grading";
 import { houseKey, type RatingLevel } from "@/lib/house-rating";
+import { possibleTrashMap, type ExclusionSignal } from "@/lib/lot-exclusion";
+import { parseAiAlbum } from "@/lib/lot-score";
 import {
   buildLotIdentity,
   lookoutCandidates,
@@ -26,6 +28,7 @@ import {
   useCollectionLinksQuery,
   useCollectionQuery,
   useCollectorInterests,
+  useExcludedLotsQuery,
   useHouseRatingsQuery,
   useLookoutLinksQuery,
   useLookoutQuery,
@@ -33,6 +36,7 @@ import {
   useLotConditionQuery,
   useLotIdentQuery,
   useLotMarketQuery,
+  useTrashDenylistQuery,
 } from "@/lib/queries";
 import type { VinylLot } from "@/lib/vinyl-parse";
 import {
@@ -58,6 +62,8 @@ export type LotInsight = {
   owned: OwnedHit | null;
   lookout: LookoutMark | null;
   houseLevel: RatingLevel | null;
+  /** Parecido com um lote já excluído ("possível lixo"); só sinaliza, nunca esconde sozinho. */
+  possibleTrash: ExclusionSignal | null;
 };
 
 /**
@@ -84,6 +90,8 @@ export function useLotInsights(allLots: VinylLot[]) {
   const collectionLinksQuery = useCollectionLinksQuery();
   const collectionFeedbackQuery = useCollectionFeedbackQuery();
   const keywordDenylistQuery = useCollectionKeywordDenylistQuery();
+  const excludedQuery = useExcludedLotsQuery();
+  const trashDenylistQuery = useTrashDenylistQuery();
   // Perfil do colecionador: interesses digitados + artistas do De olho.
   const { matcher: matchesInterest } = useCollectorInterests();
 
@@ -244,6 +252,21 @@ export function useLotInsights(allLots: VinylLot[]) {
     [],
   );
 
+  // ---- Possível lixo (parecido com lote já excluído) ---------------------------------------
+  const trashById = useMemo(
+    () =>
+      possibleTrashMap(
+        allLots,
+        (id) => {
+          const album = albumById.get(id) ?? null;
+          return [parseAiAlbum(album).artist, album, marketById.get(id)?.releaseTitle];
+        },
+        excludedQuery.data ?? [],
+        new Set(trashDenylistQuery.data ?? []),
+      ),
+    [allLots, albumById, marketById, excludedQuery.data, trashDenylistQuery.data],
+  );
+
   // ---- Resultado: uma linha de "insight" por lote -------------------------------------------
   const insightById = useMemo(() => {
     const map = new Map<string, LotInsight>();
@@ -287,6 +310,7 @@ export function useLotInsights(allLots: VinylLot[]) {
         owned,
         lookout: lookoutByLot.get(lot.id) ?? null,
         houseLevel: ratingsQuery.data?.houses[houseKey(lot.house)]?.level ?? null,
+        possibleTrash: trashById.get(lot.id) ?? null,
       });
     }
     return map;
@@ -309,6 +333,7 @@ export function useLotInsights(allLots: VinylLot[]) {
     demandById,
     lookoutByLot,
     ratingsQuery.data,
+    trashById,
   ]);
 
   return {
