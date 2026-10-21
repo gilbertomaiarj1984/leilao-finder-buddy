@@ -164,6 +164,13 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
 > de mercado no lugar da gravada pela IA, blocos «em breve» no painel. Lista completa de pendências e dos testes
 > manuais: `docs/checklist-ia.md`.
 
+## Revisão geral (21/10/2026) — o que o PR de infra deixou de fora
+
+- **Logout por GET** (logout-CSRF, baixo): trocar por POST exige mexer em `index.tsx` e `mobile-bottom-nav.tsx`.
+- **CSP de script/estilo** no Caddy: precisa de nonces no SSR do TanStack Start.
+- **Imagens flutuantes** (`postgres:17-alpine`, `caddy:2`, `portainer:lts`): fixar o minor.
+- **Previews/Portainer** (S6) e **backup das fotos da Coleção** (B2): ver "Próximo" na revisão geral.
+
 ## Código repetido (marcado com `// DUP(...)`; regra no AGENTS.md)
 
 Achar: `grep -rn "DUP(" src`. Pendentes: `DUP(pool)` — laço de workers com `cursor` em 8 lugares

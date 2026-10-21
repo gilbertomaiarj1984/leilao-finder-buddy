@@ -22,6 +22,19 @@
 }
 
 {$APP_DOMAIN} {
+	# Cabeçalhos de segurança no domínio do app (v0.165.0). HSTS sem `includeSubDomains`: o mesmo
+	# VPS serve outros apps em subdomínios sslip.io. `frame-ancestors 'none'` impede embutir o app em
+	# iframe (clickjacking). Nenhum CSP de script/estilo aqui de propósito: o app SSR injeta scripts
+	# inline e um CSP restritivo precisaria de nonces (fica como pendência em docs/pendencias.md).
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "frame-ancestors 'none'"
+		-Server
+	}
+	encode zstd gzip
+
 	handle_path /collection/* {
 		root * /data/collection
 		header Cache-Control "public, max-age=604800"

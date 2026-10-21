@@ -3,7 +3,7 @@
 # o `pg_dump` na versão certa para falar com o serviço `postgres` do compose.
 FROM postgres:17-alpine
 
-RUN apk add --no-cache bash tzdata py3-pip && \
+RUN apk add --no-cache bash curl tzdata py3-pip && \
     pip install --no-cache-dir --break-system-packages awscli
 
 COPY backup.sh /usr/local/bin/backup.sh

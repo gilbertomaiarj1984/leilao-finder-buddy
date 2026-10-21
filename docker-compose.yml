@@ -99,6 +99,7 @@ services:
       R2_BUCKET: ${R2_BUCKET:?defina R2_BUCKET no .env}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?defina R2_ACCESS_KEY_ID no .env}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?defina R2_SECRET_ACCESS_KEY no .env}
+      BACKUP_PING_URL: ${BACKUP_PING_URL:-}
     networks:
       - default
     depends_on:

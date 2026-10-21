@@ -18,6 +18,22 @@ export function assertAllowed(email: string | undefined): void {
   }
 }
 
+/**
+ * Decide, já no callback do login, se a conta Google devolvida pode ganhar sessão: e-mail
+ * VERIFICADO (`email_verified === true`; ausente não conta) e igual ao e-mail cadastrado. Antes só
+ * `=== false` reprovava e qualquer conta Google recebia cookie válido, barrada só depois por
+ * `assertAllowed` em cada chamada.
+ */
+export function checkGoogleUser(
+  user: { email?: string; email_verified?: boolean },
+  allowed: string | null,
+): { ok: true; email: string } | { ok: false; reason: "unverified" | "forbidden" } {
+  const email = (user.email ?? "").trim().toLowerCase();
+  if (!email || user.email_verified !== true) return { ok: false, reason: "unverified" };
+  if (!allowed || email !== allowed) return { ok: false, reason: "forbidden" };
+  return { ok: true, email };
+}
+
 // -------------------------------------------------------- link público do Analytics ---
 //
 // Variante somente-leitura do Vinil Analytics (`/vinil-analytics-publico`) para compartilhar

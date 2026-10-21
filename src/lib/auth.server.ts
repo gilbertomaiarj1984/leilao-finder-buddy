@@ -9,6 +9,8 @@
  * /api/live: tratado direto em src/server.ts.
  */
 
+import { checkGoogleUser, configuredEmail } from "./access.server";
+
 const SESSION_COOKIE = "gs_session";
 const OAUTH_COOKIE = "gs_oauth";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
@@ -217,10 +219,12 @@ async function googleAuthCallback(request: Request): Promise<Response> {
     });
     if (!userRes.ok) throw new Error(`userinfo failed: ${userRes.status}`);
     const userData = (await userRes.json()) as { email?: string; email_verified?: boolean };
-    if (!userData.email || userData.email_verified === false) {
-      throw new Error("e-mail não verificado pelo Google");
+    const verdict = checkGoogleUser(userData, configuredEmail());
+    if (!verdict.ok) {
+      console.warn(`[auth] login recusado (${verdict.reason})`);
+      return errorRedirect(url.origin, verdict.reason);
     }
-    email = userData.email;
+    email = verdict.email;
   } catch (error) {
     console.error("[auth] falha no login com Google", error);
     return errorRedirect(url.origin, "google_failed");

@@ -16,6 +16,9 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    # Limite explícito: o padrão do GitHub é 360 min, e um travamento ficaria horas segurando o grupo
+    # de concorrência (as próximas varreduras esperariam atrás dele). Uma execução normal leva bem menos.
+    timeout-minutes: 90
     steps:
       - name: Varrer em blocos + preencher nº de lote
         env:
@@ -58,6 +61,9 @@ jobs:
             curl -fsS --retry 2 --max-time 10 "${HEALTHCHECKS_PING_URL%/}${1:+/$1}" >/dev/null || true
           }
           trap 'ping_healthcheck fail' ERR
+          # Ping de início: o healthchecks.io passa a distinguir "a run nunca começou" (alerta pelo
+          # atraso) de "começou e não terminou" (alerta pelo tempo de execução).
+          ping_healthcheck start
 
           echo "== Varredura em blocos =="
           # `chunk`/`enrich` engolem falha de persistência no banco (best-effort, pra não
@@ -166,12 +172,6 @@ jobs:
             echo "condition $i: $res"
             if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
           done
-
-          echo "== Diagnóstico de vendas (salesdebug — sinais crus do catálogo, não grava) =="
-          # Mostra, para os leilões terminados, quantos lotes o parser vê e reconhece como
-          # vendidos, e se o HTML traz "Valor de venda"/"vendido". Ajuda a distinguir um
-          # sales:0 legítimo (casa sem venda) de um parser que não casou o formato da casa.
-          curl -sS --max-time 60 -H "x-cron-token: $CRON_TOKEN" "$base/api/cron?step=salesdebug&limit=2" | jq . || true
 
           echo "== Captura de vendas pós-leilão (histórico lot_sales) =="
           # Varre o catálogo da casa (1 req/leilão) dos leilões terminados ainda não
