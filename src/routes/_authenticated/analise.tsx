@@ -22,7 +22,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CoverageBar } from "@/components/vinyl/analise/coverage-bar";
 import { AnaliseLotRow } from "@/components/vinyl/analise/lot-row";
+import { useAnalyzeScope, useRepriceLots } from "@/components/vinyl/use-ai-actions";
+import { useAuctionProgress, useNow } from "@/components/vinyl/use-auction-progress";
 import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { RarityLegend } from "@/components/vinyl/ai-score";
@@ -43,6 +46,8 @@ import {
   type RankInput,
   type SortKey,
 } from "@/lib/analise-rank";
+import { priceRoseSinceEval } from "@/lib/ai-reprice";
+import { auctionChip, startsInMinutes } from "@/lib/analise-time";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
 import { FUTURE_LABEL, FUTURE_TAB, isFutureDay } from "@/lib/day-bar";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
@@ -55,7 +60,7 @@ import {
   useWatchedQuery,
 } from "@/lib/queries";
 import { useLotInsights, type LotInsight } from "@/lib/use-lot-insights";
-import { bidIsWinning, normalizeForMatch, type VinylLot } from "@/lib/vinyl-parse";
+import { bidIsWinning, normalizeForMatch, parsePrice, type VinylLot } from "@/lib/vinyl-parse";
 import { saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
 import { OWNED_CONFIDENT_MIN } from "@/lib/wantlist-match";
 
@@ -81,6 +86,8 @@ function filterChipClass(active: boolean): string {
 type AnaliseItem = RankInput &
   PresetInput & {
     score: number;
+    /** A nota foi dada a um preço bem menor que o de hoje (`priceRoseSinceEval`). */
+    stale: boolean;
     lot: VinylLot;
     insight: LotInsight;
     currentPrice: string;
@@ -187,6 +194,11 @@ function AnalisePage() {
   });
 
   const allLots = useMemo(() => lots.data?.lots ?? [], [lots.data]);
+  // Relógio da tela: o "começa em N min" e a visão "Começando logo" andam sozinhos.
+  const nowMs = useNow();
+  const nowMin = Math.floor(nowMs / 60_000);
+  const { analyzing, analyzeDays } = useAnalyzeScope();
+  const { repricing, repriceLots } = useRepriceLots();
   // Tudo que o app sabe de cada lote (nota, mercado, estado, Coleção, De olho, casa…).
   const { insightById, albumById, evaluated, lookoutCount, lookoutActiveItems } =
     useLotInsights(allLots);
@@ -273,10 +285,15 @@ function AnalisePage() {
         hasBid: status !== null,
         weakDisc: insight.condition.media !== null && !gradeAtLeast(insight.condition.media, "VG"),
         ownedConfident: Boolean(insight.owned && insight.owned.score >= OWNED_CONFIDENT_MIN),
+        startsInMin: startsInMinutes(lot.dayKey, lot.time, nowMin * 60_000),
+        // Só avisa quando a nota TEM preço gravado (nota antiga sem `eval_price` reavalia 1× pelo cron).
+        stale:
+          insight.ai?.evalPrice != null &&
+          priceRoseSinceEval(insight.ai.evalPrice, parsePrice(currentPrice)),
       });
     }
     return out;
-  }, [allLots, insightById, bidStatusById, myBidById, watchedIds]);
+  }, [allLots, insightById, bidStatusById, myBidById, watchedIds, nowMin]);
 
   // Aplica os filtros SEM o dia — a barra de dias mostra a contagem de cada dia sobre este conjunto.
   const filteredAnyDay = useMemo(() => {
@@ -379,6 +396,36 @@ function AnalisePage() {
     () => new Map(PRESETS.map((p) => [p.key, items.filter((it) => p.test(it, todayKey)).length])),
     [items, todayKey],
   );
+  // Cobertura da IA na janela do app + o que o botão "Analisar pendentes" avalia: o dia escolhido,
+  // os dias depois do último da barra ("Dias Futuros") ou, em "Todos", os dias de hoje em diante.
+  const pendingByDay = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const lot of allLots) {
+      if (insightById.get(lot.id)?.ai?.score != null) continue;
+      map.set(lot.dayKey, (map.get(lot.dayKey) ?? 0) + 1);
+    }
+    return map;
+  }, [allLots, insightById]);
+  const analyzeDaysScope = useMemo(
+    () =>
+      [...pendingByDay.keys()]
+        .filter((d) =>
+          activeDay === FUTURE_TAB
+            ? isFutureDay(d, lastDay)
+            : activeDay
+              ? d === activeDay
+              : d >= todayKey,
+        )
+        .sort(),
+    [pendingByDay, activeDay, lastDay, todayKey],
+  );
+  const pendingInScope = analyzeDaysScope.reduce((n, d) => n + (pendingByDay.get(d) ?? 0), 0);
+  const scopeLabel = activeDay
+    ? activeDay === FUTURE_TAB
+      ? "nos dias futuros"
+      : "neste dia"
+    : "de hoje em diante";
+  const staleItems = items.filter((it) => it.stale && it.dayKey >= todayKey);
   const bidCount = bidStatusById.size;
   const watchedCount = items.filter((it) => it.watched).length;
 
@@ -391,6 +438,30 @@ function AnalisePage() {
     return counts;
   }, [filteredAnyDay]);
 
+  const coverageBar = (
+    <CoverageBar
+      rated={allLots.length - [...pendingByDay.values()].reduce((n, c) => n + c, 0)}
+      total={allLots.length}
+      pendingInScope={pendingInScope}
+      scopeLabel={scopeLabel}
+      analyzing={analyzing !== null}
+      onAnalyze={() => analyzeDays(analyzeDaysScope)}
+      staleCount={staleItems.length}
+      repricing={repricing}
+      onReprice={() =>
+        repriceLots(
+          staleItems.map((it) => ({
+            id: it.lot.id,
+            title: it.lot.title,
+            price: it.currentPrice,
+            house: it.lot.house,
+            image: it.lot.image,
+          })),
+        )
+      }
+    />
+  );
+
   // Agrupa o bloco visível por casa, na ordem em que cada casa aparece (a melhor posição manda).
   const houseGroups = useMemo(() => {
     const groups = new Map<string, { house: string; items: AnaliseItem[] }>();
@@ -402,6 +473,11 @@ function AnalisePage() {
     return [...groups.values()];
   }, [shown]);
   const rankOf = new Map(shown.map((it, i) => [it.lot.id, i + 1]));
+  const progressByAuction = useAuctionProgress(
+    useMemo(() => shown.map((it) => it.lot), [shown]),
+    todayKey,
+    nowMs,
+  );
   const renderRow = (it: AnaliseItem, variant: "list" | "cards") => (
     <AnaliseLotRow
       key={it.lot.id}
@@ -411,6 +487,14 @@ function AnalisePage() {
       currentPrice={it.currentPrice}
       rank={rankOf.get(it.lot.id) ?? 0}
       past={pastById?.[it.lot.id] ?? null}
+      chip={auctionChip({
+        dayKey: it.lot.dayKey,
+        time: it.lot.time,
+        lote: it.lot.lote,
+        nowMs,
+        progress: progressByAuction.get(`${it.lot.idLeilao}|${it.lot.dayKey}`) ?? null,
+      })}
+      stale={it.stale}
       open={openIds.has(it.lot.id)}
       onToggleOpen={onToggleOpen}
       days={days}
@@ -473,17 +557,21 @@ function AnalisePage() {
             Não foi possível ler os lotes: {(lots.error as Error).message}
           </p>
         ) : evaluated === 0 ? (
-          <p className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
-            Nenhum lote avaliado ainda. A avaliação roda em segundo plano (atualização periódica);
-            volte após a próxima rodada — ou use os botões “Analisar” por dia/casa na página
-            principal para avaliar agora, sob demanda.
-          </p>
+          <div className="space-y-4">
+            {coverageBar}
+            <p className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
+              Nenhum lote avaliado ainda. A avaliação roda em segundo plano (atualização periódica);
+              use “Analisar pendentes” acima para avaliar agora, sob demanda.
+            </p>
+          </div>
         ) : (
           <div className="space-y-6">
+            {coverageBar}
+
             {/* ------- Visões prontas (contam sobre todos os lotes avaliados) ------- */}
             <section
               aria-label="Visões prontas"
-              className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5"
+              className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6"
             >
               {PRESETS.map((p) => {
                 const active = preset === p.key;

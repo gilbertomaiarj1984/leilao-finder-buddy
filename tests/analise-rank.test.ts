@@ -93,6 +93,7 @@ describe("PRESETS", () => {
     hasBid: false,
     weakDisc: false,
     ownedConfident: false,
+    startsInMin: 50 as number | null,
   };
   const run = (key: string, over: Partial<typeof base> = {}) =>
     PRESETS.find((p) => p.key === key)!.test({ ...base, ...over }, "2026-10-21");
@@ -102,6 +103,13 @@ describe("PRESETS", () => {
     expect(run("garimpo", { score: 60 })).toBe(false);
     expect(run("garimpo", { weakDisc: true })).toBe(false);
     expect(run("garimpo", { ownedConfident: true })).toBe(false);
+  });
+  test("começando logo: até 2h antes ou 3h depois do início", () => {
+    expect(run("logo")).toBe(true);
+    expect(run("logo", { startsInMin: 121 })).toBe(false);
+    expect(run("logo", { startsInMin: -170 })).toBe(true);
+    expect(run("logo", { startsInMin: -200 })).toBe(false);
+    expect(run("logo", { startsInMin: null })).toBe(false);
   });
   test("pechinchas, raros, radar e meus", () => {
     expect(run("pechincha")).toBe(true);

@@ -83,6 +83,20 @@
     (`price-range-bar.tsx`: menor–maior vendido, mediana e o custo de hoje); no celular os filtros ficam
     recolhidos (`analise-filters-open`). As vendas passadas vêm de **uma chamada só** (`getPastSalesBulk` →
     `usePastSalesBulk`, até 800 ids; mesma conta de `getLotPastSales`).
+  - **Fase 3 (v0.160.0):** **cobertura da IA** (`coverage-bar.tsx`: % de lotes da janela com nota, calculado no
+    cliente — `lot_ai` sem score conta como pendente; pode subestimar o que o servidor vai reavaliar por mudança
+    de título/prompt) com **"Analisar pendentes"** (`useAnalyzeScope().analyzeDays`, `use-ai-actions.ts`: o mesmo
+    laço de `analyzeOnDemand` da home — 25 lotes por chamada, provedor do topo, failover nos toasts — por dia, em
+    sequência; escopo = dia escolhido, "Dias Futuros" ou, em "Todos", de hoje em diante). A home passou a usar o
+    mesmo hook (`analyzeScope`). **Nota defasada**: pílula na linha quando `priceRoseSinceEval(eval_price,
+    preço atual)` (só com `eval_price` gravado) e botão **"Reavaliar defasadas"** (`useRepriceLots` →
+    `repriceLotAi`, 10 por chamada; o servidor reconfere e respeita o modo "off"). **Horário e andamento do
+    pregão** (`analise-time.ts`, `use-auction-progress.ts`): chip "começa em N min" (≤ 24 h; ≤ 30 min fica
+    amarelo), "ao vivo · lote 41/120 · faltam 47", "já passou", "pregão encerrado" — o início vem do horário
+    da casa (relógio `useNow`, 1 min) e o andamento de UMA consulta `getPresencialNow` por pregão de hoje já
+    iniciado dentre os lotes visíveis (mesma chave `["presencial-now", url]` da home e da visão "Sem lance");
+    casas fora da plataforma ficam sem andamento ("ao vivo" só nas 6 h seguintes ao início). Nova visão pronta
+    **"Começando logo"** (começa em até 2 h ou começou há menos de 3 h).
   - Teste local no navegador: `tools/local-tests/analise-seed.mjs` + `analise-e2e.mjs`.
 - **`_authenticated/analise.tsx` (Análise, remodelada na v0.113.0):** dois **Top 30 por nota**
   recolhíveis — **vigiados** (`watchedIds`) e **restante** — sob a barra de filtros e a **barra

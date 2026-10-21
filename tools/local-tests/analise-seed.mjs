@@ -26,13 +26,21 @@ ROWS.forEach(([artist, album, year, house, uf, d, time, price, score, rar, sugg,
   const byCond = JSON.stringify({ VG: sugg * 0.85, "VG+": sugg, "G+": sugg * 0.7, NM: sugg * 1.2 });
   psql(`insert into lots(id,id_leilao,id_peca,base,lote,title,url,image,price,day_key,start_time,uf,house,house_url,artist)
     values('${id}','9000${i}','1000${i}','https://www.leiloesbr.com.br','${10 + i}','${q(title)}','https://example.com/peca.asp?ID=1000${i}',null,'${price}','${day(d)}','${time}','${uf}','${q(house)}','https://example.com','${q(artist)}')`);
-  psql(`insert into lot_ai(id,title_hash,score,rarity,deal,album,reason,tags)
-    values('${id}','h',${score},'${rar}','justo','${q(artist)} - ${q(album)} (${year})','Motivo de teste ${i}','["teste"]')`);
+  const evalPrice = i === 4 ? 120 : "null"; // Clube da Esquina: nota dada com o lote a R$ 120 (hoje R$ 210)
+  psql(`insert into lot_ai(id,title_hash,score,rarity,deal,album,reason,tags,eval_price)
+    values('${id}','h',${score},'${rar}','justo','${q(artist)} - ${q(album)} (${year})','Motivo de teste ${i}','["teste"]',${evalPrice})`);
   psql(`insert into lot_market(id,basis,matched,release_id,release_title,year,num_for_sale,lowest_price,currency,suggested_price,suggested_condition,have,want,price_low_br,price_high_br,num_for_sale_br,suggested_by_condition)
     values('${id}','m2:x',true,${500 + i},'${q(album)}',${year},10,${sugg * 0.8},'BRL',${sugg},'VG+',${have},${want},${sugg * 0.9},${sugg * 1.4},3,'${byCond}')`);
   psql(`insert into lot_condition(id,title_hash,media,sleeve,insert_state,score,faixa,source,views,bids)
     values('${id}','c','${media}','${sleeve}','sim',70,'Bom','regex',200,${bids})`);
 });
+// Dois lotes de hoje AINDA SEM NOTA (sem linha em lot_ai): alimentam "Analisar pendentes".
+[["Cartola", "Cartola", "R$ 55,00"], ["Novos Baianos", "Acabou Chorare", "R$ 130,00"]].forEach(([artist, album, price], k) => {
+  const id = `9100${k}-1100${k}`;
+  psql(`insert into lots(id,id_leilao,id_peca,base,lote,title,url,image,price,day_key,start_time,uf,house,house_url,artist)
+    values('${id}','9100${k}','1100${k}','https://www.leiloesbr.com.br','${40 + k}','LP ${q(artist)} - ${q(album)}','https://example.com/peca.asp?ID=1100${k}',null,'${price}','${day(0)}','21:00h','SP','Delta Leilões','https://example.com','${q(artist)}')`);
+});
+
 // Vendas passadas (Analytics) de dois discos: Tim Maia (4 vendas) e Rita Lee (3).
 const SALES = [
   ["Tim Maia", "Tim Maia", [380, 610, 640, 880]],

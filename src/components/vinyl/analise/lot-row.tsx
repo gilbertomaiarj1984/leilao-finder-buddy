@@ -30,9 +30,10 @@ import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { demandRatio, gradeAtLeast } from "@/lib/analise-rank";
 import type { LotEconomics } from "@/lib/lot-score";
+import type { AuctionChip } from "@/lib/analise-time";
 import type { PastSales } from "@/lib/past-sales";
 import type { LotInsight } from "@/lib/use-lot-insights";
-import { bidIsWinning, formatDayLabel, type VinylLot } from "@/lib/vinyl-parse";
+import { bidIsWinning, formatDayLabel, parsePrice, type VinylLot } from "@/lib/vinyl-parse";
 import { OWNED_CONFIDENT_MIN } from "@/lib/wantlist-match";
 
 import { LotDetail } from "./lot-detail";
@@ -48,6 +49,10 @@ type AnaliseRowProps = {
   rank: number;
   /** Vendas passadas do mesmo disco (Analytics), quando há. */
   past: PastSales | null;
+  /** Andamento/horário do pregão ("começa em 50 min", "ao vivo · faltam 47"). */
+  chip: AuctionChip | null;
+  /** A nota foi dada quando o lote custava bem menos que hoje. */
+  stale: boolean;
   /** "Por que esta nota" aberto. */
   open: boolean;
   onToggleOpen: (id: string) => void;
@@ -61,6 +66,13 @@ type AnaliseRowProps = {
 };
 
 const pill = "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium";
+
+const CHIP_TONE: Record<AuctionChip["tone"], string> = {
+  info: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+  warn: "bg-yellow-500/20 text-yellow-800 dark:text-yellow-300",
+  live: "bg-red-500/15 text-red-700 dark:text-red-400",
+  muted: "bg-secondary text-muted-foreground",
+};
 
 /** Capa do lote (miniatura) ou um disco genérico quando o lote não tem imagem. */
 function Cover({ image }: { image: string | null }) {
@@ -87,6 +99,8 @@ function AnaliseLotRowImpl({
   currentPrice,
   rank,
   past,
+  chip,
+  stale,
   open,
   onToggleOpen,
   days,
@@ -248,6 +262,17 @@ function AnaliseLotRowImpl({
                 🔥 procurado {heat.toFixed(1)}×
               </span>
             ) : null}
+            {stale ? (
+              <span
+                className={`${pill} bg-yellow-500/20 text-yellow-800 dark:text-yellow-300`}
+                title="A nota foi dada quando o lote custava bem menos; reavalie para refletir o preço de hoje"
+              >
+                nota defasada
+                {ai?.evalPrice
+                  ? ` (${fmtMoney(ai.evalPrice, "BRL")} → ${fmtMoney(parsePrice(currentPrice), "BRL")})`
+                  : ""}
+              </span>
+            ) : null}
             {demand?.bids ? (
               <span
                 className={`${pill} bg-secondary`}
@@ -271,6 +296,17 @@ function AnaliseLotRowImpl({
               · {formatDayLabel(lot.dayKey, days)} {lot.time}
               {lot.lote ? ` · lote ${lot.lote}` : ""}
             </span>
+            {chip ? (
+              <span className={`${pill} ${CHIP_TONE[chip.tone]}`} title={chip.title}>
+                {chip.tone === "live" ? (
+                  <span className="relative flex h-1.5 w-1.5" aria-hidden>
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-current opacity-70" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-current" />
+                  </span>
+                ) : null}
+                {chip.label}
+              </span>
+            ) : null}
           </div>
 
           {ai?.reason ? (
