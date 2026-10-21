@@ -35,6 +35,13 @@ async function markSent(dayKey: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Desfaz a reserva do dia (volta ao valor anterior, ou apaga o registro). */
+async function restoreSent(previous: string | null): Promise<void> {
+  if (previous) return markSent(previous);
+  const { error } = await db.from("app_state").delete().eq("key", SENT_KEY);
+  if (error) throw error;
+}
+
 /**
  * Resumo diário por e-mail dos melhores lotes dos próximos dias: ordena pela nota da IA e deixa
  * de fora os marcados como "caro". No máximo UM por dia (`app_state.daily_digest_sent`, gravado
@@ -116,7 +123,16 @@ export async function sendDailyDigest(): Promise<{
   });
   const [, m, d] = today.split("-");
   const base = (process.env["PUBLIC_BASE_URL"] ?? "").replace(/\/$/, "");
-  await sendEmail(buildDigestEmail(entries, `${d}/${m}`, base || undefined));
+  // RESERVA o dia antes de enviar: o workflow chama com `curl --retry 3`, e se o servidor demora
+  // mais que o `--max-time` o curl repete enquanto o 1º envio ainda roda (e-mail em dobro). Se o
+  // envio falhar, a reserva é desfeita e a próxima chamada do dia tenta de novo.
+  const previous = await lastSentDay();
   await markSent(today);
+  try {
+    await sendEmail(buildDigestEmail(entries, `${d}/${m}`, base || undefined));
+  } catch (error) {
+    await restoreSent(previous).catch(() => undefined);
+    throw error;
+  }
   return { enabled: true, sent: true, count: entries.length };
 }

@@ -1,13 +1,13 @@
 name: Aviso de pregão começando
 
-# A cada 15 minutos entre 8h e 23h45 de Brasília (UTC 11h–02h45; o agendador do GitHub pode atrasar
+# A cada 15 minutos entre 6h e 23h45 de Brasília (UTC 9h–02h45; o agendador do GitHub pode atrasar
 # alguns minutos). Só chama o endpoint — o servidor decide: avisa por Web Push quando o pregão de um
-# lote vigiado começa em até 30 min (uma vez por pregão) e é no-op sem VAPID_* ou sem aparelho
-# inscrito. Fora do grupo de concorrência das varreduras (`refresh-lotes`) para não enfileirar atrás
+# lote vigiado começa em até 30 min (uma vez por lote vigiado) e quando um lote vigiado cruza o teto
+# de lance (barato), e é no-op sem VAPID_* ou sem aparelho inscrito. Fora do grupo de concorrência das varreduras (`refresh-lotes`) para não enfileirar atrás
 # delas. Também pode ser disparado manualmente.
 on:
   schedule:
-    - cron: "*/15 11-23,0-2 * * *"
+    - cron: "*/15 9-23,0-2 * * *"
   workflow_dispatch: {}
 
 concurrency:

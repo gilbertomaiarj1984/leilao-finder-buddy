@@ -181,6 +181,7 @@ Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score
 
 ## Análise de Lotes — o que ficou de fora das fases 1–4 (v0.161.0)
 
+- ~~**Alerta "vigiado passou/está abaixo do teto de lance"**~~ feito na v0.171.0 (ver `docs/areas/infra.md`). Texto original:
 - **Alerta "vigiado passou/está abaixo do teto de lance"**: exige o valor AO VIVO do lote (a varredura geral
   defasa até 6 h) e a conta de mercado no servidor (`getAllLotMarket` + `withConditionAnchor` + `lotEconomics`,
   como o `daily-digest`). Pensar em aviso de **cruzamento** (snapshot lote → "abaixo"/"acima" em `app_state`), não
