@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, ChevronUp, ExternalLink } from "lucide-react";
 
 import { HouseLight } from "@/components/vinyl/house-light";
+import { HouseUf } from "@/components/vinyl/house-uf";
 import { Badge } from "@/components/ui/badge";
 
 import type { Condition } from "@/lib/grading";
@@ -111,6 +112,7 @@ export function BidHouseSections({
                   {houseGroup.house}
                 </h2>
               )}
+              <HouseUf house={houseGroup.house} />
               <HouseLight house={houseGroup.house} />
               <Badge variant="secondary">{houseGroup.lots.length} lance(s)</Badge>
               <BidStatBadges stats={computeBidStats(houseGroup.lots)} />

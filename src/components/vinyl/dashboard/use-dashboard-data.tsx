@@ -16,6 +16,7 @@ import {
   watchedMatchesSearch,
   type HouseStats,
 } from "@/components/vinyl/grouping";
+import { useTodayUnsold } from "@/components/vinyl/use-today-unsold";
 import { effectiveTextRules } from "@/lib/condition-text";
 import { type Condition, type Grade, parseConditionFromText, scoreCondition } from "@/lib/grading";
 import {
@@ -1857,8 +1858,12 @@ export function useDashboardData() {
     [bids.data, houseUrlByName, houseTimeByDayHouse, dayKeyByLotId],
   );
 
+  // Visão "Lotes sem lance" do dia de hoje (ícone ao lado de Hoje) — vive só na sessão.
+  const [unsoldViewDay, setUnsoldViewDay] = useState<string | null>(null);
+  const todayUnsold = useTodayUnsold(lots.data?.lots ?? [], todayKey);
+
   usePersistedScroll(
-    `home:${tab}:${watchedViewDay ?? ""}:${bidsViewDay ?? ""}`,
+    `home:${tab}:${watchedViewDay ?? ""}:${bidsViewDay ?? ""}:${unsoldViewDay ?? ""}`,
     navReady && !lots.isLoading,
   );
 
@@ -1895,6 +1900,9 @@ export function useDashboardData() {
     artistFilter,
     watchedViewDay,
     bidsViewDay,
+    unsoldViewDay,
+    setUnsoldViewDay,
+    todayUnsold,
     bidsWithHouseUrl,
     bidDayKey,
     futureCount,

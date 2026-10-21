@@ -6,6 +6,7 @@ import {
   extractArtist,
   collectionNeedsIdentification,
   isDiscBundle,
+  isLotePassed,
   UNCLASSIFIED_LABEL,
   isVinylTitle,
   splitRecordSpec,
@@ -203,18 +204,15 @@ describe("lotOpenUrl", () => {
 });
 
 describe("trackedAuctionStatus", () => {
-  const none = { inProgress: false, finished: false, seenLive: false, manual: false };
+  const none = { inProgress: false, finished: false, seenLive: false };
   test("pregão longo com peças pela frente fica ao vivo (sem janela de horas)", () => {
     expect(
       trackedAuctionStatus("ended", "2026-10-07", { ...none, inProgress: true }, "2026-10-07"),
     ).toBe("live");
   });
-  test("peça = total ou marcação manual encerra", () => {
+  test("peça = total encerra", () => {
     expect(
       trackedAuctionStatus("live", "2026-10-07", { ...none, finished: true }, "2026-10-07"),
-    ).toBe("ended");
-    expect(
-      trackedAuctionStatus("live", "2026-10-07", { ...none, manual: true }, "2026-10-07"),
     ).toBe("ended");
   });
   test("presencial parou de responder depois de visto ao vivo → encerrado; sem sinal → ao vivo", () => {
@@ -261,5 +259,18 @@ describe("splitRecordSpec", () => {
       name: "LP Cher - Heart of Stone",
       spec: "",
     });
+  });
+});
+
+describe("isLotePassed", () => {
+  test("só lote numérico anterior ao atual", () => {
+    expect(isLotePassed("12", "40")).toBe(true);
+    expect(isLotePassed("40", "40")).toBe(false);
+    expect(isLotePassed("41", "40")).toBe(false);
+  });
+  test("sem nº ou ilegível não conta", () => {
+    expect(isLotePassed(null, "40")).toBe(false);
+    expect(isLotePassed("", "40")).toBe(false);
+    expect(isLotePassed("12", "--")).toBe(false);
   });
 });

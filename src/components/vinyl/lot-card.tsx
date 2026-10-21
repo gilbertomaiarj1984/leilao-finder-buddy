@@ -9,6 +9,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { HouseLight } from "@/components/vinyl/house-light";
+import { HouseUf } from "@/components/vinyl/house-uf";
 import { useEffect, useRef, useState, type ComponentProps } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -228,6 +229,7 @@ function LotCardDesktop({
         >
           <HouseLight house={origin.house} className="bg-white/90 !p-0.5" />
           <span className="font-bold">{origin.house}</span>
+          <HouseUf house={origin.house} className="text-inherit opacity-80" />
           {origin.houseWinning || origin.houseCovered ? (
             <span className="inline-flex items-center gap-0.5 rounded bg-white/90 px-1 text-[11px] leading-4">
               {origin.houseWinning ? (

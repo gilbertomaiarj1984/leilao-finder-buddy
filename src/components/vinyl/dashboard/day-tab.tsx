@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TabsContent } from "@/components/ui/tabs";
 import { HouseLight } from "@/components/vinyl/house-light";
+import { HouseUf } from "@/components/vinyl/house-uf";
 import { AuctionStatusInline, BidStatBadges, HouseStatBadges } from "@/components/vinyl/badges";
 import { BidHouseSections } from "@/components/vinyl/bid-house-sections";
 import { ArtistFilter, PriceFilter } from "@/components/vinyl/filters";
@@ -38,11 +39,11 @@ import {
   type HouseGroup,
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
-import { PresencialOrUnsoldLink } from "@/components/vinyl/presencial-or-unsold-link";
+import { PresencialLink } from "@/components/vinyl/presencial-link";
 import { DAY_PAGE, TODAY_INDEX } from "@/lib/day-bar";
-import { isManuallyFinished } from "@/lib/manually-finished-auctions";
 import { auctionDayPassed, UNCLASSIFIED_LABEL } from "@/lib/vinyl-parse";
 
+import { UnsoldView } from "./unsold-view";
 import type { DashboardData } from "./use-dashboard-data";
 
 export function DayTab({ d, day, index }: { d: DashboardData; day: string; index: number }) {
@@ -59,6 +60,9 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     matchesSearch,
     artistFilter,
     watchedViewDay,
+    unsoldViewDay,
+    setUnsoldViewDay,
+    todayUnsold,
     watched,
     searchNorm,
     albumFor,
@@ -131,9 +135,8 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
   // valor final etc.), então continuam aparecendo na grade geral mesmo depois do
   // leilão encerrar, sem precisar abrir "Mostrar finalizados". Só o "resto" (sem
   // relação com o usuário) some por padrão.
-  // Finalizado = dia já passado ou pregão marcado como encerrado à mão (sem janela de horas).
-  const lotAuctionFinished = (lot: { dayKey: string; idLeilao: string }) =>
-    auctionDayPassed(lot.dayKey) || isManuallyFinished(lot.idLeilao, lot.dayKey);
+  // Finalizado = dia já passado (sem janela de horas).
+  const lotAuctionFinished = (lot: { dayKey: string }) => auctionDayPassed(lot.dayKey);
   const isTracked = (lot: { idPeca: string; watched: boolean }) =>
     lot.watched || bidStatusById.has(lot.idPeca);
   const finishedCount = rawDay.filter((lot) => lotAuctionFinished(lot) && !isTracked(lot)).length;
@@ -155,6 +158,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     matchesStatFilter(lot.idPeca, watchedIds, bidStatusById, statFilter),
   );
   const groups = groupByHouse(visibleLots);
+  const isUnsoldView = unsoldViewDay === day && index === TODAY_INDEX;
   const isWatchedView = watchedViewDay === day;
   // Vigiados do dia: a busca principal também filtra aqui.
   const watchedForDay = (watched.data ?? []).filter(
@@ -202,6 +206,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                 type="button"
                 onClick={() => {
                   setBidsViewDay(null);
+                  setUnsoldViewDay(null);
                   setWatchedViewDay((cur) => (cur === day ? null : day));
                 }}
                 title="Ver vigiados deste dia"
@@ -237,6 +242,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                 type="button"
                 onClick={() => {
                   setWatchedViewDay(null);
+                  setUnsoldViewDay(null);
                   setBidsViewDay((cur) => (cur === day ? null : day));
                 }}
                 title="Ver lances deste dia"
@@ -283,7 +289,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                 )}
                 Analisar dia
               </button>
-              {!isWatchedView && !isBidsView ? (
+              {!isWatchedView && !isBidsView && !isUnsoldView ? (
                 <>
                   <ArtistFilter artists={artists} value={artistFilter} onChange={setArtistFilter} />
                   {artistFilter ? (
@@ -300,6 +306,10 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     {visibleLots.length} lote(s) em {groups.length} casa(s)
                   </span>
                 </>
+              ) : isUnsoldView ? (
+                <span className="text-xs text-muted-foreground">
+                  {todayUnsold.length} casa(s) com pregão encerrado ou em andamento
+                </span>
               ) : isWatchedView ? (
                 <span className="text-xs text-muted-foreground">
                   {watchedForDay.length} lote(s) vigiado(s) neste dia
@@ -322,6 +332,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
       {finishedToggleHost &&
         !isWatchedView &&
         !isBidsView &&
+        !isUnsoldView &&
         finishedCount > 0 &&
         createPortal(
           <Button variant="ghost" size="sm" onClick={() => toggleShowFinished(day)}>
@@ -331,7 +342,13 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
           </Button>,
           finishedToggleHost,
         )}
-      {isWatchedView ? (
+      {isUnsoldView ? (
+        <UnsoldView
+          houses={todayUnsold}
+          dayLabel={dayLabel(day, index - TODAY_INDEX)}
+          onBack={() => setUnsoldViewDay(null)}
+        />
+      ) : isWatchedView ? (
         watched.isLoading ? (
           <Skeleton className="h-40 w-full" />
         ) : watchedForDay.length === 0 ? (
@@ -374,6 +391,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                         {houseGroup.house}
                       </span>
                     </button>
+                    <HouseUf house={houseGroup.house} />
                     <HouseLight house={houseGroup.house} />
                     <Badge variant="secondary">{houseGroup.lots.length} lote(s)</Badge>
                     <HouseStatBadges
@@ -384,7 +402,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     <AuctionStatusInline info={auctionInfo} />
                     <div className="ml-auto flex flex-wrap items-center gap-3">
                       {auctionInfo?.presencialUrl ? (
-                        <PresencialOrUnsoldLink
+                        <PresencialLink
                           presencialUrl={auctionInfo.presencialUrl}
                           idLeilao={auctionInfo.idLeilao}
                           dayKey={auctionInfo.dayKey}
@@ -621,6 +639,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                         {group.house}
                       </span>
                     </button>
+                    <HouseUf house={group.house} uf={group.lots[0]?.uf} />
                     <HouseLight house={group.house} />
                     <Badge variant="secondary">{houseLots.length} lotes</Badge>
                     <HouseStatBadges
@@ -631,7 +650,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     <AuctionStatusInline info={auctionInfo} />
                     <div className="ml-auto flex flex-wrap items-center gap-3">
                       {auctionInfo?.presencialUrl ? (
-                        <PresencialOrUnsoldLink
+                        <PresencialLink
                           presencialUrl={auctionInfo.presencialUrl}
                           idLeilao={auctionInfo.idLeilao}
                           dayKey={auctionInfo.dayKey}

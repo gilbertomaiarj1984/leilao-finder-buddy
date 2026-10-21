@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { GradeSelect } from "@/components/vinyl/grade-select";
+import { HouseUf } from "@/components/vinyl/house-uf";
 import { saveCalibrationEntry } from "@/lib/ai-panel.functions";
 import {
   calibrationHints,
@@ -95,7 +96,7 @@ function CalibrationCard({ row }: { row: CalibrationRow }) {
             {row.label}
           </p>
           <p className="truncate text-xs text-muted-foreground">
-            {row.house} · pago {row.wonPrice || "—"}
+            {row.house} <HouseUf house={row.house} /> · pago {row.wonPrice || "—"}
             {row.receivedAt ? ` · recebido ${row.receivedAt.split("-").reverse().join("/")}` : ""}
           </p>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">

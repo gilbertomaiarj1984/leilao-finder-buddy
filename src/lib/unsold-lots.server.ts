@@ -18,6 +18,7 @@
 import { db } from "@/lib/db-client.server";
 
 import { isPublicHost } from "./leiloesbr-live.server";
+import { isLotePassed } from "./vinyl-parse";
 
 type UnsoldLot = {
   idPeca: string;
@@ -37,6 +38,8 @@ type UnsoldLotsResult = {
 
 // ≤ metade do intervalo de refetch do cliente, mesmo espírito de leiloesbr-presencial.server.ts.
 const CACHE_TTL_MS = 5 * 60 * 1000;
+// Pregão em andamento muda a cada lote: cache curto (e por lote atual).
+const LIVE_CACHE_TTL_MS = 45 * 1000;
 const cache = new Map<string, { at: number; value: UnsoldLotsResult }>();
 
 /** Valida e devolve o domínio (origin) da casa a partir da URL do pregão presencial. */
@@ -54,11 +57,13 @@ export async function getUnsoldLotsForAuction(
   idLeilao: string,
   presencialUrl: string,
   dayKey: string,
+  currentLote: string | null = null,
 ): Promise<UnsoldLotsResult> {
   const domain = domainFromPresencialUrl(presencialUrl);
-  const key = `${domain}#${idLeilao}#${dayKey}`;
+  const key = `${domain}#${idLeilao}#${dayKey}#${currentLote ?? ""}`;
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
+  const ttl = currentLote ? LIVE_CACHE_TTL_MS : CACHE_TTL_MS;
+  if (hit && Date.now() - hit.at < ttl) return hit.value;
 
   let value: UnsoldLotsResult = { lots: [], total: 0 };
   try {
@@ -91,6 +96,7 @@ export async function getUnsoldLotsForAuction(
       if (!known) continue; // sem correspondência conhecida PRO DIA pedido — não dá pra confirmar
       total += 1;
       if (data.sold) continue; // já vendido: fora da lista de sem-lance
+      if (currentLote && !isLotePassed(data.lote, currentLote)) continue; // ainda por vir
 
       rows.push({
         idPeca,

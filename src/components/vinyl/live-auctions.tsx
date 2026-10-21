@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 
 import { getLiveAuctions, getPresencialNow } from "@/lib/leiloesbr.functions";
 import { isSeenLive, markSeenLive } from "@/lib/auction-seen-live";
-import { isManuallyFinished } from "@/lib/manually-finished-auctions";
 import type { PresencialNow } from "@/lib/presencial-now";
 
 /**
@@ -99,7 +98,7 @@ export function LiveAuctions() {
 
   // Fim do pregão pelo acompanhamento (sem janela de horas): peça = total, ou o presencial
   // parou de responder depois de já ter sido visto ao vivo (o polling costuma parar assim que
-  // acaba de verdade), ou marcação manual — ver `trackedAuctionStatus`/`presencial-or-unsold-link.tsx`.
+  // acaba de verdade), — ver `trackedAuctionStatus`.
   useEffect(() => {
     allAuctions.forEach((auction, i) => {
       const now = presencialQueries[i]?.data;
@@ -115,8 +114,7 @@ export function LiveAuctions() {
       ({ auction, now }) =>
         !isPresencialFinished(now) &&
         auction.status !== "ended" &&
-        !(now === null && isSeenLive(auction.idLeilao, auction.dayKey)) &&
-        !isManuallyFinished(auction.idLeilao, auction.dayKey),
+        !(now === null && isSeenLive(auction.idLeilao, auction.dayKey)),
     );
 
   if (!auctions.length) return null;

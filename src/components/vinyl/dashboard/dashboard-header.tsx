@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { Fragment } from "react";
 import {
   BarChart3,
   Binoculars,
@@ -6,6 +7,7 @@ import {
   ChevronRight,
   Library,
   LogOut,
+  PackageOpen,
   Radio,
   ShoppingBag,
   SlidersHorizontal,
@@ -25,7 +27,6 @@ import {
   TODAY_PAGE,
 } from "@/lib/day-bar";
 import { useLookoutOverviewQuery } from "@/lib/queries";
-import { isManuallyFinished } from "@/lib/manually-finished-auctions";
 import { auctionDayPassed } from "@/lib/vinyl-parse";
 
 import { PushToggle } from "../push-toggle";
@@ -64,9 +65,16 @@ export function DashboardHeader({
     bids,
     setFinishedToggleHost,
     futureCount,
+    todayUnsold,
+    setUnsoldViewDay,
+    setWatchedViewDay,
+    setBidsViewDay,
+    unsoldViewDay,
   } = d;
   // Janela de dias visíveis (5 por vez, página `dayPage`); as setas paginam de 5 em 5 por
   // 2 páginas de histórico, a de hoje e 2 de futuro (`day-bar.ts`).
+  // Casas de hoje (pregão encerrado ou em andamento) que já têm lote sem lance → contador do ícone.
+  const unsoldHouses = todayUnsold.filter((h) => h.lots.length > 0).length;
   const offset = dayPage * DAY_PAGE;
   const canPrev = dayPage > 0;
   const canNext = dayPage < BAR_PAGES - 1;
@@ -198,34 +206,53 @@ export function DashboardHeader({
             {barDays.map((day, index) => {
               if (index < offset || index >= offset + DAY_PAGE) return null;
               return (
-                <TabsTrigger
-                  key={day}
-                  value={`day-${index}`}
-                  className={
-                    index < TODAY_INDEX
-                      ? "shrink-0 bg-amber-500/10 text-amber-700 data-[state=active]:bg-amber-500/25 data-[state=active]:text-amber-800 dark:text-amber-300 dark:data-[state=active]:text-amber-200"
-                      : index > TODAY_INDEX
-                        ? "shrink-0 bg-sky-500/10 text-sky-700 data-[state=active]:bg-sky-500/25 data-[state=active]:text-sky-800 dark:text-sky-300 dark:data-[state=active]:text-sky-200"
-                        : "shrink-0"
-                  }
-                >
-                  {dayLabel(day, index - TODAY_INDEX)}
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {pageLoading && (index < TODAY_INDEX || index >= TODAY_INDEX + DAY_PAGE)
-                      ? "…"
-                      : (lots.data?.lots.filter(
-                          (lot) =>
-                            lot.dayKey === day &&
-                            // Dias passados (histórico) contam tudo — o leilão já acabou.
-                            (index < TODAY_INDEX ||
-                              !(
-                                auctionDayPassed(lot.dayKey) ||
-                                isManuallyFinished(lot.idLeilao, lot.dayKey)
-                              )) &&
-                            matchesSearch(lot),
-                        ).length ?? 0)}
-                  </span>
-                </TabsTrigger>
+                <Fragment key={day}>
+                  <TabsTrigger
+                    value={`day-${index}`}
+                    className={
+                      index < TODAY_INDEX
+                        ? "shrink-0 bg-amber-500/10 text-amber-700 data-[state=active]:bg-amber-500/25 data-[state=active]:text-amber-800 dark:text-amber-300 dark:data-[state=active]:text-amber-200"
+                        : index > TODAY_INDEX
+                          ? "shrink-0 bg-sky-500/10 text-sky-700 data-[state=active]:bg-sky-500/25 data-[state=active]:text-sky-800 dark:text-sky-300 dark:data-[state=active]:text-sky-200"
+                          : "shrink-0"
+                    }
+                  >
+                    {dayLabel(day, index - TODAY_INDEX)}
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {pageLoading && (index < TODAY_INDEX || index >= TODAY_INDEX + DAY_PAGE)
+                        ? "…"
+                        : (lots.data?.lots.filter(
+                            (lot) =>
+                              lot.dayKey === day &&
+                              // Dias passados (histórico) contam tudo — o leilão já acabou.
+                              (index < TODAY_INDEX || !auctionDayPassed(lot.dayKey)) &&
+                              matchesSearch(lot),
+                          ).length ?? 0)}
+                    </span>
+                  </TabsTrigger>
+                  {index === TODAY_INDEX && unsoldHouses > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWatchedViewDay(null);
+                        setBidsViewDay(null);
+                        setUnsoldViewDay(unsoldViewDay === day ? null : day);
+                        setTab(`day-${index}`);
+                      }}
+                      aria-pressed={unsoldViewDay === day}
+                      title={`Lotes sem lance de hoje: ${unsoldHouses} casa(s) com pregão encerrado ou em andamento`}
+                      aria-label={`Lotes sem lance de hoje (${unsoldHouses} casa(s))`}
+                      className={`inline-flex shrink-0 items-center gap-1 rounded-md px-2 text-xs font-bold outline outline-1 transition-colors ${
+                        unsoldViewDay === day
+                          ? "bg-primary text-primary-foreground outline-primary"
+                          : "bg-card text-primary outline-primary/30 hover:bg-primary hover:text-primary-foreground"
+                      }`}
+                    >
+                      <PackageOpen className="h-4 w-4" />
+                      {unsoldHouses}
+                    </button>
+                  ) : null}
+                </Fragment>
               );
             })}
             <TabsTrigger

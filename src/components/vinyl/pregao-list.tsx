@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { HouseLight } from "@/components/vinyl/house-light";
+import { HouseUf } from "@/components/vinyl/house-uf";
 import { LevelDot } from "@/components/vinyl/level-dot";
 import { PregaoRatingDialog } from "@/components/vinyl/pregao-rating-dialog";
 import { LEVEL_META } from "@/lib/house-rating";
@@ -239,6 +240,7 @@ export function PregaoView({
                     Na guarda ·{" "}
                     {h.house ? <HouseLight house={h.house} className="-mx-0.5" /> : null}
                     {h.house || "casa não identificada"}
+                    {h.house ? <HouseUf house={h.house} className="ml-1" /> : null}
                     <span className="ml-2 text-xs font-normal text-muted-foreground">
                       {h.groups.length} pregão(ões) ·{" "}
                       {h.groups.reduce((n, g) => n + g.purchases.length, 0)} discos ·{" "}
@@ -319,7 +321,10 @@ function HouseTotalsTable({ data }: { data: ReturnType<typeof totalsByHouse> }) 
         <tbody className="tabular-nums">
           {data.houses.map((r) => (
             <tr key={r.house} className="border-t border-border">
-              <td className="py-1 pr-2">{r.house || "(casa não identificada)"}</td>
+              <td className="py-1 pr-2">
+                {r.house || "(casa não identificada)"}{" "}
+                {r.house ? <HouseUf house={r.house} /> : null}
+              </td>
               <td className="py-1 pr-2 text-right">{r.auctions}</td>
               <td className="py-1 pr-2 text-right">{r.discs}</td>
               <td className="py-1 pr-2 text-right">{brl(r.subtotal)}</td>
@@ -531,7 +536,7 @@ function PregaoCard({
             Pregão {g.idLeilao} ·{" "}
             {g.house ? <HouseLight house={g.house} className="-mx-1" /> : null}
             {g.house || "casa não identificada"}
-            {g.uf ? ` (${g.uf})` : ""}
+            {g.house ? <HouseUf house={g.house} uf={g.uf} className="ml-1" /> : null}
           </h3>
           <p className="text-xs text-muted-foreground">
             {brDate(g.date)} · {g.purchases.length} disco(s)

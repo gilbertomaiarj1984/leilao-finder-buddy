@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { bidMatchesSearch, watchedMatchesSearch } from "@/components/vinyl/grouping";
 import { DAY_PAGE, FUTURE_TAB, TODAY_INDEX, TODAY_PAGE } from "@/lib/day-bar";
-import { isManuallyFinished } from "@/lib/manually-finished-auctions";
 import { auctionDayPassed } from "@/lib/vinyl-parse";
 import { cn } from "@/lib/utils";
 
@@ -62,9 +61,15 @@ export function MobileDashboardHeader({
     watchedViewDay,
     bidsViewDay,
     setWatchedViewDay,
+    unsoldViewDay,
+    setUnsoldViewDay,
+    todayUnsold,
+    todayKey,
     setBidsViewDay,
     futureCount,
   } = d;
+  // Casas de hoje com lote sem lance achado (pregão encerrado ou em andamento).
+  const unsoldCount = todayUnsold.filter((h) => h.lots.length > 0).length;
   const [searching, setSearching] = useState(false);
   const [draft, setDraft] = useState(search);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -191,11 +196,7 @@ export function MobileDashboardHeader({
                       : (lots.data?.lots.filter(
                           (lot) =>
                             lot.dayKey === dayKey &&
-                            (index < TODAY_INDEX ||
-                              !(
-                                auctionDayPassed(lot.dayKey) ||
-                                isManuallyFinished(lot.idLeilao, lot.dayKey)
-                              )) &&
+                            (index < TODAY_INDEX || !auctionDayPassed(lot.dayKey)) &&
                             matchesSearch(lot),
                         ).length ?? 0);
                   return (
@@ -287,10 +288,11 @@ export function MobileDashboardHeader({
           {[
             {
               label: "Todos os lotes",
-              on: watchedViewDay !== day && bidsViewDay !== day,
+              on: watchedViewDay !== day && bidsViewDay !== day && unsoldViewDay !== day,
               click: () => {
                 setWatchedViewDay(null);
                 setBidsViewDay(null);
+                setUnsoldViewDay(null);
               },
             },
             {
@@ -298,6 +300,7 @@ export function MobileDashboardHeader({
               on: watchedViewDay === day,
               click: () => {
                 setBidsViewDay(null);
+                setUnsoldViewDay(null);
                 setWatchedViewDay(watchedViewDay === day ? null : day);
               },
             },
@@ -306,9 +309,23 @@ export function MobileDashboardHeader({
               on: bidsViewDay === day,
               click: () => {
                 setWatchedViewDay(null);
+                setUnsoldViewDay(null);
                 setBidsViewDay(bidsViewDay === day ? null : day);
               },
             },
+            ...(day === todayKey && unsoldCount > 0
+              ? [
+                  {
+                    label: `Sem lance (${unsoldCount})`,
+                    on: unsoldViewDay === day,
+                    click: () => {
+                      setWatchedViewDay(null);
+                      setBidsViewDay(null);
+                      setUnsoldViewDay(unsoldViewDay === day ? null : day);
+                    },
+                  },
+                ]
+              : []),
           ].map((c) => (
             <button
               key={c.label}
