@@ -1,4 +1,13 @@
-import { Disc3, ExternalLink, Eye, EyeOff, Gavel, Loader2, Target } from "lucide-react";
+import {
+  ChevronDown,
+  Disc3,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Gavel,
+  Loader2,
+  Target,
+} from "lucide-react";
 import { memo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -21,9 +30,13 @@ import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { demandRatio, gradeAtLeast } from "@/lib/analise-rank";
 import type { LotEconomics } from "@/lib/lot-score";
+import type { PastSales } from "@/lib/past-sales";
 import type { LotInsight } from "@/lib/use-lot-insights";
 import { bidIsWinning, formatDayLabel, type VinylLot } from "@/lib/vinyl-parse";
 import { OWNED_CONFIDENT_MIN } from "@/lib/wantlist-match";
+
+import { LotDetail } from "./lot-detail";
+import { PriceRangeBar } from "./price-range-bar";
 
 type AnaliseRowProps = {
   lot: VinylLot;
@@ -33,6 +46,11 @@ type AnaliseRowProps = {
   /** Valor atual exibido (texto do lote ou meu lance vencendo). */
   currentPrice: string;
   rank: number;
+  /** Vendas passadas do mesmo disco (Analytics), quando há. */
+  past: PastSales | null;
+  /** "Por que esta nota" aberto. */
+  open: boolean;
+  onToggleOpen: (id: string) => void;
   days: string[];
   watched: boolean;
   bidStatus: string | null;
@@ -68,6 +86,9 @@ function AnaliseLotRowImpl({
   eco,
   currentPrice,
   rank,
+  past,
+  open,
+  onToggleOpen,
   days,
   watched,
   bidStatus,
@@ -295,6 +316,9 @@ function AnaliseLotRowImpl({
           ) : (
             <p className="mt-1 text-muted-foreground">sem preço de mercado</p>
           )}
+          {past && eco.total !== null && !cards ? (
+            <PriceRangeBar total={eco.total} past={past} />
+          ) : null}
           {range ? (
             <p
               className="mt-1 text-muted-foreground"
@@ -316,7 +340,19 @@ function AnaliseLotRowImpl({
         </div>
       </div>
 
+      {open ? <LotDetail lot={lot} insight={insight} eco={eco} past={past} /> : null}
+
       <footer className="flex items-center justify-end gap-2 border-t border-border/60 bg-secondary/30 px-3 py-1.5">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="mr-auto h-8 gap-1 text-xs"
+          onClick={() => onToggleOpen(lot.id)}
+          aria-expanded={open}
+        >
+          <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
+          Por que esta nota
+        </Button>
         <ReevaluateIconButton
           lot={{
             id: lot.id,
