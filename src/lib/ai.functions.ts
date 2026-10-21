@@ -410,7 +410,8 @@ export const analyzeOnDemand = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
-    const { aiConfigured, selectLotsToEvaluate, evalLotsSync } = await import("./ai-eval.server");
+    const { aiConfigured, selectLotsToEvaluate, evalLotsSync, loadContextMasks } =
+      await import("./ai-eval.server");
     if (!aiConfigured()) {
       throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
     }
@@ -451,7 +452,13 @@ export const analyzeOnDemand = createServerFn({ method: "POST" })
         (lot) => lot.dayKey === data.day && (!data.house || lot.house === data.house),
       );
     }
-    const pending = selectLotsToEvaluate(scope, aiRows, Number.MAX_SAFE_INTEGER);
+    const pending = selectLotsToEvaluate(
+      scope,
+      aiRows,
+      Number.MAX_SAFE_INTEGER,
+      undefined,
+      await loadContextMasks(),
+    );
     const toEval = pending.slice(0, data.max);
     if (!toEval.length) {
       return {

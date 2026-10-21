@@ -1,4 +1,5 @@
 import { db } from "@/lib/db-client.server";
+import { albumWithIdentPriority } from "@/lib/album-pick";
 import { normalizeTracklist, type Track } from "@/lib/tracklist";
 
 /**
@@ -173,13 +174,24 @@ export async function updateLotTags(id: string, tags: string[]): Promise<string[
 export async function upsertLotAi(rows: LotAiRow[]): Promise<number> {
   if (!rows.length) return 0;
   const evaluatedAt = new Date().toISOString();
+  // Identificação segura (`lot_ident`, confiança alta) não é sobreposta pelo palpite da avaliação.
+  const identById = new Map<string, { album: string | null; confidence: string | null }>();
+  try {
+    const { getAllLotIdent } = await import("./lot-ident.server");
+    for (const r of await getAllLotIdent()) identById.set(r.id, r);
+  } catch (error) {
+    console.error(
+      "[lot-ai] não foi possível ler as identificações; gravando o álbum da avaliação",
+      error,
+    );
+  }
   const payload = rows.map((r) => ({
     id: r.id,
     title_hash: r.title_hash,
     score: r.score,
     rarity: r.rarity,
     deal: r.deal,
-    album: r.album,
+    album: albumWithIdentPriority(r.album, identById.get(r.id)),
     reason: r.reason,
     tags: r.tags,
     model: r.model,

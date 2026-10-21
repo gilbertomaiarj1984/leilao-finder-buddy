@@ -27,6 +27,7 @@ import {
 } from "./ai-context";
 import { DEFAULT_PANEL_CONFIG, type PanelConfig } from "./ai-panel-config";
 import { loadLotContexts } from "./ai-context.server";
+import { normalizeSuggestionMap } from "./discogs-price";
 import { DEAL_BAND_CHEAP, DEAL_BAND_EXPENSIVE } from "./lot-score";
 import {
   runText,
@@ -73,16 +74,69 @@ function promptFp(): string {
 }
 
 /**
- * Hash de `lot_ai.title_hash`: o do título + a versão do prompt (`.p3`) + a impressão do texto do
- * prompt. `PROMPT_VERSION` cobre mudanças na ESTRUTURA do contexto (ai-context.ts); o texto das
- * instruções é coberto pela impressão. Dados que mudam toda hora (have/want, preços) ficam FORA do
- * hash de propósito, senão a base inteira seria reavaliada sem parar. A identificação
- * (`lot_ident`) segue com `titleHash` puro.
+ * Letras dos blocos de contexto que o lote tinha quando foi avaliado: `e` estado, `m` mercado
+ * (Discogs), `v` vendas passadas. Entram no hash (`.c<letras>`) para a nota ser refeita quando um
+ * bloco que faltava chega depois — antes só uma falha ao CARREGAR o contexto reavaliava.
  */
-export function evalHash(title: string, contextOk = true): string {
+export function contextMask(ctx: LotContext | null | undefined): string {
+  if (!ctx) return "";
+  return `${ctx.estado ? "e" : ""}${ctx.mercado ? "m" : ""}${ctx.vendas ? "v" : ""}`;
+}
+
+/**
+ * Hash de `lot_ai.title_hash`: o do título + a versão do prompt (`.p4`) + a impressão do texto do
+ * prompt + (opcional) a máscara do contexto presente (`.cemv`). `PROMPT_VERSION` cobre mudanças na
+ * ESTRUTURA do contexto (ai-context.ts); o texto das instruções é coberto pela impressão. Dados que
+ * mudam toda hora (have/want, preços) ficam FORA do hash de propósito, senão a base inteira seria
+ * reavaliada sem parar. A identificação (`lot_ident`) segue com `titleHash` puro.
+ */
+export function evalHash(title: string, contextOk = true, mask = ""): string {
   // Sufixo "x": o contexto falhou ao carregar e a nota saiu sem ele — o hash diverge do esperado
   // (`evalHash(title)`), então o lote volta para a fila em vez de ficar sem contexto para sempre.
-  return `${titleHash(title)}.p${PROMPT_VERSION}.${promptFp()}${contextOk ? "" : "x"}`;
+  return `${titleHash(title)}.p${PROMPT_VERSION}.${promptFp()}${contextOk ? "" : "x"}${mask ? `.c${mask}` : ""}`;
+}
+
+/**
+ * O hash gravado ainda vale para este título e para o contexto de hoje (`mask`)? Vale quando a
+ * base (título + prompt) é a mesma e o contexto gravado já tinha todos os blocos que existem agora.
+ * Bloco que sumiu não reavalia (só o que chegou).
+ */
+export function evalHashCurrent(stored: string, title: string, mask = ""): boolean {
+  const m = /\.c([emv]+)$/.exec(stored);
+  const storedMask = m?.[1] ?? "";
+  const base = m ? stored.slice(0, m.index) : stored;
+  return base === evalHash(title) && [...mask].every((c) => storedMask.includes(c));
+}
+
+/** O hash sem a máscara de contexto (`.cem`): é o que identifica "o mesmo título e prompt" nas falhas. */
+export function stripHashMask(hash: string): string {
+  return hash.replace(/\.c[emv]+$/, "");
+}
+
+/**
+ * Máscara de contexto de HOJE de cada lote, para a seleção (`selectLotsToEvaluate`): só `e` (há
+ * Disco ou Capa em `lot_condition`) e `m` (casou no Discogs e há preço por condição em
+ * `lot_market`), lidos das tabelas já em cache, sem montar o contexto inteiro (vendas e perfil
+ * custam caro e chegam raramente depois da nota). Falhou a leitura: vazia, nada é reavaliado por isso.
+ */
+export async function loadContextMasks(): Promise<(id: string) => string> {
+  try {
+    const [{ getAllLotCondition }, { getAllLotMarket }] = await Promise.all([
+      import("./lot-condition.server"),
+      import("./lot-market.server"),
+    ]);
+    const [conds, markets] = await Promise.all([getAllLotCondition(), getAllLotMarket()]);
+    const withEstado = new Set(conds.filter((r) => r.media || r.sleeve).map((r) => r.id));
+    const withMercado = new Set(
+      markets
+        .filter((r) => r.matched && normalizeSuggestionMap(r.suggested_by_condition) !== null)
+        .map((r) => r.id),
+    );
+    return (id) => `${withEstado.has(id) ? "e" : ""}${withMercado.has(id) ? "m" : ""}`;
+  } catch (error) {
+    console.error("[ai-eval] não foi possível ler o contexto presente; seguindo sem ele", error);
+    return () => "";
+  }
 }
 
 /**
@@ -97,18 +151,30 @@ export function selectLotsToEvaluate(
   aiRows: (Pick<LotAiRow, "id" | "title_hash"> & { eval_price?: number | null })[],
   max = MAX_PER_ROUND,
   repriceIds?: ReadonlySet<string>,
-  hashOf: (title: string) => string = evalHash,
+  maskOf: (id: string) => string = () => "",
+  skipIds?: ReadonlySet<string>,
 ): EvalLot[] {
   const known = new Map(aiRows.map((r) => [r.id, r]));
+  return pickLots(lots, max, skipIds, (lot) => {
+    const row = known.get(lot.id);
+    if (!row || !evalHashCurrent(row.title_hash, lot.title, maskOf(lot.id))) return true;
+    return Boolean(
+      repriceIds?.has(lot.id) && priceRoseSinceEval(row.eval_price, parsePrice(lot.price)),
+    );
+  });
+}
+
+/** Percorre os lotes em ordem e junta os que `needs` marca, sem os de `skipIds`, até `max`. */
+function pickLots(
+  lots: Pick<VinylLot, "id" | "title" | "price" | "house" | "image">[],
+  max: number,
+  skipIds: ReadonlySet<string> | undefined,
+  needs: (lot: Pick<VinylLot, "id" | "title" | "price" | "house" | "image">) => boolean,
+): EvalLot[] {
   const out: EvalLot[] = [];
   for (const lot of lots) {
-    if (!lot.id || !lot.title) continue;
-    const row = known.get(lot.id);
-    if (row && row.title_hash === hashOf(lot.title)) {
-      const reprice =
-        repriceIds?.has(lot.id) && priceRoseSinceEval(row.eval_price, parsePrice(lot.price));
-      if (!reprice) continue;
-    }
+    if (!lot.id || !lot.title || skipIds?.has(lot.id)) continue;
+    if (!needs(lot)) continue;
     out.push({
       id: lot.id,
       title: lot.title,
@@ -219,7 +285,14 @@ export function parseEvalObject(
 ): Omit<LotAiRow, "id" | "title_hash" | "model" | "eval_price"> | null {
   const obj = extractJsonObject(text);
   if (!obj) return null;
-  const scoreRaw = typeof obj["score"] === "number" ? obj["score"] : Number(obj["score"] ?? NaN);
+  // `Number("")` vale 0: texto vazio não é nota.
+  const rawScore = obj["score"];
+  const scoreRaw =
+    typeof rawScore === "number"
+      ? rawScore
+      : typeof rawScore === "string" && rawScore.trim() !== ""
+        ? Number(rawScore)
+        : NaN;
   const score = Number.isFinite(scoreRaw) ? Math.max(0, Math.min(100, Math.round(scoreRaw))) : null;
   const rarity =
     typeof obj["rarity"] === "string" && (RARITIES as readonly string[]).includes(obj["rarity"])
@@ -240,7 +313,10 @@ export function parseEvalObject(
         .map((t) => t.slice(0, 40))
         .slice(0, 8)
     : [];
-  if (score === null && !rarity && !deal && !album && !reason && tags.length === 0) return null;
+  // Sem nota a avaliação não serve (a nota ordena a lista e alimenta e-mails e avisos), e gravá-la
+  // com o hash final impediria de refazer. Resposta sem nota vira falha e entra no controle de falhas.
+  if (score === null) return null;
+  if (!rarity && !deal && !album && !reason) return null;
   return { score, rarity, deal, album, reason, tags, tracklist: null };
 }
 
@@ -275,7 +351,7 @@ export async function submitEvalBatch(lots: EvalLot[]): Promise<SubmitResult> {
   // O Batches congela o contexto (estado, mercado, frete) no momento do envio.
   const { byId: contexts, cfg, ok: contextOk } = await loadLotContexts(lots.map((l) => l.id));
   const requests = lots.map((lot) => {
-    hashes[lot.id] = evalHash(lot.title, contextOk);
+    hashes[lot.id] = evalHash(lot.title, contextOk, contextMask(contexts.get(lot.id)));
     const price = parsePrice(lot.price);
     if (price != null && price > 0) prices[lot.id] = price;
     return { custom_id: lot.id, params: buildLotParams(lot, model, contexts.get(lot.id), cfg) };
@@ -286,7 +362,8 @@ export async function submitEvalBatch(lots: EvalLot[]): Promise<SubmitResult> {
   return { batchId: batch.id, hashes, prices, count: requests.length };
 }
 
-type CollectResult = { done: boolean; rows: LotAiRow[] };
+/** `failed`: lotes do batch que não geraram avaliação (erro, expirado, cancelado ou resposta ilegível). */
+type CollectResult = { done: boolean; rows: LotAiRow[]; failed: string[] };
 
 /**
  * Coleta um batch. Se ainda processando, `{done:false}`. Se terminou, parseia os
@@ -301,14 +378,21 @@ export async function collectEvalBatch(
   const client = await getAnthropicClient();
   const model = await resolveAnthropicModel();
   const batch = await client.messages.batches.retrieve(batchId);
-  if (batch.processing_status !== "ended") return { done: false, rows: [] };
+  if (batch.processing_status !== "ended") return { done: false, rows: [], failed: [] };
 
   const rows: LotAiRow[] = [];
+  const failed: string[] = [];
   for await (const result of await client.messages.batches.results(batchId)) {
-    if (result.result.type !== "succeeded") continue;
-    const parsed = parseEvalObject(messageText(result.result.message));
-    if (!parsed) continue;
     const id = result.custom_id;
+    if (result.result.type !== "succeeded") {
+      failed.push(id);
+      continue;
+    }
+    const parsed = parseEvalObject(messageText(result.result.message));
+    if (!parsed) {
+      failed.push(id);
+      continue;
+    }
     rows.push({
       id,
       title_hash: hashes[id] ?? "",
@@ -323,7 +407,9 @@ export async function collectEvalBatch(
       eval_price: prices[id] ?? null,
     });
   }
-  return { done: true, rows };
+  if (failed.length)
+    console.warn(`[ai-eval] batch ${batchId}: ${failed.length} lote(s) sem avaliação`);
+  return { done: true, rows, failed };
 }
 
 // ---------------------------------------------------------------------------
@@ -393,7 +479,9 @@ export function parseIdentObject(
       : null;
   const yearRaw = Number(obj["year"]);
   const year =
-    Number.isFinite(yearRaw) && yearRaw >= 1900 && yearRaw <= 2100 ? Math.round(yearRaw) : null;
+    Number.isFinite(yearRaw) && yearRaw >= 1900 && yearRaw <= new Date().getFullYear() + 1
+      ? Math.round(yearRaw)
+      : null;
   const c = typeof obj["confidence"] === "string" ? obj["confidence"].toLowerCase().trim() : "";
   const confidence = (CONFIDENCES as readonly string[]).includes(c) ? c : null;
   if (album === null && year === null && confidence === null) return null;
@@ -408,9 +496,16 @@ export function selectLotsToIdentify(
   lots: Pick<VinylLot, "id" | "title" | "price" | "house" | "image">[],
   identRows: Pick<LotIdentRow, "id" | "title_hash">[],
   max = MAX_PER_ROUND,
+  skipIds?: ReadonlySet<string>,
 ): EvalLot[] {
   // `lot_ident.title_hash` é o hash puro do título (sem a versão do prompt da avaliação).
-  return selectLotsToEvaluate(lots, identRows, max, undefined, titleHash);
+  const known = new Map(identRows.map((r) => [r.id, r]));
+  return pickLots(
+    lots,
+    max,
+    skipIds,
+    (lot) => known.get(lot.id)?.title_hash !== titleHash(lot.title),
+  );
 }
 
 /**
@@ -422,11 +517,12 @@ export function selectLotsToReident(
   lots: Pick<VinylLot, "id" | "title" | "price" | "house" | "image">[],
   identRows: Pick<LotIdentRow, "id" | "confidence" | "source">[],
   max = MAX_PER_ROUND,
+  skipIds?: ReadonlySet<string>,
 ): EvalLot[] {
   const byId = new Map(identRows.map((r) => [r.id, r]));
   const out: EvalLot[] = [];
   for (const lot of lots) {
-    if (!lot.id || !lot.title) continue;
+    if (!lot.id || !lot.title || skipIds?.has(lot.id)) continue;
     if (!usableImage(lot.image)) continue;
     const row = byId.get(lot.id);
     if (!row || row.source !== "title" || row.confidence !== "baixa") continue;
@@ -455,7 +551,7 @@ export async function submitIdentBatch(lots: EvalLot[], withImage: boolean): Pro
   return { batchId: batch.id, hashes, count: requests.length };
 }
 
-type CollectIdentResult = { done: boolean; rows: LotIdentRow[] };
+type CollectIdentResult = { done: boolean; rows: LotIdentRow[]; failed: string[] };
 
 /**
  * Coleta um batch de identificação. `source` marca de onde veio a identificação
@@ -470,14 +566,21 @@ export async function collectIdentBatch(
   const client = await getAnthropicClient();
   const model = await resolveAnthropicModel();
   const batch = await client.messages.batches.retrieve(batchId);
-  if (batch.processing_status !== "ended") return { done: false, rows: [] };
+  if (batch.processing_status !== "ended") return { done: false, rows: [], failed: [] };
 
   const rows: LotIdentRow[] = [];
+  const failed: string[] = [];
   for await (const result of await client.messages.batches.results(batchId)) {
-    if (result.result.type !== "succeeded") continue;
-    const parsed = parseIdentObject(messageText(result.result.message));
-    if (!parsed) continue;
     const id = result.custom_id;
+    if (result.result.type !== "succeeded") {
+      failed.push(id);
+      continue;
+    }
+    const parsed = parseIdentObject(messageText(result.result.message));
+    if (!parsed) {
+      failed.push(id);
+      continue;
+    }
     rows.push({
       id,
       title_hash: hashes[id] ?? "",
@@ -488,7 +591,9 @@ export async function collectIdentBatch(
       model,
     });
   }
-  return { done: true, rows };
+  if (failed.length)
+    console.warn(`[ai-eval] batch ${batchId}: ${failed.length} lote(s) sem identificação`);
+  return { done: true, rows, failed };
 }
 
 /** Concorrência das chamadas síncronas sob demanda (mantém o servidor dentro do tempo). */
@@ -505,6 +610,8 @@ export type SyncOutcome<T> = {
   served: AiProvider | null;
   switched: boolean;
   failed: number;
+  /** Ids dos lotes que falharam (só a avaliação e a identificação preenchem; alimenta `ai-failures`). */
+  failedIds?: string[];
   error: string | null;
   /** Motivo de cada provedor pulado/que falhou no caminho até o que atendeu (ver `runText`). */
   attemptErrors: Partial<Record<AiProvider, string>>;
@@ -556,6 +663,7 @@ export async function evalLotsSync(
   const rows: LotAiRow[] = [];
   const tracker = new ProviderTracker();
   let failed = 0;
+  const failedIds: string[] = [];
   let firstError: string | null = null;
   // DUP(pool): mesmo laço de workers com `cursor` em 8 lugares — extrair `runPool` ao mexer aqui (AGENTS.md, "Código repetido").
   let cursor = 0;
@@ -577,7 +685,7 @@ export async function evalLotsSync(
         if (parsed) {
           rows.push({
             id: lot.id,
-            title_hash: evalHash(lot.title, contextOk),
+            title_hash: evalHash(lot.title, contextOk, contextMask(contexts.get(lot.id))),
             score: parsed.score,
             rarity: parsed.rarity,
             deal: parsed.deal,
@@ -591,11 +699,13 @@ export async function evalLotsSync(
         } else {
           // Resposta que não vira JSON de avaliação: conta como falha (senão a UI diria "já avaliado").
           failed += 1;
+          failedIds.push(lot.id);
           if (!firstError) firstError = "resposta da IA ilegível";
           console.error(`[ai-eval] resposta ilegível para o lote ${lot.id}`);
         }
       } catch (error) {
         failed += 1;
+        failedIds.push(lot.id);
         if (!firstError) firstError = (error as Error)?.message || String(error);
         console.error(`[ai-eval] falha ao avaliar o lote ${lot.id}`, error);
       }
@@ -610,6 +720,7 @@ export async function evalLotsSync(
     served: tracker.served(provider),
     switched: tracker.switched,
     failed,
+    failedIds,
     error: firstError,
     attemptErrors: tracker.errors(),
   };
@@ -681,6 +792,7 @@ export async function identLotsSyncRows(
   const tracker = new ProviderTracker();
   const source: "title" | "image" = withImage ? "image" : "title";
   let failed = 0;
+  const failedIds: string[] = [];
   let firstError: string | null = null;
   // DUP(pool): mesmo laço de workers com `cursor` em 8 lugares — extrair `runPool` ao mexer aqui (AGENTS.md, "Código repetido").
   let cursor = 0;
@@ -705,9 +817,15 @@ export async function identLotsSyncRows(
             source,
             model: r.model,
           });
+        } else {
+          // Resposta que não vira identificação: antes sumia em silêncio e o lote voltava à fila.
+          failed += 1;
+          failedIds.push(lot.id);
+          if (!firstError) firstError = "resposta da IA ilegível";
         }
       } catch (error) {
         failed += 1;
+        failedIds.push(lot.id);
         if (!firstError) firstError = (error as Error)?.message || String(error);
         console.error(`[ai-eval] falha ao identificar (rows) o lote ${lot.id}`, error);
       }
@@ -722,6 +840,7 @@ export async function identLotsSyncRows(
     served: tracker.served(provider),
     switched: tracker.switched,
     failed,
+    failedIds,
     error: firstError,
     attemptErrors: tracker.errors(),
   };
