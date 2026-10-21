@@ -9,12 +9,18 @@ import {
 } from "@/components/vinyl/ai-score-utils";
 import { buildOwnedCandidates } from "@/lib/collector-profile";
 import { effectiveTextRules } from "@/lib/condition-text";
-import { parseConditionFromText, scoreCondition, type Condition, type Grade } from "@/lib/grading";
+import { parseConditionFromText, type Condition } from "@/lib/grading";
 import { houseKey, type RatingLevel } from "@/lib/house-rating";
+import {
+  conditionMap,
+  demandMap,
+  lotIdentityMap,
+  ownedAutoMap,
+  ownedHitFromResolution,
+} from "@/lib/lot-insight-build";
 import { possibleTrashMap, type ExclusionSignal } from "@/lib/lot-exclusion";
 import { parseAiAlbum } from "@/lib/lot-score";
 import {
-  buildLotIdentity,
   lookoutCandidates,
   LOOKOUT_CONFIDENT_MIN,
   matchLookoutForLot,
@@ -39,12 +45,7 @@ import {
   useTrashDenylistQuery,
 } from "@/lib/queries";
 import type { VinylLot } from "@/lib/vinyl-parse";
-import {
-  ownedMatchForLot,
-  resolveOwned,
-  type LotIdentity,
-  type OwnedHit,
-} from "@/lib/wantlist-match";
+import { resolveOwned, type LotIdentity, type OwnedHit } from "@/lib/wantlist-match";
 
 /** Casamento do lote com um disco do De olho (rótulo + confiança) para o 🎯 da linha. */
 export type LookoutMark = Pick<LookoutHit, "label" | "score" | "confirmed" | "yearPending">;
@@ -72,9 +73,8 @@ export type LotInsight = {
  * (Disco/Capa), demanda do catálogo, "já tenho" (Coleção), De olho e semáforo da casa.
  * Leituras só — nenhuma mutação. O mapa tem identidade estável enquanto os dados não mudam.
  *
- * DUP(lot-insights): a home (`use-dashboard-data.tsx`) mantém a sua própria cópia desse pipeline
- * (condição, mercado, demanda e Coleção), que também alimenta os diálogos de decisão da Coleção.
- * Migrar a home para este hook é a consolidação pendente (ver `docs/pendencias.md`).
+ * As peças puras (estado, demanda, identidade, "já tenho") vêm de `lot-insight-build.ts`, as
+ * mesmas que a home usa em `use-dashboard-data.tsx` com as queries escopadas dela.
  */
 export function useLotInsights(allLots: VinylLot[]) {
   const lotAiQuery = useLotAiQuery();
@@ -122,27 +122,11 @@ export function useLotInsights(allLots: VinylLot[]) {
   }, [aiAlbumSig, identAlbumSig]);
 
   // ---- Estado (Disco/Capa) -----------------------------------------------------------------
-  const conditionById = useMemo(() => {
-    const map = new Map<string, Condition>();
-    for (const r of lotConditionQuery.data ?? []) {
-      const rawMedia = (r.media || null) as Grade | null;
-      const rawSleeve = (r.sleeve || null) as Grade | null;
-      // `scoreCondition` espelha o lado desconhecido (padrão do app).
-      const { media, sleeve, score, faixa } = scoreCondition(rawMedia, rawSleeve);
-      const insert = r.insert_state === "sim" ? "sim" : r.insert_state === "nao" ? "nao" : null;
-      if (!media && !sleeve && insert === null) continue; // indefinido → não guarda
-      map.set(r.id, { media, sleeve, insert, score, faixa, source: "regex", raw: "" });
-    }
-    return map;
-  }, [lotConditionQuery.data]);
-  const demandById = useMemo(() => {
-    const map = new Map<string, { views: number | null; bids: number | null }>();
-    for (const r of lotConditionQuery.data ?? []) {
-      if (r.views == null && r.bids == null) continue;
-      map.set(r.id, { views: r.views ?? null, bids: r.bids ?? null });
-    }
-    return map;
-  }, [lotConditionQuery.data]);
+  const conditionById = useMemo(
+    () => conditionMap(lotConditionQuery.data),
+    [lotConditionQuery.data],
+  );
+  const demandById = useMemo(() => demandMap(lotConditionQuery.data), [lotConditionQuery.data]);
   const textRules = useMemo(
     () => effectiveTextRules(aiPanelQuery.data?.rules, aiPanelQuery.data?.disabledRules),
     [aiPanelQuery.data],
@@ -157,28 +141,10 @@ export function useLotInsights(allLots: VinylLot[]) {
 
   // ---- Identidade do lote (De olho e Coleção) -----------------------------------------------
   const artistAliases = useMemo(() => aliasesQuery.data?.artists ?? {}, [aliasesQuery.data]);
-  const identityById = useMemo(() => {
-    const map = new Map<string, LotIdentity>();
-    for (const lot of allLots) {
-      try {
-        const market = marketById.get(lot.id);
-        map.set(
-          lot.id,
-          buildLotIdentity({
-            title: lot.title,
-            artist: lot.artist,
-            album: albumById.get(lot.id) ?? null,
-            marketTitle: market?.releaseTitle ?? null,
-            marketYear: market?.year ?? null,
-            aliases: artistAliases,
-          }),
-        );
-      } catch {
-        /* um lote problemático não derruba a tela */
-      }
-    }
-    return map;
-  }, [allLots, albumById, marketById, artistAliases]);
+  const identityById = useMemo(
+    () => lotIdentityMap(allLots, albumById, marketById, artistAliases),
+    [allLots, albumById, marketById, artistAliases],
+  );
 
   // ---- De olho -----------------------------------------------------------------------------
   const lookoutCands = useMemo(
@@ -226,27 +192,19 @@ export function useLotInsights(allLots: VinylLot[]) {
     () => new Set(keywordDenylistQuery.data ?? []),
     [keywordDenylistQuery.data],
   );
-  const ownedAutoById = useMemo(() => {
-    const map = new Map<string, OwnedHit>();
-    for (const lot of allLots) {
-      try {
-        const exactId = ownedByLotId.get(lot.id);
-        if (exactId) {
-          map.set(lot.id, { id: exactId, label: collLabel(exactId), score: 1 });
-          continue;
-        }
-        if (!ownedCands.length) continue;
-        const identity = identityById.get(lot.id);
-        if (!identity) continue;
-        const best = ownedMatchForLot(ownedCands, identity, keywordDenylist);
-        if (best) map.set(lot.id, best);
-      } catch {
-        /* falha de casamento de um lote é ignorada */
-      }
-    }
-    return map;
+  const ownedAutoById = useMemo(
+    () =>
+      ownedAutoMap({
+        lots: allLots,
+        ownedByLotId,
+        ownedCands,
+        identityById,
+        denylist: keywordDenylist,
+        labelOf: collLabel,
+      }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- collLabel depende de collById
-  }, [allLots, ownedCands, ownedByLotId, identityById, collById, keywordDenylist]);
+    [allLots, ownedCands, ownedByLotId, identityById, collById, keywordDenylist],
+  );
   const EMPTY_IDENTITY: LotIdentity = useMemo(
     () => ({ text: "", tokens: new Set<string>(), years: new Set<number>() }),
     [],
@@ -293,11 +251,7 @@ export function useLotInsights(allLots: VinylLot[]) {
           identityById.get(lot.id) ?? EMPTY_IDENTITY,
           (itemId) => ownedCands.find((c) => c.id === itemId),
         );
-        if (res.kind === "linked")
-          owned = { id: res.itemId, label: collLabel(res.itemId), score: 1 };
-        else if (res.kind === "auto") owned = res.hit;
-        else if (res.kind === "suggested")
-          owned = { id: res.itemId, label: collLabel(res.itemId), score: res.score };
+        owned = ownedHitFromResolution(res, collLabel);
       } catch {
         /* qualquer erro no casamento vira "sem relação" */
       }

@@ -19,7 +19,7 @@ import {
 import { useAnalyzeScope } from "@/components/vinyl/use-ai-actions";
 import { useTodayUnsold } from "@/components/vinyl/use-today-unsold";
 import { effectiveTextRules } from "@/lib/condition-text";
-import { type Condition, type Grade, parseConditionFromText, scoreCondition } from "@/lib/grading";
+import { type Condition, parseConditionFromText } from "@/lib/grading";
 import {
   parseAiAlbum,
   toLotAi,
@@ -45,7 +45,6 @@ import type { AiProvider } from "@/lib/ai-provider";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { attachLookout, setLookoutLink, toggleLookout } from "@/lib/lookout.functions";
 import {
-  buildLotIdentity,
   lookoutCandidates,
   LOOKOUT_CONFIDENT_MIN,
   matchLookoutForLot,
@@ -58,6 +57,13 @@ import { useBidCoveredAlerts } from "@/lib/bid-alerts";
 import type { CollectionItem } from "@/lib/collection.server";
 import { dismissPossibleTrash, excludeLot } from "@/lib/lot-exclusion.functions";
 import { possibleTrashMap } from "@/lib/lot-exclusion";
+import {
+  conditionMap,
+  demandMap,
+  lotIdentityMap,
+  ownedAutoMap,
+  ownedHitFromResolution,
+} from "@/lib/lot-insight-build";
 import { BIDS_ACCUM_STORAGE_KEY, saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
 import {
   bidIsCovered,
@@ -74,7 +80,6 @@ import {
 import { priceRoseSinceEval } from "@/lib/ai-reprice";
 import { buildOwnedCandidates } from "@/lib/collector-profile";
 import {
-  ownedMatchForLot,
   ownedSignatureFromLot,
   resolveOwned,
   type CollectionLinks,
@@ -496,20 +501,10 @@ export function useDashboardData() {
   // alimentado pelo descritivo do catálogo — mais rico); cai no parse do TÍTULO quando não
   // há linha no cache ainda (ou ela ficou indefinida).
   const lotConditionQuery = useHomeLotConditionQuery();
-  const conditionById = useMemo(() => {
-    const map = new Map<string, Condition>();
-    for (const r of lotConditionQuery.data ?? []) {
-      const rawMedia = (r.media || null) as Grade | null;
-      const rawSleeve = (r.sleeve || null) as Grade | null;
-      // scoreCondition ESPELHA quando só um lado é conhecido (padrão do app) — usa o retorno
-      // (não os campos crus) para o badge refletir isso mesmo em linhas antigas do cache.
-      const { media, sleeve, score, faixa } = scoreCondition(rawMedia, rawSleeve);
-      const insert = r.insert_state === "sim" ? "sim" : r.insert_state === "nao" ? "nao" : null;
-      if (!media && !sleeve && insert === null) continue; // indefinido → não guarda
-      map.set(r.id, { media, sleeve, insert, score, faixa, source: "regex", raw: "" });
-    }
-    return map;
-  }, [lotConditionQuery.data]);
+  const conditionById = useMemo(
+    () => conditionMap(lotConditionQuery.data),
+    [lotConditionQuery.data],
+  );
   // Regras de texto do painel de IA (expressões do usuário + as do app não desligadas).
   const textRules = useMemo(
     () => effectiveTextRules(aiPanelQuery.data?.rules, aiPanelQuery.data?.disabledRules),
@@ -589,14 +584,7 @@ export function useDashboardData() {
     onSuccess: () => toast.success('Marcado como "não é lixo" — o sistema aprendeu'),
   });
   // Demanda (visualizações/lances) por lote, do mesmo cache `lot_condition`.
-  const demandById = useMemo(() => {
-    const map = new Map<string, { views: number | null; bids: number | null }>();
-    for (const r of lotConditionQuery.data ?? []) {
-      if (r.views == null && r.bids == null) continue;
-      map.set(r.id, { views: r.views ?? null, bids: r.bids ?? null });
-    }
-    return map;
-  }, [lotConditionQuery.data]);
+  const demandById = useMemo(() => demandMap(lotConditionQuery.data), [lotConditionQuery.data]);
   const demandFor = (lot: { id?: string }) => (lot.id ? demandById.get(lot.id) : undefined) ?? null;
 
   // Coleção do usuário: discos que ele JÁ possui (`collection_items`). Usada só para marcar
@@ -649,51 +637,25 @@ export function useDashboardData() {
   }, [collectionQuery.data]);
   // Identidade de cada lote (título + artista efetivo + álbum IA + release Discogs), reusada
   // pelo casamento automático, pelo aprendizado e pela assinatura das decisões.
-  const identityById = useMemo(() => {
-    const map = new Map<string, LotIdentity>();
-    for (const lot of lots.data?.lots ?? []) {
-      try {
-        const market = marketById.get(lot.id);
-        map.set(
-          lot.id,
-          buildLotIdentity({
-            title: lot.title,
-            artist: lot.artist,
-            album: albumById.get(lot.id) ?? null,
-            marketTitle: market?.releaseTitle ?? null,
-            marketYear: market?.year ?? null,
-            aliases: artistAliases,
-          }),
-        );
-      } catch {
-        /* um lote problemático não pode derrubar a home */
-      }
-    }
-    return map;
-  }, [lots.data, albumById, marketById, artistAliases]);
+  const identityById = useMemo(
+    () => lotIdentityMap(lots.data?.lots ?? [], albumById, marketById, artistAliases),
+    [lots.data, albumById, marketById, artistAliases],
+  );
   // Casamento AUTOMÁTICO cru (antes de override/aprendizado): peça exata (score 1) ou ≥50%.
-  const ownedAutoById = useMemo(() => {
-    const map = new Map<string, OwnedHit>();
-    for (const lot of lots.data?.lots ?? []) {
-      try {
-        const exactId = ownedByLotId.get(lot.id);
-        if (exactId) {
-          map.set(lot.id, { id: exactId, label: collLabel(exactId), score: 1 });
-          continue;
-        }
-        if (!ownedCands.length) continue;
-        const identity = identityById.get(lot.id);
-        if (!identity) continue;
-        const best = ownedMatchForLot(ownedCands, identity, collectionKeywordDenylist);
-        if (best) map.set(lot.id, best);
-      } catch {
-        /* idem: falha de casamento de um lote é ignorada */
-      }
-    }
-    return map;
+  const ownedAutoById = useMemo(
+    () =>
+      ownedAutoMap({
+        lots: lots.data?.lots ?? [],
+        ownedByLotId,
+        ownedCands,
+        identityById,
+        denylist: collectionKeywordDenylist,
+        labelOf: collLabel,
+      }),
     // collLabel depende de collById (memo estável); ownedByLotId/identityById cobrem os dados.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ownedCands, ownedByLotId, identityById, collById, collectionKeywordDenylist]);
+    [ownedCands, ownedByLotId, identityById, collById, collectionKeywordDenylist],
+  );
 
   // "Atualizar relações": rebusca Coleção, vínculos, rejeições ("não tenho") e termos negados —
   // a Coleção fica em cache por 1h, então discos recém-adicionados (aqui ou em outro aparelho)
@@ -738,17 +700,7 @@ export function useDashboardData() {
   };
   // `OwnedHit` efetivo para o ícone do card (cinza quando null).
   const ownedFor = (lot: { id: string }): OwnedHit | null => {
-    const res = ownedResolutionFor(lot);
-    switch (res.kind) {
-      case "linked":
-        return { id: res.itemId, label: collLabel(res.itemId), score: 1 };
-      case "auto":
-        return res.hit;
-      case "suggested":
-        return { id: res.itemId, label: collLabel(res.itemId), score: res.score };
-      default:
-        return null; // none / rejected → cinza
-    }
+    return ownedHitFromResolution(ownedResolutionFor(lot), collLabel);
   };
 
   // Painel de relação (abre ao tocar o ícone) + assinatura da decisão + gravação. O lote é

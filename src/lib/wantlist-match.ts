@@ -533,7 +533,7 @@ function wordsOf(id: LotIdentity): string[] {
  *  - `numbers` — números do nome (volume/parte), que precisam bater exatamente;
  *  - `selfTitled` — disco homônimo (o nome do disco é o nome do artista).
  */
-type OwnedCandidate = {
+export type OwnedCandidate = {
   id: string;
   label: string; // "Artista Álbum" para o tooltip
   artistTokens: string[];
