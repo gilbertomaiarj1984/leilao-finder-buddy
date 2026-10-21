@@ -166,9 +166,9 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
 
 ## Código repetido (marcado com `// DUP(...)`; regra no AGENTS.md)
 
-Achar: `grep -rn "DUP(" src`. Pendentes: `DUP(lot-insights)` — pipeline condição/mercado/demanda/Coleção da home (`use-dashboard-data.tsx`) × `useLotInsights` (Análise); `DUP(pool)` — laço de workers com `cursor` em 8 lugares
+Achar: `grep -rn "DUP(" src`. Pendentes: `DUP(pool)` — laço de workers com `cursor` em 8 lugares
 (extrair `runPool`); `DUP(modelos)` — lista/padrão dos modelos Gemini em 4 arquivos (`ai-models.ts`).
-Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score.ts`.
+Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score.ts`. Em v0.164.0: pipeline de insights de lote (home × Análise) em `lot-insight-build.ts`.
 
 ## Análise de Lotes — o que ficou de fora das fases 1–4 (v0.161.0)
 
@@ -179,8 +179,9 @@ Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score
 - **Medir o efeito do contexto do prompt** (comparar notas antes/depois da v0.142.0 pela calibração do painel).
 - **Pendentes exatos**: a cobertura da Análise conta lote sem `lot_ai`/sem nota; o servidor também reavalia por
   mudança de título/versão do prompt (hash só existe no servidor). Uma server fn de contagem daria o número exato.
-- **`DUP(lot-insights)`**: migrar a home para `useLotInsights` (hoje a cópia dela também alimenta os diálogos de
-  decisão da Coleção).
+- ~~`DUP(lot-insights)`~~ resolvido em v0.164.0: home e Análise usam as mesmas funções puras de
+  `src/lib/lot-insight-build.ts`; a home segue com as queries escopadas e os acessores por lote, que alimentam os
+  diálogos de decisão da Coleção.
 - **Pesos do índice de garimpo** são palpite: calibrar com compras reais (`purchases`) antes de tratá-lo como
   critério padrão.
 

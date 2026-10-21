@@ -73,7 +73,7 @@
     (`analise-sort`, `analise-view`, via `usePersistedState`).
   - **`useLotInsights(lots)`** (`src/lib/use-lot-insights.ts`): um `Map` id → `LotInsight` (nota, álbum,
     mercado ancorado, condição, demanda, Coleção, De olho, nível da casa). Nasceu da consolidação pedida em
-    `docs/pendencias.md`; a home ainda tem a cópia dela (`DUP(lot-insights)`).
+    `docs/pendencias.md`; as peças puras (estado, demanda, identidade, "já tenho") ficam em `src/lib/lot-insight-build.ts` e são as mesmas da home (v0.164.0), que mantém só as queries escopadas e os acessores por lote.
   - **Fase 2 (v0.159.0):** faixa de **visões prontas** com contagem (Garimpo do dia, Pechinchas, Raros,
     Meu radar, Vigiados e lances — `PRESETS` em `analise-rank.ts`, calculadas sobre todos os lotes avaliados; a
     escolhida fica salva em `analise-preset` e soma-se aos filtros); visualização **Por casa** (agrupa o bloco
