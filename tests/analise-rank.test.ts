@@ -5,6 +5,7 @@ import {
   demandRatio,
   gradeAtLeast,
   isSortKey,
+  PRESETS,
   type RankInput,
 } from "@/lib/analise-rank";
 import type { LotEconomics } from "@/lib/lot-score";
@@ -67,5 +68,47 @@ describe("gradeAtLeast", () => {
   test("sem grau não passa; sem mínimo passa tudo", () => {
     expect(gradeAtLeast(null, "G+")).toBe(false);
     expect(gradeAtLeast(null, "")).toBe(true);
+  });
+});
+
+describe("PRESETS", () => {
+  const base = {
+    score: 80,
+    eco: {
+      total: 100,
+      ref: 200,
+      ratio: 0.5,
+      deal: "barato",
+      capCheap: 115,
+      capFair: 204,
+      potential: 100,
+    } as LotEconomics,
+    dayKey: "2026-10-21",
+    time: "19:30h",
+    want: null,
+    have: null,
+    rarity: "raro",
+    radar: false,
+    watched: false,
+    hasBid: false,
+    weakDisc: false,
+    ownedConfident: false,
+  };
+  const run = (key: string, over: Partial<typeof base> = {}) =>
+    PRESETS.find((p) => p.key === key)!.test({ ...base, ...over }, "2026-10-21");
+  test("garimpo do dia: hoje, nota, não caro, sem estado fraco, sem já tenho", () => {
+    expect(run("garimpo")).toBe(true);
+    expect(run("garimpo", { dayKey: "2026-10-22" })).toBe(false);
+    expect(run("garimpo", { score: 60 })).toBe(false);
+    expect(run("garimpo", { weakDisc: true })).toBe(false);
+    expect(run("garimpo", { ownedConfident: true })).toBe(false);
+  });
+  test("pechinchas, raros, radar e meus", () => {
+    expect(run("pechincha")).toBe(true);
+    expect(run("pechincha", { weakDisc: true })).toBe(false);
+    expect(run("raros", { rarity: "comum" })).toBe(false);
+    expect(run("radar")).toBe(false);
+    expect(run("radar", { radar: true })).toBe(true);
+    expect(run("meus", { hasBid: true })).toBe(true);
   });
 });

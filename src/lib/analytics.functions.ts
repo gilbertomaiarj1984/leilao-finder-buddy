@@ -24,6 +24,43 @@ export const getVinylSales = createServerFn({ method: "GET" })
   });
 
 /**
+ * Vendas passadas de VÁRIOS lotes de uma vez (a lista da Análise mostra a faixa de preço já
+ * vendida de cada disco). Mesma conta de `getLotPastSales`; devolve só os lotes que têm histórico
+ * (id → resumo). Aceita até `MAX_BULK` ids por chamada; best-effort: `{}` em erro.
+ */
+const PAST_SALES_MAX_BULK = 800;
+export const getPastSalesBulk = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { ids?: string[] } | undefined) => {
+    const ids = Array.isArray(input?.ids)
+      ? [...new Set(input.ids.filter((x): x is string => typeof x === "string" && x !== ""))]
+      : [];
+    return { ids: ids.slice(0, PAST_SALES_MAX_BULK) };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    try {
+      const { db } = await import("@/lib/db-client.server");
+      const { loadPastSales } = await import("./past-sales.server");
+      const scores = new Map<string, number | null>();
+      for (let i = 0; i < data.ids.length; i += 200) {
+        const { data: rows, error } = await db
+          .from<{ id: string; score: number | null }>("lot_condition")
+          .select("id, score")
+          .in("id", data.ids.slice(i, i + 200));
+        if (error) throw error;
+        for (const r of rows ?? []) scores.set(r.id, r.score);
+      }
+      const found = await loadPastSales(data.ids, scores);
+      return Object.fromEntries(found);
+    } catch (error) {
+      console.error("[past-sales] não foi possível ler as vendas passadas em lote", error);
+      return {};
+    }
+  });
+
+/**
  * Vendas passadas do MESMO disco de um lote (grupo do Analytics onde ele cai, com os apelidos e
  * correções do usuário) — a mesma conta que vai no prompt da IA, para a nota mostrar o resumo e o
  * link «Ver no Analytics». `null` = sem histórico para este disco.

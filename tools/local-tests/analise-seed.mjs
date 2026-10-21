@@ -19,7 +19,7 @@ const ROWS = [
   ["Secos & Molhados", "Secos & Molhados", 1973, "Casa Alfa Leilões", "SP", 1, "19:30h", "R$ 110,00", 83, "raro", 300, "G+", "G", 980, 710, 4],
 ];
 
-psql("delete from lots; delete from lot_ai; delete from lot_market; delete from lot_condition;");
+psql("delete from lots; delete from lot_ai; delete from lot_market; delete from lot_condition; delete from lot_sales;");
 ROWS.forEach(([artist, album, year, house, uf, d, time, price, score, rar, sugg, media, sleeve, want, have, bids], i) => {
   const id = `9000${i}-1000${i}`;
   const title = `LP ${artist} - ${album} ${year}`;
@@ -33,4 +33,15 @@ ROWS.forEach(([artist, album, year, house, uf, d, time, price, score, rar, sugg,
   psql(`insert into lot_condition(id,title_hash,media,sleeve,insert_state,score,faixa,source,views,bids)
     values('${id}','c','${media}','${sleeve}','sim',70,'Bom','regex',200,${bids})`);
 });
+// Vendas passadas (Analytics) de dois discos: Tim Maia (4 vendas) e Rita Lee (3).
+const SALES = [
+  ["Tim Maia", "Tim Maia", [380, 610, 640, 880]],
+  ["Rita Lee", "Fruto Proibido", [70, 105, 160]],
+];
+SALES.forEach(([artist, album, prices], k) =>
+  prices.forEach((p, j) =>
+    psql(`insert into lot_sales(lot_id,id_leilao,id_peca,artist,title,sold_price,sold_price_raw,sold_date,house,uf,media,sleeve,score)
+      values('8000${k}-2000${j}','8000${k}','2000${j}','${q(artist)}','${q(artist)} - ${q(album)}',${p},'R$ ${p},00','2026-09-${10 + j}','Casa Antiga','SP','VG+','VG',70)`),
+  ),
+);
 console.log(`semeados ${ROWS.length} lotes`);

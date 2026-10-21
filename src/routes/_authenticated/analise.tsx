@@ -7,8 +7,10 @@ import {
   Disc3,
   Eye,
   Gavel,
+  Building2,
   LayoutGrid,
   List,
+  SlidersHorizontal,
   Sparkles,
   Target,
   X,
@@ -21,6 +23,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AnaliseLotRow } from "@/components/vinyl/analise/lot-row";
+import { HouseLight } from "@/components/vinyl/house-light";
+import { HouseUf } from "@/components/vinyl/house-uf";
 import { RarityLegend } from "@/components/vinyl/ai-score";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
@@ -30,8 +34,12 @@ import { setLotTags } from "@/lib/ai.functions";
 import {
   compareBy,
   gradeAtLeast,
+  isPresetKey,
   isSortKey,
+  PRESETS,
   SORT_KEYS,
+  type PresetInput,
+  type PresetKey,
   type RankInput,
   type SortKey,
 } from "@/lib/analise-rank";
@@ -39,7 +47,13 @@ import { useBidCoveredAlerts } from "@/lib/bid-alerts";
 import { FUTURE_LABEL, FUTURE_TAB, isFutureDay } from "@/lib/day-bar";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
-import { queryKeys, useBidsQuery, useLotsQuery, useWatchedQuery } from "@/lib/queries";
+import {
+  queryKeys,
+  useBidsQuery,
+  useLotsQuery,
+  usePastSalesBulk,
+  useWatchedQuery,
+} from "@/lib/queries";
 import { useLotInsights, type LotInsight } from "@/lib/use-lot-insights";
 import { bidIsWinning, normalizeForMatch, type VinylLot } from "@/lib/vinyl-parse";
 import { saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
@@ -64,14 +78,15 @@ function filterChipClass(active: boolean): string {
 }
 
 /** Um lote avaliado, com a conta do lance e o estado do acompanhamento já resolvidos. */
-type AnaliseItem = RankInput & {
-  score: number;
-  lot: VinylLot;
-  insight: LotInsight;
-  currentPrice: string;
-  watched: boolean;
-  bidStatus: string | null;
-};
+type AnaliseItem = RankInput &
+  PresetInput & {
+    score: number;
+    lot: VinylLot;
+    insight: LotInsight;
+    currentPrice: string;
+    watched: boolean;
+    bidStatus: string | null;
+  };
 
 function AnalisePage() {
   // Esconder/mostrar o topo é MANUAL — botão `MobileTopToggle`, só no mobile — desde que a
@@ -103,7 +118,19 @@ function AnalisePage() {
   const [sortRaw, setSort] = usePersistedState<string>("analise-sort", "score");
   const sort: SortKey = isSortKey(sortRaw) ? sortRaw : "score";
   const [viewRaw, setView] = usePersistedState<string>("analise-view", "list");
-  const view: "list" | "cards" = viewRaw === "cards" ? "cards" : "list";
+  const view: "list" | "cards" | "house" =
+    viewRaw === "cards" ? "cards" : viewRaw === "house" ? "house" : "list";
+  // Visão pronta (Garimpo do dia, Pechinchas…): também lembrada entre visitas.
+  const [presetRaw, setPreset] = usePersistedState<string>("analise-preset", "");
+  const preset: PresetKey | "" = isPresetKey(presetRaw) ? presetRaw : "";
+  const [filtersOpen, setFiltersOpen] = usePersistedState("analise-filters-open", false);
+  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(new Set());
+  const onToggleOpen = (id: string) =>
+    setOpenIds((cur) => {
+      const next = new Set(cur);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [pending, setPending] = useState<string | null>(null);
 
@@ -208,6 +235,17 @@ function AnalisePage() {
     [allLots],
   );
 
+  const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
+    new Date(),
+  );
+  // Vendas passadas (Analytics) dos lotes avaliados, numa chamada só.
+  const evaluatedIds = useMemo(
+    () => allLots.filter((l) => insightById.get(l.id)?.ai?.score != null).map((l) => l.id),
+    [allLots, insightById],
+  );
+  const pastQuery = usePastSalesBulk(evaluatedIds);
+  const pastById = pastQuery.data;
+
   // Um item por lote já avaliado, com a conta do lance feita sobre o valor ATUAL.
   const items = useMemo(() => {
     const out: AnaliseItem[] = [];
@@ -230,6 +268,11 @@ function AnalisePage() {
         currentPrice,
         watched: watchedIds.has(lot.idPeca),
         bidStatus: status,
+        rarity: insight.ai?.rarity ?? null,
+        radar: Boolean(insight.lookout) || Boolean(insight.ai?.matchesInterests),
+        hasBid: status !== null,
+        weakDisc: insight.condition.media !== null && !gradeAtLeast(insight.condition.media, "VG"),
+        ownedConfident: Boolean(insight.owned && insight.owned.score >= OWNED_CONFIDENT_MIN),
       });
     }
     return out;
@@ -241,8 +284,10 @@ function AnalisePage() {
     const min = scoreMin.trim() ? Number(scoreMin) : null;
     const max = scoreMax.trim() ? Number(scoreMax) : null;
     const costMax = maxCost.trim() ? Number(maxCost) : null;
+    const presetDef = PRESETS.find((p) => p.key === preset);
     return items.filter((it) => {
       const { lot, insight } = it;
+      if (presetDef && !presetDef.test(it, todayKey)) return false;
       if (q && !normalizeForMatch(`${lot.title} ${insight.album ?? ""}`).includes(q)) return false;
       if (houseFilter && lot.house !== houseFilter) return false;
       if (onlyLookout && !insight.lookout) return false;
@@ -263,6 +308,8 @@ function AnalisePage() {
     });
   }, [
     items,
+    preset,
+    todayKey,
     search,
     houseFilter,
     onlyLookout,
@@ -288,11 +335,12 @@ function AnalisePage() {
   }, [filteredAnyDay, activeDay, lastDay, sort]);
 
   // Mudou filtro, dia ou ordenação: volta para o primeiro bloco da lista.
-  const listKey = `${filteredAnyDay.length}|${activeDay}|${sort}`;
+  const listKey = `${filteredAnyDay.length}|${activeDay}|${sort}|${preset}`;
   useEffect(() => setLimit(PAGE_SIZE), [listKey]);
   const shown = sorted.slice(0, limit);
 
   const filtersActive = Boolean(
+    preset ||
     search ||
     houseFilter ||
     activeDay ||
@@ -310,6 +358,7 @@ function AnalisePage() {
     onlyPriced,
   );
   const resetFilters = () => {
+    setPreset("");
     setSearch("");
     setHouseFilter("");
     setDayFilter("");
@@ -326,13 +375,14 @@ function AnalisePage() {
     setHideBadHouse(false);
     setOnlyPriced(false);
   };
+  const presetCounts = useMemo(
+    () => new Map(PRESETS.map((p) => [p.key, items.filter((it) => p.test(it, todayKey)).length])),
+    [items, todayKey],
+  );
   const bidCount = bidStatusById.size;
   const watchedCount = items.filter((it) => it.watched).length;
 
   // Barra de dias no formato da home: passados em âmbar, futuros em azul, hoje neutro.
-  const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
-    new Date(),
-  );
   const relDay = (d: string) =>
     Math.round((Date.parse(`${d}T00:00:00Z`) - Date.parse(`${todayKey}T00:00:00Z`)) / 86_400_000);
   const dayCounts = useMemo(() => {
@@ -340,6 +390,38 @@ function AnalisePage() {
     for (const it of filteredAnyDay) counts.set(it.dayKey, (counts.get(it.dayKey) ?? 0) + 1);
     return counts;
   }, [filteredAnyDay]);
+
+  // Agrupa o bloco visível por casa, na ordem em que cada casa aparece (a melhor posição manda).
+  const houseGroups = useMemo(() => {
+    const groups = new Map<string, { house: string; items: AnaliseItem[] }>();
+    for (const it of shown) {
+      const g = groups.get(it.lot.house) ?? { house: it.lot.house, items: [] };
+      g.items.push(it);
+      groups.set(it.lot.house, g);
+    }
+    return [...groups.values()];
+  }, [shown]);
+  const rankOf = new Map(shown.map((it, i) => [it.lot.id, i + 1]));
+  const renderRow = (it: AnaliseItem, variant: "list" | "cards") => (
+    <AnaliseLotRow
+      key={it.lot.id}
+      lot={it.lot}
+      insight={it.insight}
+      eco={it.eco}
+      currentPrice={it.currentPrice}
+      rank={rankOf.get(it.lot.id) ?? 0}
+      past={pastById?.[it.lot.id] ?? null}
+      open={openIds.has(it.lot.id)}
+      onToggleOpen={onToggleOpen}
+      days={days}
+      watched={it.watched}
+      bidStatus={it.bidStatus}
+      busy={pending === it.lot.idPeca}
+      variant={variant}
+      onToggleWatch={onToggleWatch}
+      onEditTags={onEditTags}
+    />
+  );
 
   return (
     <main className="min-h-screen bg-background">
@@ -398,9 +480,56 @@ function AnalisePage() {
           </p>
         ) : (
           <div className="space-y-6">
+            {/* ------- Visões prontas (contam sobre todos os lotes avaliados) ------- */}
+            <section
+              aria-label="Visões prontas"
+              className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5"
+            >
+              {PRESETS.map((p) => {
+                const active = preset === p.key;
+                return (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => setPreset(active ? "" : p.key)}
+                    aria-pressed={active}
+                    title={p.hint}
+                    className={`rounded-md border p-2.5 text-left transition-colors ${
+                      active
+                        ? "border-primary bg-primary/10"
+                        : "border-border bg-card hover:border-primary"
+                    }`}
+                  >
+                    <span className="block text-xl font-bold tabular-nums">
+                      {presetCounts.get(p.key) ?? 0}
+                    </span>
+                    <span
+                      className={`text-xs ${active ? "font-semibold text-primary" : "text-muted-foreground"}`}
+                    >
+                      {p.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </section>
+
             {/* ------- Filtros (barra de pesquisa) ------- */}
             <section className="rounded-md border border-border bg-card/40 p-3">
-              <div className="flex flex-wrap items-end gap-3">
+              <button
+                type="button"
+                onClick={() => setFiltersOpen((v) => !v)}
+                aria-expanded={filtersOpen}
+                className="mb-2 flex w-full items-center gap-2 text-sm font-medium sm:hidden"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                Filtros{filtersActive ? " (ativos)" : ""}
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {filtersOpen ? "recolher" : "mostrar"}
+                </span>
+              </button>
+              <div
+                className={`flex flex-wrap items-end gap-3 ${filtersOpen ? "" : "max-sm:hidden"}`}
+              >
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     Buscar título
@@ -517,80 +646,84 @@ function AnalisePage() {
 
               {/* Filtros liga/desliga no mesmo formato dos botões da página principal. */}
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setOnlyWatched((v) => !v)}
-                  disabled={watchedCount === 0}
-                  aria-pressed={onlyWatched}
-                  className={filterChipClass(onlyWatched)}
-                  title="Só os lotes que você está vigiando"
+                <div
+                  className={`flex flex-wrap items-center gap-2 ${filtersOpen ? "" : "max-sm:hidden"}`}
                 >
-                  <Eye className="h-3.5 w-3.5" />
-                  Vigiados
-                  {watchedCount ? (
-                    <span className="ml-0.5 text-muted-foreground">{watchedCount}</span>
+                  <button
+                    type="button"
+                    onClick={() => setOnlyWatched((v) => !v)}
+                    disabled={watchedCount === 0}
+                    aria-pressed={onlyWatched}
+                    className={filterChipClass(onlyWatched)}
+                    title="Só os lotes que você está vigiando"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    Vigiados
+                    {watchedCount ? (
+                      <span className="ml-0.5 text-muted-foreground">{watchedCount}</span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOnlyBid((v) => !v)}
+                    disabled={bidCount === 0}
+                    aria-pressed={onlyBid}
+                    className={filterChipClass(onlyBid)}
+                  >
+                    <Gavel className="h-3.5 w-3.5" />
+                    Com lance
+                    {bidCount ? (
+                      <span className="ml-0.5 text-muted-foreground">{bidCount}</span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOnlyLookout((v) => !v)}
+                    disabled={lookoutActiveItems === 0}
+                    aria-pressed={onlyLookout}
+                    className={filterChipClass(onlyLookout)}
+                  >
+                    <Target className="h-3.5 w-3.5" />
+                    Só De olho
+                    {lookoutCount ? (
+                      <span className="ml-0.5 text-muted-foreground">{lookoutCount}</span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHideOwned((v) => !v)}
+                    aria-pressed={hideOwned}
+                    className={filterChipClass(hideOwned)}
+                    title="Esconde os discos que já estão na sua Coleção"
+                  >
+                    <Disc3 className="h-3.5 w-3.5" />
+                    Ocultar já tenho
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHideBadHouse((v) => !v)}
+                    aria-pressed={hideBadHouse}
+                    className={filterChipClass(hideBadHouse)}
+                    title="Esconde lotes de casas com semáforo laranja ou vermelho"
+                  >
+                    Ocultar casas ruins
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOnlyPriced((v) => !v)}
+                    aria-pressed={onlyPriced}
+                    className={filterChipClass(onlyPriced)}
+                    title="Só lotes com preço de referência no Discogs"
+                  >
+                    Só com mercado
+                  </button>
+                  {filtersActive ? (
+                    <Button variant="ghost" size="sm" onClick={resetFilters}>
+                      <X className="mr-1 h-4 w-4" />
+                      Limpar
+                    </Button>
                   ) : null}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOnlyBid((v) => !v)}
-                  disabled={bidCount === 0}
-                  aria-pressed={onlyBid}
-                  className={filterChipClass(onlyBid)}
-                >
-                  <Gavel className="h-3.5 w-3.5" />
-                  Com lance
-                  {bidCount ? (
-                    <span className="ml-0.5 text-muted-foreground">{bidCount}</span>
-                  ) : null}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOnlyLookout((v) => !v)}
-                  disabled={lookoutActiveItems === 0}
-                  aria-pressed={onlyLookout}
-                  className={filterChipClass(onlyLookout)}
-                >
-                  <Target className="h-3.5 w-3.5" />
-                  Só De olho
-                  {lookoutCount ? (
-                    <span className="ml-0.5 text-muted-foreground">{lookoutCount}</span>
-                  ) : null}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHideOwned((v) => !v)}
-                  aria-pressed={hideOwned}
-                  className={filterChipClass(hideOwned)}
-                  title="Esconde os discos que já estão na sua Coleção"
-                >
-                  <Disc3 className="h-3.5 w-3.5" />
-                  Ocultar já tenho
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHideBadHouse((v) => !v)}
-                  aria-pressed={hideBadHouse}
-                  className={filterChipClass(hideBadHouse)}
-                  title="Esconde lotes de casas com semáforo laranja ou vermelho"
-                >
-                  Ocultar casas ruins
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOnlyPriced((v) => !v)}
-                  aria-pressed={onlyPriced}
-                  className={filterChipClass(onlyPriced)}
-                  title="Só lotes com preço de referência no Discogs"
-                >
-                  Só com mercado
-                </button>
-                {filtersActive ? (
-                  <Button variant="ghost" size="sm" onClick={resetFilters}>
-                    <X className="mr-1 h-4 w-4" />
-                    Limpar
-                  </Button>
-                ) : null}
+                </div>
                 <div className="ml-auto flex flex-wrap items-center gap-2">
                   <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     Ordenar por
@@ -627,6 +760,14 @@ function AnalisePage() {
                       className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium ${view === "cards" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
                     >
                       <LayoutGrid className="h-3.5 w-3.5" /> Cards
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setView("house")}
+                      aria-pressed={view === "house"}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium ${view === "house" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                    >
+                      <Building2 className="h-3.5 w-3.5" /> Por casa
                     </button>
                   </div>
                 </div>
@@ -693,29 +834,32 @@ function AnalisePage() {
               <p className="rounded-md border border-border bg-card p-3 text-sm text-muted-foreground">
                 Nenhum lote avaliado no filtro atual.
               </p>
+            ) : view === "house" ? (
+              <div className="space-y-5">
+                {houseGroups.map((g) => (
+                  <section key={g.house} className="space-y-3">
+                    <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border pb-2">
+                      <HouseLight house={g.house} />
+                      <h2 className="text-lg font-semibold tracking-tight">{g.house}</h2>
+                      <HouseUf house={g.house} uf={g.items[0]?.lot.uf} className="text-sm" />
+                      <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold">
+                        {g.items.length} lote(s)
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        melhor nota {Math.max(...g.items.map((it) => it.score))}
+                      </span>
+                    </header>
+                    <div className="space-y-3">{g.items.map((it) => renderRow(it, "list"))}</div>
+                  </section>
+                ))}
+              </div>
             ) : (
               <div
                 className={
                   view === "cards" ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "space-y-3"
                 }
               >
-                {shown.map((it, i) => (
-                  <AnaliseLotRow
-                    key={it.lot.id}
-                    lot={it.lot}
-                    insight={it.insight}
-                    eco={it.eco}
-                    currentPrice={it.currentPrice}
-                    rank={i + 1}
-                    days={days}
-                    watched={it.watched}
-                    bidStatus={it.bidStatus}
-                    busy={pending === it.lot.idPeca}
-                    variant={view}
-                    onToggleWatch={onToggleWatch}
-                    onEditTags={onEditTags}
-                  />
-                ))}
+                {shown.map((it) => renderRow(it, view))}
               </div>
             )}
             {sorted.length > shown.length ? (

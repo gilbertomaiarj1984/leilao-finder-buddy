@@ -74,6 +74,15 @@
   - **`useLotInsights(lots)`** (`src/lib/use-lot-insights.ts`): um `Map` id → `LotInsight` (nota, álbum,
     mercado ancorado, condição, demanda, Coleção, De olho, nível da casa). Nasceu da consolidação pedida em
     `docs/pendencias.md`; a home ainda tem a cópia dela (`DUP(lot-insights)`).
+  - **Fase 2 (v0.159.0):** faixa de **visões prontas** com contagem (Garimpo do dia, Pechinchas, Raros,
+    Meu radar, Vigiados e lances — `PRESETS` em `analise-rank.ts`, calculadas sobre todos os lotes avaliados; a
+    escolhida fica salva em `analise-preset` e soma-se aos filtros); visualização **Por casa** (agrupa o bloco
+    visível por casa, com semáforo/UF e a melhor nota); painel **"Por que esta nota"** em cada linha
+    (`lot-detail.tsx`: evidências com tom verde/amarelo/vermelho de `buildEvidence`, a conta do lance completa com
+    os dois tetos, vendas passadas + link «ver no Analytics», tracklist e link do lote); **barra de faixa de preço**
+    (`price-range-bar.tsx`: menor–maior vendido, mediana e o custo de hoje); no celular os filtros ficam
+    recolhidos (`analise-filters-open`). As vendas passadas vêm de **uma chamada só** (`getPastSalesBulk` →
+    `usePastSalesBulk`, até 800 ids; mesma conta de `getLotPastSales`).
   - Teste local no navegador: `tools/local-tests/analise-seed.mjs` + `analise-e2e.mjs`.
 - **`_authenticated/analise.tsx` (Análise, remodelada na v0.113.0):** dois **Top 30 por nota**
   recolhíveis — **vigiados** (`watchedIds`) e **restante** — sob a barra de filtros e a **barra

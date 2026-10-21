@@ -31,7 +31,8 @@ import {
   getLotIdent,
   getUserInterests,
 } from "@/lib/ai.functions";
-import { getAnalyticsAliases, getLotPastSales } from "@/lib/analytics.functions";
+import { getAnalyticsAliases, getLotPastSales, getPastSalesBulk } from "@/lib/analytics.functions";
+import type { PastSales } from "@/lib/past-sales";
 import {
   getLotCondition,
   getHouseUfs,
@@ -224,6 +225,28 @@ export function useLotPastSales(id: string | null | undefined) {
     queryFn: () => fetchPastSales({ data: { id: id as string } }),
     enabled: Boolean(id),
     staleTime: 30_000, // volta do Analytics já com a correção feita lá
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * Vendas passadas (Analytics) de vários lotes numa chamada só, para a lista da Análise. A chave
+ * leva uma assinatura curta dos ids (a lista inteira não cabe numa chave legível); o resultado é
+ * `id → resumo`, só com os lotes que têm histórico.
+ */
+export function usePastSalesBulk(ids: readonly string[]) {
+  const fetchBulk = useServerFn(getPastSalesBulk);
+  const sig = useMemo(() => {
+    let h = 5381;
+    for (const id of ids)
+      for (let i = 0; i < id.length; i++) h = ((h << 5) + h + id.charCodeAt(i)) | 0;
+    return `${ids.length}:${(h >>> 0).toString(36)}`;
+  }, [ids]);
+  return useQuery({
+    queryKey: ["past-sales-bulk", sig] as const,
+    queryFn: () => fetchBulk({ data: { ids: [...ids] } }) as Promise<Record<string, PastSales>>,
+    enabled: ids.length > 0,
+    staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
 }

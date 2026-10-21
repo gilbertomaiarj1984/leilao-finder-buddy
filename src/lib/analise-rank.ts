@@ -77,3 +77,67 @@ export function gradeAtLeast(media: string | null | undefined, min: string): boo
   const want = GRADE_ORDER.indexOf(min.trim().toUpperCase());
   return have >= 0 && want >= 0 && have >= want;
 }
+
+// ---- Visões prontas ----------------------------------------------------------------------------
+
+/** O que uma visão pronta lê de cada lote (resolvido pela tela). */
+export type PresetInput = RankInput & {
+  rarity: string | null;
+  /** Está no De olho ou combina com os interesses. */
+  radar: boolean;
+  watched: boolean;
+  hasBid: boolean;
+  /** Disco abaixo de VG. */
+  weakDisc: boolean;
+  /** Disco que já está na Coleção (casamento confiante). */
+  ownedConfident: boolean;
+};
+
+export type PresetKey = "garimpo" | "pechincha" | "raros" | "radar" | "meus";
+
+export const PRESETS: {
+  key: PresetKey;
+  label: string;
+  hint: string;
+  test: (i: PresetInput, todayKey: string) => boolean;
+}[] = [
+  {
+    key: "garimpo",
+    label: "Garimpo do dia",
+    hint: "Hoje, nota ≥ 70, não caro, sem estado fraco e que você ainda não tem",
+    test: (i, today) =>
+      i.dayKey === today &&
+      (i.score ?? 0) >= 70 &&
+      i.eco.deal !== "caro" &&
+      !i.weakDisc &&
+      !i.ownedConfident,
+  },
+  {
+    key: "pechincha",
+    label: "Pechinchas",
+    hint: "Custo (lance + frete) até 70% do mercado e estado do disco não fraco",
+    test: (i) => i.eco.deal === "barato" && !i.weakDisc,
+  },
+  {
+    key: "raros",
+    label: "Raros",
+    hint: "Raridade “raro” ou “muito raro”",
+    test: (i) => i.rarity === "raro" || i.rarity === "muito_raro",
+  },
+  {
+    key: "radar",
+    label: "Meu radar",
+    hint: "No seu De olho ou combinando com seus interesses",
+    test: (i) => i.radar,
+  },
+  {
+    key: "meus",
+    label: "Vigiados e lances",
+    hint: "Os lotes que você vigia ou em que deu lance",
+    test: (i) => i.watched || i.hasBid,
+  },
+];
+
+export function isPresetKey(v: unknown): v is PresetKey {
+  return PRESETS.some((p) => p.key === v);
+}
