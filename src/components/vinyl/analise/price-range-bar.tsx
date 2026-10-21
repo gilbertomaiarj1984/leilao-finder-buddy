@@ -2,9 +2,9 @@ import type { PastSales } from "@/lib/past-sales";
 import { DEAL_BAND_CHEAP, DEAL_BAND_EXPENSIVE, fmtMoney } from "@/lib/lot-score";
 
 /**
- * Onde o custo do lote (lance + frete) cai na faixa de preços já vendidos do MESMO disco
+ * Onde o valor do lote cai na faixa de preços já vendidos do MESMO disco
  * (Analytics): a barra azul vai do menor ao maior valor vendido, o traço é a mediana e o losango é
- * o custo de hoje (verde ≤ 70% da mediana, vermelho ≥ 115%, mesmas faixas do veredicto).
+ * o valor de hoje (verde ≤ 70% da mediana, vermelho ≥ 115%, mesmas faixas do veredicto).
  */
 export function PriceRangeBar({ total, past }: { total: number; past: PastSales }) {
   const lo = Math.min(past.min, total) * 0.85;
@@ -16,7 +16,7 @@ export function PriceRangeBar({ total, past }: { total: number; past: PastSales 
       : total >= past.median * DEAL_BAND_EXPENSIVE
         ? "bg-red-600"
         : "bg-foreground";
-  const title = `Vendas passadas: ${fmtMoney(past.min, "BRL")} a ${fmtMoney(past.max, "BRL")}, mediana ${fmtMoney(past.median, "BRL")} (${past.count} venda(s)). O losango é o custo de hoje: ${fmtMoney(total, "BRL")}.`;
+  const title = `Vendas passadas: ${fmtMoney(past.min, "BRL")} a ${fmtMoney(past.max, "BRL")}, mediana ${fmtMoney(past.median, "BRL")} (${past.count} venda(s)). O losango é o valor do lote hoje: ${fmtMoney(total, "BRL")}.`;
   return (
     <div className="relative mt-1 h-5 min-w-[160px]" role="img" aria-label={title} title={title}>
       <div className="absolute inset-x-0 top-2 h-1 rounded bg-secondary" />

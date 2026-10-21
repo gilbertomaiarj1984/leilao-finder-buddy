@@ -109,14 +109,24 @@ export function LotDetail({
         </h4>
         {eco.ref !== null ? (
           <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-[13px] tabular-nums">
-            <dt className="text-muted-foreground">Lance atual</dt>
-            <dd className="text-right font-medium">{lot.price || "—"}</dd>
-            <dt className="text-muted-foreground">+ frete estimado ({lot.uf || "UF ?"})</dt>
-            <dd className="text-right font-medium">{brl(market?.freight ?? 0)}</dd>
-            <dt className="text-muted-foreground">Custo total</dt>
+            <dt className="text-muted-foreground">Valor do lote</dt>
             <dd className="text-right font-semibold">{brl(eco.total)}</dd>
-            <dt className="text-muted-foreground">Mercado ({condition.media ?? "G+"})</dt>
-            <dd className="text-right font-medium">{brl(eco.ref)}</dd>
+            <dt className="text-xs text-muted-foreground">
+              frete estimado do leilão ({lot.uf || "UF ?"}), fora da conta
+            </dt>
+            <dd className="text-right text-xs text-muted-foreground">{brl(eco.freight)}</dd>
+            {eco.refShipping > 0 ? (
+              <>
+                <dt className="text-muted-foreground">
+                  Discogs: disco ({condition.media ?? "G+"})
+                </dt>
+                <dd className="text-right font-medium">{brl(eco.ref - eco.refShipping)}</dd>
+                <dt className="text-muted-foreground">Discogs: + frete do vendedor</dt>
+                <dd className="text-right font-medium">{brl(eco.refShipping)}</dd>
+              </>
+            ) : null}
+            <dt className="text-muted-foreground">Discogs com frete</dt>
+            <dd className="text-right font-semibold">{brl(eco.ref)}</dd>
             <dt className="text-muted-foreground">Teto para ainda ser barato</dt>
             <dd className="text-right font-semibold text-green-700 dark:text-green-400">
               {brl(eco.capCheap)}

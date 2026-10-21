@@ -236,24 +236,47 @@ export function fmtMoney(value: number | null, currency: string | null): string 
 export const DEAL_BAND_CHEAP = 0.7;
 export const DEAL_BAND_EXPENSIVE = 1.15;
 
-/** Referência de preço do mercado (BRL), da mais para a menos confiável — ver `marketDeal`. */
-function marketReference(m: LotMarket | undefined): number | null {
+/**
+ * Referência de preço do mercado (BRL), da mais para a menos confiável — ver `marketDeal`.
+ * `includesShipping`: o valor já é um TOTAL com o frete do vendedor (a faixa BR do Discogs soma
+ * preço + frete); os demais são preço do disco, sem frete.
+ */
+function marketReferenceInfo(
+  m: LotMarket | undefined,
+): { value: number; includesShipping: boolean } | null {
   if (!m || !m.matched) return null;
   // Âncora, da mais para a menos confiável: sugerido da CONDIÇÃO do lote; menor total (preço +
   // frete) de vendedor BR; sugerido padrão (G+); e só por último o menor global, que é o
   // anúncio mais barato do mundo em qualquer condição (ou, em disco raro, um lacrado caro).
-  const ref = m.anchor?.price ?? m.priceLowBr ?? m.suggestedPrice ?? m.lowestPrice;
-  return ref !== null && ref !== undefined && ref > 0 ? ref : null;
+  const anchor = m.anchor?.price;
+  if (anchor !== null && anchor !== undefined && anchor > 0)
+    return { value: anchor, includesShipping: false };
+  if (m.priceLowBr !== null && m.priceLowBr !== undefined && m.priceLowBr > 0)
+    return { value: m.priceLowBr, includesShipping: true };
+  const rest = m.suggestedPrice ?? m.lowestPrice;
+  return rest !== null && rest !== undefined && rest > 0
+    ? { value: rest, includesShipping: false }
+    : null;
 }
 
 export type LotDeal = "barato" | "justo" | "caro" | "indefinido";
 
 /** A conta do lote contra o mercado (tudo em BRL; `null` = sem base para calcular). */
 export type LotEconomics = {
-  /** Lance atual + frete estimado. */
+  /**
+   * Custo do lote na conta: no modo `withFreight`, lance + frete estimado do leilão; no modo
+   * `lotValue`, só o valor do lote (o frete aparece à parte, em `freight`).
+   */
   total: number | null;
-  /** Preço de referência do mercado (`marketReference`). */
+  /** Frete estimado do leilão (UF), SEMPRE à parte — só entra em `total` no modo `withFreight`. */
+  freight: number;
+  /**
+   * Preço de referência do mercado. No modo `lotValue` é o que um comprador paga no Discogs:
+   * preço do disco + frete (`refShipping`), pois vendedores embutem margem no frete.
+   */
   ref: number | null;
+  /** Parte de `ref` que é frete do Discogs (0 quando a referência já é um total com frete). */
+  refShipping: number;
   /** `total ÷ ref`. */
   ratio: number | null;
   deal: LotDeal;
@@ -269,15 +292,29 @@ export type LotEconomics = {
  * Conta do lote: custo total (lance + frete), veredicto e tetos de lance. É a ÚNICA fonte das
  * faixas barato/justo/caro (`DEAL_BAND_*`) — `marketDeal` só devolve o veredicto daqui.
  */
-export function lotEconomics(price: string, m: LotMarket | undefined): LotEconomics {
+type EconomicsMode = "withFreight" | "lotValue";
+
+export function lotEconomics(
+  price: string,
+  m: LotMarket | undefined,
+  mode: EconomicsMode = "withFreight",
+): LotEconomics {
   const hammer = parsePrice(price);
-  const ref = marketReference(m);
-  // Conta justa: o lote custa o valor + o frete da casa (as casas brasileiras sempre cobram).
+  const info = marketReferenceInfo(m);
   const freight = m?.freight ?? 0;
-  const total = hammer === null ? null : hammer + freight;
+  // `withFreight` (home, e-mails, prompt da IA): o lote custa o valor + o frete da casa, contra o
+  // preço do disco no Discogs. `lotValue` (Análise): o lote vale o que se paga por ele; quem leva
+  // o frete é o lado do Discogs (preço + frete do vendedor), onde ele costuma inflar o preço.
+  const lotValue = mode === "lotValue";
+  const refShipping = lotValue && info && !info.includesShipping ? freight : 0;
+  const ref = info ? info.value + refShipping : null;
+  const total = hammer === null ? null : lotValue ? hammer : hammer + freight;
+  const capFreight = lotValue ? 0 : freight;
   if (total === null || ref === null) {
     return {
       total,
+      freight,
+      refShipping,
       ref,
       ratio: null,
       deal: "indefinido",
@@ -294,11 +331,13 @@ export function lotEconomics(price: string, m: LotMarket | undefined): LotEconom
         : "justo";
   return {
     total,
+    freight,
+    refShipping,
     ref,
     ratio: total / ref,
     deal,
-    capCheap: Math.max(0, Math.floor(ref * DEAL_BAND_CHEAP - freight)),
-    capFair: Math.max(0, Math.ceil(ref * DEAL_BAND_EXPENSIVE - freight) - 1),
+    capCheap: Math.max(0, Math.floor(ref * DEAL_BAND_CHEAP - capFreight)),
+    capFair: Math.max(0, Math.ceil(ref * DEAL_BAND_EXPENSIVE - capFreight) - 1),
     potential: ref - total,
   };
 }
@@ -374,7 +413,7 @@ const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 /**
  * Índice de garimpo (EXPERIMENTAL): um número 0–100 que junta o que decide uma boa compra, para
  * ordenar a lista — NÃO substitui a nota da IA. Cada parte vai de 0 a 1 e tem peso fixo:
- * negócio 35 (custo ÷ mercado: ≤ 50% = 1, ≥ 115% = 0), nota da IA 25, estado do disco 15 (nota de
+ * negócio 35 (valor do lote ÷ Discogs com frete: ≤ 50% = 1, ≥ 115% = 0), nota da IA 25, estado do disco 15 (nota de
  * estado 0–100), procura 15 (want ÷ have: 3× ou mais = 1) e casa 10 (semáforo). Disco que já está
  * na Coleção vale metade. Parte sem dado fica neutra e marcada `known: false`.
  */
@@ -394,7 +433,7 @@ export function garimpoIndex(input: {
   const parts: GarimpoPart[] = [
     {
       key: "negocio",
-      label: "Negócio (custo ÷ mercado)",
+      label: "Negócio (valor do lote ÷ Discogs)",
       weight: 35,
       known: ratio !== null,
       value:

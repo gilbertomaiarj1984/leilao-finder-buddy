@@ -199,3 +199,57 @@ describe("lotEconomics — conta do lance", () => {
     expect(lotEconomics("sem valor", m).total).toBeNull();
   });
 });
+
+describe("lotEconomics — modo valor do lote (Análise)", () => {
+  const mk = (over: Record<string, unknown>) =>
+    ({
+      matched: true,
+      releaseId: 1,
+      releaseTitle: null,
+      year: null,
+      numForSale: null,
+      lowestPrice: null,
+      currency: "BRL",
+      suggestedPrice: null,
+      suggestedCondition: null,
+      suggestedByCondition: null,
+      anchor: { price: 200, condition: "VG+", exact: true },
+      freight: 25,
+      have: null,
+      want: null,
+      priceLowBr: null,
+      priceHighBr: null,
+      numForSaleBr: null,
+      ...over,
+    }) as unknown as Parameters<typeof lotEconomics>[1];
+
+  test("o lote vale só o lance; o frete fica à parte e o Discogs leva preço + frete", () => {
+    const e = lotEconomics("R$ 150,00", mk({}), "lotValue");
+    expect(e.total).toBe(150); // sem frete do leilão
+    expect(e.freight).toBe(25); // informativo
+    expect(e.refShipping).toBe(25);
+    expect(e.ref).toBe(225); // 200 do disco + 25 de frete do vendedor
+    expect(e.ratio).toBeCloseTo(150 / 225, 5);
+    expect(e.deal).toBe("barato"); // 66,7% do mercado (≤ 70%)
+    expect(e.potential).toBe(75);
+  });
+  test("tetos sem frete do leilão", () => {
+    const e = lotEconomics("R$ 100,00", mk({}), "lotValue");
+    expect(e.capCheap).toBe(157); // 225 × 0,7
+    expect(e.capFair).toBe(258); // < 225 × 1,15 = 258,75
+    expect(lotEconomics("R$ 157,00", mk({}), "lotValue").deal).toBe("barato");
+    expect(lotEconomics("R$ 158,00", mk({}), "lotValue").deal).toBe("justo");
+    expect(lotEconomics("R$ 259,00", mk({}), "lotValue").deal).toBe("caro");
+  });
+  test("faixa BR já é total com frete: não soma frete de novo", () => {
+    const e = lotEconomics("R$ 100,00", mk({ anchor: null, priceLowBr: 180 }), "lotValue");
+    expect(e.refShipping).toBe(0);
+    expect(e.ref).toBe(180);
+  });
+  test("modo antigo continua igual (home, e-mails, IA)", () => {
+    const e = lotEconomics("R$ 150,00", mk({}));
+    expect(e.total).toBe(175);
+    expect(e.ref).toBe(200);
+    expect(e.refShipping).toBe(0);
+  });
+});

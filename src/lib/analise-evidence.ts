@@ -54,7 +54,7 @@ export function buildEvidence(i: EvidenceInput): Evidence[] {
   } else {
     out.push({
       tone: i.eco.deal === "barato" ? "good" : i.eco.deal === "caro" ? "bad" : "warn",
-      text: `Preço: ${i.eco.deal} (${Math.round(i.eco.ratio * 100)}% do mercado, já com o frete)`,
+      text: `Preço: ${i.eco.deal} (${Math.round(i.eco.ratio * 100)}% do Discogs com frete)`,
     });
   }
   if (!i.media) {

@@ -6,6 +6,8 @@ const base: EvidenceInput = {
   rarity: "raro",
   eco: {
     total: 125,
+    freight: 0,
+    refShipping: 0,
     ref: 400,
     ratio: 0.31,
     deal: "barato",
@@ -32,7 +34,7 @@ describe("buildEvidence", () => {
   test("lote bom: tons positivos e frases com os números", () => {
     const e = buildEvidence(base);
     expect(e[0]).toEqual({ tone: "good", text: "Raridade: raro" });
-    expect(e[1]!.text).toContain("barato (31% do mercado");
+    expect(e[1]!.text).toContain("barato (31% do Discogs com frete");
     expect(e[2]!.text).toBe("Estado: disco VG+, capa VG, com encarte");
     expect(e.some((x) => x.text.includes("Está no seu De olho"))).toBe(true);
     expect(e.some((x) => x.text.startsWith("Procura") && x.tone === "good")).toBe(true);
@@ -42,6 +44,8 @@ describe("buildEvidence", () => {
       ...base,
       eco: {
         total: 125,
+        freight: 0,
+        refShipping: 0,
         ref: null,
         ratio: null,
         deal: "indefinido",

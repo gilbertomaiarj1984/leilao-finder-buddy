@@ -4,6 +4,8 @@ import { garimpoIndex, type LotEconomics } from "@/lib/lot-score";
 
 const eco = (ratio: number | null): LotEconomics => ({
   total: 100,
+  freight: 0,
+  refShipping: 0,
   ref: ratio ? 100 / ratio : null,
   ratio,
   deal: "justo",

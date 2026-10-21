@@ -47,6 +47,7 @@ import {
   type SortKey,
 } from "@/lib/analise-rank";
 import { priceRoseSinceEval } from "@/lib/ai-reprice";
+import { auctionFreight } from "@/lib/auction-freight";
 import { garimpoIndex, type Garimpo } from "@/lib/lot-score";
 import { auctionChip, startsInMinutes } from "@/lib/analise-time";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
@@ -202,7 +203,7 @@ function AnalisePage() {
   const { analyzing, analyzeDays } = useAnalyzeScope();
   const { repricing, repriceLots } = useRepriceLots();
   // Tudo que o app sabe de cada lote (nota, mercado, estado, Coleção, De olho, casa…).
-  const { insightById, albumById, evaluated, lookoutCount, lookoutActiveItems } =
+  const { insightById, albumById, evaluated, lookoutCount, lookoutActiveItems, aiPanelConfig } =
     useLotInsights(allLots);
   // Aviso (toast) quando um lote com lance vira "Coberto" — só com o app aberto, ver
   // `@/lib/bid-alerts`.
@@ -270,7 +271,7 @@ function AnalisePage() {
       const status = bidStatusById.get(lot.idPeca) ?? null;
       const myBid = myBidById.get(lot.idPeca);
       const currentPrice = status && bidIsWinning(status) && myBid ? myBid : lot.price;
-      const eco = lotEconomics(currentPrice, insight.market);
+      const eco = lotEconomics(currentPrice, insight.market, "lotValue");
       const ownedConfident = Boolean(insight.owned && insight.owned.score >= OWNED_CONFIDENT_MIN);
       const garimpoFull = garimpoIndex({
         eco,
@@ -499,6 +500,7 @@ function AnalisePage() {
       lot={it.lot}
       insight={it.insight}
       eco={it.eco}
+      freight={auctionFreight(it.lot.uf, aiPanelConfig?.freight)}
       currentPrice={it.currentPrice}
       rank={rankOf.get(it.lot.id) ?? 0}
       past={pastById?.[it.lot.id] ?? null}
@@ -543,7 +545,7 @@ function AnalisePage() {
                 </h1>
               </div>
               <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
-                Todos os lotes avaliados em uma lista, com a conta do lance (lance + frete, teto e
+                Todos os lotes avaliados em uma lista, com a conta do lance (valor do lote, teto e
                 potencial contra o Discogs), estado do disco, “já tenho” e a situação da casa.
                 Ordene por nota ou por melhor negócio. ⭐ = combina com seus interesses; 🎯 = está
                 no De olho.{" "}
@@ -736,12 +738,12 @@ function AnalisePage() {
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Custo total até
+                    Valor do lote até
                   </label>
                   <Input
                     value={maxCost}
                     onChange={(e) => setMaxCost(e.target.value)}
-                    placeholder="R$ (lance + frete)"
+                    placeholder="R$ (valor do lote)"
                     inputMode="numeric"
                     className="h-9 w-36"
                   />
