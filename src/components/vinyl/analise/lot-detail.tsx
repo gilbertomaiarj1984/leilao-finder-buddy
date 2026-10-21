@@ -49,6 +49,7 @@ export function LotDetail({
     interest: Boolean(ai?.matchesInterests),
     owned,
     ownedConfidentMin: OWNED_CONFIDENT_MIN,
+    trashLike: insight.possibleTrash?.excludedTitle ?? null,
   });
   const brl = (n: number | null) => fmtMoney(n, "BRL");
   const aiLabel = insight.album ? formatAiAlbum(insight.album, market?.year ?? null) : "";

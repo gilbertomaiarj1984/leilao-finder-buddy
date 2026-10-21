@@ -218,7 +218,7 @@ function indicatorsOf(text: string): string[] {
  * lote (artista efetivo, álbum da IA, título do release do Discogs): seus termos saem das
  * keywords — um lote não pode parecer lixo por causa do nome do próprio disco.
  */
-export function trashProfile(lot: {
+function trashProfile(lot: {
   title: string;
   artist?: string | null;
   content?: (string | null | undefined)[];
@@ -312,7 +312,7 @@ const COMMON_MIN_SHARE = 0.03;
  * carregados). `denylist` são termos/expressões que o usuário já disse que NÃO indicam lixo
  * (clique no badge — `trash_keyword_denylist`), ignorados em todas as camadas.
  */
-export function buildTrashModel(
+function buildTrashModel(
   excluded: { title: string; keywords?: string[] | null; reason?: string | null }[],
   corpus: TrashProfile[],
   denylist?: ReadonlySet<string>,
@@ -366,7 +366,7 @@ export type ExclusionSignal = { matchedTerms: string[]; excludedTitle: string };
  * pelas três camadas descritas no topo desta seção. `matchedTerms` são os termos/expressões
  * que causaram o sinal — o clique no badge os nega (`trash_keyword_denylist`).
  */
-export function matchPossibleTrash(lot: TrashProfile, model: TrashModel): ExclusionSignal | null {
+function matchPossibleTrash(lot: TrashProfile, model: TrashModel): ExclusionSignal | null {
   const { denylist, common } = model;
   const lotKw = new Set(lot.keywords.filter((k) => !denylist.has(k) && !common.has(k)));
   const lotInd = new Set(lot.indicators.filter((i) => !denylist.has(i)));
@@ -394,4 +394,29 @@ export function matchPossibleTrash(lot: TrashProfile, model: TrashModel): Exclus
     if (shared.length >= MIN_OVERLAP) return { matchedTerms: shared, excludedTitle: ex.title };
   }
   return null;
+}
+
+/**
+ * "Possível lixo" de TODA a listagem de uma vez: cada lote vira um perfil (termos do título sem o
+ * artista/álbum do próprio lote — `contentFor`) e é comparado com os lotes já excluídos; a própria
+ * listagem serve de corpus para saber quais termos são comuns demais. Usado pela home e pela
+ * Análise (`useLotInsights`). Sem lotes excluídos devolve vazio sem montar nada.
+ */
+export function possibleTrashMap(
+  lots: readonly { id: string; title: string; artist?: string | null }[],
+  contentFor: (id: string) => (string | null | undefined)[],
+  excluded: { title: string; keywords?: string[] | null; reason?: string | null }[],
+  denylist?: ReadonlySet<string>,
+): Map<string, ExclusionSignal> {
+  const map = new Map<string, ExclusionSignal>();
+  if (!excluded.length) return map;
+  const profiles = lots.map((lot) =>
+    trashProfile({ title: lot.title, artist: lot.artist, content: contentFor(lot.id) }),
+  );
+  const model = buildTrashModel(excluded, profiles, denylist);
+  lots.forEach((lot, i) => {
+    const signal = matchPossibleTrash(profiles[i]!, model);
+    if (signal) map.set(lot.id, signal);
+  });
+  return map;
 }

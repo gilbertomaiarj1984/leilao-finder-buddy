@@ -7,6 +7,7 @@ import {
   Gavel,
   Loader2,
   Target,
+  Trash2,
 } from "lucide-react";
 import { memo } from "react";
 
@@ -66,6 +67,10 @@ type AnaliseRowProps = {
   busy: boolean;
   variant: "list" | "cards";
   onToggleWatch: (lot: VinylLot) => void;
+  /** Abre a confirmação de exclusão definitiva do lote. */
+  onExclude: (lot: VinylLot) => void;
+  /** "Isto não é lixo": nega os termos que causaram o sinal. */
+  onDismissTrash: (terms: string[]) => void;
   onEditTags: (id: string, tags: string[]) => void;
 };
 
@@ -115,9 +120,12 @@ function AnaliseLotRowImpl({
   busy,
   variant,
   onToggleWatch,
+  onExclude,
+  onDismissTrash,
   onEditTags,
 }: AnaliseRowProps) {
-  const { ai, album, market, condition, demand, owned, lookout, houseLevel } = insight;
+  const { ai, album, market, condition, demand, owned, lookout, houseLevel, possibleTrash } =
+    insight;
   const cards = variant === "cards";
   const aiLabel = album ? formatAiAlbum(album, market?.year ?? null) : "";
   const lookoutTitle = lookout
@@ -278,6 +286,16 @@ function AnaliseLotRowImpl({
                 🔥 procurado {heat.toFixed(1)}×
               </span>
             ) : null}
+            {possibleTrash ? (
+              <button
+                type="button"
+                onClick={() => onDismissTrash(possibleTrash.matchedTerms)}
+                className={`${pill} bg-orange-500/15 text-orange-700 hover:bg-orange-500/25 dark:text-orange-400`}
+                title={`Parecido com um lote excluído: "${possibleTrash.excludedTitle}" (termos: ${possibleTrash.matchedTerms.join(", ")}). Clique se isto NÃO for lixo.`}
+              >
+                ⚠ possível lixo ✕
+              </button>
+            ) : null}
             {stale ? (
               <span
                 className={`${pill} bg-yellow-500/20 text-yellow-800 dark:text-yellow-300`}
@@ -420,6 +438,16 @@ function AnaliseLotRowImpl({
         >
           <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
           Por que esta nota
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8"
+          onClick={() => onExclude(lot)}
+          aria-label="Excluir lote (nunca mais aparece)"
+          title="Excluir lote: some para sempre e ajuda a sinalizar parecidos"
+        >
+          <Trash2 className="h-4 w-4 text-muted-foreground" />
         </Button>
         <ReevaluateIconButton
           lot={{

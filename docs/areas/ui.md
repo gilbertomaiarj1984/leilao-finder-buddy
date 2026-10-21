@@ -115,6 +115,19 @@
     filtro "Valor do lote até", índice de garimpo e a barra de vendas passadas (valor do lote × valores de venda)
     usam o valor do lote. **Só a Análise:** home, e-mails/avisos e o contexto do prompt da IA seguem no modo antigo
     (lote + frete × preço do disco) — mudar isso exige subir `PROMPT_VERSION` (reavalia a base); ver `pendencias.md`.
+  - **Dias, lotes que fazem sentido e possível lixo (v0.163.0):** a barra de dias da Análise tem a MESMA
+    quantidade da home à frente — **hoje + 14 dias**, em páginas de 5 com setas, mais "Dias Futuros" (depois
+    do último dia) — e **sem histórico** (`use-analise-lots.ts`: janela padrão da varredura + 2 páginas do banco + o
+    que passa do último dia, com `beyond: true` em `getVinylLotsRange`, que não corta em hoje+14). Lotes
+    **vigiados, com lance e do De olho entram sempre**, mesmo futuros e mesmo fora do banco (montados a partir
+    da conta). Só aparecem lotes que **ainda fazem sentido**: saem — mesmo vigiados — os de dia anterior a hoje,
+    lance com resultado final ("Vendido", "Vencedor", "Arrematado", "Não vendido"), pregão encerrado e
+    pregão em andamento que já passou do lote (`lotIsClosed`, `analise-time.ts`; andamento do presencial de
+    todas as casas de hoje, uma consulta por pregão); a nota "N lote(s) já encerrado(s)… mostrar" reexibe
+    (`analise-show-closed`). **Possível lixo** (`possibleTrashMap`, `lot-exclusion.ts`, compartilhada com a home;
+    parte de `useLotInsights`): pílula "⚠ possível lixo ✕" (clique = "não é lixo", ensina o modelo), evidência no
+    painel, filtro "Ocultar possível lixo" e botão de **excluir** na linha (`ExcludeLotDialog` + `excludeLot`).
+    "Analisar pendentes" só cobre os 5 primeiros dias (o servidor só enxerga a janela da varredura).
   - Teste local no navegador: `tools/local-tests/analise-seed.mjs` + `analise-e2e.mjs`.
 - **`_authenticated/analise.tsx` (Análise, remodelada na v0.113.0):** dois **Top 30 por nota**
   recolhíveis — **vigiados** (`watchedIds`) e **restante** — sob a barra de filtros e a **barra

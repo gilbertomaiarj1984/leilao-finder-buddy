@@ -4,6 +4,8 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   ArrowLeft,
   Binoculars,
+  ChevronLeft,
+  ChevronRight,
   Disc3,
   Eye,
   Gavel,
@@ -49,19 +51,22 @@ import {
 import { priceRoseSinceEval } from "@/lib/ai-reprice";
 import { auctionFreight } from "@/lib/auction-freight";
 import { garimpoIndex, type Garimpo } from "@/lib/lot-score";
-import { auctionChip, startsInMinutes } from "@/lib/analise-time";
+import { auctionChip, lotIsClosed, startsInMinutes } from "@/lib/analise-time";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
-import { FUTURE_LABEL, FUTURE_TAB, isFutureDay } from "@/lib/day-bar";
+import { DAY_PAGE, FUTURE_LABEL, FUTURE_TAB, isFutureDay } from "@/lib/day-bar";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
 import {
+  patchLotsCaches,
   queryKeys,
   useBidsQuery,
-  useLotsQuery,
   usePastSalesBulk,
   useWatchedQuery,
 } from "@/lib/queries";
+import { ANALISE_PAGES, useAnaliseLots } from "@/lib/use-analise-lots";
 import { useLotInsights, type LotInsight } from "@/lib/use-lot-insights";
+import { excludeLot, dismissPossibleTrash } from "@/lib/lot-exclusion.functions";
+import { ExcludeLotDialog } from "@/components/vinyl/exclude-lot-dialog";
 import { bidIsWinning, normalizeForMatch, parsePrice, type VinylLot } from "@/lib/vinyl-parse";
 import { saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
 import { OWNED_CONFIDENT_MIN } from "@/lib/wantlist-match";
@@ -124,6 +129,7 @@ function AnalisePage() {
   const [hideOwned, setHideOwned] = usePersistedState("analise-hide-owned", false);
   const [hideBadHouse, setHideBadHouse] = usePersistedState("analise-hide-bad-house", false);
   const [onlyPriced, setOnlyPriced] = usePersistedState("analise-only-priced", false);
+  const [hideTrash, setHideTrash] = usePersistedState("analise-hide-trash", false);
   // Ordenação e visualização: o que o usuário deixou por último vira o padrão da próxima visita.
   const [sortRaw, setSort] = usePersistedState<string>("analise-sort", "score");
   const sort: SortKey = isSortKey(sortRaw) ? sortRaw : "score";
@@ -144,7 +150,6 @@ function AnalisePage() {
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [pending, setPending] = useState<string | null>(null);
 
-  const lots = useLotsQuery();
   // Vigiados + meus lances: alimentam o filtro "Vigiados"/"Com lance", a borda
   // colorida das linhas, o status do lance e o botão de vigiar (mesma mecânica da página
   // principal). MESMO acumulador local de `index.tsx` (`@/lib/watched-accum`, MESMA chave de
@@ -196,7 +201,55 @@ function AnalisePage() {
     },
   });
 
-  const allLots = useMemo(() => lots.data?.lots ?? [], [lots.data]);
+  // Exclusão definitiva de lote (DELETE físico + aprendizado de "possível lixo"): um diálogo só.
+  const runExclude = useServerFn(excludeLot);
+  const runDismissTrash = useServerFn(dismissPossibleTrash);
+  const [excludeTarget, setExcludeTarget] = useState<{ id: string; title: string } | null>(null);
+  const excludeMutation = useMutation({
+    mutationFn: async (input: { lotId: string; reason?: string }) =>
+      await runExclude({ data: input }),
+    onSuccess: (result, input) => {
+      if (!result.ok) {
+        toast.error("Este lote já não estava mais na listagem");
+        return;
+      }
+      patchLotsCaches(queryClient, (list) => list.filter((item) => item.id !== input.lotId));
+      void queryClient.invalidateQueries({ queryKey: ["excluded-lots"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lots });
+      toast.success("Lote excluído — não volta a aparecer");
+      setExcludeTarget(null);
+    },
+    onError: (error: unknown) => {
+      toast.error((error as Error)?.message || "Não foi possível excluir o lote");
+    },
+  });
+  // "Isto não é lixo": nega os termos que causaram o sinal (vale para qualquer lote futuro).
+  const dismissTrash = useMutation({
+    mutationFn: async (terms: string[]) => await runDismissTrash({ data: { terms } }),
+    onMutate: (terms) => {
+      const prev = queryClient.getQueryData<string[]>(["trash-keyword-denylist"]) ?? [];
+      queryClient.setQueryData(["trash-keyword-denylist"], [...new Set([...prev, ...terms])]);
+      return { prev };
+    },
+    onError: (error: unknown, _terms, ctx) => {
+      if (ctx) queryClient.setQueryData(["trash-keyword-denylist"], ctx.prev);
+      toast.error((error as Error)?.message || "Não foi possível salvar");
+    },
+    onSuccess: () => toast.success('Marcado como "não é lixo" — o sistema aprendeu'),
+  });
+
+  // Hoje + 14 dias (a mesma quantidade da barra da home, sem histórico); lotes vigiados, com lance
+  // ou do De olho entram sempre, mesmo futuros.
+  const {
+    lots: allLots,
+    todayKey: serverToday,
+    barDays,
+    windowDays,
+    isLoading: lotsLoading,
+    isError: lotsError,
+    error: lotsErr,
+  } = useAnaliseLots(watchedQuery.data, bidsQuery.data);
+  const todayKey = serverToday ?? "";
   // Relógio da tela: o "começa em N min" e a visão "Começando logo" andam sozinhos.
   const nowMs = useNow();
   const nowMin = Math.floor(nowMs / 60_000);
@@ -236,11 +289,21 @@ function AnalisePage() {
     });
   const onEditTags = (id: string, tags: string[]) => saveTagsMut.mutate({ id, tags });
 
-  const days = useMemo(() => lots.data?.days ?? [], [lots.data]);
-  // Dia salvo que saiu da janela vira "Todos" (senão a lista ficaria vazia sem aba ativa).
-  // Último dia da janela: o que vier depois cai no último botão, "Dias Futuros".
-  const lastDay = days[days.length - 1];
-  const activeDay = days.includes(dayFilter) || dayFilter === FUTURE_TAB ? dayFilter : "";
+  // Barra de dias: hoje + 14, em páginas de 5 (como na home); o que vier depois do último dia cai
+  // no botão "Dias Futuros". Dia salvo que saiu da barra vira "Todos".
+  const days = barDays;
+  const lastDay = barDays[barDays.length - 1];
+  const activeDay = barDays.includes(dayFilter) || dayFilter === FUTURE_TAB ? dayFilter : "";
+  const [dayPageRaw, setDayPage] = usePersistedState<number>("analise-day-page", 0);
+  const dayPage = Number.isInteger(dayPageRaw)
+    ? Math.min(Math.max(dayPageRaw, 0), ANALISE_PAGES - 1)
+    : 0;
+  // Escolheu um dia de outra página (ex.: pelo filtro salvo): a barra vai até a página dele.
+  useEffect(() => {
+    const idx = barDays.indexOf(activeDay);
+    if (idx >= 0) setDayPage(Math.floor(idx / DAY_PAGE));
+  }, [activeDay, barDays, setDayPage]);
+  const pageDays = barDays.slice(dayPage * DAY_PAGE, dayPage * DAY_PAGE + DAY_PAGE);
 
   const houses = useMemo(
     () =>
@@ -250,9 +313,6 @@ function AnalisePage() {
     [allLots],
   );
 
-  const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
-    new Date(),
-  );
   // Vendas passadas (Analytics) dos lotes avaliados, numa chamada só.
   const evaluatedIds = useMemo(
     () => allLots.filter((l) => insightById.get(l.id)?.ai?.score != null).map((l) => l.id),
@@ -311,6 +371,38 @@ function AnalisePage() {
     return out;
   }, [allLots, insightById, bidStatusById, myBidById, watchedIds, nowMin]);
 
+  // Andamento do pregão por casa (uma consulta por pregão de hoje já iniciado): alimenta os chips
+  // e decide quais lotes já acabaram.
+  const progressByAuction = useAuctionProgress(
+    useMemo(
+      () => items.filter((it) => it.dayKey === todayKey).map((it) => it.lot),
+      [items, todayKey],
+    ),
+    todayKey,
+    nowMs,
+  );
+  // Só fazem sentido lotes que ainda podem receber lance — nem vigiados que já acabaram.
+  const [showClosed, setShowClosed] = usePersistedState("analise-show-closed", false);
+  const closedIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const it of items)
+      if (
+        lotIsClosed({
+          dayKey: it.dayKey,
+          todayKey,
+          lote: it.lot.lote,
+          bidStatus: it.bidStatus,
+          progress: progressByAuction.get(`${it.lot.idLeilao}|${it.lot.dayKey}`) ?? null,
+        })
+      )
+        ids.add(it.lot.id);
+    return ids;
+  }, [items, todayKey, progressByAuction]);
+  const openItems = useMemo(
+    () => (showClosed ? items : items.filter((it) => !closedIds.has(it.lot.id))),
+    [items, closedIds, showClosed],
+  );
+
   // Aplica os filtros SEM o dia — a barra de dias mostra a contagem de cada dia sobre este conjunto.
   const filteredAnyDay = useMemo(() => {
     const q = normalizeForMatch(search);
@@ -318,7 +410,7 @@ function AnalisePage() {
     const max = scoreMax.trim() ? Number(scoreMax) : null;
     const costMax = maxCost.trim() ? Number(maxCost) : null;
     const presetDef = PRESETS.find((p) => p.key === preset);
-    return items.filter((it) => {
+    return openItems.filter((it) => {
       const { lot, insight } = it;
       if (presetDef && !presetDef.test(it, todayKey)) return false;
       if (q && !normalizeForMatch(`${lot.title} ${insight.album ?? ""}`).includes(q)) return false;
@@ -337,10 +429,11 @@ function AnalisePage() {
       if (hideBadHouse && (insight.houseLevel === "vermelho" || insight.houseLevel === "laranja"))
         return false;
       if (onlyPriced && it.eco.ref === null) return false;
+      if (hideTrash && insight.possibleTrash) return false;
       return true;
     });
   }, [
-    items,
+    openItems,
     preset,
     todayKey,
     search,
@@ -357,6 +450,7 @@ function AnalisePage() {
     hideOwned,
     hideBadHouse,
     onlyPriced,
+    hideTrash,
   ]);
   const sorted = useMemo(() => {
     const byDay = !activeDay
@@ -388,7 +482,8 @@ function AnalisePage() {
     maxCost ||
     hideOwned ||
     hideBadHouse ||
-    onlyPriced,
+    onlyPriced ||
+    hideTrash,
   );
   const resetFilters = () => {
     setPreset("");
@@ -407,10 +502,12 @@ function AnalisePage() {
     setHideOwned(false);
     setHideBadHouse(false);
     setOnlyPriced(false);
+    setHideTrash(false);
   };
   const presetCounts = useMemo(
-    () => new Map(PRESETS.map((p) => [p.key, items.filter((it) => p.test(it, todayKey)).length])),
-    [items, todayKey],
+    () =>
+      new Map(PRESETS.map((p) => [p.key, openItems.filter((it) => p.test(it, todayKey)).length])),
+    [openItems, todayKey],
   );
   // Cobertura da IA na janela do app + o que o botão "Analisar pendentes" avalia: o dia escolhido,
   // os dias depois do último da barra ("Dias Futuros") ou, em "Todos", os dias de hoje em diante.
@@ -425,6 +522,7 @@ function AnalisePage() {
   const analyzeDaysScope = useMemo(
     () =>
       [...pendingByDay.keys()]
+        .filter((d) => windowDays.includes(d))
         .filter((d) =>
           activeDay === FUTURE_TAB
             ? isFutureDay(d, lastDay)
@@ -433,17 +531,22 @@ function AnalisePage() {
               : d >= todayKey,
         )
         .sort(),
-    [pendingByDay, activeDay, lastDay, todayKey],
+    [pendingByDay, activeDay, lastDay, todayKey, windowDays],
   );
   const pendingInScope = analyzeDaysScope.reduce((n, d) => n + (pendingByDay.get(d) ?? 0), 0);
-  const scopeLabel = activeDay
-    ? activeDay === FUTURE_TAB
-      ? "nos dias futuros"
-      : "neste dia"
-    : "de hoje em diante";
-  const staleItems = items.filter((it) => it.stale && it.dayKey >= todayKey);
+  // A análise sob demanda enxerga só a janela da varredura (5 dias); os demais dias entram na
+  // rodada automática da IA.
+  const outsideWindow =
+    activeDay !== "" && (activeDay === FUTURE_TAB || !windowDays.includes(activeDay));
+  const scopeLabel = outsideWindow
+    ? "neste escopo (a análise sob demanda cobre só os 5 primeiros dias; os demais entram na rodada automática)"
+    : activeDay
+      ? "neste dia"
+      : "nos 5 primeiros dias";
+  const staleItems = openItems.filter((it) => it.stale && !closedIds.has(it.lot.id));
   const bidCount = bidStatusById.size;
-  const watchedCount = items.filter((it) => it.watched).length;
+  const watchedCount = openItems.filter((it) => it.watched).length;
+  const closedCount = closedIds.size;
 
   // Barra de dias no formato da home: passados em âmbar, futuros em azul, hoje neutro.
   const relDay = (d: string) =>
@@ -489,11 +592,6 @@ function AnalisePage() {
     return [...groups.values()];
   }, [shown]);
   const rankOf = new Map(shown.map((it, i) => [it.lot.id, i + 1]));
-  const progressByAuction = useAuctionProgress(
-    useMemo(() => shown.map((it) => it.lot), [shown]),
-    todayKey,
-    nowMs,
-  );
   const renderRow = (it: AnaliseItem, variant: "list" | "cards") => (
     <AnaliseLotRow
       key={it.lot.id}
@@ -521,6 +619,8 @@ function AnalisePage() {
       busy={pending === it.lot.idPeca}
       variant={variant}
       onToggleWatch={onToggleWatch}
+      onExclude={(lot) => setExcludeTarget({ id: lot.id, title: lot.title })}
+      onDismissTrash={(terms) => dismissTrash.mutate(terms)}
       onEditTags={onEditTags}
     />
   );
@@ -565,14 +665,14 @@ function AnalisePage() {
       </HideableBar>
 
       <div className="mx-auto max-w-6xl px-4 py-6">
-        {lots.isLoading ? (
+        {lotsLoading ? (
           <div className="space-y-4">
             <Skeleton className="h-10 w-full max-w-md" />
             <Skeleton className="h-64 w-full" />
           </div>
-        ) : lots.isError ? (
+        ) : lotsError ? (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-foreground">
-            Não foi possível ler os lotes: {(lots.error as Error).message}
+            Não foi possível ler os lotes: {(lotsErr as Error).message}
           </p>
         ) : evaluated === 0 ? (
           <div className="space-y-4">
@@ -823,6 +923,15 @@ function AnalisePage() {
                   >
                     Só com mercado
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setHideTrash((v) => !v)}
+                    aria-pressed={hideTrash}
+                    className={filterChipClass(hideTrash)}
+                    title="Esconde lotes parecidos com os que você já excluiu (possível lixo)"
+                  >
+                    Ocultar possível lixo
+                  </button>
                   {filtersActive ? (
                     <Button variant="ghost" size="sm" onClick={resetFilters}>
                       <X className="mr-1 h-4 w-4" />
@@ -888,52 +997,91 @@ function AnalisePage() {
                 </p>
                 <RarityLegend />
               </div>
+              {closedCount > 0 ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {showClosed
+                    ? `Mostrando também ${closedCount} lote(s) que já acabaram (pregão encerrado, passou do lote ou lance com resultado final).`
+                    : `${closedCount} lote(s) já encerrado(s) ficam fora da lista, mesmo vigiados.`}{" "}
+                  <button
+                    type="button"
+                    onClick={() => setShowClosed((v) => !v)}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    {showClosed ? "ocultar" : "mostrar"}
+                  </button>
+                </p>
+              ) : null}
             </section>
 
             {/* ------- Barra de dias (mesmo formato da página principal) ------- */}
-            <Tabs
-              value={activeDay || "all"}
-              onValueChange={(v) => setDayFilter(v === "all" ? "" : v)}
-            >
-              <TabsList className="flex h-auto flex-nowrap justify-start gap-1 overflow-x-auto bg-secondary sm:flex-wrap sm:overflow-visible">
-                <TabsTrigger value="all" className="shrink-0">
-                  Todos
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {filteredAnyDay.length}
-                  </span>
-                </TabsTrigger>
-                {days.map((day) => {
-                  const rel = relDay(day);
-                  return (
-                    <TabsTrigger
-                      key={day}
-                      value={day}
-                      className={
-                        rel < 0
-                          ? "shrink-0 bg-amber-500/10 text-amber-700 data-[state=active]:bg-amber-500/25 data-[state=active]:text-amber-800 dark:text-amber-300 dark:data-[state=active]:text-amber-200"
-                          : rel > 0
-                            ? "shrink-0 bg-sky-500/10 text-sky-700 data-[state=active]:bg-sky-500/25 data-[state=active]:text-sky-800 dark:text-sky-300 dark:data-[state=active]:text-sky-200"
-                            : "shrink-0"
-                      }
-                    >
-                      {dayLabel(day, rel)}
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {dayCounts.get(day) ?? 0}
-                      </span>
-                    </TabsTrigger>
-                  );
-                })}
-                <TabsTrigger
-                  value={FUTURE_TAB}
-                  className="shrink-0 bg-sky-500/10 text-sky-700 data-[state=active]:bg-sky-500/25 data-[state=active]:text-sky-800 dark:text-sky-300 dark:data-[state=active]:text-sky-200"
-                >
-                  {FUTURE_LABEL}
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {filteredAnyDay.filter((it) => isFutureDay(it.dayKey, lastDay)).length}
-                  </span>
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                disabled={dayPage <= 0}
+                onClick={() => setDayPage(dayPage - 1)}
+                title="5 dias anteriores"
+                aria-label="5 dias anteriores"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Tabs
+                className="min-w-0 flex-1"
+                value={activeDay || "all"}
+                onValueChange={(v) => setDayFilter(v === "all" ? "" : v)}
+              >
+                <TabsList className="flex h-auto flex-nowrap justify-start gap-1 overflow-x-auto bg-secondary sm:flex-wrap sm:overflow-visible">
+                  <TabsTrigger value="all" className="shrink-0">
+                    Todos
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {filteredAnyDay.length}
+                    </span>
+                  </TabsTrigger>
+                  {pageDays.map((day) => {
+                    const rel = relDay(day);
+                    return (
+                      <TabsTrigger
+                        key={day}
+                        value={day}
+                        className={
+                          rel < 0
+                            ? "shrink-0 bg-amber-500/10 text-amber-700 data-[state=active]:bg-amber-500/25 data-[state=active]:text-amber-800 dark:text-amber-300 dark:data-[state=active]:text-amber-200"
+                            : rel > 0
+                              ? "shrink-0 bg-sky-500/10 text-sky-700 data-[state=active]:bg-sky-500/25 data-[state=active]:text-sky-800 dark:text-sky-300 dark:data-[state=active]:text-sky-200"
+                              : "shrink-0"
+                        }
+                      >
+                        {dayLabel(day, rel)}
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {dayCounts.get(day) ?? 0}
+                        </span>
+                      </TabsTrigger>
+                    );
+                  })}
+                  <TabsTrigger
+                    value={FUTURE_TAB}
+                    className="shrink-0 bg-sky-500/10 text-sky-700 data-[state=active]:bg-sky-500/25 data-[state=active]:text-sky-800 dark:text-sky-300 dark:data-[state=active]:text-sky-200"
+                  >
+                    {FUTURE_LABEL}
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {filteredAnyDay.filter((it) => isFutureDay(it.dayKey, lastDay)).length}
+                    </span>
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                disabled={dayPage >= ANALISE_PAGES - 1}
+                onClick={() => setDayPage(dayPage + 1)}
+                title="Próximos 5 dias"
+                aria-label="Próximos 5 dias"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
 
             {/* ------- Lista única ------- */}
             {shown.length === 0 ? (
@@ -978,6 +1126,14 @@ function AnalisePage() {
           </div>
         )}
       </div>
+      <ExcludeLotDialog
+        target={excludeTarget}
+        busy={excludeMutation.isPending}
+        onClose={() => setExcludeTarget(null)}
+        onConfirm={(reason) =>
+          excludeMutation.mutate({ lotId: excludeTarget!.id, reason: reason || undefined })
+        }
+      />
     </main>
   );
 }
