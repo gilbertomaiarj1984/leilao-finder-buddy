@@ -135,7 +135,7 @@
   de dias** (mesmo formato da home: passados âmbar, futuros azul, + "Todos"; contagem por dia
   sobre os filtros sem o dia). A visão "Por dia e casa de leilão" foi extinta. Cada linha do Top
   tem o botão ✨ **repassar a IA** (`ReevaluateIconButton` em `ai-score.tsx`, o MESMO `reevaluateLot` do
-  "refazer consulta" do card: reavalia forçado, com o preço atual — inclui meu lance vencendo —,
+  ↻ do card (menu capa/texto/dica): reavalia forçado, com o preço atual — inclui meu lance vencendo —,
   regrava `lot_ai`/`eval_price` e atualiza o cache `lotAi` sem refetch). Dia salvo que saiu da
   janela cai em "Todos". Nota à esquerda com `HoverDetails` (painel via `createPortal`,
   `position:fixed`, abre à esquerda/no toque, Discogs clicável); título com
@@ -1042,7 +1042,7 @@ Testes das partes puras: `tests/screen-speed.test.ts`.
     **Resumo** (álbum + título completo, valores, data/hora/UF, demanda, conservação via
     `ConditionBadges`, tags editáveis com controles sempre visíveis, sinais De olho ✓/✕ e
     "possível lixo → não é lixo", origem + mover para outro artista), **Nota IA**
-    (`ScoreDetails` exportado de `ai-score.tsx`: raridade, oportunidade, motivo, refazer consulta
+    (`ScoreDetails` exportado de `ai-score.tsx`: raridade, oportunidade, motivo
     e bloco Mercado Discogs), **Faixas** (`TracklistContent`, extraído de `tracklist-hover.tsx`
     — o popover do desktop usa o mesmo componente) e **Coleção** (estado da relação + botão que
     fecha a folha e abre o `OwnedPanel` existente; ficar de olho). Rodapé fixo: Vigiar, De olho,

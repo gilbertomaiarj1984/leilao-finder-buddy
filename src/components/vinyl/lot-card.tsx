@@ -13,7 +13,12 @@ import { HouseUf } from "@/components/vinyl/house-uf";
 import { useEffect, useRef, useState, type ComponentProps } from "react";
 
 import { Button } from "@/components/ui/button";
-import { EvaluateCornerButton, LotTags, ScoreCorner } from "@/components/vinyl/ai-score";
+import {
+  EvaluateCornerButton,
+  LotTags,
+  ReevaluateIconButton,
+  ScoreCorner,
+} from "@/components/vinyl/ai-score";
 import { TracklistHover } from "@/components/vinyl/tracklist-hover";
 import { formatAiAlbum, type LotAi, type LotMarket } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
@@ -37,7 +42,7 @@ import { LotCardMobile } from "./mobile/lot-card-mobile";
 
 type CardLot = {
   // Opcional só por cautela de tipagem; todo lote real tem id (chave da tabela `lots`) — sem
-  // ele, o botão "refazer consulta" da IA no painel de detalhes simplesmente não aparece.
+  // ele, o botão de IA do card e as vendas passadas do painel de detalhes não aparecem.
   id?: string;
   title: string;
   url: string;
@@ -266,22 +271,7 @@ function LotCardDesktop({
       ) : null}
       <div className="relative flex flex-1 flex-col">
         {ai && ai.score !== null ? (
-          <ScoreCorner
-            ai={ai}
-            market={market}
-            price={lot.price}
-            lot={
-              lot.id
-                ? {
-                    id: lot.id,
-                    title: lot.title,
-                    price: lot.price,
-                    house: lot.house,
-                    image: lot.image,
-                  }
-                : undefined
-            }
-          />
+          <ScoreCorner ai={ai} market={market} price={lot.price} />
         ) : lot.id ? (
           <EvaluateCornerButton
             lot={{
@@ -560,6 +550,17 @@ function LotCardDesktop({
                   className={`h-4 w-4 ${lookout?.on ? "text-fuchsia-600 dark:text-fuchsia-400" : "text-muted-foreground"}`}
                 />
               </Button>
+            ) : null}
+            {lot.id ? (
+              <ReevaluateIconButton
+                lot={{
+                  id: lot.id,
+                  title: lot.title,
+                  price: lot.price,
+                  house: lot.house,
+                  image: lot.image,
+                }}
+              />
             ) : null}
             <Button size="sm" variant="ghost" asChild>
               <a

@@ -204,7 +204,7 @@ cfg)` respeita `blocks` e `hiddenFields`), **Correlação de condições** (`rul
 image})` chama `evalLotsSync` **direto** (ignora o cache por `title_hash` — é justamente
   para reavaliar com base em informação nova do lote, ex.: imagem trocada) e faz
   `upsertLotAi([row])`. Provedor: o PADRÃO do usuário (`resolveAiProvider`/`getAiProvider`).
-  **Menu de opções (v0.173.0):** os três botões (✨ do card sem nota, "refazer consulta", ✨ da Análise)
+  **Menu de opções (v0.173.0; v0.174.0: o "refazer consulta" saiu do painel flutuante da nota e virou o botão ↻ `ReevaluateIconButton` na fileira de ações de TODO card de lote — `LotCard`, folha do celular e linhas da Análise):** os botões (✨ do card sem nota, ↻ do card/linha)
   abrem `AiReprocessPopover` (`ai-reprocess-menu.tsx`, o MESMO menu do reprocesso da Coleção): 1 · capa
   (`mode:"image"`, desabilitada sem imagem), 2 · só o título (`mode:"text"` → `evalLotsSync` zera a imagem),
   3 · dica livre (`hint` ≤600, prioridade máxima no prompt via `buildUserPrompt`; vale só para aquela nota,
