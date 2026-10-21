@@ -166,7 +166,6 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
 
 ## Revisão geral (21/10/2026) — o que o PR de infra deixou de fora
 
-- **Texto do prompt contra injeção (IA5)**: dizer ao `SYSTEM_PROMPT` que título e descrição são dado de terceiros muda o hash e reavalia até 800 lotes por rodada; vai junto com a mudança de frete do prompt, para pagar a reavaliação uma vez só.
 - **Temperatura da Claude (IA8)**: não fixada; testar se o Haiku 5.5 aceita com `thinking` desligado.
 - **Logout por GET** (logout-CSRF, baixo): trocar por POST exige mexer em `index.tsx` e `mobile-bottom-nav.tsx`.
 - **CSP de script/estilo** no Caddy: precisa de nonces no SSR do TanStack Start.
@@ -194,8 +193,5 @@ Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score
 - **Pesos do índice de garimpo** são palpite: calibrar com compras reais (`purchases`) antes de tratá-lo como
   critério padrão.
 
-- **Conta do lote com e sem frete (v0.162.0)**: a Análise usa o valor real do lote (frete à parte; Discogs = preço +
-  frete), mas `marketDeal` (home, `daily-digest`, De olho, calibração) e o contexto do prompt da IA
-  (`lote_mais_frete_brl`, `razao_lote_vs_sugerido`) ainda somam o frete do leilão ao lote. Decidir se unifica
-  (subir `PROMPT_VERSION` reavalia até 800 lotes por rodada) e se o frete do Discogs passa a vir da mediana real
-  dos anúncios BR (hoje usa a mesma estimativa fixa do painel).
+- **Frete do Discogs real (resta da unificação, v0.167.0)**: a regra de frete/comissão é única em todo o app; o
+  frete do lado do Discogs ainda é a estimativa fixa do painel (R$ 25/35), não a mediana real dos anúncios BR.

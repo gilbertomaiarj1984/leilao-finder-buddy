@@ -101,27 +101,28 @@ describe("marketDeal — âncora por condição", () => {
 
   test("o menor global (R$ 5,60) não ancora mais o veredicto", () => {
     // Antes: qualquer lote acima de R$ 6,44 era "caro" (vs. o menor global de R$ 5,60).
-    // Agora a âncora é o sugerido da condição (VG+ = 50): R$ 25 + R$ 25 de frete = 50, justo.
+    // Agora a âncora é o sugerido da condição (VG+ = 50) + o frete do vendedor (25) = 75: R$ 60 é justo.
     const vgp = withConditionAnchor(base, "VG+", "SP")!;
-    expect(marketDeal("R$ 25,00", vgp)).toBe("justo");
+    expect(marketDeal("R$ 60,00", vgp)).toBe("justo");
   });
 
   test("usa a condição do lote: o mesmo preço é barato para um NM e caro para um VG", () => {
     const nm = withConditionAnchor(base, "NM", "SP")!;
     const vg = withConditionAnchor(base, "VG", "SP")!;
     expect(nm.anchor).toEqual({ price: 66, condition: "NM", exact: true });
-    expect(marketDeal("R$ 20,00", nm)).toBe("barato"); // 20 + 25 = 45 <= 66 × 0,7 = 46,2
-    expect(marketDeal("R$ 20,00", vg)).toBe("caro"); // 45 >= 35 × 1,15
+    expect(marketDeal("R$ 60,00", nm)).toBe("barato"); // 60 <= (66 + 25) × 0,7 = 63,7
+    expect(marketDeal("R$ 70,00", vg)).toBe("caro"); // 70 >= (35 + 25) × 1,15 = 69
+    expect(marketDeal("R$ 70,00", nm)).toBe("justo");
   });
 
-  test("o frete do leilão entra na conta: Sudeste R$ 25, fora R$ 35", () => {
+  test("o frete do Discogs entra na referência: Sudeste R$ 25, fora R$ 35", () => {
     const se = withConditionAnchor(base, "NM", "RJ")!;
     const ne = withConditionAnchor(base, "NM", "BA")!;
     expect(se.freight).toBe(25);
     expect(ne.freight).toBe(35);
-    // 21 + 25 = 46 <= 46,2 (barato no Sudeste); 21 + 35 = 56 > 46,2 (justo fora dele).
-    expect(marketDeal("R$ 21,00", se)).toBe("barato");
-    expect(marketDeal("R$ 21,00", ne)).toBe("justo");
+    // O lote não leva o frete; a referência leva: 66 + 25 = 91 (limite barato 63,7) e 66 + 35 = 101 (70,7).
+    expect(marketDeal("R$ 66,00", se)).toBe("justo");
+    expect(marketDeal("R$ 66,00", ne)).toBe("barato");
   });
 
   test("sem mapa por condição (linha antiga) cai no sugerido, depois no menor global", () => {
@@ -161,46 +162,6 @@ describe("selectMarketBackfill", () => {
 });
 
 describe("lotEconomics — conta do lance", () => {
-  const m = {
-    matched: true,
-    releaseId: 1,
-    releaseTitle: null,
-    year: null,
-    numForSale: null,
-    lowestPrice: null,
-    currency: "BRL",
-    suggestedPrice: null,
-    suggestedCondition: null,
-    suggestedByCondition: null,
-    anchor: { price: 200, condition: "VG+", exact: true },
-    freight: 25,
-    have: null,
-    want: null,
-    priceLowBr: null,
-    priceHighBr: null,
-    numForSaleBr: null,
-  } as unknown as Parameters<typeof lotEconomics>[1];
-  test("custo total, veredicto e tetos", () => {
-    const e = lotEconomics("R$ 150,00", m);
-    expect(e.total).toBe(175);
-    expect(e.deal).toBe("justo");
-    expect(e.capCheap).toBe(115); // 200 × 0,7 − 25
-    expect(e.capFair).toBe(204); // < 200 × 1,15 − 25 = 205
-    expect(e.potential).toBe(25);
-  });
-  test("teto barato mantém o veredicto barato e o teto justo mantém justo", () => {
-    expect(lotEconomics("R$ 115,00", m).deal).toBe("barato");
-    expect(lotEconomics("R$ 116,00", m).deal).toBe("justo");
-    expect(lotEconomics("R$ 204,00", m).deal).toBe("justo");
-    expect(lotEconomics("R$ 205,00", m).deal).toBe("caro");
-  });
-  test("sem mercado ou sem preço: indefinido", () => {
-    expect(lotEconomics("R$ 100,00", undefined).deal).toBe("indefinido");
-    expect(lotEconomics("sem valor", m).total).toBeNull();
-  });
-});
-
-describe("lotEconomics — modo valor do lote (Análise)", () => {
   const mk = (over: Record<string, unknown>) =>
     ({
       matched: true,
@@ -223,33 +184,39 @@ describe("lotEconomics — modo valor do lote (Análise)", () => {
       ...over,
     }) as unknown as Parameters<typeof lotEconomics>[1];
 
-  test("o lote vale só o lance; o frete fica à parte e o Discogs leva preço + frete", () => {
-    const e = lotEconomics("R$ 150,00", mk({}), "lotValue");
+  test("o lote vale só o lance; o frete e a comissão ficam à parte e o Discogs leva preço + frete", () => {
+    const e = lotEconomics("R$ 150,00", mk({}));
     expect(e.total).toBe(150); // sem frete do leilão
     expect(e.freight).toBe(25); // informativo
+    expect(e.commission).toBe(7.5); // 5% do lote, informativo
     expect(e.refShipping).toBe(25);
     expect(e.ref).toBe(225); // 200 do disco + 25 de frete do vendedor
     expect(e.ratio).toBeCloseTo(150 / 225, 5);
     expect(e.deal).toBe("barato"); // 66,7% do mercado (≤ 70%)
     expect(e.potential).toBe(75);
   });
-  test("tetos sem frete do leilão", () => {
-    const e = lotEconomics("R$ 100,00", mk({}), "lotValue");
+  test("tetos de lance sem frete nem comissão", () => {
+    const e = lotEconomics("R$ 100,00", mk({}));
     expect(e.capCheap).toBe(157); // 225 × 0,7
     expect(e.capFair).toBe(258); // < 225 × 1,15 = 258,75
-    expect(lotEconomics("R$ 157,00", mk({}), "lotValue").deal).toBe("barato");
-    expect(lotEconomics("R$ 158,00", mk({}), "lotValue").deal).toBe("justo");
-    expect(lotEconomics("R$ 259,00", mk({}), "lotValue").deal).toBe("caro");
+    expect(lotEconomics("R$ 157,00", mk({})).deal).toBe("barato");
+    expect(lotEconomics("R$ 158,00", mk({})).deal).toBe("justo");
+    expect(lotEconomics("R$ 258,00", mk({})).deal).toBe("justo");
+    expect(lotEconomics("R$ 259,00", mk({})).deal).toBe("caro");
   });
   test("faixa BR já é total com frete: não soma frete de novo", () => {
-    const e = lotEconomics("R$ 100,00", mk({ anchor: null, priceLowBr: 180 }), "lotValue");
+    const e = lotEconomics("R$ 100,00", mk({ anchor: null, priceLowBr: 180 }));
     expect(e.refShipping).toBe(0);
     expect(e.ref).toBe(180);
   });
-  test("modo antigo continua igual (home, e-mails, IA)", () => {
-    const e = lotEconomics("R$ 150,00", mk({}));
-    expect(e.total).toBe(175);
-    expect(e.ref).toBe(200);
-    expect(e.refShipping).toBe(0);
+  test("a comissão não muda o veredicto", () => {
+    const withFee = lotEconomics("R$ 157,00", mk({}));
+    expect(withFee.deal).toBe("barato");
+    expect(withFee.commission).toBeCloseTo(7.85, 5);
+  });
+  test("sem mercado ou sem preço: indefinido", () => {
+    expect(lotEconomics("R$ 100,00", undefined).deal).toBe("indefinido");
+    expect(lotEconomics("sem valor", mk({})).total).toBeNull();
+    expect(lotEconomics("sem valor", mk({})).commission).toBeNull();
   });
 });

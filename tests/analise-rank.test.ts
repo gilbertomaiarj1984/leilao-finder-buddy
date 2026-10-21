@@ -12,6 +12,7 @@ import type { LotEconomics } from "@/lib/lot-score";
 
 const eco = (ratio: number | null, potential: number | null): LotEconomics => ({
   total: 100,
+  commission: 0,
   freight: 0,
   refShipping: 0,
   ref: ratio ? 100 / ratio : null,
@@ -84,6 +85,7 @@ describe("PRESETS", () => {
     score: 80,
     eco: {
       total: 100,
+      commission: 0,
       freight: 0,
       refShipping: 0,
       ref: 200,

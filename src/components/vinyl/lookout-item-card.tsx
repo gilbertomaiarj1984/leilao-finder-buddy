@@ -664,7 +664,7 @@ export function LookoutItemCard({
                         {m.marketVerdict !== "indefinido" ? (
                           <span
                             className={`font-medium ${dealTone(m.marketVerdict)}`}
-                            title="Lote + frete da casa contra o preço sugerido do Discogs para a condição do disco"
+                            title="Valor do lote contra o preço sugerido do Discogs para a condição do disco, mais o frete do vendedor"
                           >
                             {dealLabel(m.marketVerdict)} vs. mercado
                           </span>

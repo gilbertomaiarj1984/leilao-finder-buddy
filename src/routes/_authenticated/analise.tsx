@@ -331,7 +331,7 @@ function AnalisePage() {
       const status = bidStatusById.get(lot.idPeca) ?? null;
       const myBid = myBidById.get(lot.idPeca);
       const currentPrice = status && bidIsWinning(status) && myBid ? myBid : lot.price;
-      const eco = lotEconomics(currentPrice, insight.market, "lotValue");
+      const eco = lotEconomics(currentPrice, insight.market);
       const ownedConfident = Boolean(insight.owned && insight.owned.score >= OWNED_CONFIDENT_MIN);
       const garimpoFull = garimpoIndex({
         eco,

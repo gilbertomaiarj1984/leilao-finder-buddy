@@ -108,13 +108,14 @@
     dedupe em `app_state.watch_start_notified` (`idLeilao|dia`, gravado só depois do envio); no-op sem VAPID_*
     ou sem aparelho inscrito.
   - **Valor real do lote, frete à parte (v0.162.0):** na Análise o lote vale o que se paga por ele — a conta
-    (`lotEconomics(..., "lotValue")`, `lot-score.ts`) NÃO soma o frete do leilão: o **valor do lote** aparece
+    (`lotEconomics`, `lot-score.ts`) NÃO soma o frete do leilão: o **valor do lote** aparece
     grande e o **frete estimado** (UF, painel de IA) logo abaixo, só informativo. O frete entra do lado do
     **Discogs**: referência = preço do disco (âncora da condição) **+ frete do vendedor** (vendedores embutem
     margem no frete); a faixa BR, que já é total com frete, não soma de novo. Tetos barato/justo, potencial,
     filtro "Valor do lote até", índice de garimpo e a barra de vendas passadas (valor do lote × valores de venda)
-    usam o valor do lote. **Só a Análise:** home, e-mails/avisos e o contexto do prompt da IA seguem no modo antigo
-    (lote + frete × preço do disco) — mudar isso exige subir `PROMPT_VERSION` (reavalia a base); ver `pendencias.md`.
+    usam o valor do lote. **Regra única (v0.167.0):** a mesma conta vale na home, nos e-mails/avisos, na calibração
+    e no contexto do prompt da IA; a **comissão do leiloeiro** (sempre 5%) aparece à parte, como o frete, e não
+    entra na conta.
   - **Dias, lotes que fazem sentido e possível lixo (v0.163.0):** a barra de dias da Análise tem a MESMA
     quantidade da home à frente — **hoje + 14 dias**, em páginas de 5 com setas, mais "Dias Futuros" (depois
     do último dia) — e **sem histórico** (`use-analise-lots.ts`: janela padrão da varredura + 2 páginas do banco + o

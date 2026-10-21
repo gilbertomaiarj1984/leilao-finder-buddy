@@ -28,7 +28,7 @@ const market = {
 };
 
 describe("contexto da avaliação", () => {
-  test("usa a condição do disco e soma o frete do Sudeste", () => {
+  test("usa a condição do disco; o frete do Sudeste vai para a referência, não para o lote", () => {
     const ctx = buildLotContext({
       condition: { media: "NM", sleeve: "VG+", insert_state: "sim", score: 85 },
       market,
@@ -38,10 +38,10 @@ describe("contexto da avaliação", () => {
     expect(ctx.estado).toEqual({ disco: "NM", capa: "VG+", encarte: "sim", nota_estado: 85 });
     expect(ctx.mercado?.anchor).toEqual({ price: 66.27, condition: "NM", exact: true });
     const out = contextForPrompt(ctx, 40);
-    expect(out["lote_mais_frete_brl"]).toBe(65);
-    expect((out["mercado_discogs_brl"] as Record<string, unknown>)["razao_lote_vs_sugerido"]).toBe(
-      0.98,
-    );
+    expect(out["lote_brl"]).toBe(40);
+    const mercado = out["mercado_discogs_brl"] as Record<string, unknown>;
+    expect(mercado["referencia_com_frete_brl"]).toBe(91); // 66,27 + 25
+    expect(mercado["razao_lote_vs_referencia"]).toBe(0.44); // 40 / 91,27
     expect(out["mercado_discogs_brl"]).toMatchObject({
       preco_sugerido: 66,
       condicao_de_referencia: "NM",
@@ -61,9 +61,9 @@ describe("contexto da avaliação", () => {
     expect(
       (out["mercado_discogs_brl"] as Record<string, unknown>)["estado_do_lote_conhecido"],
     ).toBe(false);
-    expect((out["mercado_discogs_brl"] as Record<string, unknown>)["razao_lote_vs_sugerido"]).toBe(
-      2.23,
-    ); // (15 + 35) / 22,4
+    expect(
+      (out["mercado_discogs_brl"] as Record<string, unknown>)["razao_lote_vs_referencia"],
+    ).toBe(0.26); // 15 / (22,4 + 35)
   });
 
   test("com só a capa conhecida, o disco repete o grau (convenção do app)", () => {
@@ -96,7 +96,7 @@ describe("contexto da avaliação", () => {
     };
     const withCtx = buildUserPrompt(lot, buildLotContext({ market, uf: "SP" }));
     expect(withCtx).toContain('"contexto"');
-    expect(withCtx).toContain('"lote_mais_frete_brl":65');
+    expect(withCtx).toContain('"lote_brl":40');
     expect(buildUserPrompt(lot)).not.toContain("contexto");
   });
 
@@ -119,11 +119,7 @@ describe("painel de IA — configuração", () => {
       hiddenFields: ["mercado.tem", "mercado.querem"],
     });
     const out = contextForPrompt(buildLotContext(input, cfg), 40, cfg);
-    expect(Object.keys(out)).toEqual([
-      "frete_estimado_brl",
-      "lote_mais_frete_brl",
-      "mercado_discogs_brl",
-    ]);
+    expect(Object.keys(out)).toEqual(["frete_estimado_brl", "lote_brl", "mercado_discogs_brl"]);
     const m = out["mercado_discogs_brl"] as Record<string, unknown>;
     expect(m["tem"]).toBeUndefined();
     expect(m["querem"]).toBeUndefined();
@@ -202,7 +198,7 @@ describe("assinatura da estrutura do contexto", () => {
     expect(sig.startsWith("estado:disco,capa,encarte,nota_estado|mercado:preco_sugerido")).toBe(
       true,
     );
-    expect(sig).toContain("|frete:frete_estimado_brl,lote_mais_frete_brl");
+    expect(sig).toContain("|frete:frete_estimado_brl,lote_brl");
   });
 });
 

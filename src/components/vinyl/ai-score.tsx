@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { reevaluateLot } from "@/lib/ai.functions";
 
 import {
+  COMMISSION_PCT,
   DEAL_BAND_CHEAP,
   DEAL_BAND_EXPENSIVE,
   dealLabel,
@@ -73,10 +74,11 @@ function MarketBlock({ market, price }: { market: LotMarket; price?: string }) {
         ) : null}
         {market.freight && price && parsePrice(price) !== null ? (
           <>
-            <dt>Lote + frete:</dt>
+            <dt>Frete estimado:</dt>
             <dd className="font-medium text-foreground">
-              {fmtMoney(parsePrice(price)! + market.freight, "BRL")}
-              {` · frete estimado ${fmtMoney(market.freight, "BRL")}`}
+              {fmtMoney(market.freight, "BRL")}
+              {` · comissão (5%) ${fmtMoney(parsePrice(price)! * COMMISSION_PCT, "BRL")}`}
+              <span className="font-normal text-muted-foreground"> · fora do valor do lote</span>
             </dd>
           </>
         ) : null}
@@ -521,7 +523,7 @@ export function ScoreDetails({
   // Dados do lote para o botão "refazer consulta" — sem eles, o botão simplesmente não aparece.
   lot?: ReevalLot;
 }) {
-  // A oportunidade vale mais calculada AGORA (lote + frete × preço do Discogs na condição do disco,
+  // A oportunidade vale mais calculada AGORA (valor do lote × preço do Discogs na condição do disco + frete,
   // com a configuração atual do painel) do que a gravada pela IA, que pode ter saído com dado antigo.
   const marketVerdict = market && price ? marketDeal(price, market) : "indefinido";
   const fromMarket = marketVerdict !== "indefinido";
@@ -546,7 +548,7 @@ export function ScoreDetails({
           className={`font-medium ${dealTone(opportunity)}`}
           title={
             fromMarket
-              ? "Calculada agora: lote + frete contra o preço sugerido do Discogs para a condição do disco"
+              ? "Calculada agora: valor do lote contra o preço sugerido do Discogs para a condição do disco, mais o frete do vendedor"
               : "Avaliação da IA"
           }
         >

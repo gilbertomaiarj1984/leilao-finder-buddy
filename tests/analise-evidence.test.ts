@@ -6,6 +6,7 @@ const base: EvidenceInput = {
   rarity: "raro",
   eco: {
     total: 125,
+    commission: 0,
     freight: 0,
     refShipping: 0,
     ref: 400,
@@ -45,6 +46,7 @@ describe("buildEvidence", () => {
       ...base,
       eco: {
         total: 125,
+        commission: 0,
         freight: 0,
         refShipping: 0,
         ref: null,

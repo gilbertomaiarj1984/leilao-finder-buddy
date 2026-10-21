@@ -16,8 +16,10 @@ export function FreightTab({ draft, setDraft }: Props) {
           Frete do leilão
         </h2>
         <p className="mb-3 text-sm text-muted-foreground">
-          As casas brasileiras sempre cobram frete. Ele é somado ao valor do lote antes de comparar
-          com o preço do Discogs, sempre em reais.
+          As casas brasileiras sempre cobram frete. Ele aparece à parte do valor do lote (assim como
+          a comissão de 5%) e não entra na comparação do lote. No Discogs o frete do vendedor é
+          somado ao preço do disco, porque vendedores costumam embutir margem nele; este valor é a
+          estimativa usada nos dois lados, sempre em reais.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -46,11 +48,11 @@ export function FreightTab({ draft, setDraft }: Props) {
           </label>
         </div>
         <p className="mt-3 rounded bg-secondary/50 p-2 font-mono text-xs">
-          lote {brl(price)} + frete Sudeste {brl(draft.freight.sudeste)} ={" "}
-          {brl(price + draft.freight.sudeste)}
+          disco no Discogs {brl(price)} + frete Sudeste {brl(draft.freight.sudeste)} ={" "}
+          {brl(price + draft.freight.sudeste)} de referência
           <br />
-          lote {brl(price)} + frete demais regiões {brl(draft.freight.outras)} ={" "}
-          {brl(price + draft.freight.outras)}
+          disco no Discogs {brl(price)} + frete demais regiões {brl(draft.freight.outras)} ={" "}
+          {brl(price + draft.freight.outras)} de referência
         </p>
       </section>
 

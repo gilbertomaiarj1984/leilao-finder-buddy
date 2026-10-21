@@ -98,8 +98,9 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   bloco `contexto` (`ai-context.ts`, puro): `estado` (disco/capa/encarte/nota de `lot_condition`),
   `mercado_discogs_brl` (preço sugerido da condição do disco — G+ quando o estado é desconhecido —,
   `want`/`have`, ano, anúncios à venda, de `lot_market.suggested_by_condition`), `frete_estimado_brl`
-  (R$ 25 Sudeste / R$ 35 demais, pela UF de `lots`), `lote_mais_frete_brl` e `razao_lote_vs_sugerido`
-  (≤ 0,7 barato, ≥ 1,15 caro — as mesmas faixas do `marketDeal`). Dado ausente não entra no JSON.
+  (R$ 25 Sudeste / R$ 35 demais, pela UF de `lots`), `lote_brl` (valor do lote, sem frete),
+  `referencia_com_frete_brl` (sugerido + frete) e `razao_lote_vs_referencia` (≤ 0,7 barato, ≥ 1,15 caro — as
+  mesmas faixas e a mesma regra do `marketDeal`, desde a v0.167.0; `PROMPT_VERSION` 4). Dado ausente não entra no JSON.
   Carregado na hora do envio (`loadLotContexts`, por ids; best-effort — falha = prompt sem contexto,
   como antes); o Batches congela o contexto no submit. **Versão do prompt:** `PROMPT_VERSION`
   (`ai-context.ts`) vira sufixo do hash (`evalHash` = `titleHash.p3`); subir o número reavalia a

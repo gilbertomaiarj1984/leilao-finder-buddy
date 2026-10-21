@@ -116,6 +116,10 @@ export function LotDetail({
               frete estimado do leilão ({lot.uf || "UF ?"}), fora da conta
             </dt>
             <dd className="text-right text-xs text-muted-foreground">{brl(eco.freight)}</dd>
+            <dt className="text-xs text-muted-foreground">
+              comissão do leiloeiro (5%), fora da conta
+            </dt>
+            <dd className="text-right text-xs text-muted-foreground">{brl(eco.commission)}</dd>
             {eco.refShipping > 0 ? (
               <>
                 <dt className="text-muted-foreground">

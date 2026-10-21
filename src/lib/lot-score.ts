@@ -230,7 +230,7 @@ export function fmtMoney(value: number | null, currency: string | null): string 
 }
 
 /**
- * Faixas do veredicto "vs. mercado": barato quando (lote + frete) ≤ 70% da âncora; caro quando
+ * Faixas do veredicto "vs. mercado": barato quando o valor do lote ≤ 70% da referência; caro quando
  * ≥ 115%. O texto do prompt da IA (`ai-eval.server.ts`) usa as MESMAS constantes.
  */
 export const DEAL_BAND_CHEAP = 0.7;
@@ -261,18 +261,23 @@ function marketReferenceInfo(
 
 export type LotDeal = "barato" | "justo" | "caro" | "indefinido";
 
+/**
+ * Comissão do leiloeiro estimada, SEMPRE 5% do valor do lote. Aparece à parte (como o frete) e
+ * não entra na comparação com o mercado nem nos tetos de lance.
+ */
+export const COMMISSION_PCT = 0.05;
+
 /** A conta do lote contra o mercado (tudo em BRL; `null` = sem base para calcular). */
 export type LotEconomics = {
-  /**
-   * Custo do lote na conta: no modo `withFreight`, lance + frete estimado do leilão; no modo
-   * `lotValue`, só o valor do lote (o frete aparece à parte, em `freight`).
-   */
+  /** Valor do lote (o lance): é isto que se compara com o mercado. O frete e a comissão ficam à parte. */
   total: number | null;
-  /** Frete estimado do leilão (UF), SEMPRE à parte — só entra em `total` no modo `withFreight`. */
+  /** Frete estimado do leilão (UF), SEMPRE à parte do valor do lote. */
   freight: number;
+  /** Comissão estimada do leiloeiro (5% do lote), à parte do valor do lote. */
+  commission: number | null;
   /**
-   * Preço de referência do mercado. No modo `lotValue` é o que um comprador paga no Discogs:
-   * preço do disco + frete (`refShipping`), pois vendedores embutem margem no frete.
+   * Preço de referência do mercado: o que um comprador paga no Discogs, preço do disco + frete
+   * (`refShipping`), pois vendedores embutem margem no frete.
    */
   ref: number | null;
   /** Parte de `ref` que é frete do Discogs (0 quando a referência já é um total com frete). */
@@ -280,40 +285,34 @@ export type LotEconomics = {
   /** `total ÷ ref`. */
   ratio: number | null;
   deal: LotDeal;
-  /** Maior lance que ainda deixa o lote "barato" (total ≤ 70% da referência). */
+  /** Maior lance que ainda deixa o lote "barato" (valor do lote ≤ 70% da referência). */
   capCheap: number | null;
-  /** Maior lance que ainda deixa o lote "justo" (total < 115% da referência). */
+  /** Maior lance que ainda deixa o lote "justo" (valor do lote < 115% da referência). */
   capFair: number | null;
   /** `ref − total`: quanto o mercado paga a mais (negativo = lote acima do mercado). */
   potential: number | null;
 };
 
 /**
- * Conta do lote: custo total (lance + frete), veredicto e tetos de lance. É a ÚNICA fonte das
- * faixas barato/justo/caro (`DEAL_BAND_*`) — `marketDeal` só devolve o veredicto daqui.
+ * Conta do lote: valor do lote contra o Discogs (preço + frete do vendedor), veredicto e tetos de
+ * lance. Regra ÚNICA em todo o app (home, Análise, e-mails, calibração e prompt da IA): o lote vale
+ * o que se paga por ele, e quem leva o frete é o lado do Discogs, onde ele costuma inflar o preço.
+ * É a ÚNICA fonte das faixas barato/justo/caro (`DEAL_BAND_*`) — `marketDeal` só devolve o veredicto
+ * daqui.
  */
-type EconomicsMode = "withFreight" | "lotValue";
-
-export function lotEconomics(
-  price: string,
-  m: LotMarket | undefined,
-  mode: EconomicsMode = "withFreight",
-): LotEconomics {
+export function lotEconomics(price: string, m: LotMarket | undefined): LotEconomics {
   const hammer = parsePrice(price);
   const info = marketReferenceInfo(m);
   const freight = m?.freight ?? 0;
-  // `withFreight` (home, e-mails, prompt da IA): o lote custa o valor + o frete da casa, contra o
-  // preço do disco no Discogs. `lotValue` (Análise): o lote vale o que se paga por ele; quem leva
-  // o frete é o lado do Discogs (preço + frete do vendedor), onde ele costuma inflar o preço.
-  const lotValue = mode === "lotValue";
-  const refShipping = lotValue && info && !info.includesShipping ? freight : 0;
+  const refShipping = info && !info.includesShipping ? freight : 0;
   const ref = info ? info.value + refShipping : null;
-  const total = hammer === null ? null : lotValue ? hammer : hammer + freight;
-  const capFreight = lotValue ? 0 : freight;
+  const total = hammer;
+  const commission = hammer === null ? null : hammer * COMMISSION_PCT;
   if (total === null || ref === null) {
     return {
       total,
       freight,
+      commission,
       refShipping,
       ref,
       ratio: null,
@@ -332,12 +331,13 @@ export function lotEconomics(
   return {
     total,
     freight,
+    commission,
     refShipping,
     ref,
     ratio: total / ref,
     deal,
-    capCheap: Math.max(0, Math.floor(ref * DEAL_BAND_CHEAP - capFreight)),
-    capFair: Math.max(0, Math.ceil(ref * DEAL_BAND_EXPENSIVE - capFreight) - 1),
+    capCheap: Math.max(0, Math.floor(ref * DEAL_BAND_CHEAP)),
+    capFair: Math.max(0, Math.ceil(ref * DEAL_BAND_EXPENSIVE) - 1),
     potential: ref - total,
   };
 }
