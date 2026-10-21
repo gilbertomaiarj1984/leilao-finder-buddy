@@ -16,6 +16,7 @@ import {
   watchedMatchesSearch,
   type HouseStats,
 } from "@/components/vinyl/grouping";
+import { useAnalyzeScope } from "@/components/vinyl/use-ai-actions";
 import { useTodayUnsold } from "@/components/vinyl/use-today-unsold";
 import { effectiveTextRules } from "@/lib/condition-text";
 import { type Condition, type Grade, parseConditionFromText, scoreCondition } from "@/lib/grading";
@@ -27,13 +28,7 @@ import {
   type LotAi,
   type LotMarket,
 } from "@/components/vinyl/ai-score-utils";
-import {
-  analyzeOnDemand,
-  getAiMode,
-  repriceLotAi,
-  runAiident,
-  setLotTags,
-} from "@/lib/ai.functions";
+import { getAiMode, repriceLotAi, runAiident, setLotTags } from "@/lib/ai.functions";
 import { applyCollectionDecision, dismissCollectionMatchTerms } from "@/lib/collection.functions";
 import {
   enrichLotes,
@@ -46,7 +41,7 @@ import {
   scrapeVinylChunk,
   setVerifiedHouses,
 } from "@/lib/leiloesbr.functions";
-import { AI_PROVIDER_SHORT, formatFailoverTrail, type AiProvider } from "@/lib/ai-provider";
+import type { AiProvider } from "@/lib/ai-provider";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { attachLookout, setLookoutLink, toggleLookout } from "@/lib/lookout.functions";
 import {
@@ -375,7 +370,6 @@ export function useDashboardData() {
   const fetchSoldLots = useServerFn(getSoldLots);
   const runSaveTags = useServerFn(setLotTags);
   const fetchAiMode = useServerFn(getAiMode);
-  const runAnalyze = useServerFn(analyzeOnDemand);
   const runApplyDecision = useServerFn(applyCollectionDecision);
   const runToggleLookout = useServerFn(toggleLookout);
   const runSetLookoutLink = useServerFn(setLookoutLink);
@@ -451,75 +445,8 @@ export function useDashboardData() {
   // Provedor de IA PADRÃO (Claude/Gemini). Fonte da verdade é o servidor (`app_state`).
   const aiProviderQuery = useAiProviderQuery();
   const aiProvider: AiProvider = aiProviderQuery.data ?? "anthropic";
-  // Análise SOB DEMANDA (botões por dia/casa). `analyzing` guarda a chave em execução:
-  // o dia (`day`) ou a casa (`${day}|${casa}`). Roda em laço até esgotar os não avaliados
-  // (ou parar de progredir), depois revalida o cache queryKeys.lotAi para as notas aparecerem.
-  const [analyzing, setAnalyzing] = useState<string | null>(null);
-  const analyzeScope = (opts: { day: string; house?: string; watched?: boolean }) => {
-    if (analyzing) return; // uma análise por vez (evita disparar vários batches síncronos)
-    const key = opts.watched ? "watched" : opts.house ? `${opts.day}|${opts.house}` : opts.day;
-    // Usa SEMPRE o provedor selecionado no topo da página (sem perguntar).
-    const provider = aiProvider;
-    void (async () => {
-      setAnalyzing(key);
-      let evaluated = 0;
-      let failed = 0;
-      let scopeSize = 0;
-      let lastError: string | null = null;
-      let switchedTo: AiProvider | null = null;
-      let attemptErrors: Partial<Record<AiProvider, string>> = {};
-      try {
-        for (let guard = 0; guard < 60; guard += 1) {
-          const res = await runAnalyze({
-            data: { day: opts.day, house: opts.house, watched: opts.watched, max: 25, provider },
-          });
-          evaluated += res.evaluated;
-          failed += res.failed ?? 0;
-          scopeSize = Math.max(scopeSize, res.scope ?? 0);
-          if (res.error) lastError = res.error;
-          if (res.switched && res.served) switchedTo = res.served;
-          if (res.attemptErrors) attemptErrors = { ...attemptErrors, ...res.attemptErrors };
-          // Para quando não sobra nada OU quando a rodada não avaliou nada (lotes que
-          // falham sempre voltariam ao "pendente" e causariam laço infinito).
-          if (res.remaining === 0 || res.evaluated === 0) break;
-        }
-        await queryClient.invalidateQueries({ queryKey: queryKeys.lotAi });
-        // Avisa se houve failover: mostra o motivo de CADA provedor pulado (ex.: "Claude: sem
-        // chave de API configurada · Gemini: sem créditos/quota") em vez de um "trocou" genérico.
-        const trail = formatFailoverTrail(attemptErrors);
-        if (switchedTo && switchedTo !== provider) {
-          toast.warning(
-            trail
-              ? `${trail} — usei ${AI_PROVIDER_SHORT[switchedTo]}`
-              : `${AI_PROVIDER_SHORT[provider]} indisponível — usei ${AI_PROVIDER_SHORT[switchedTo]}`,
-          );
-        }
-        if (evaluated) {
-          toast.success(
-            `IA avaliou ${evaluated} lote(s) ${opts.house ? "desta casa" : "deste dia"}`,
-          );
-        } else if (failed) {
-          // Havia lotes pendentes, mas a IA não devolveu nada (vazio/erro) — não é "já avaliado".
-          toast.error(
-            `A IA não retornou avaliação${lastError ? ` (${lastError})` : ""} — verifique a chave/limite do provedor`,
-          );
-        } else if (opts.watched && scopeSize === 0) {
-          // Escopo vazio: a lista de vigiados/lances não veio (ex.: sessão do LeilõesBR expirada).
-          toast.error(
-            "Nenhum vigiado/lance foi encontrado no LeilõesBR — confira o login da conta",
-          );
-        } else {
-          toast.success(
-            `Nada novo para avaliar (${scopeSize} lote(s) verificado(s), todos já avaliados)`,
-          );
-        }
-      } catch (error) {
-        toast.error((error as Error)?.message || "Não foi possível analisar agora");
-      } finally {
-        setAnalyzing(null);
-      }
-    })();
-  };
+  // Análise SOB DEMANDA (botões por dia/casa) — laço e avisos em `use-ai-actions.ts`.
+  const { analyzing, analyzeScope } = useAnalyzeScope();
   const aiById = useMemo(() => {
     const map = new Map<string, LotAi>();
     for (const r of lotAiQuery.data ?? []) map.set(r.id, toLotAi(r));

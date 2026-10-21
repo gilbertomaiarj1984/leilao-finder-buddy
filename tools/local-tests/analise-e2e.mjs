@@ -93,6 +93,22 @@ const det = await rita.innerText();
 ok("painel mostra evidências e a conta do lance", /Raridade:/.test(det) && /Teto para ainda ser barato/.test(det) && /Casa:/.test(det));
 ok("painel mostra vendas passadas e a barra de faixa", /Vendas passadas: 3 venda/.test(det) && (await rita.locator('[role="img"]').count()) >= 1, det.slice(-500));
 await page.screenshot({ path: `${OUT}/analise-detalhe.png`, fullPage: false });
+// ---- fase 3: cobertura da IA, nota defasada, horário do pregão ----
+await page.reload({ waitUntil: "networkidle" });
+await page.waitForSelector("article");
+const cov = await page.getByLabel("Cobertura da IA").innerText();
+ok("cobertura da IA mostra 8 de 10 com nota", /8 de 10 lote/.test(cov), cov);
+ok("botão Analisar pendentes (2)", await page.getByRole("button", { name: /Analisar pendentes \(2\)/ }).isVisible());
+ok("botão Reavaliar defasadas (1)", await page.getByRole("button", { name: /Reavaliar defasadas \(1\)/ }).isVisible());
+const milton = page.locator("article", { hasText: "Clube da Esquina" }).first();
+ok("linha do Clube da Esquina mostra 'nota defasada'", /nota defasada/.test(await milton.innerText()));
+const all = await page.locator("main").innerText();
+ok("chip do pregão aparece (ao vivo / começa em / encerrado)", /ao vivo|começa em|pregão encerrado/.test(all));
+await page.getByRole("button", { name: /Começando logo/ }).count().then((n) => ok("visão Começando logo existe", n === 1, n));
+await page.getByRole("button", { name: /Analisar pendentes/ }).click();
+await page.waitForTimeout(2500);
+const toast = await page.locator("[data-sonner-toast]").allInnerTexts();
+ok("Analisar pendentes responde com aviso (sem IA configurada aqui)", toast.length > 0, toast);
 // mobile
 const mctx = await browser.newContext({ viewport: { width: 390, height: 800 } });
 await mctx.addCookies([{ name: "gs_session", value: cookie, url: BASE }]);

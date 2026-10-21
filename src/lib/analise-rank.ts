@@ -91,9 +91,11 @@ export type PresetInput = RankInput & {
   weakDisc: boolean;
   /** Disco que já está na Coleção (casamento confiante). */
   ownedConfident: boolean;
+  /** Minutos até o início do pregão (negativo = já começou); `null` sem horário. */
+  startsInMin: number | null;
 };
 
-export type PresetKey = "garimpo" | "pechincha" | "raros" | "radar" | "meus";
+export type PresetKey = "garimpo" | "logo" | "pechincha" | "raros" | "radar" | "meus";
 
 export const PRESETS: {
   key: PresetKey;
@@ -111,6 +113,12 @@ export const PRESETS: {
       i.eco.deal !== "caro" &&
       !i.weakDisc &&
       !i.ownedConfident,
+  },
+  {
+    key: "logo",
+    label: "Começando logo",
+    hint: "O pregão começa em até 2h ou começou há menos de 3h",
+    test: (i) => i.startsInMin !== null && i.startsInMin <= 120 && i.startsInMin >= -180,
   },
   {
     key: "pechincha",
