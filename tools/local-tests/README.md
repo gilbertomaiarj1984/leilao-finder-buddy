@@ -24,6 +24,11 @@ bun run tools/local-tests/integracao-banco.ts        # 19 verificações
 bun run tools/local-tests/cadeia-ia.ts               # 19 verificações (usa a porta 4010)
 ```
 
+## 2b. Trava por step do cron (v0.168.0)
+```sh
+bun run tools/local-tests/cron-lock.ts    # imprime {"a":{busy:false},"b":{busy:true},"c":{busy:false},"d":{busy:false}}
+```
+
 ## 3. Painel `/ia-painel` no navegador (desktop e celular)
 ```sh
 bun run build

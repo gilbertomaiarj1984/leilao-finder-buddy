@@ -31,11 +31,20 @@ export async function runAiIdentStep(maxParam?: number) {
   // 1) Batch (Claude) de identificação em andamento? Coleta — independe do provedor atual.
   const pending = await getPendingAiIdentBatch();
   if (pending) {
-    const { done, rows } = await collectIdentBatch(pending.batchId, pending.hashes, pending.source);
+    const { done, rows, failed } = await collectIdentBatch(
+      pending.batchId,
+      pending.hashes,
+      pending.source,
+    );
     if (!done) return { pending: true as const, batchId: pending.batchId };
     const collected = await upsertLotIdent(rows);
     await setPendingAiIdentBatch(null);
-    return { collected, batchId: pending.batchId, source: pending.source };
+    const { noteAiResults } = await import("./ai-failures.server");
+    await noteAiResults("ident", {
+      failed: failed.map((id) => ({ id, hash: pending.hashes[id] ?? "" })),
+      succeededIds: rows.map((r) => r.id),
+    });
+    return { collected, failed: failed.length, batchId: pending.batchId, source: pending.source };
   }
 
   // Provedor efetivo (padrão, ou o primeiro configurado se o padrão não tiver chave).
@@ -50,6 +59,11 @@ export async function runAiIdentStep(maxParam?: number) {
   const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
   const [snapshot, identRows] = await Promise.all([scrapeVinylLots(false), getAllLotIdent()]);
   const max = Math.min(Math.max(Number(maxParam) || 800, 1), 2000);
+  // Lotes que a IA não conseguiu identificar duas vezes seguidas saem da fila por alguns dias.
+  const { noteAiResults, loadSkippableIds } = await import("./ai-failures.server");
+  const { titleHash } = await import("./ai-eval.server");
+  const hashById = new Map(snapshot.lots.map((l) => [l.id, titleHash(l.title)]));
+  const skip = await loadSkippableIds("ident", (id) => hashById.get(id) ?? null);
 
   // Caminho SÍNCRONO (Gemini/failover): grava direto até o teto por rodada.
   const runSync = async (
@@ -58,10 +72,19 @@ export async function runAiIdentStep(maxParam?: number) {
     source: string,
   ) => {
     const toSync = lots.slice(0, GEMINI_SYNC_CAP);
-    const { rows, served, switched } = await identLotsSyncRows(toSync, withImage, "gemini");
+    const { rows, served, switched, failedIds } = await identLotsSyncRows(
+      toSync,
+      withImage,
+      "gemini",
+    );
     const collected = await upsertLotIdent(rows);
+    await noteAiResults("ident", {
+      failed: (failedIds ?? []).map((id) => ({ id, hash: hashById.get(id) ?? "" })),
+      succeededIds: rows.map((r) => r.id),
+    });
     return {
       collected,
+      failed: failedIds?.length ?? 0,
       source,
       provider: served ?? "gemini",
       switched,
@@ -71,7 +94,7 @@ export async function runAiIdentStep(maxParam?: number) {
   };
 
   // 2) Identifica por TÍTULO os ainda não identificados (ou com título mudado).
-  const toIdent = selectLotsToIdentify(snapshot.lots, identRows, max);
+  const toIdent = selectLotsToIdentify(snapshot.lots, identRows, max, skip);
   if (toIdent.length) {
     if (useBatch) {
       try {
@@ -92,7 +115,7 @@ export async function runAiIdentStep(maxParam?: number) {
   }
 
   // 3) Nada por título: reidentifica com a CAPA os de baixa confiança.
-  const toReident = selectLotsToReident(snapshot.lots, identRows, max);
+  const toReident = selectLotsToReident(snapshot.lots, identRows, max, skip);
   if (toReident.length) {
     if (useBatch) {
       try {

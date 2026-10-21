@@ -1,7 +1,17 @@
 import { describe, expect, test } from "bun:test";
 
 import { parseConditionAiObject } from "../src/lib/ai-condition.server";
-import { evalHash, parseEvalObject, parseIdentObject, titleHash } from "../src/lib/ai-eval.server";
+import {
+  contextMask,
+  evalHash,
+  evalHashCurrent,
+  parseEvalObject,
+  parseIdentObject,
+  selectLotsToEvaluate,
+  selectLotsToIdentify,
+  stripHashMask,
+  titleHash,
+} from "../src/lib/ai-eval.server";
 import { marketBasis, selectLotsForMarket } from "../src/lib/lot-market.server";
 
 describe("parseEvalObject (resposta da avaliação)", () => {
@@ -20,16 +30,26 @@ describe("parseEvalObject (resposta da avaliação)", () => {
   });
 
   test("limita a nota a 0-100 e descarta rarity/deal fora da lista", () => {
-    expect(parseEvalObject('{"score": 250}')?.score).toBe(100);
+    expect(parseEvalObject('{"score": 250, "reason": "x"}')?.score).toBe(100);
     expect(parseEvalObject('{"score": -4, "reason": "x"}')?.score).toBe(0);
-    const r = parseEvalObject('{"score": 50, "rarity": "lendário", "deal": "baratíssimo"}');
+    const r = parseEvalObject(
+      '{"score": 50, "rarity": "lendário", "deal": "baratíssimo", "reason": "x"}',
+    );
     expect(r?.rarity).toBeNull();
     expect(r?.deal).toBeNull();
   });
 
-  test("nota ausente ou nula NÃO vira zero", () => {
-    expect(parseEvalObject('{"score": null, "reason": "sem nota"}')?.score).toBeNull();
-    expect(parseEvalObject('{"reason": "sem nota"}')?.score).toBeNull();
+  test("resposta sem nota (ausente, nula ou vazia) é falha, não vira zero", () => {
+    expect(parseEvalObject('{"score": null, "reason": "sem nota"}')).toBeNull();
+    expect(parseEvalObject('{"reason": "sem nota"}')).toBeNull();
+    expect(parseEvalObject('{"score": "", "reason": "sem nota"}')).toBeNull();
+    expect(parseEvalObject('{"score": "   ", "rarity": "raro"}')).toBeNull();
+  });
+
+  test("nota sem nenhum outro campo útil também não serve", () => {
+    expect(parseEvalObject('{"score": 40}')).toBeNull();
+    expect(parseEvalObject('{"score": 40, "tags": ["a"]}')).toBeNull();
+    expect(parseEvalObject('{"score": "40", "deal": "justo"}')?.score).toBe(40);
   });
 
   test("limita tags (8 de até 40 caracteres) e o motivo (400)", () => {
@@ -53,6 +73,12 @@ describe("parseIdentObject (identificação)", () => {
     expect(
       parseIdentObject('{"album": "Tim Maia - Racional", "year": 1975, "confidence": "ALTA"}'),
     ).toEqual({ album: "Tim Maia - Racional", year: 1975, confidence: "alta" });
+  });
+
+  test("ano no futuro (além do ano que vem) vira null", () => {
+    const next = new Date().getFullYear() + 1;
+    expect(parseIdentObject(`{"album": "X - Y", "year": ${next}}`)?.year).toBe(next);
+    expect(parseIdentObject(`{"album": "X - Y", "year": ${next + 1}}`)?.year).toBeNull();
   });
 
   test("ano fora de 1900-2100 e confiança desconhecida viram null", () => {
@@ -101,6 +127,28 @@ describe("hash do prompt e basis do Discogs", () => {
     expect(evalHash("LP B")).not.toBe(h);
   });
 
+  test("a máscara do contexto entra no hash e sai com stripHashMask", () => {
+    expect(evalHash("LP A", true, "em")).toBe(`${evalHash("LP A")}.cem`);
+    expect(stripHashMask(evalHash("LP A", true, "em"))).toBe(evalHash("LP A"));
+    expect(stripHashMask(evalHash("LP A"))).toBe(evalHash("LP A"));
+  });
+
+  test("contextMask lista só os blocos presentes", () => {
+    expect(contextMask(null)).toBe("");
+    const ctx = { estado: { disco: "VG" }, mercado: null, vendas: { count: 2 } };
+    expect(contextMask(ctx as never)).toBe("ev");
+  });
+
+  test("evalHashCurrent: reavalia só quando chega um bloco de contexto que faltava", () => {
+    const stored = evalHash("LP A", true, "e");
+    expect(evalHashCurrent(stored, "LP A", "e")).toBe(true); // nada novo
+    expect(evalHashCurrent(stored, "LP A", "")).toBe(true); // bloco que sumiu não reavalia
+    expect(evalHashCurrent(stored, "LP A", "em")).toBe(false); // mercado chegou depois da nota
+    expect(evalHashCurrent(evalHash("LP A"), "LP A", "m")).toBe(false); // nota sem contexto nenhum
+    expect(evalHashCurrent(stored, "LP B", "e")).toBe(false); // título mudou
+    expect(evalHashCurrent(evalHash("LP A", false), "LP A", "")).toBe(false); // contexto falhou ao carregar
+  });
+
   test("marketBasis ignora acento, pontuação, parênteses e ano", () => {
     const a = marketBasis("Gilberto Gil - Raça Humana (1984)", "T1");
     const b = marketBasis("Gilberto Gil – Raca Humana", "OUTRO TÍTULO");
@@ -131,5 +179,38 @@ describe("hash do prompt e basis do Discogs", () => {
       { id: "2", basis: legacy2 },
     ];
     expect(selectLotsForMarket(lots, albums, rows, 10).map((l) => l.id)).toEqual(["3"]);
+  });
+});
+
+describe("seleção da fila de IA", () => {
+  const lot = (id: string, title = `LP ${id}`) => ({
+    id,
+    title,
+    price: "R$ 10,00",
+    house: "X",
+    image: null,
+  });
+  const lots = [lot("1"), lot("2"), lot("3")];
+
+  test("pula os lotes em skipIds e preenche o teto com os seguintes", () => {
+    const out = selectLotsToEvaluate(lots, [], 2, undefined, () => "", new Set(["1"]));
+    expect(out.map((l) => l.id)).toEqual(["2", "3"]);
+  });
+
+  test("lote avaliado só volta se o contexto novo (mercado) chegou", () => {
+    const rows = [
+      { id: "1", title_hash: evalHash("LP 1", true, "e") },
+      { id: "2", title_hash: evalHash("LP 2", true, "em") },
+    ];
+    const maskOf = (id: string) => (id === "1" ? "em" : "em");
+    expect(selectLotsToEvaluate(lots, rows, 10, undefined, maskOf).map((l) => l.id)).toEqual([
+      "1",
+      "3",
+    ]);
+  });
+
+  test("identificação: respeita skipIds", () => {
+    const out = selectLotsToIdentify(lots, [], 10, new Set(["2"]));
+    expect(out.map((l) => l.id)).toEqual(["1", "3"]);
   });
 });

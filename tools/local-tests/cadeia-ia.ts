@@ -56,11 +56,11 @@ const req1 = seen.find((s) => s.path === "/v1/messages");
 const userText = JSON.stringify(req1?.body?.messages);
 ok("sync: uma chamada à IA e 1 linha de resultado", r1.rows.length === 1 && r1.failed === 0, { rows: r1.rows.length, failed: r1.failed, error: r1.error });
 ok("sync: prompt do sistema fala em reais e cita o contexto", String(req1?.body?.system ?? JSON.stringify(req1?.body?.system)).includes("reais") && JSON.stringify(req1.body.system).includes("contexto"));
-ok("sync: prompt leva estado, Discogs e frete do BANCO", userText.includes("contexto") && userText.includes("VG+") && userText.includes("preco_sugerido") && userText.includes("frete_estimado_brl") && userText.includes("lote_mais_frete_brl"), userText.slice(0, 700));
-ok("sync: âncora = VG+ (51), frete SP = 25, lote+frete = 65, razão 1,28", userText.includes('preco_sugerido\\":51') && userText.includes('frete_estimado_brl\\":25') && userText.includes('lote_mais_frete_brl\\":65') && userText.includes("1.28"), userText);
+ok("sync: prompt leva estado, Discogs e frete do BANCO", userText.includes("contexto") && userText.includes("VG+") && userText.includes("preco_sugerido") && userText.includes("frete_estimado_brl") && userText.includes("lote_brl"), userText.slice(0, 700));
+ok("sync: âncora = VG+ (51), frete SP = 25, lote = 40, referência 76, razão 0,53", userText.includes('preco_sugerido\\":51') && userText.includes('frete_estimado_brl\\":25') && userText.includes('lote_brl\\":40') && userText.includes('referencia_com_frete_brl\\":76') && userText.includes("0.53"), userText);
 ok("sync: parse do JSON da IA (nota 81, raro, barato)", r1.rows[0]?.score === 81 && r1.rows[0]?.rarity === "raro" && r1.rows[0]?.deal === "barato");
 const row = r1.rows[0]!;
-ok("sync: hash = evalHash(título) (versão + impressão do texto)", row.title_hash === ev.evalHash(title) && row.title_hash.split(".").length === 3, row.title_hash);
+ok("sync: hash = evalHash(título) (versão + impressão do texto)", row.title_hash === ev.evalHash(title, true, "em") && row.title_hash.split(".").length === 4, row.title_hash);
 ok("sync: eval_price gravado (40)", row.eval_price === 40);
 
 // 2) persistir e conferir que o lote NÃO volta para a fila
@@ -77,8 +77,8 @@ const t2 = JSON.stringify(seen.find((s) => s.path === "/v1/messages")?.body?.mes
 ok("painel→prompt: bloco «estado» desligado some", !t2.includes('estado\\":{') && !t2.includes("nota_estado"), t2);
 ok("painel→prompt: campos desligados somem (tem/querem/ano)", !t2.includes("querem") && !t2.includes('tem\\"') && !t2.includes('ano\\"') && t2.includes("preco_sugerido"), t2);
 ok("painel→prompt: frete configurado (SP = 40) e ordem frete antes do mercado", t2.includes('frete_estimado_brl\\":40') && t2.indexOf("frete_estimado_brl") < t2.indexOf("mercado_discogs_brl"), t2);
-ok("painel→prompt: lote + frete = 80", t2.includes('lote_mais_frete_brl\\":80'), t2);
-ok("avaliação continua gravando o mesmo hash (config não reavalia sozinha)", r2.rows[0]?.title_hash === ev.evalHash(title));
+ok("painel→prompt: lote = 40 e referência = 51 + frete 40 = 91", t2.includes('lote_brl\\":40') && t2.includes('referencia_com_frete_brl\\":91'), t2);
+ok("avaliação continua gravando o mesmo hash (config não reavalia sozinha)", r2.rows[0]?.title_hash === ev.evalHash(title, true, "em"));
 
 // 4) Batches: o pedido leva o mesmo contexto e o hash
 seen.length = 0;
@@ -87,7 +87,7 @@ const breq = seen.find((s) => s.path === "/v1/messages/batches");
 const bUser = JSON.stringify(breq?.body?.requests?.[0]);
 ok("batch: 1 requisição com custom_id = id do lote", breq?.body?.requests?.length === 1 && breq.body.requests[0].custom_id === "chain-1", breq?.body);
 ok("batch: contexto congelado no envio (frete configurado)", bUser.includes("contexto") && bUser.includes('frete_estimado_brl\\":40'), bUser.slice(0, 500));
-ok("batch: hashes por lote = evalHash; preço guardado", sub.hashes["chain-1"] === ev.evalHash(title) && sub.prices?.["chain-1"] === 40, sub);
+ok("batch: hashes por lote = evalHash; preço guardado", sub.hashes["chain-1"] === ev.evalHash(title, true, "em") && sub.prices?.["chain-1"] === 40, sub);
 
 // 5) contexto indisponível → hash com 'x' e volta para a fila
 await sql`alter table lot_market rename to lot_market_x`;

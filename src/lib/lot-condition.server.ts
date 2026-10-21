@@ -222,6 +222,7 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
   // Fallback de IA: só os que ficaram INDEFINIDOS pelo regex mas têm texto pra IA ler.
   let aiUsed = 0;
   const deferred = new Set<string>();
+  const outageDeferred = new Set<string>();
   const { aiConfigured } = await import("./ai-eval.server");
   if (aiConfigured()) {
     const withText = rows.filter(
@@ -238,7 +239,14 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
       const { resolveAiProvider } = await import("./ai-eval.server");
       const { conditionAiSync } = await import("./ai-condition.server");
       const provider = await resolveAiProvider();
-      const { rows: aiRows } = await conditionAiSync(candidates, provider);
+      const { rows: aiRows, failed: aiFailed } = await conditionAiSync(candidates, provider);
+      // A IA fora do ar (todas as chamadas falharam): não grava "indefinido" com o hash — isso
+      // impediria de reler o lote até subir a versão do leitor. Eles voltam na próxima execução
+      // (e não seguram o `done`: o laço do cron não deve insistir numa IA indisponível).
+      if (aiFailed >= candidates.length) {
+        console.error("[lot-condition] a IA falhou para todos os lotes da rodada; sem gravá-los");
+        for (const c of candidates) outageDeferred.add(c.id);
+      }
       const byId = new Map(aiRows.map((r) => [r.id, r]));
       for (const row of rows) {
         const ai = byId.get(row.id);
@@ -257,14 +265,17 @@ export async function enrichConditions(maxAuctions = 8): Promise<{
     }
   }
 
-  const updated = await upsertLotCondition(rows.filter((r) => !deferred.has(r.id)));
+  const updated = await upsertLotCondition(
+    rows.filter((r) => !deferred.has(r.id) && !outageDeferred.has(r.id)),
+  );
   const remaining = Math.max(0, total - batch.length);
   // Com lotes adiados (teto da IA) ainda há trabalho: o laço do cron chama de novo.
   return {
     updated,
     auctions: batch.length,
     remaining,
-    done: remaining === 0 && !deferred.size,
+    // IA fora do ar: encerra o laço desta execução (insistir só repetiria as mesmas chamadas).
+    done: (remaining === 0 && !deferred.size) || outageDeferred.size > 0,
     aiUsed,
   };
 }

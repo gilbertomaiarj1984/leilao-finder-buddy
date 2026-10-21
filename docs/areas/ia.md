@@ -228,6 +228,15 @@ image})` chama `evalLotsSync` **direto** (ignora o cache por `title_hash` — é
   192.168/16.
 - **Batch preso:** `aieval` abandona o batch pendente com mais de 48h se a coleta lançar erro.
 
+### Confiabilidade da fila (v0.168.0)
+
+- **Falhas por lote (`ai-failures.ts`/`.server.ts`, `app_state.ai_eval_failures`/`ai_ident_failures`):** resposta ilegível, batch com `errored/expired` ou erro do provedor soma uma falha por lote (zera se o título/prompt muda). Com 2 falhas seguidas o lote sai da fila AUTOMÁTICA por 3 dias (`MAX_ATTEMPTS`, `RETRY_AFTER_MS`); a análise sob demanda ainda tenta. Antes, os primeiros 25 que falhavam sempre seguravam o resto da fila e eram pagos de novo a cada chamada. O `collect*Batch` devolve `failed` e loga.
+- **Resposta sem nota** (`parseEvalObject`) é falha: score finito + um campo útil são obrigatórios (`""` não vira 0). Ano de identificação no futuro (além do ano que vem) vira `null`.
+- **Contexto no hash:** `evalHash(title, contextOk, mask)` ganha `.c<letras>` (`e` estado, `m` mercado, `v` vendas) e `evalHashCurrent` reavalia o lote quando um bloco que faltava chegou (`loadContextMasks` lê só `lot_condition`/`lot_market` em cache; vendas não disparam).
+- **Álbum:** `upsertLotAi` grava o álbum da identificação quando ela tem confiança "alta" (`album-pick.ts`); um palpite da avaliação não a sobrepõe.
+- **Trava por step (`cron-lock.server.ts`):** `aieval`, `aiident`, `reident`, `sales`, `market`, `condition`, `tracklist`, `fame` rodam sob `pg_try_advisory_xact_lock`; uma 2ª chamada simultânea (retry do curl, "Atualizar tudo", outro deploy) responde `{done:true, busy:true}` e encerra o laço. Teste: `tools/local-tests/cron-lock.ts`.
+- **Estado por IA (`lot-condition.server.ts`):** se a IA falha para TODOS os candidatos da rodada, as linhas não são gravadas como `indefinido` (voltam na próxima execução) e o laço encerra.
+
 ### Timeouts (v0.166.0)
 
 Chamadas síncronas à IA têm teto de 60 s (`AI_CALL_TIMEOUT_MS` em `ai-provider.server.ts`): `AbortSignal.timeout` no `fetch` do Gemini (o estouro é "transitório" → retry e failover) e `timeout` por requisição no SDK da Anthropic. A temperatura da Claude segue a padrão do SDK (o Gemini usa 0,2); fixá-la exige testar se o Haiku 5.5 aceita o parâmetro com `thinking` desligado.

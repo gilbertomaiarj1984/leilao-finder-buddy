@@ -10,6 +10,8 @@
  * em laço até terminar. A varredura geral e o catálogo são PÚBLICOS (sem login).
  * Vigias/lances continuam sendo lidos ao vivo quando o usuário abre o app.
  */
+import { withStepLock } from "./cron-lock.server";
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -57,6 +59,22 @@ const DEBUG_STEPS = new Set([
   "resetnosourcethumbs",
 ]);
 
+/**
+ * Steps que gastam IA/API ou gravam em lote e não podem rodar em dobro (ver `cron-lock.server.ts`).
+ * Fora daqui: `chunk`/`enrich`/`galleryscan` (cursor do chamador, regravar é inofensivo) e os avisos
+ * (têm dedupe próprio).
+ */
+const LOCKED_STEPS = new Set([
+  "aieval",
+  "aiident",
+  "reident",
+  "sales",
+  "market",
+  "condition",
+  "tracklist",
+  "fame",
+]);
+
 export function isDebugCall(step: string, params: URLSearchParams): boolean {
   if (DEBUG_STEPS.has(step)) return true;
   if (step === "cleannonvinyl") return params.get("apply") === "1";
@@ -77,6 +95,23 @@ export async function handleCron(request: Request): Promise<Response | null> {
   if (isDebugCall(step, url.searchParams) && process.env["CRON_ENABLE_DEBUG"] !== "1") {
     return json({ error: "step de diagnóstico desligado (CRON_ENABLE_DEBUG=1 liga)" }, 403);
   }
+  if (!LOCKED_STEPS.has(step)) return runCronStep(step, url);
+  let locked: Awaited<ReturnType<typeof withStepLock<Response>>>;
+  try {
+    locked = await withStepLock(step, () => runCronStep(step, url));
+  } catch (error) {
+    // Sem banco para travar: roda sem a trava (o step trata a própria falha) em vez de parar o cron.
+    console.error(`[cron] não foi possível travar o step ${step}`, error);
+    return runCronStep(step, url);
+  }
+  if (locked.busy) {
+    // `done: true` encerra o laço do workflow para este step sem reprovar a run.
+    return json({ done: true, busy: true, skipped: `o step ${step} já está em execução` });
+  }
+  return locked.value;
+}
+
+async function runCronStep(step: string, url: URL): Promise<Response> {
   try {
     const { scrapeVinylChunk, enrichMissingLotes } = await import("./leiloesbr-scrape.server");
 
@@ -110,6 +145,9 @@ export async function handleCron(request: Request): Promise<Response | null> {
         submitEvalBatch,
         collectEvalBatch,
         evalLotsSync,
+        evalHash,
+        loadContextMasks,
+        stripHashMask,
       } = await import("./ai-eval.server");
       if (!aiConfigured()) return json({ skipped: "nenhum provedor de IA configurado" });
       const { getPendingAiBatch, setPendingAiBatch, getAiMode, getAiProvider } =
@@ -141,11 +179,18 @@ export async function handleCron(request: Request): Promise<Response | null> {
           await setPendingAiBatch(null);
           return json({ dropped: pending.batchId });
         }
-        const { done, rows } = result;
+        const { done, rows, failed } = result;
         if (!done) return json({ pending: true, batchId: pending.batchId });
         const collected = await upsertLotAi(rows);
         await setPendingAiBatch(null);
-        return json({ collected, batchId: pending.batchId });
+        // Quem não gerou avaliação ganha uma falha (e sai da fila automática depois de duas);
+        // quem gerou sai do registro.
+        const { noteAiResults } = await import("./ai-failures.server");
+        await noteAiResults("eval", {
+          failed: failed.map((id) => ({ id, hash: stripHashMask(pending.hashes[id] ?? "") })),
+          succeededIds: rows.map((r) => r.id),
+        });
+        return json({ collected, failed: failed.length, batchId: pending.batchId });
       }
 
       // Provedor efetivo: o padrão, ou o primeiro configurado se o padrão não tiver chave.
@@ -205,7 +250,15 @@ export async function handleCron(request: Request): Promise<Response | null> {
       if (mode === "watched") candidates = snapshot.lots.filter((lot) => ids.has(lot.id));
       candidates = [...candidates, ...extra.values()];
 
-      const toEval = selectLotsToEvaluate(candidates, aiRows, max, ids);
+      // Lotes que falharam duas vezes seguidas com o mesmo título/prompt saem da fila automática (a
+      // análise sob demanda ainda tenta); passados alguns dias ganham outra chance.
+      const { loadSkippableIds } = await import("./ai-failures.server");
+      const baseHash = new Map(candidates.map((l) => [l.id, evalHash(l.title)]));
+      const [maskOf, skip] = await Promise.all([
+        loadContextMasks(),
+        loadSkippableIds("eval", (id) => baseHash.get(id) ?? null),
+      ]);
+      const toEval = selectLotsToEvaluate(candidates, aiRows, max, ids, maskOf, skip);
       if (!toEval.length) return json({ done: true, submitted: 0, mode, provider });
 
       // 3a) Claude → Batches API. Se estiver sem créditos e houver Gemini, cai p/ o síncrono.
@@ -228,10 +281,16 @@ export async function handleCron(request: Request): Promise<Response | null> {
       // 3b) Gemini (ou failover do Claude): síncrono em bloco (cap por rodada p/ caber no
       // tempo do servidor; o laço do cron chama de novo até esgotar).
       const toEvalSync = toEval.slice(0, GEMINI_SYNC_CAP);
-      const { rows, served, switched } = await evalLotsSync(toEvalSync, "gemini");
+      const { rows, served, switched, failedIds } = await evalLotsSync(toEvalSync, "gemini");
       const collected = await upsertLotAi(rows);
+      const { noteAiResults } = await import("./ai-failures.server");
+      await noteAiResults("eval", {
+        failed: (failedIds ?? []).map((id) => ({ id, hash: baseHash.get(id) ?? "" })),
+        succeededIds: rows.map((r) => r.id),
+      });
       return json({
         collected,
+        failed: failedIds?.length ?? 0,
         mode,
         provider: served ?? "gemini",
         switched,
