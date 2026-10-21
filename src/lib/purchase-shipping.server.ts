@@ -1,6 +1,8 @@
 import { db } from "@/lib/db-client.server";
 
 import {
+  JOINABLE_STATUSES,
+  SHIPMENT_STATUSES,
   isAuctionStatus,
   isUnpaid,
   type AuctionState,
@@ -84,16 +86,25 @@ async function readState(idLeilao: string): Promise<AuctionState | null> {
 }
 
 /**
- * Muda o status de UM pregão. Datas automáticas: `paid_at` ao sair de "aberto"/"frete" (mantém a já
+ * Muda o status de um pregão. Datas automáticas: `paid_at` ao sair de "aberto"/"frete" (mantém a já
  * gravada), `received_at` ao virar "recebido"; voltar a "aberto"/"aguardando frete" limpa pagamento e remessa.
- * Sair de "em trânsito" desvincula a remessa (se ficar órfã, ela é apagada).
+ * Pregões que seguem juntos numa remessa (a enviar/em trânsito/recebido) mudam de status TODOS de uma
+ * vez; para qualquer outro status só este pregão muda e sai da remessa (se ela ficar órfã, é apagada).
  */
 export async function setAuctionStatus(idLeilao: string, status: AuctionStatus): Promise<void> {
   const prev = await readState(idLeilao);
   const today = todayIso();
+  const keepShipment = SHIPMENT_STATUSES.includes(status);
+  if (prev?.shipmentId && keepShipment) {
+    const { error } = await db
+      .from("purchase_auctions")
+      .update({ status, received_at: status === "recebido" ? today : null })
+      .eq("shipment_id", prev.shipmentId);
+    if (error) throw new Error(`Não foi possível salvar o status: ${error.message}`);
+    return;
+  }
   const paidAt = isUnpaid(status) ? null : (prev?.paidAt ?? today);
   const receivedAt = status === "recebido" ? (prev?.receivedAt ?? today) : null;
-  const keepShipment = status === "transito" || status === "recebido";
   const shipmentId = keepShipment ? (prev?.shipmentId ?? null) : null;
   const { error } = await db.from("purchase_auctions").upsert(
     {
@@ -205,4 +216,76 @@ export async function markShipmentReceived(shipmentId: string): Promise<void> {
     .update({ status: "recebido", received_at: todayIso() })
     .eq("shipment_id", shipmentId);
   if (error) throw new Error(`Não foi possível marcar como recebido: ${error.message}`);
+}
+
+/**
+ * Arrastar um pregão sobre outro: os dois passam a seguir na MESMA remessa (juntos). Só pregões "a
+ * enviar" ou "em trânsito" da mesma casa e do mesmo status (validado aqui, com dados do banco). Se o
+ * destino ainda não tem remessa, uma nova é criada (frete e rastreio podem ser preenchidos depois).
+ */
+export async function joinShipment(
+  fromId: string,
+  ontoId: string,
+): Promise<{ shipmentId: string }> {
+  if (fromId === ontoId) throw new Error("Escolha dois pregões diferentes.");
+  const ids = [fromId, ontoId];
+  const [states, purchases] = await Promise.all([
+    db.from<AuctionRow>("purchase_auctions").select(AUCTION_COLS).in("id_leilao", ids),
+    db
+      .from<{ id_leilao: string; house: string }>("purchases")
+      .select("id_leilao, house")
+      .in("id_leilao", ids),
+  ]);
+  if (states.error) throw states.error;
+  if (purchases.error) throw purchases.error;
+
+  const byId = new Map((states.data ?? []).map((r) => [r.id_leilao, toState(r)]));
+  const from = byId.get(fromId);
+  const onto = byId.get(ontoId);
+  if (!from || !onto || from.status !== onto.status || !JOINABLE_STATUSES.includes(from.status)) {
+    throw new Error(
+      'Só pregões "Pago · a enviar" ou "Em trânsito" (no mesmo status) seguem juntos.',
+    );
+  }
+  const houses = new Set((purchases.data ?? []).map((p) => p.house));
+  if (houses.size !== 1 || ![...houses][0]) {
+    throw new Error("Os pregões precisam ser da mesma casa.");
+  }
+  if (from.shipmentId && from.shipmentId === onto.shipmentId)
+    return { shipmentId: from.shipmentId };
+
+  let shipmentId = onto.shipmentId;
+  if (!shipmentId) {
+    const { data: created, error: shipError } = await db
+      .from<ShipmentRow>("shipments")
+      .insert({ house: [...houses][0]!, freight: 0, tracking: "" })
+      .select("id")
+      .single();
+    if (shipError || !created) {
+      throw new Error(`Não foi possível agrupar: ${shipError?.message ?? "sem retorno"}`);
+    }
+    shipmentId = created.id;
+  }
+  const { error } = await db
+    .from("purchase_auctions")
+    .update({ shipment_id: shipmentId })
+    .in("id_leilao", onto.shipmentId ? [fromId] : ids);
+  if (error) {
+    if (!onto.shipmentId) await db.from("shipments").delete().eq("id", shipmentId);
+    throw new Error(`Não foi possível agrupar: ${error.message}`);
+  }
+  if (from.shipmentId) await deleteOrphanShipment(from.shipmentId);
+  return { shipmentId };
+}
+
+/** Tira um pregão da remessa em que seguia junto (a remessa é apagada se ficar sem pregões). */
+export async function leaveShipment(idLeilao: string): Promise<void> {
+  const prev = await readState(idLeilao);
+  if (!prev?.shipmentId) return;
+  const { error } = await db
+    .from("purchase_auctions")
+    .update({ shipment_id: null })
+    .eq("id_leilao", idLeilao);
+  if (error) throw new Error(`Não foi possível separar o pregão: ${error.message}`);
+  await deleteOrphanShipment(prev.shipmentId);
 }

@@ -153,6 +153,55 @@ export function canBundle(groups: { state: AuctionState; house: string }[]): boo
   return groups.every((g) => g.state.status === "guarda" && g.house === groups[0]!.house);
 }
 
+/** Status em que pregões da mesma casa podem seguir "juntos" (mesma remessa), arrastando um sobre o outro. */
+export const JOINABLE_STATUSES: readonly AuctionStatus[] = ["pago", "transito"];
+
+/** Status que mantêm o vínculo com a remessa (juntos, o status muda para todos de uma vez). */
+export const SHIPMENT_STATUSES: readonly AuctionStatus[] = ["pago", "transito", "recebido"];
+
+/** `from` pode ser solto sobre `onto`: casas e status (a enviar/em trânsito) iguais, remessas diferentes. */
+export function canJoinShipment(
+  from: { idLeilao: string; house: string; state: AuctionState },
+  onto: { idLeilao: string; house: string; state: AuctionState },
+): boolean {
+  if (from.idLeilao === onto.idLeilao) return false;
+  if (!from.house || from.house !== onto.house) return false;
+  if (from.state.status !== onto.state.status) return false;
+  if (!JOINABLE_STATUSES.includes(from.state.status)) return false;
+  return !(from.state.shipmentId && from.state.shipmentId === onto.state.shipmentId);
+}
+
+/**
+ * Pregões "a enviar"/"em trânsito" da mesma remessa viram um bloco (em ordem de entrada, na posição
+ * do primeiro membro); os demais seguem soltos. Remessa de um pregão só não vira bloco.
+ */
+export function bundleShipments<P extends PurchaseLike>(
+  groups: PregaoGroup<P>[],
+): (
+  | { kind: "single"; group: PregaoGroup<P> }
+  | { kind: "bundle"; shipment: Shipment; groups: PregaoGroup<P>[] }
+)[] {
+  const members = new Map<string, PregaoGroup<P>[]>();
+  for (const g of groups) {
+    if (!g.shipment || !JOINABLE_STATUSES.includes(g.state.status)) continue;
+    const key = `${g.shipment.id}|${g.state.status}`;
+    members.set(key, [...(members.get(key) ?? []), g]);
+  }
+  const out: ReturnType<typeof bundleShipments<P>> = [];
+  const placed = new Set<string>();
+  for (const g of groups) {
+    const key = g.shipment ? `${g.shipment.id}|${g.state.status}` : "";
+    const list = key ? members.get(key) : undefined;
+    if (!list || list.length < 2) {
+      out.push({ kind: "single", group: g });
+    } else if (!placed.has(key)) {
+      placed.add(key);
+      out.push({ kind: "bundle", shipment: g.shipment!, groups: list });
+    }
+  }
+  return out;
+}
+
 type ShipmentPreview = {
   house: string;
   auctions: number;

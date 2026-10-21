@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  bundleShipments,
   canBundle,
+  canJoinShipment,
   isUnpaid,
   daysBetween,
   groupByPregao,
@@ -148,5 +150,59 @@ describe("gasto por período", () => {
     const { rows } = spendingByPeriod(groups, "month");
     expect(rows.map((r) => r.key)).toEqual(["2026-10", "2026-09", "2025-12", ""]);
     expect(rows[0]!.subtotal).toBeCloseTo(1340.5);
+  });
+});
+
+describe("agrupar pregões por arrastar (remessa)", () => {
+  const sh = (id: string) => ({ id, house: "Beta", freight: 0, tracking: "", createdAt: "" });
+  const stS = (
+    idLeilao: string,
+    status: AuctionState["status"],
+    shipmentId: string | null = null,
+  ) => ({ ...st(idLeilao, status), shipmentId });
+  const grp = (id: string, house: string, status: AuctionState["status"], ship: string | null) =>
+    groupByPregao([p(id, house, "2026-10-01", "R$ 10,00")], {
+      auctions: [stS(id, status, ship)],
+      shipments: ship ? [sh(ship)] : [],
+    })[0]!;
+
+  test("canJoinShipment: mesma casa e status a enviar/em trânsito", () => {
+    expect(canJoinShipment(grp("1", "Beta", "pago", null), grp("2", "Beta", "pago", null))).toBe(
+      true,
+    );
+    expect(
+      canJoinShipment(grp("1", "Beta", "transito", null), grp("2", "Beta", "transito", "s")),
+    ).toBe(true);
+  });
+  test("canJoinShipment: recusa casa/status diferentes, o mesmo pregão e a mesma remessa", () => {
+    expect(canJoinShipment(grp("1", "Beta", "pago", null), grp("2", "Alfa", "pago", null))).toBe(
+      false,
+    );
+    expect(
+      canJoinShipment(grp("1", "Beta", "pago", null), grp("2", "Beta", "transito", null)),
+    ).toBe(false);
+    expect(
+      canJoinShipment(grp("1", "Beta", "guarda", null), grp("2", "Beta", "guarda", null)),
+    ).toBe(false);
+    expect(canJoinShipment(grp("1", "Beta", "pago", null), grp("1", "Beta", "pago", null))).toBe(
+      false,
+    );
+    expect(canJoinShipment(grp("1", "Beta", "pago", "s"), grp("2", "Beta", "pago", "s"))).toBe(
+      false,
+    );
+  });
+  test("bundleShipments: bloco na posição do primeiro membro; remessa de um só não vira bloco", () => {
+    const list = [
+      grp("1", "Beta", "pago", "s"),
+      grp("2", "Alfa", "pago", null),
+      grp("3", "Beta", "pago", "s"),
+      grp("4", "Beta", "transito", "t"),
+    ];
+    const out = bundleShipments(list);
+    expect(
+      out.map((o) =>
+        o.kind === "bundle" ? o.groups.map((g) => g.idLeilao).join("+") : o.group.idLeilao,
+      ),
+    ).toEqual(["1+3", "2", "4"]);
   });
 });
