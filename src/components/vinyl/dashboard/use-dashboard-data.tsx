@@ -34,11 +34,7 @@ import {
   runAiident,
   setLotTags,
 } from "@/lib/ai.functions";
-import {
-  applyCollectionDecision,
-  dismissCollectionMatchTerms,
-  getCollectionKeywordDenylist,
-} from "@/lib/collection.functions";
+import { applyCollectionDecision, dismissCollectionMatchTerms } from "@/lib/collection.functions";
 import {
   enrichLotes,
   getLotDetails,
@@ -102,6 +98,7 @@ import {
   useAnalyticsAliasesQuery,
   useCollectionFeedbackQuery,
   useCollectionLinksQuery,
+  useCollectionKeywordDenylistQuery,
   useCollectionQuery,
   useCollectorInterests,
   useHomeLotAiQuery,
@@ -383,7 +380,6 @@ export function useDashboardData() {
   const runToggleLookout = useServerFn(toggleLookout);
   const runSetLookoutLink = useServerFn(setLookoutLink);
   const runAttachLookout = useServerFn(attachLookout);
-  const fetchCollectionKeywordDenylist = useServerFn(getCollectionKeywordDenylist);
   const runDismissCollectionMatch = useServerFn(dismissCollectionMatchTerms);
   const runExcludeLot = useServerFn(excludeLot);
   const fetchExcludedLots = useServerFn(getExcludedLotsForMatching);
@@ -715,19 +711,7 @@ export function useDashboardData() {
   // quando o casamento foi falso positivo por causa de uma palavra específica — ver
   // `matchedAlbumTerms`/`ownedScore` em `wantlist-match.ts`). Mesmo padrão do
   // "possível lixo": filtrado dos dois lados, só cresce, vale globalmente.
-  const collectionKeywordDenylistQuery = useQuery<string[]>({
-    queryKey: ["collection-keyword-denylist"] as const,
-    queryFn: async () => {
-      try {
-        return ((await fetchCollectionKeywordDenylist()) as string[]) ?? [];
-      } catch {
-        return [];
-      }
-    },
-    staleTime: 30 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    retry: false,
-  });
+  const collectionKeywordDenylistQuery = useCollectionKeywordDenylistQuery();
   const collectionKeywordDenylist = useMemo(
     () => new Set(collectionKeywordDenylistQuery.data ?? []),
     [collectionKeywordDenylistQuery.data],

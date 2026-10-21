@@ -6,7 +6,11 @@ import {
   normalizeSuggestionMap,
   parseSuggestionMap,
 } from "../src/lib/discogs-price";
-import { marketDeal, withConditionAnchor } from "../src/components/vinyl/ai-score-utils";
+import {
+  lotEconomics,
+  marketDeal,
+  withConditionAnchor,
+} from "../src/components/vinyl/ai-score-utils";
 
 const RAW = {
   "Mint (M)": { currency: "BRL", value: 74.0694705 },
@@ -153,5 +157,45 @@ describe("selectMarketBackfill", () => {
       { id: "e", release_id: 5 },
     ]);
     expect(selectMarketBackfill(rows, 1)).toEqual([{ id: "a", release_id: 1 }]);
+  });
+});
+
+describe("lotEconomics — conta do lance", () => {
+  const m = {
+    matched: true,
+    releaseId: 1,
+    releaseTitle: null,
+    year: null,
+    numForSale: null,
+    lowestPrice: null,
+    currency: "BRL",
+    suggestedPrice: null,
+    suggestedCondition: null,
+    suggestedByCondition: null,
+    anchor: { price: 200, condition: "VG+", exact: true },
+    freight: 25,
+    have: null,
+    want: null,
+    priceLowBr: null,
+    priceHighBr: null,
+    numForSaleBr: null,
+  } as unknown as Parameters<typeof lotEconomics>[1];
+  test("custo total, veredicto e tetos", () => {
+    const e = lotEconomics("R$ 150,00", m);
+    expect(e.total).toBe(175);
+    expect(e.deal).toBe("justo");
+    expect(e.capCheap).toBe(115); // 200 × 0,7 − 25
+    expect(e.capFair).toBe(204); // < 200 × 1,15 − 25 = 205
+    expect(e.potential).toBe(25);
+  });
+  test("teto barato mantém o veredicto barato e o teto justo mantém justo", () => {
+    expect(lotEconomics("R$ 115,00", m).deal).toBe("barato");
+    expect(lotEconomics("R$ 116,00", m).deal).toBe("justo");
+    expect(lotEconomics("R$ 204,00", m).deal).toBe("justo");
+    expect(lotEconomics("R$ 205,00", m).deal).toBe("caro");
+  });
+  test("sem mercado ou sem preço: indefinido", () => {
+    expect(lotEconomics("R$ 100,00", undefined).deal).toBe("indefinido");
+    expect(lotEconomics("sem valor", m).total).toBeNull();
   });
 });

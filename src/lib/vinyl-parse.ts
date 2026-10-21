@@ -773,7 +773,7 @@ export function formatDayLabel(dayKey: string, dayKeys: string[]): string {
 }
 
 /** Instante de início do leilão (dia + hora, fuso São Paulo) em ms, ou null. */
-function auctionStartMs(dayKey: string, time: string): number | null {
+export function auctionStartMs(dayKey: string, time: string): number | null {
   const match = time.match(/(\d{1,2})[:h.]?(\d{2})?/);
   if (!match) return null;
   const hh = String(Number(match[1])).padStart(2, "0");
