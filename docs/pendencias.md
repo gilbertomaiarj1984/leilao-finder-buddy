@@ -167,6 +167,7 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
 ## Revisão geral (21/10/2026) — o que o PR de infra deixou de fora
 
 - **Temperatura da Claude (IA8)**: não fixada; testar se o Haiku 5.5 aceita com `thinking` desligado.
+- **Ensaio de restauração (backup)**: nunca feito com as fotos; marcar um por trimestre (roteiro em `docs/areas/infra.md`).
 - **Logout por GET** (logout-CSRF, baixo): trocar por POST exige mexer em `index.tsx` e `mobile-bottom-nav.tsx`.
 - **CSP de script/estilo** no Caddy: precisa de nonces no SSR do TanStack Start.
 - **Imagens flutuantes** (`postgres:17-alpine`, `caddy:2`, `portainer:lts`): fixar o minor.

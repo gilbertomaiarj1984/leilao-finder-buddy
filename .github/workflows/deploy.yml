@@ -103,7 +103,7 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts
           ssh -p "$port" "$VPS_USER@$VPS_HOST" "mkdir -p '$VPS_DEPLOY_PATH/supabase-init'"
-          scp -P "$port" docker-compose.yml Caddyfile "$VPS_USER@$VPS_HOST:$VPS_DEPLOY_PATH/"
+          scp -P "$port" docker-compose.yml Caddyfile docker/deploy/remote-deploy.sh "$VPS_USER@$VPS_HOST:$VPS_DEPLOY_PATH/"
           # Só roda de fato num volume de dados novo (postgres:17-alpine, initdb.d) — não
           # afeta um banco já existente. Nome com prefixo numérico: initdb.d roda em ordem
           # alfabética, e supabase/setup.sql é re-executável (tudo IF NOT EXISTS).
@@ -131,14 +131,8 @@ jobs:
           port="${VPS_SSH_PORT:-22}"
           # Rollback: só aceita um SHA completo (evita injeção de shell via input).
           case "$APP_IMAGE" in *[!a-zA-Z0-9:/._-]*) echo "image_sha inválido"; exit 1 ;; esac
-          # As tags também vão para o `.env` do VPS: um `docker compose up` manual depois do deploy
-          # (ou um restart do host) sobe a MESMA versão, em vez de voltar para `:latest`.
+          # Toda a sequência (tags no .env, Postgres saudável, dump de segurança, migração numa
+          # transação com lock_timeout, app novo, reload do Caddy) está em docker/deploy/remote-deploy.sh,
+          # testado localmente por tools/local-tests/remote-deploy.sh.
           ssh -p "$port" "$VPS_USER@$VPS_HOST" "cd '$VPS_DEPLOY_PATH' && \
-            export APP_IMAGE='$APP_IMAGE' BACKUP_IMAGE='$BACKUP_IMAGE' && \
-            touch .env && sed -i '/^APP_IMAGE=/d;/^BACKUP_IMAGE=/d' .env && \
-            { [ -z \"\$(tail -c1 .env)\" ] || echo >> .env; } && \
-            printf 'APP_IMAGE=%s\nBACKUP_IMAGE=%s\n' '$APP_IMAGE' '$BACKUP_IMAGE' >> .env && \
-            docker compose pull && \
-            docker compose up -d --remove-orphans && \
-            docker compose exec -T postgres sh -c 'psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/01-setup.sql' && \
-            docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile"
+            APP_IMAGE='$APP_IMAGE' BACKUP_IMAGE='$BACKUP_IMAGE' bash ./remote-deploy.sh"

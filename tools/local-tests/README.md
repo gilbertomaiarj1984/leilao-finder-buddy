@@ -29,6 +29,12 @@ bun run tools/local-tests/cadeia-ia.ts               # 19 verificações (usa a 
 bun run tools/local-tests/cron-lock.ts    # imprime {"a":{busy:false},"b":{busy:true},"c":{busy:false},"d":{busy:false}}
 ```
 
+## 2c. Backup e deploy (scripts de shell, sem banco)
+```sh
+bash tools/local-tests/backup-script.sh    # docker/backup/backup.sh com pg_dump/aws falsos (4 casos)
+bash tools/local-tests/remote-deploy.sh    # docker/deploy/remote-deploy.sh com docker falso (6 verificações)
+```
+
 ## 3. Painel `/ia-painel` no navegador (desktop e celular)
 ```sh
 bun run build
