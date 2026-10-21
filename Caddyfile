@@ -57,6 +57,12 @@
 # isolamento e (se possível) uma camada extra de acesso — ver o checklist manual em
 # docs/arquivo/economia-fase-2-vps-unico.md antes de expor esse domínio ao público.
 {$PORTAINER_DOMAIN} {
+	# Lista de IPs/CIDRs que podem abrir o Portainer (`PORTAINER_ALLOWED_IPS` no .env, separados
+	# por espaço, ex.: "203.0.113.7 198.51.100.0/24"). Sem a variável, o padrão é liberar todos
+	# (comportamento anterior): defina-a para restringir o acesso ao socket do Docker do host.
+	@blocked not remote_ip {$PORTAINER_ALLOWED_IPS:0.0.0.0/0 ::/0}
+	respond @blocked 403
+
 	reverse_proxy portainer:9000
 }
 
@@ -119,7 +125,7 @@ pdf.143-95-214-240.sslip.io {
 		on_demand
 	}
 	basic_auth {
-		preview $2a$14$3efAPxZyk4IEeWqFksxrluwpL9p6M64uIb8gG0JjKN3hYt6tjEAm2
+		preview {$PREVIEW_BASIC_AUTH_HASH:$2a$14$3efAPxZyk4IEeWqFksxrluwpL9p6M64uIb8gG0JjKN3hYt6tjEAm2}
 	}
 	reverse_proxy dokploy-traefik:8081
 }

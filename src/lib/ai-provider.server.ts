@@ -251,20 +251,13 @@ type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: str
 async function fetchInlineImage(url: string): Promise<{ mimeType: string; data: string } | null> {
   const dataUrl = url.match(/^data:(image\/[a-z+.-]+);base64,(.+)$/);
   if (dataUrl) return { mimeType: dataUrl[1]!, data: dataUrl[2]! };
-  // A URL da capa pode vir do cliente (reavaliar um lote): nada de rede interna/metadados.
-  if (!isSafeImageUrl(url)) return null;
-  try {
-    const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-    if (!resp.ok) return null;
-    const type = (resp.headers.get("content-type") || "").split(";")[0]?.trim();
-    const mimeType = type && type.startsWith("image/") ? type : "image/jpeg";
-    const buf = Buffer.from(await resp.arrayBuffer());
-    // Evita estourar payload/limite: capas muito grandes são descartadas (raro).
-    if (buf.byteLength > 6 * 1024 * 1024) return null;
-    return { mimeType, data: buf.toString("base64") };
-  } catch {
-    return null;
-  }
+  // A URL da capa pode vir do cliente (reavaliar um lote): nada de rede interna/metadados, redirect
+  // revalidado a cada salto e teto de 6 MB lido em fluxo (capas maiores são descartadas, raro).
+  const { fetchImageBytes } = await import("./safe-fetch.server");
+  const img = await fetchImageBytes(url, { maxBytes: 6 * 1024 * 1024 });
+  if (!img) return null;
+  const mimeType = img.contentType.startsWith("image/") ? img.contentType : "image/jpeg";
+  return { mimeType, data: img.bytes.toString("base64") };
 }
 
 /**
