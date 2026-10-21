@@ -97,11 +97,19 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
           VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          # OPCIONAL: linha(s) de known_hosts do VPS (`ssh-keyscan -p <porta> <host>` rodado de um lugar
+          # confiável). Com ela o deploy confere a chave do servidor; sem ela cai no ssh-keyscan de
+          # sempre, que confia no primeiro que responder (um interceptador na rede do runner passaria).
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
           port="${VPS_SSH_PORT:-22}"
           mkdir -p ~/.ssh
-          ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          if [ -n "${VPS_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$VPS_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          fi
           ssh -p "$port" "$VPS_USER@$VPS_HOST" "mkdir -p '$VPS_DEPLOY_PATH/supabase-init'"
           scp -P "$port" docker-compose.yml Caddyfile docker/deploy/remote-deploy.sh "$VPS_USER@$VPS_HOST:$VPS_DEPLOY_PATH/"
           # Só roda de fato num volume de dados novo (postgres:17-alpine, initdb.d) — não

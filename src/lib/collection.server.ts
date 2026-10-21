@@ -1,3 +1,4 @@
+import { MAX_INPUT_PIXELS } from "./image-limits";
 import { parseAiAlbum } from "@/lib/lot-score";
 import { db } from "@/lib/db-client.server";
 import {
@@ -745,7 +746,7 @@ async function compressCollectionImage(
   bytes: Buffer,
 ): Promise<{ bytes: Buffer; contentType: string; ext: string }> {
   const sharp = (await import("sharp")).default;
-  const out = await sharp(bytes)
+  const out = await sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS })
     .rotate()
     .resize({
       width: COMPRESS_MAX_DIMENSION,

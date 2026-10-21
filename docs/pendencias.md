@@ -168,6 +168,7 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
 
 - **Temperatura da Claude (IA8)**: não fixada; testar se o Haiku 5.5 aceita com `thinking` desligado.
 - **Ensaio de restauração (backup)**: nunca feito com as fotos; marcar um por trimestre (roteiro em `docs/areas/infra.md`).
+- **Superfície do VPS que fica por decisão sua**: previews apontam para o banco de produção com código de PR (usar um banco/dump separado reduziria o risco); a chave SSH de deploy dá shell no VPS (restringir com `command=` no `authorized_keys` pede cuidado porque o deploy também usa `scp`); fixar as actions por SHA e as imagens por minor; checagem de `Origin` nas server functions (só se confirmar que o TanStack não exige cabeçalho próprio).
 - **Logout por GET** (logout-CSRF, baixo): trocar por POST exige mexer em `index.tsx` e `mobile-bottom-nav.tsx`.
 - **CSP de script/estilo** no Caddy: precisa de nonces no SSR do TanStack Start.
 - **Imagens flutuantes** (`postgres:17-alpine`, `caddy:2`, `portainer:lts`): fixar o minor.

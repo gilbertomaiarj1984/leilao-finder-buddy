@@ -1,3 +1,4 @@
+import { MAX_INPUT_PIXELS } from "./image-limits";
 import { db } from "@/lib/db-client.server";
 
 import type { CatalogLot } from "./leiloesbr-catalog.server";
@@ -406,12 +407,14 @@ const SALE_THUMB_WEBP_QUALITY = 70;
 async function captureSaleThumbnail(lotId: string, srcUrl: string): Promise<string | null> {
   if (!srcUrl) return null;
   try {
-    const res = await fetch(srcUrl);
-    if (!res.ok) return null;
-    const raw = Buffer.from(await res.arrayBuffer());
-    if (!raw.length) return null;
+    // A URL vem do HTML da casa de leilão: mesma trava das demais buscas de imagem (host público,
+    // redirect revalidado, timeout e teto de 10 MB).
+    const { fetchImageBytes } = await import("./safe-fetch.server");
+    const img = await fetchImageBytes(srcUrl, { maxBytes: 10 * 1024 * 1024 });
+    if (!img?.bytes.length) return null;
+    const raw = img.bytes;
     const sharp = (await import("sharp")).default;
-    const out = await sharp(raw)
+    const out = await sharp(raw, { limitInputPixels: MAX_INPUT_PIXELS })
       .rotate()
       .resize({
         width: SALE_THUMB_MAX_DIMENSION,
