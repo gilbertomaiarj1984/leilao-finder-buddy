@@ -193,5 +193,9 @@ Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score
 - **Pesos do índice de garimpo** são palpite: calibrar com compras reais (`purchases`) antes de tratá-lo como
   critério padrão.
 
+- **Validade do preço do Discogs (M7)**: `lot_market` é uma linha por lote e `checked_at` nunca renova; um match errado
+  (ou anterior ao filtro de país/formato da v0.169.0) só sai quando o `basis` muda ou a linha é apagada. Tabela
+  `discogs_release` com validade de 7 a 14 dias resolveria; `match_info` já permite achar os suspeitos
+  (`SELECT id, match_info FROM lot_market WHERE match_info->>'format' <> 'lp' OR match_info->>'via' = 'any'`).
 - **Frete do Discogs real (resta da unificação, v0.167.0)**: a regra de frete/comissão é única em todo o app; o
   frete do lado do Discogs ainda é a estimativa fixa do painel (R$ 25/35), não a mediana real dos anúncios BR.

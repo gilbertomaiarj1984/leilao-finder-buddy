@@ -10,6 +10,15 @@
 import { parse } from "node-html-parser";
 
 import type { DiscCode, DiscogsCodeInfo } from "./disc-code";
+import {
+  extractYear,
+  parseAlbum,
+  pickBestRelease,
+  toMatchInfo,
+  type MatchInfo,
+  type ReleaseTarget,
+  type SearchHit,
+} from "./discogs-match";
 import { parseSuggestionMap, type SuggestionMap } from "./discogs-price";
 import { parseDiscogsTracklist, type RawTrack } from "./tracklist";
 import { normalizeForMatch } from "./vinyl-parse";
@@ -42,6 +51,8 @@ type MarketData = {
   priceLowBr: number | null; // menor total (preço + frete) entre vendedores BR
   priceHighBr: number | null; // maior total (preço + frete) entre vendedores BR
   numForSaleBr: number | null; // quantidade de anúncios de vendedores BR considerados
+  /** Evidência do casamento (país, formato, cobertura) para auditar um preço estranho. */
+  matchInfo: MatchInfo | null;
 };
 
 export function discogsConfigured(): boolean {
@@ -92,124 +103,6 @@ function buildQuery(album: string | null, title: string): string | null {
   // Se veio do TÍTULO (sem album) e parece coletânea, não consulta.
   if (!(album && album.trim()) && MIXED_HINTS.some((h) => norm.includes(h))) return null;
   return q;
-}
-
-type SearchHit = {
-  id?: number;
-  title?: string;
-  year?: number | string;
-  format?: string[];
-  community?: { have?: number; want?: number };
-  thumb?: string;
-  cover_image?: string;
-};
-
-/** O que a IA identificou, quebrado em artista/álbum/ano para casar melhor no Discogs. */
-type ReleaseTarget = { artist: string | null; title: string | null; year: number | null };
-
-/** Extrai o 1º ano (19xx/20xx) de um texto. */
-function extractYear(text: string): number | null {
-  const m = (text ?? "").match(/\b(19|20)\d{2}\b/);
-  return m ? Number(m[0]) : null;
-}
-
-/**
- * Quebra o `album` da IA ("Artista - Álbum (1970)") em {artista, título, ano}. Tolerante:
- * separa no primeiro travessão/hífen/barra (o modelo às vezes devolve "Artista / Álbum"
- * no lugar do " - " pedido); sem separador, tudo vira título. Remove o "(ano)".
- */
-function parseAlbum(album: string): ReleaseTarget {
-  const year = extractYear(album);
-  let s = (album ?? "")
-    .replace(/\((?:\s*\d{4}\s*)\)/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const parts = s.split(/\s[-–—:/]\s/);
-  if (parts.length >= 2 && parts[0].trim()) {
-    const artist = parts[0].trim();
-    const title = parts.slice(1).join(" - ").trim();
-    return { artist: artist || null, title: title || null, year };
-  }
-  s = s
-    .replace(/\b(19|20)\d{2}\b/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return { artist: null, title: s || null, year };
-}
-
-// Sinais de coletânea/"greatest hits" no título do release (para não casar com elas quando
-// o alvo é um álbum de estúdio específico).
-const COMP_HINTS = [
-  "greatest hits",
-  "best of",
-  "the best",
-  "anthology",
-  "collection",
-  "compilation",
-  "essential",
-  "singles",
-];
-function looksCompilation(title: string, formats: string[]): boolean {
-  const t = (title ?? "").toLowerCase();
-  if (/\b(19|20)\d{2}\s*[-–]\s*(19|20)\d{2}\b/.test(t)) return true; // faixa de anos "1967-1970"
-  if (COMP_HINTS.some((h) => t.includes(h))) return true;
-  return (formats ?? []).some((f) => /comp|compilation/i.test(f));
-}
-
-function coverage(targetTokens: string[], resultTokens: Set<string>): number {
-  if (!targetTokens.length) return 1;
-  let hit = 0;
-  for (const t of targetTokens) if (resultTokens.has(t)) hit += 1;
-  return hit / targetTokens.length;
-}
-
-/**
- * Escolhe o melhor release para o alvo (artista+álbum+ano). Pontua pela **cobertura dos
- * tokens do ÁLBUM** (peso maior) + cobertura do artista + ano + vinil, com **penalidade para
- * coletâneas**. Rejeita (null) quando a cobertura mínima do álbum/artista não é atingida —
- * melhor não casar do que casar com o disco errado (ex.: "Let It Be" vs "1967-1970").
- */
-function pickBestRelease(target: ReleaseTarget, results: SearchHit[]): SearchHit | null {
-  if (!results?.length) return null;
-  const titleToks = target.title ? normalizeForMatch(target.title).split(" ").filter(Boolean) : [];
-  const artistToks = target.artist
-    ? normalizeForMatch(target.artist).split(" ").filter(Boolean)
-    : [];
-  let best: SearchHit | null = null;
-  let bestScore = -Infinity;
-  let bestTitleCov = 0;
-  let bestArtistCov = 0;
-  for (const r of results) {
-    const rTokens = new Set(
-      normalizeForMatch(r.title ?? "")
-        .split(" ")
-        .filter(Boolean),
-    );
-    const titleCov = coverage(titleToks, rTokens);
-    const artistCov = coverage(artistToks, rTokens);
-    const isVinyl = (r.format ?? []).some((f) => /vinyl|lp|vinil/i.test(f)) ? 0.5 : 0;
-    const ry = Number(r.year);
-    let yearBonus = 0;
-    if (target.year && Number.isFinite(ry) && ry > 0) {
-      if (ry === target.year) yearBonus = 2;
-      else if (Math.abs(ry - target.year) <= 1) yearBonus = 0.5;
-      else yearBonus = -1.5;
-    }
-    let score = titleCov * 5 + artistCov * 3 + isVinyl + yearBonus;
-    // Coletânea só é penalizada quando NÃO é exatamente o álbum buscado.
-    if (looksCompilation(r.title ?? "", r.format ?? []) && titleCov < 0.999) score -= 3;
-    if (score > bestScore) {
-      bestScore = score;
-      best = r;
-      bestTitleCov = titleCov;
-      bestArtistCov = artistCov;
-    }
-  }
-  // Piso de aceitação: o álbum precisa aparecer bem no título e o artista bater.
-  if (!best) return null;
-  if (titleToks.length && bestTitleCov < 0.6) return null;
-  if (artistToks.length && bestArtistCov < 0.5) return null;
-  return best;
 }
 
 // Condição de referência para o "preço sugerido" (ordem de preferência).
@@ -410,7 +303,10 @@ async function searchReleases(qs: string): Promise<SearchHit[]> {
  * Acha o release do Discogs para o álbum/título (busca estruturada artista+álbum+vinil, depois
  * texto livre; sempre pontuada por `pickBestRelease`). `null` quando não casa com segurança.
  */
-async function findRelease(album: string | null, title: string): Promise<SearchHit | null> {
+async function findRelease(
+  album: string | null,
+  title: string,
+): Promise<{ hit: SearchHit; info: MatchInfo } | null> {
   const query = buildQuery(album, title);
   if (!query) return null;
 
@@ -422,20 +318,25 @@ async function findRelease(album: string | null, title: string): Promise<SearchH
 
   // 1ª tentativa: busca ESTRUTURADA (artista + título do álbum + vinil) — bem mais precisa
   // que texto livre (evita casar "Let It Be" com a coletânea "1967-1970").
-  let hit: SearchHit | null = null;
   if (target.artist && target.title) {
-    const qs =
+    const base =
       `type=release&format=Vinyl&per_page=25` +
       `&artist=${encodeURIComponent(target.artist)}` +
       `&release_title=${encodeURIComponent(target.title)}`;
-    hit = pickBestRelease(target, await searchReleases(qs));
+    // Os lotes são de leilões brasileiros, e a prensagem brasileira costuma valer bem menos (ou mais)
+    // que a original estrangeira: prefere o release do Brasil quando existe, e só depois a busca
+    // sem país.
+    const br = pickBestRelease(target, await searchReleases(`${base}&country=Brazil`));
+    if (br?.hit.id) return { hit: br.hit, info: toMatchInfo(br, "br") };
+    const any = pickBestRelease(target, await searchReleases(base));
+    if (any?.hit.id) return { hit: any.hit, info: toMatchInfo(any, "any") };
   }
   // 2ª tentativa: texto livre (fallback), ainda pontuado pelo alvo.
-  if (!hit?.id) {
-    const qs = `type=release&per_page=25&q=${encodeURIComponent(query)}`;
-    hit = pickBestRelease(target, await searchReleases(qs));
-  }
-  return hit?.id ? hit : null;
+  const free = pickBestRelease(
+    target,
+    await searchReleases(`type=release&per_page=25&q=${encodeURIComponent(query)}`),
+  );
+  return free?.hit.id ? { hit: free.hit, info: toMatchInfo(free, "any") } : null;
 }
 
 /**
@@ -448,7 +349,7 @@ export async function fetchDiscogsTracklist(
   releaseId: number | null = null,
 ): Promise<RawTrack[] | null> {
   let id = releaseId;
-  if (!id) id = (await findRelease(album, album))?.id ?? null;
+  if (!id) id = (await findRelease(album, album))?.hit.id ?? null;
   if (!id) return null;
   const rel = (await discogsGet(`/releases/${id}`)) as { tracklist?: unknown } | null;
   return parseDiscogsTracklist(rel?.tracklist);
@@ -518,12 +419,14 @@ async function fetchMarketOnce(album: string | null, title: string): Promise<Mar
     priceLowBr: null,
     priceHighBr: null,
     numForSaleBr: null,
+    matchInfo: null,
   };
 
-  const hit = await findRelease(album, title);
-  if (!hit?.id) return empty;
+  const found = await findRelease(album, title);
+  const releaseId = found?.hit.id;
+  if (!found || !releaseId) return empty;
+  const { hit } = found;
 
-  const releaseId = hit.id;
   const yearNum = Number(hit.year);
   const base: MarketData = {
     ...empty,
@@ -533,6 +436,7 @@ async function fetchMarketOnce(album: string | null, title: string): Promise<Mar
     year: Number.isFinite(yearNum) && yearNum > 0 ? yearNum : null,
     have: hit.community?.have ?? null,
     want: hit.community?.want ?? null,
+    matchInfo: found.info,
   };
 
   const stats = (await discogsGet(`/marketplace/stats/${releaseId}?curr_abbr=${CURRENCY}`)) as {

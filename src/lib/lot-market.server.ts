@@ -1,4 +1,5 @@
 import { titleHash } from "./ai-eval.server";
+import type { MatchInfo } from "./discogs-match";
 import { normalizeSuggestionMap, type SuggestionMap } from "./discogs-price";
 import { normalizeForMatch, type VinylLot } from "./vinyl-parse";
 
@@ -22,6 +23,8 @@ type LotMarketRow = {
   price_low_br: number | null;
   price_high_br: number | null;
   num_for_sale_br: number | null;
+  /** Evidência do casamento (só gravada; não vai ao navegador). */
+  match_info?: MatchInfo | null;
 };
 
 type MarketTarget = { id: string; album: string | null; title: string; price: string };

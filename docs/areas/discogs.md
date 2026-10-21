@@ -25,6 +25,7 @@
   1 chamada de sugestões por release); `{}` = consultado sem sugestões. Medido em produção
   (15/10/2026): 2.546 linhas em BRL, 0 com faixa BR; a API respeita `curr_abbr` (R$ 5,60 vs
   US$ 1,11) e o sugerido já vem em BRL (conta do token); sugerido ÷ menor global tem mediana 1,73.
+- **Casamento do release (v0.169.0):** `discogs-match.ts` (puro, testado) decide o release; `discogs.server.ts` busca. A busca estruturada tenta PRIMEIRO `country=Brazil` (os lotes são de leilões brasileiros, e a prensagem brasileira e a estrangeira têm preços de 5x a 20x de diferença), depois sem país, depois texto livre. `pickBestRelease` ganhou critério de formato: LP/12"/Album +0,5, compacto 7"/EP/single −2 (o preço de um 7" não vale para um LP). A evidência do casamento (`via` br/any, país, formato, cobertura do título e do artista) é gravada em `lot_market.match_info` (jsonb, não vai ao navegador) para auditar um preço estranho. Linhas já gravadas só mudam quando o `basis` muda ou a linha é apagada (a validade por release fica em `pendencias.md`).
 - **Conta justa com o frete do leilão (v0.141.1):** as casas brasileiras sempre cobram frete, então
   `marketDeal` compara o **valor do lote** com a âncora **+ frete** (`auction-freight.ts`: R$ 25 no
   Sudeste — SP, RJ, MG, ES —, R$ 35 nas demais UFs e quando a UF é desconhecida). **Regra única desde a
