@@ -14,7 +14,16 @@ on:
     paths-ignore:
       - "docs/**"
       - "**.md"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      image_sha:
+        description: >-
+          ROLLBACK: SHA completo (40 caracteres) de um commit cujas imagens já estão no GHCR. Vazio =
+          deploy normal (builda a partir do ref escolhido). Preenchido, pula o build e só sobe as
+          imagens desse SHA.
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   group: deploy-vps
@@ -26,6 +35,7 @@ env:
 
 jobs:
   build-and-push:
+    if: ${{ inputs.image_sha == '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -70,6 +80,8 @@ jobs:
 
   deploy:
     needs: build-and-push
+    # `build-and-push` fica "skipped" num rollback; sem isto o deploy também seria pulado.
+    if: ${{ !cancelled() && (needs.build-and-push.result == 'success' || needs.build-and-push.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -112,13 +124,20 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
           VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
-          APP_IMAGE: ${{ env.IMAGE }}:${{ github.sha }}
-          BACKUP_IMAGE: ${{ env.BACKUP_IMAGE }}:${{ github.sha }}
+          APP_IMAGE: ${{ env.IMAGE }}:${{ inputs.image_sha || github.sha }}
+          BACKUP_IMAGE: ${{ env.BACKUP_IMAGE }}:${{ inputs.image_sha || github.sha }}
         run: |
           set -euo pipefail
           port="${VPS_SSH_PORT:-22}"
+          # Rollback: só aceita um SHA completo (evita injeção de shell via input).
+          case "$APP_IMAGE" in *[!a-zA-Z0-9:/._-]*) echo "image_sha inválido"; exit 1 ;; esac
+          # As tags também vão para o `.env` do VPS: um `docker compose up` manual depois do deploy
+          # (ou um restart do host) sobe a MESMA versão, em vez de voltar para `:latest`.
           ssh -p "$port" "$VPS_USER@$VPS_HOST" "cd '$VPS_DEPLOY_PATH' && \
             export APP_IMAGE='$APP_IMAGE' BACKUP_IMAGE='$BACKUP_IMAGE' && \
+            touch .env && sed -i '/^APP_IMAGE=/d;/^BACKUP_IMAGE=/d' .env && \
+            { [ -z \"\$(tail -c1 .env)\" ] || echo >> .env; } && \
+            printf 'APP_IMAGE=%s\nBACKUP_IMAGE=%s\n' '$APP_IMAGE' '$BACKUP_IMAGE' >> .env && \
             docker compose pull && \
             docker compose up -d --remove-orphans && \
             docker compose exec -T postgres sh -c 'psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/01-setup.sql' && \

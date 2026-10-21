@@ -38,6 +38,32 @@ function tokensMatch(provided: string, expected: string): boolean {
   return diff === 0;
 }
 
+/**
+ * Steps de diagnóstico e ações destrutivas: só respondem com `CRON_ENABLE_DEBUG=1` no `.env` do
+ * servidor. O `CRON_TOKEN` é um segredo de longa vida (também nos secrets do GitHub); com a trava,
+ * vazar o token não dá acesso a busca em domínio arbitrário (`catalogdebug`), a limpezas nem a
+ * recaptura total (`sales&reset=1`).
+ */
+const DEBUG_STEPS = new Set([
+  "salesdebug",
+  "catdebug",
+  "findlot",
+  "findlot2",
+  "findlotraw",
+  "findlotcat",
+  "pagedebug",
+  "windowaudit",
+  "catalogdebug",
+  "resetnosourcethumbs",
+]);
+
+export function isDebugCall(step: string, params: URLSearchParams): boolean {
+  if (DEBUG_STEPS.has(step)) return true;
+  if (step === "cleannonvinyl") return params.get("apply") === "1";
+  if (step === "sales") return params.get("reset") === "1";
+  return false;
+}
+
 export async function handleCron(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname !== "/api/cron") return null;
@@ -48,6 +74,9 @@ export async function handleCron(request: Request): Promise<Response | null> {
   if (!tokensMatch(provided, token)) return json({ error: "unauthorized" }, 401);
 
   const step = url.searchParams.get("step") ?? "";
+  if (isDebugCall(step, url.searchParams) && process.env["CRON_ENABLE_DEBUG"] !== "1") {
+    return json({ error: "step de diagnóstico desligado (CRON_ENABLE_DEBUG=1 liga)" }, 403);
+  }
   try {
     const { scrapeVinylChunk, enrichMissingLotes } = await import("./leiloesbr-scrape.server");
 
@@ -677,33 +706,11 @@ export async function handleCron(request: Request): Promise<Response | null> {
       {
         error:
           "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|salesthumbs|resetnosourcethumbs|reident|purchases|backfillbundle|compressimages|prune|cleannonvinyl|salesdebug|catdebug|findlot|findlot2|findlotraw|findlotcat|galleries|galleryscan|pagedebug|windowaudit|catalogdebug)",
-        // Diagnóstico (v0.69.4): step=prune vinha falhando com 400 só quando chamado pelo
-        // GitHub Actions (curl direto do VPS sempre respondia 200). Sem log de acesso no
-        // Caddy nem log de aplicação chegando no `docker logs` (Nitro usa logger próprio,
-        // não captura `console.log` cru), a única forma de provar o que o servidor recebeu
-        // é ecoar de volta no corpo — remover depois que o caso for entendido.
-        receivedStep: step,
-        receivedSearch: url.search,
       },
       400,
     );
   } catch (error) {
     console.error("[cron] falha", error);
-    // Diagnóstico (v0.69.16): step=aieval vem voltando 500 "Missing DATABASE_URL" só
-    // via GitHub Actions, mesmo com a var confirmada presente no container (printenv) e
-    // um teste direto no localhost do mesmo container funcionando logo antes/depois —
-    // intermitente, sem explicação ainda. PID/uptime/hostname ajudam a saber se é sempre
-    // o MESMO processo/container respondendo (contra a teoria de request batendo em
-    // outro container por engano) — remover depois que o caso for entendido.
-    return json(
-      {
-        error: (error as Error)?.message ?? "cron failed",
-        pid: process.pid,
-        uptimeSec: Math.round(process.uptime()),
-        hostname: (await import("node:os")).hostname(),
-        hasDatabaseUrl: Boolean(process.env["DATABASE_URL"]),
-      },
-      500,
-    );
+    return json({ error: (error as Error)?.message ?? "cron failed" }, 500);
   }
 }
