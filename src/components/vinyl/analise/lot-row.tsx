@@ -363,9 +363,10 @@ function AnaliseLotRowImpl({
           </div>
           <p
             className="text-[11px] text-muted-foreground"
-            title="Estimativa fixa do painel de IA, pela UF da casa. Não entra na conta abaixo."
+            title="Frete: estimativa fixa do painel de IA, pela UF da casa. Comissão: 5% do lote. Nenhum dos dois entra na conta abaixo."
           >
             + frete estimado {fmtMoney(freight, "BRL")}
+            {eco.commission !== null ? ` · comissão 5% ${fmtMoney(eco.commission, "BRL")}` : ""}
           </p>
           {eco.ref !== null ? (
             <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-muted-foreground">

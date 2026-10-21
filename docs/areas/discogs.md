@@ -26,9 +26,12 @@
   (15/10/2026): 2.546 linhas em BRL, 0 com faixa BR; a API respeita `curr_abbr` (R$ 5,60 vs
   US$ 1,11) e o sugerido já vem em BRL (conta do token); sugerido ÷ menor global tem mediana 1,73.
 - **Conta justa com o frete do leilão (v0.141.1):** as casas brasileiras sempre cobram frete, então
-  `marketDeal` compara `valor do lote + frete` com a âncora (`auction-freight.ts`: R$ 25 no Sudeste —
-  SP, RJ, MG, ES —, R$ 35 nas demais UFs e quando a UF é desconhecida). `withConditionAnchor(m,
-  media, uf)` anexa `anchor` e `freight` ao mercado; o `MarketBlock` mostra "Lote + frete". Valores
+  `marketDeal` compara o **valor do lote** com a âncora **+ frete** (`auction-freight.ts`: R$ 25 no
+  Sudeste — SP, RJ, MG, ES —, R$ 35 nas demais UFs e quando a UF é desconhecida). **Regra única desde a
+  v0.167.0** (antes a home somava o frete ao lote): o frete do leilão e a comissão do leiloeiro (sempre 5%,
+  `COMMISSION_PCT`) aparecem à parte e não entram na conta; o frete entra do lado do Discogs, onde vendedores
+  embutem margem. `withConditionAnchor(m, media, uf)` anexa `anchor` e `freight` ao mercado; o `MarketBlock`
+  mostra "Frete estimado" e a comissão. Valores
   fixos no código (viram configuração no painel de IA). Preço de mercado só em BRL; outra moeda é
   descartada (decisão: o Brasil é a referência, outros países são outras realidades).
 - **⚠️ Página de venda bloqueada (15/10/2026):** `www.discogs.com/sell/release/<id>` responde

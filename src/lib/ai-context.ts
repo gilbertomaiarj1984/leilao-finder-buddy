@@ -30,7 +30,7 @@ import type { PastSales } from "./past-sales";
  * número reavalia todos os lotes na rodada seguinte. Mudou o texto do prompt ou os blocos de
  * contexto? Suba aqui.
  */
-export const PROMPT_VERSION = 3;
+export const PROMPT_VERSION = 4;
 
 /** Teto da descrição que vai no prompt (≈ 150 tokens). */
 const DESCRIPTION_MAX = 600;
@@ -166,9 +166,9 @@ export function buildLotContext(
 
 /**
  * Objeto `contexto` que vai no JSON do prompt, na ordem dos blocos da configuração e sem os campos
- * desligados. `priceBrl` é o valor atual do lote (sem frete); com ele e a âncora do Discogs entram
- * o total com frete e a razão entre os dois, o número que a IA precisa para dizer "barato" ou
- * "caro" (mesmas faixas do `marketDeal` do app).
+ * desligados. `priceBrl` é o valor atual do lote (sem frete nem comissão); com ele e a âncora do
+ * Discogs mais o frete estimado (a referência) entra a razão entre os dois, o número que a IA precisa
+ * para dizer "barato" ou "caro" (mesma regra e mesmas faixas do `marketDeal` do app).
  */
 export function contextForPrompt(
   ctx: LotContext,
@@ -176,7 +176,7 @@ export function contextForPrompt(
   cfg: PanelConfig = DEFAULT_PANEL_CONFIG,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  const total = priceBrl != null && priceBrl > 0 ? priceBrl + ctx.frete : null;
+  const lote = priceBrl != null && priceBrl > 0 ? priceBrl : null;
   const pick = (block: ContextBlockId, all: Record<string, unknown>) =>
     Object.fromEntries(
       Object.entries(all).filter(([k, v]) => v !== undefined && fieldOn(cfg, block, k)),
@@ -196,8 +196,9 @@ export function contextForPrompt(
         querem: querem ?? undefined,
         tem: tem ?? undefined,
         anuncios_a_venda: anuncios_a_venda ?? undefined,
-        razao_lote_vs_sugerido:
-          total != null ? Math.round((total / anchor.price) * 100) / 100 : undefined,
+        referencia_com_frete_brl: Math.round(anchor.price + ctx.frete),
+        razao_lote_vs_referencia:
+          lote != null ? Math.round((lote / (anchor.price + ctx.frete)) * 100) / 100 : undefined,
       });
       if (Object.keys(o).length) out["mercado_discogs_brl"] = o;
     } else if (block === "descricao" && ctx.descricao) {
@@ -233,7 +234,7 @@ export function contextForPrompt(
         out,
         pick("frete", {
           frete_estimado_brl: ctx.frete,
-          lote_mais_frete_brl: total ?? undefined,
+          lote_brl: lote ?? undefined,
         }),
       );
     }

@@ -35,11 +35,12 @@ export const CONTEXT_FIELDS: Record<ContextBlockId, readonly { key: string; labe
     { key: "querem", label: "Querem (want)" },
     { key: "tem", label: "Têm (have)" },
     { key: "anuncios_a_venda", label: "Anúncios à venda" },
-    { key: "razao_lote_vs_sugerido", label: "Razão lote ÷ sugerido" },
+    { key: "referencia_com_frete_brl", label: "Referência (sugerido + frete)" },
+    { key: "razao_lote_vs_referencia", label: "Razão lote ÷ referência" },
   ],
   frete: [
     { key: "frete_estimado_brl", label: "Frete estimado" },
-    { key: "lote_mais_frete_brl", label: "Lote + frete" },
+    { key: "lote_brl", label: "Valor do lote" },
   ],
   descricao: [{ key: "descricao_do_lote", label: "Texto da descrição" }],
   colecionador: [

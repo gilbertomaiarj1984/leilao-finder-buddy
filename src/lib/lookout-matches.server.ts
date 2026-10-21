@@ -70,8 +70,8 @@ export type LookoutUpcoming = {
   marketLowBr: number | null;
   marketHighBr: number | null;
   /**
-   * "Barato/justo/caro vs. mercado": valor do lote + frete da casa contra o preço sugerido do
-   * Discogs para a condição do disco (mesma conta do resto do app). "indefinido" sem mercado casado.
+   * "Barato/justo/caro vs. mercado": valor do lote contra o preço sugerido do Discogs para a
+   * condição do disco mais o frete do vendedor (mesma conta do resto do app). "indefinido" sem mercado casado.
    */
   marketVerdict: "barato" | "justo" | "caro" | "indefinido";
   /** Disco de nome genérico cujo ano não deu para validar (usuário valida com ✓/✕). */
