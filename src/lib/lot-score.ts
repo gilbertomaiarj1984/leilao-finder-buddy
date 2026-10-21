@@ -236,23 +236,76 @@ export function fmtMoney(value: number | null, currency: string | null): string 
 export const DEAL_BAND_CHEAP = 0.7;
 export const DEAL_BAND_EXPENSIVE = 1.15;
 
-/** Preço do lote (BRL) vs. mercado: barato/justo/caro. "indefinido" sem base comparável. */
-export function marketDeal(
-  price: string,
-  m: LotMarket | undefined,
-): "barato" | "justo" | "caro" | "indefinido" {
-  if (!m || !m.matched) return "indefinido";
-  const hammer = parsePrice(price);
-  // Conta justa: o lote custa o valor + o frete da casa (as casas brasileiras sempre cobram).
-  const p = hammer === null ? null : hammer + (m.freight ?? 0);
+/** Referência de preço do mercado (BRL), da mais para a menos confiável — ver `marketDeal`. */
+function marketReference(m: LotMarket | undefined): number | null {
+  if (!m || !m.matched) return null;
   // Âncora, da mais para a menos confiável: sugerido da CONDIÇÃO do lote; menor total (preço +
   // frete) de vendedor BR; sugerido padrão (G+); e só por último o menor global, que é o
   // anúncio mais barato do mundo em qualquer condição (ou, em disco raro, um lacrado caro).
   const ref = m.anchor?.price ?? m.priceLowBr ?? m.suggestedPrice ?? m.lowestPrice;
-  if (p === null || ref === null || ref <= 0) return "indefinido";
-  if (p <= ref * DEAL_BAND_CHEAP) return "barato";
-  if (p >= ref * DEAL_BAND_EXPENSIVE) return "caro";
-  return "justo";
+  return ref !== null && ref !== undefined && ref > 0 ? ref : null;
+}
+
+export type LotDeal = "barato" | "justo" | "caro" | "indefinido";
+
+/** A conta do lote contra o mercado (tudo em BRL; `null` = sem base para calcular). */
+export type LotEconomics = {
+  /** Lance atual + frete estimado. */
+  total: number | null;
+  /** Preço de referência do mercado (`marketReference`). */
+  ref: number | null;
+  /** `total ÷ ref`. */
+  ratio: number | null;
+  deal: LotDeal;
+  /** Maior lance que ainda deixa o lote "barato" (total ≤ 70% da referência). */
+  capCheap: number | null;
+  /** Maior lance que ainda deixa o lote "justo" (total < 115% da referência). */
+  capFair: number | null;
+  /** `ref − total`: quanto o mercado paga a mais (negativo = lote acima do mercado). */
+  potential: number | null;
+};
+
+/**
+ * Conta do lote: custo total (lance + frete), veredicto e tetos de lance. É a ÚNICA fonte das
+ * faixas barato/justo/caro (`DEAL_BAND_*`) — `marketDeal` só devolve o veredicto daqui.
+ */
+export function lotEconomics(price: string, m: LotMarket | undefined): LotEconomics {
+  const hammer = parsePrice(price);
+  const ref = marketReference(m);
+  // Conta justa: o lote custa o valor + o frete da casa (as casas brasileiras sempre cobram).
+  const freight = m?.freight ?? 0;
+  const total = hammer === null ? null : hammer + freight;
+  if (total === null || ref === null) {
+    return {
+      total,
+      ref,
+      ratio: null,
+      deal: "indefinido",
+      capCheap: null,
+      capFair: null,
+      potential: null,
+    };
+  }
+  const deal: LotDeal =
+    total <= ref * DEAL_BAND_CHEAP
+      ? "barato"
+      : total >= ref * DEAL_BAND_EXPENSIVE
+        ? "caro"
+        : "justo";
+  return {
+    total,
+    ref,
+    ratio: total / ref,
+    deal,
+    capCheap: Math.max(0, Math.floor(ref * DEAL_BAND_CHEAP - freight)),
+    capFair: Math.max(0, Math.ceil(ref * DEAL_BAND_EXPENSIVE - freight) - 1),
+    potential: ref - total,
+  };
+}
+
+/** Preço do lote (BRL) vs. mercado: barato/justo/caro. "indefinido" sem base comparável. */
+export function marketDeal(price: string, m: LotMarket | undefined): LotDeal {
+  return lotEconomics(price, m).deal;
 }
 
 /**

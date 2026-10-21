@@ -56,6 +56,25 @@
   não disparar o casamento pesado da sondagem ao editar tag). `effectiveArtist` usa
   `isDiscBundle` → grupo **"Lote"** para conjuntos ("lote com N discos"), senão o artista da IA
   (`parseAiAlbum`), senão o heurístico do título. Header com links **Análise** / **Ao vivo**.
+- **Análise de Lotes — lista única (v0.158.0, fase 1 da remodelagem):** a descrição "dois Tops" abaixo é
+  histórica. Hoje a página é UMA lista com todos os lotes avaliados (blocos de 30 + "Mostrar mais"):
+  - **Linha** (`components/vinyl/analise/lot-row.tsx`): capa, nota (`ScoreBadge`), título/álbum, estado
+    **vigia/lance sempre explícito** (pílulas "Vigiando" e "Ganhando"/"Coberto" + borda de `rowStatusTone`),
+    oportunidade, raridade, estado do disco/capa (`ConditionBadges`), "já tenho" (Coleção), 🎯 De olho,
+    ⭐ interesse, 🔥 procurado (want ÷ have), nº de lances do catálogo, semáforo + UF da casa e "casa mal
+    avaliada"; à direita a **conta do lance** (`lotEconomics`, `lot-score.ts`): lance + frete, mercado na
+    condição do disco, **teto barato** (≤ 70% do mercado) e **potencial** (mercado − custo), mais a faixa
+    Discogs BR. Visualizações **Lista** e **Cards**.
+  - **Filtros novos:** Vigiados, oportunidade (barato/justo/caro), disco mínimo (sem estado conhecido não
+    passa), custo total até, ocultar já tenho (só casamento confiante), ocultar casas ruins (laranja/vermelho),
+    só com mercado — somados aos antigos (busca, casa, raridade, nota, Com lance, Só De olho, dias).
+  - **Ordenação** (`analise-rank.ts`): nota da IA, melhor negócio (custo ÷ mercado), potencial em R$, horário
+    do pregão, procura. Empates caem na nota. **Ordenação e visualização escolhidas ficam salvas** como padrão
+    (`analise-sort`, `analise-view`, via `usePersistedState`).
+  - **`useLotInsights(lots)`** (`src/lib/use-lot-insights.ts`): um `Map` id → `LotInsight` (nota, álbum,
+    mercado ancorado, condição, demanda, Coleção, De olho, nível da casa). Nasceu da consolidação pedida em
+    `docs/pendencias.md`; a home ainda tem a cópia dela (`DUP(lot-insights)`).
+  - Teste local no navegador: `tools/local-tests/analise-seed.mjs` + `analise-e2e.mjs`.
 - **`_authenticated/analise.tsx` (Análise, remodelada na v0.113.0):** dois **Top 30 por nota**
   recolhíveis — **vigiados** (`watchedIds`) e **restante** — sob a barra de filtros e a **barra
   de dias** (mesmo formato da home: passados âmbar, futuros azul, + "Todos"; contagem por dia

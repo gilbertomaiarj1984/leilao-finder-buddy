@@ -15,6 +15,7 @@ import { EMPTY_RATINGS, type RatingsPayload } from "@/lib/house-rating";
 import {
   getCollection,
   getCollectionFeedback,
+  getCollectionKeywordDenylist,
   getCollectionLinks,
 } from "@/lib/collection.functions";
 import type { CollectionItem } from "@/lib/collection.server";
@@ -435,6 +436,27 @@ export function useCollectionFeedbackQuery() {
       }
     },
     staleTime: HOUR,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+}
+
+/**
+ * Termos negados como genéricos demais para casar a Coleção (clique no painel de relação quando o
+ * casamento foi falso positivo). Best-effort: erro vira vazio. Mesma chave da home.
+ */
+export function useCollectionKeywordDenylistQuery() {
+  const fetchDenylist = useServerFn(getCollectionKeywordDenylist);
+  return useQuery<string[]>({
+    queryKey: ["collection-keyword-denylist"] as const,
+    queryFn: async () => {
+      try {
+        return ((await fetchDenylist()) as string[]) ?? [];
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 30 * MIN,
     refetchOnWindowFocus: false,
     retry: false,
   });

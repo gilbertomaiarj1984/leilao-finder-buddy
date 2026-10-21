@@ -1,247 +1,60 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { HouseUf } from "@/components/vinyl/house-uf";
 import {
   ArrowLeft,
   Binoculars,
-  ChevronDown,
-  ChevronRight,
-  ExternalLink,
+  Disc3,
   Eye,
-  EyeOff,
   Gavel,
-  Loader2,
+  LayoutGrid,
+  List,
   Sparkles,
-  Star,
   Target,
   X,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
-import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  LotTags,
-  RarityLabel,
-  RarityLegend,
-  ReevaluateIconButton,
-  ScoreBadge,
-} from "@/components/vinyl/ai-score";
+import { AnaliseLotRow } from "@/components/vinyl/analise/lot-row";
+import { RarityLegend } from "@/components/vinyl/ai-score";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
-import {
-  dealLabel,
-  dealTone,
-  discogsUrl,
-  fmtMoney,
-  formatAiAlbum,
-  marketDeal,
-  RARITY_LEGEND,
-  rowStatusTone,
-  toLotAi,
-  toLotMarket,
-  withConditionAnchor,
-  type LotAi,
-  type LotMarket,
-} from "@/components/vinyl/ai-score-utils";
+import { RARITY_LEGEND, lotEconomics } from "@/components/vinyl/ai-score-utils";
 import { dayLabel } from "@/components/vinyl/grouping";
-import { FUTURE_LABEL, FUTURE_TAB, isFutureDay } from "@/lib/day-bar";
 import { setLotTags } from "@/lib/ai.functions";
-import { effectiveTextRules } from "@/lib/condition-text";
-import { normalizeGrade, parseConditionFromText, scoreCondition } from "@/lib/grading";
-import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
+import {
+  compareBy,
+  gradeAtLeast,
+  isSortKey,
+  SORT_KEYS,
+  type RankInput,
+  type SortKey,
+} from "@/lib/analise-rank";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
-import { bidIsWinning, formatDayLabel, normalizeForMatch, type VinylLot } from "@/lib/vinyl-parse";
+import { FUTURE_LABEL, FUTURE_TAB, isFutureDay } from "@/lib/day-bar";
+import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
+import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
+import { queryKeys, useBidsQuery, useLotsQuery, useWatchedQuery } from "@/lib/queries";
+import { useLotInsights, type LotInsight } from "@/lib/use-lot-insights";
+import { bidIsWinning, normalizeForMatch, type VinylLot } from "@/lib/vinyl-parse";
 import { saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
-import {
-  buildLotIdentity,
-  lookoutCandidates,
-  matchLookoutForLot,
-  LOOKOUT_CONFIDENT_MIN,
-  type LookoutHit,
-} from "@/lib/lookout-match";
-import {
-  useAnalyticsAliasesQuery,
-  useCollectorInterests,
-  useLotAiQuery,
-  useLotConditionQuery,
-  useLotIdentQuery,
-  useAiPanelQuery,
-  useLotMarketQuery,
-  useLotsQuery,
-  useLookoutLinksQuery,
-  useLookoutQuery,
-  useBidsQuery,
-  useWatchedQuery,
-  queryKeys,
-} from "@/lib/queries";
+import { OWNED_CONFIDENT_MIN } from "@/lib/wantlist-match";
 
 export const Route = createFileRoute("/_authenticated/analise")({
   head: () => ({ meta: [{ title: "Análise de Lotes — Garimpo de Vinil" }] }),
   component: AnalisePage,
 });
 
-const TOP_N = 30;
+/** Quantos lotes aparecem de uma vez; "Mostrar mais" soma outro bloco. */
+const PAGE_SIZE = 30;
 
 const selectClass =
   "h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
-
-/** Casamento do lote com um disco do De olho (rótulo + confiança) para o 🎯 da linha. */
-type LookoutMark = Pick<LookoutHit, "label" | "score" | "confirmed" | "yearPending">;
-
-function LotTitle({
-  lot,
-  lookout,
-  album,
-  marketYear,
-}: {
-  lot: VinylLot;
-  lookout?: LookoutMark | null;
-  album?: string | null;
-  marketYear?: number | null;
-}) {
-  const wantTitle = lookout
-    ? `De olho: ${lookout.label} · ${lookout.confirmed ? "confirmado" : `${Math.round(lookout.score * 100)}%${lookout.yearPending ? " (a validar)" : ""}`}`
-    : undefined;
-  // Artista/álbum da IA (mais acertivo) em destaque; o título original vira linha secundária.
-  const aiLabel = album ? formatAiAlbum(album, marketYear) : "";
-  return (
-    <span className="inline-flex items-start gap-1" title={wantTitle}>
-      {lookout ? (
-        <Target className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-label={wantTitle} />
-      ) : null}
-      {aiLabel ? (
-        <span className="flex min-w-0 flex-col">
-          <a
-            href={lot.url}
-            target="_blank"
-            rel="noreferrer"
-            className="line-clamp-2 font-medium text-foreground hover:text-primary hover:underline"
-            title={lot.title}
-          >
-            {aiLabel}
-          </a>
-          <span className="line-clamp-1 text-xs text-muted-foreground" title={lot.title}>
-            {lot.title}
-          </span>
-        </span>
-      ) : (
-        <a
-          href={lot.url}
-          target="_blank"
-          rel="noreferrer"
-          className="line-clamp-2 text-foreground hover:text-primary hover:underline"
-          title={lot.title}
-        >
-          {lot.title}
-        </a>
-      )}
-    </span>
-  );
-}
-
-/**
- * Campos que ficam ABAIXO do título nas tabelas: raridade, oportunidade, âncora de mercado
- * (clicável → Discogs), motivo da IA e tags. A nota (com a explicação completa no hover)
- * fica na coluna à esquerda via `ScoreBadge`.
- */
-function LotSummary({
-  ai,
-  market,
-  price,
-  onEditTags,
-}: {
-  ai?: LotAi;
-  market?: LotMarket;
-  price?: string;
-  onEditTags?: (next: string[]) => void;
-}) {
-  if (!ai) return null;
-  const mDeal = market ? marketDeal(price ?? "", market) : "indefinido";
-  const href = market?.matched ? discogsUrl(market.releaseId) : null;
-  // Faixa real no Brasil (total = preço + frete). Sempre mostrada quando existe.
-  const range =
-    market?.priceLowBr != null
-      ? market.priceHighBr != null && market.priceHighBr > market.priceLowBr
-        ? `${fmtMoney(market.priceLowBr, "BRL")}–${fmtMoney(market.priceHighBr, "BRL")}`
-        : fmtMoney(market.priceLowBr, "BRL")
-      : null;
-  return (
-    <div className="mt-1 space-y-1">
-      <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-        {ai.rarity ? (
-          <span className="rounded bg-secondary px-1.5 py-0.5">
-            <RarityLabel rarity={ai.rarity} />
-          </span>
-        ) : null}
-        {mDeal === "indefinido" && ai.deal && ai.deal !== "indefinido" ? (
-          <span className={`font-medium ${dealTone(ai.deal)}`}>{dealLabel(ai.deal)}</span>
-        ) : null}
-        {mDeal !== "indefinido" ? (
-          <span className={`font-medium ${dealTone(mDeal)}`}>{dealLabel(mDeal)} vs. mercado</span>
-        ) : null}
-        {range ? (
-          <span
-            className="text-muted-foreground"
-            title="Faixa no Discogs — vendedores do Brasil, já com o frete somado"
-          >
-            Discogs BR: <span className="font-medium text-foreground">{range}</span>
-          </span>
-        ) : null}
-        {href ? (
-          <a
-            href={href}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-0.5 font-medium text-primary hover:underline"
-          >
-            Discogs <ExternalLink className="h-3 w-3" />
-          </a>
-        ) : null}
-      </div>
-      {ai.reason ? <p className="max-w-md text-xs text-muted-foreground">{ai.reason}</p> : null}
-      <LotTags tags={ai.tags} onEdit={onEditTags} />
-    </div>
-  );
-}
-
-/** Botão de vigiar/desvigiar (só ícone) para as linhas das tabelas — sincroniza com o LeilõesBR. */
-function WatchButton({
-  watched,
-  busy,
-  onToggle,
-}: {
-  watched: boolean;
-  busy: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <Button
-      size="sm"
-      variant={watched ? "default" : "outline"}
-      className="h-8 w-8 p-0"
-      onClick={onToggle}
-      disabled={busy}
-      title={watched ? "Vigiando — clique para remover" : "Vigiar este lote"}
-      aria-label={watched ? "Deixar de vigiar" : "Vigiar"}
-      aria-pressed={watched}
-    >
-      {busy ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : watched ? (
-        <EyeOff className="h-4 w-4" />
-      ) : (
-        <Eye className="h-4 w-4" />
-      )}
-    </Button>
-  );
-}
 
 /** Chip de filtro (liga/desliga) no mesmo formato dos botões da parte principal do site. */
 function filterChipClass(active: boolean): string {
@@ -250,45 +63,15 @@ function filterChipClass(active: boolean): string {
     : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-50";
 }
 
-/** Seção recolhível de um Top (cabeçalho clicável + conteúdo). */
-function TopSection({
-  title,
-  open,
-  onToggle,
-  filtered,
-  children,
-}: {
-  title: string;
-  open: boolean;
-  onToggle: () => void;
-  filtered: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <section className="space-y-3">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground"
-      >
-        {open ? (
-          <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-        )}
-        <Star className="h-5 w-5 text-primary" />
-        {title}
-        {filtered ? (
-          <Badge variant="secondary" className="ml-1 font-normal">
-            filtrado
-          </Badge>
-        ) : null}
-      </button>
-      {open ? children : null}
-    </section>
-  );
-}
+/** Um lote avaliado, com a conta do lance e o estado do acompanhamento já resolvidos. */
+type AnaliseItem = RankInput & {
+  score: number;
+  lot: VinylLot;
+  insight: LotInsight;
+  currentPrice: string;
+  watched: boolean;
+  bidStatus: string | null;
+};
 
 function AnalisePage() {
   // Esconder/mostrar o topo é MANUAL — botão `MobileTopToggle`, só no mobile — desde que a
@@ -300,7 +83,7 @@ function AnalisePage() {
   const runToggle = useServerFn(toggleWatch);
   const saveTags = useServerFn(setLotTags);
 
-  // Filtros (valem para os dois Tops). O dia vem da barra de dias ("" = todos).
+  // Filtros. O dia vem da barra de dias ("" = todos).
   const [search, setSearch] = usePersistedState("analise-search", "");
   const [houseFilter, setHouseFilter] = usePersistedState("analise-house", "");
   const [dayFilter, setDayFilter] = usePersistedState("analise-day", "");
@@ -309,18 +92,23 @@ function AnalisePage() {
   const [rarityFilter, setRarityFilter] = usePersistedState("analise-rarity", "");
   const [onlyLookout, setOnlyLookout] = usePersistedState("analise-only-lookout", false);
   const [onlyBid, setOnlyBid] = usePersistedState("analise-only-bid", false);
-  const [watchedOpen, setWatchedOpen] = usePersistedState("analise-top-open", true);
-  const [restOpen, setRestOpen] = usePersistedState("analise-rest-open", true);
+  const [onlyWatched, setOnlyWatched] = usePersistedState("analise-only-watched", false);
+  const [dealFilter, setDealFilter] = usePersistedState("analise-deal", "");
+  const [minCond, setMinCond] = usePersistedState("analise-min-cond", "");
+  const [maxCost, setMaxCost] = usePersistedState("analise-max-cost", "");
+  const [hideOwned, setHideOwned] = usePersistedState("analise-hide-owned", false);
+  const [hideBadHouse, setHideBadHouse] = usePersistedState("analise-hide-bad-house", false);
+  const [onlyPriced, setOnlyPriced] = usePersistedState("analise-only-priced", false);
+  // Ordenação e visualização: o que o usuário deixou por último vira o padrão da próxima visita.
+  const [sortRaw, setSort] = usePersistedState<string>("analise-sort", "score");
+  const sort: SortKey = isSortKey(sortRaw) ? sortRaw : "score";
+  const [viewRaw, setView] = usePersistedState<string>("analise-view", "list");
+  const view: "list" | "cards" = viewRaw === "cards" ? "cards" : "list";
+  const [limit, setLimit] = useState(PAGE_SIZE);
   const [pending, setPending] = useState<string | null>(null);
 
   const lots = useLotsQuery();
-  const lotAiQuery = useLotAiQuery();
-  const lotIdentQuery = useLotIdentQuery();
-  const lotMarketQuery = useLotMarketQuery();
-  const lookoutQuery = useLookoutQuery();
-  const lookoutLinksQuery = useLookoutLinksQuery();
-  const analyticsAliasesQuery = useAnalyticsAliasesQuery();
-  // Vigiados + meus lances: alimentam a divisão em dois Tops, o filtro "Com lance", a borda
+  // Vigiados + meus lances: alimentam o filtro "Vigiados"/"Com lance", a borda
   // colorida das linhas, o status do lance e o botão de vigiar (mesma mecânica da página
   // principal). MESMO acumulador local de `index.tsx` (`@/lib/watched-accum`, MESMA chave de
   // `localStorage` e de query, `queryKeys.watched`/`queryKeys.bids`) — essas duas rotas
@@ -330,7 +118,7 @@ function AnalisePage() {
   const { query: watchedQuery, accumRef: watchedAccumRef } = useWatchedQuery();
   const { query: bidsQuery } = useBidsQuery();
 
-  // Vigiar/desvigiar direto na tabela — sincroniza com o LeilõesBR (igual aos cards).
+  // Vigiar/desvigiar direto na lista — sincroniza com o LeilõesBR (igual aos cards).
   const toggle = useMutation({
     mutationFn: (lot: { idPeca: string; idLeilao: string; base: string; watch: boolean }) =>
       runToggle({ data: lot }),
@@ -371,6 +159,14 @@ function AnalisePage() {
     },
   });
 
+  const allLots = useMemo(() => lots.data?.lots ?? [], [lots.data]);
+  // Tudo que o app sabe de cada lote (nota, mercado, estado, Coleção, De olho, casa…).
+  const { insightById, albumById, evaluated, lookoutCount, lookoutActiveItems } =
+    useLotInsights(allLots);
+  // Aviso (toast) quando um lote com lance vira "Coberto" — só com o app aberto, ver
+  // `@/lib/bid-alerts`.
+  useBidCoveredAlerts(bidsQuery.data, (id) => albumById.get(id) ?? null);
+
   const watchedIds = useMemo(
     () => new Set((watchedQuery.data ?? []).map((w) => w.idPeca)),
     [watchedQuery.data],
@@ -389,110 +185,20 @@ function AnalisePage() {
     return map;
   }, [bidsQuery.data]);
 
-  const aiById = useMemo(() => {
-    const map = new Map<string, LotAi>();
-    for (const r of lotAiQuery.data ?? []) map.set(r.id, toLotAi(r));
-    return map;
-  }, [lotAiQuery.data]);
-  // Mapa id→álbum com identidade ESTÁVEL enquanto os álbuns não mudam (assinatura id:album).
-  // O casamento com a sondagem (`wantByLot`) usa só o álbum; sem isto, editar uma tag muda
-  // `lotAiQuery.data` e forçava o recálculo pesado do casamento (jank de ~1s na edição).
-  const aiAlbumSig = useMemo(
-    () => (lotAiQuery.data ?? []).map((r) => `${r.id}:${r.album ?? ""}`).join("|"),
-    [lotAiQuery.data],
-  );
-  const identAlbumSig = useMemo(
-    () => (lotIdentQuery.data ?? []).map((r) => `${r.id}:${r.album ?? ""}`).join("|"),
-    [lotIdentQuery.data],
-  );
-  // Álbum RESOLVIDO por lote: prefere a avaliação completa (`lot_ai`); senão a
-  // identificação simplificada (`lot_ident`). Identidade estável pelas assinaturas
-  // acima (evita recomputar o casamento pesado da sondagem ao editar uma tag).
-  const albumById = useMemo(() => {
-    const map = new Map<string, string | null>();
-    for (const r of lotIdentQuery.data ?? []) if (r.album) map.set(r.id, r.album);
-    for (const r of lotAiQuery.data ?? []) if (r.album) map.set(r.id, r.album);
-    return map;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiAlbumSig, identAlbumSig]);
-  const albumFor = (lot: VinylLot): string | null => albumById.get(lot.id) ?? null;
-  // Aviso (toast) quando um lote com lance vira "Coberto" — só com o app aberto, ver
-  // `@/lib/bid-alerts`.
-  useBidCoveredAlerts(bidsQuery.data, (id) => albumById.get(id) ?? null);
-  // Perfil do colecionador: interesses digitados + artistas do De olho.
-  const { matcher: matchesInterest } = useCollectorInterests();
-  const marketById = useMemo(() => {
-    const map = new Map<string, LotMarket>();
-    for (const r of lotMarketQuery.data ?? []) map.set(r.id, toLotMarket(r));
-    return map;
-  }, [lotMarketQuery.data]);
-  const aiFor = (lot: VinylLot): LotAi | undefined => {
-    const base = aiById.get(lot.id);
-    if (!base) return undefined;
-    return { ...base, matchesInterests: matchesInterest(lot.title) };
-  };
-  // Estado do disco por lote (`useLotConditionQuery`, tabela inteira): a âncora de mercado
-  // usa o preço sugerido do Discogs para a condição dele.
-  const aiPanelQuery = useAiPanelQuery();
-  const lotConditionQuery = useLotConditionQuery();
-  const mediaById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const r of lotConditionQuery.data ?? []) {
-      // Mesma convenção da home: com só um lado conhecido, o outro repete.
-      const media = scoreCondition(
-        normalizeGrade(r.media || null),
-        normalizeGrade(r.sleeve || null),
-      ).media;
-      if (media) map.set(r.id, media);
-    }
-    return map;
-  }, [lotConditionQuery.data]);
-  const textRules = useMemo(
-    () => effectiveTextRules(aiPanelQuery.data?.rules, aiPanelQuery.data?.disabledRules),
-    [aiPanelQuery.data],
-  );
-  // Chamado por lote em todo render: cacheia o resultado (objeto estável por lote) para não
-  // refazer o parse do título nem anular o `React.memo` das linhas. O mapa recomeça vazio quando
-  // as entradas mudam.
-  const marketCache = useMemo(
-    () => new Map<string, LotMarket | undefined>(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [marketById, mediaById, textRules, aiPanelQuery.data],
-  );
-  const marketFor = (lot: VinylLot): LotMarket | undefined => {
-    if (marketCache.has(lot.id)) return marketCache.get(lot.id);
-    const m = withConditionAnchor(
-      marketById.get(lot.id),
-      mediaById.get(lot.id) ?? parseConditionFromText(lot.title, textRules).media,
-      lot.uf,
-      aiPanelQuery.data,
-    );
-    marketCache.set(lot.id, m);
-    return m;
-  };
-
-  // Estado por lote (vigia/lance) e o valor "Atual" corrigido para quem está vencendo.
-  const isWatched = (lot: VinylLot) => watchedIds.has(lot.idPeca);
-  const bidStatusFor = (lot: VinylLot) => bidStatusById.get(lot.idPeca) ?? null;
-  const currentPriceFor = (lot: VinylLot) => {
-    const status = bidStatusFor(lot);
-    const myBid = myBidById.get(lot.idPeca);
-    return status && bidIsWinning(status) && myBid ? myBid : lot.price;
-  };
   const onToggleWatch = (lot: VinylLot) =>
     toggle.mutate({
       idPeca: lot.idPeca,
       idLeilao: lot.idLeilao,
       base: lot.base,
-      watch: !isWatched(lot),
+      watch: !watchedIds.has(lot.idPeca),
     });
+  const onEditTags = (id: string, tags: string[]) => saveTagsMut.mutate({ id, tags });
 
   const days = useMemo(() => lots.data?.days ?? [], [lots.data]);
   // Dia salvo que saiu da janela vira "Todos" (senão a lista ficaria vazia sem aba ativa).
   // Último dia da janela: o que vier depois cai no último botão, "Dias Futuros".
   const lastDay = days[days.length - 1];
   const activeDay = days.includes(dayFilter) || dayFilter === FUTURE_TAB ? dayFilter : "";
-  const allLots = useMemo(() => lots.data?.lots ?? [], [lots.data]);
 
   const houses = useMemo(
     () =>
@@ -502,102 +208,90 @@ function AnalisePage() {
     [allLots],
   );
 
-  // Casamento com o De olho (mesmo motor da home e da página /olho): artista + álbum + ano, com
-  // os vínculos que o usuário confirmou/descartou. Só discos ativos; o próprio lote marcado não
-  // conta (ele é a origem). Falha num lote nunca derruba a tela.
-  const artistAliases = analyticsAliasesQuery.data?.artists;
-  const lookoutCands = useMemo(
-    () => lookoutCandidates(lookoutQuery.data ?? [], artistAliases),
-    [lookoutQuery.data, artistAliases],
-  );
-  const lookoutByLot = useMemo(() => {
-    const map = new Map<string, LookoutMark>();
-    if (!lookoutCands.length) return map;
+  // Um item por lote já avaliado, com a conta do lance feita sobre o valor ATUAL.
+  const items = useMemo(() => {
+    const out: AnaliseItem[] = [];
     for (const lot of allLots) {
-      try {
-        const market = marketById.get(lot.id);
-        const hit = matchLookoutForLot(
-          lookoutCands,
-          lot.id,
-          buildLotIdentity({
-            title: lot.title,
-            artist: lot.artist,
-            album: albumById.get(lot.id) ?? null,
-            marketTitle: market?.releaseTitle ?? null,
-            marketYear: market?.year ?? null,
-            aliases: artistAliases,
-          }),
-          lookoutLinksQuery.data,
-        );
-        if (hit && (hit.confirmed || hit.score >= LOOKOUT_CONFIDENT_MIN)) map.set(lot.id, hit);
-      } catch {
-        /* um lote problemático não derruba a Análise */
-      }
+      const insight = insightById.get(lot.id);
+      const score = insight?.ai?.score ?? null;
+      if (!insight || score === null) continue;
+      const status = bidStatusById.get(lot.idPeca) ?? null;
+      const myBid = myBidById.get(lot.idPeca);
+      const currentPrice = status && bidIsWinning(status) && myBid ? myBid : lot.price;
+      out.push({
+        lot,
+        insight,
+        score,
+        eco: lotEconomics(currentPrice, insight.market),
+        dayKey: lot.dayKey,
+        time: lot.time,
+        want: insight.market?.want ?? null,
+        have: insight.market?.have ?? null,
+        currentPrice,
+        watched: watchedIds.has(lot.idPeca),
+        bidStatus: status,
+      });
     }
-    return map;
-  }, [lookoutCands, allLots, albumById, marketById, artistAliases, lookoutLinksQuery.data]);
-  const lookoutOf = (lot: VinylLot): LookoutMark | null => lookoutByLot.get(lot.id) ?? null;
+    return out;
+  }, [allLots, insightById, bidStatusById, myBidById, watchedIds]);
 
-  // Aplica os filtros (busca/casa/nota/De olho) SEM o dia — a barra de dias mostra a
-  // contagem de cada dia sobre este conjunto.
+  // Aplica os filtros SEM o dia — a barra de dias mostra a contagem de cada dia sobre este conjunto.
   const filteredAnyDay = useMemo(() => {
     const q = normalizeForMatch(search);
     const min = scoreMin.trim() ? Number(scoreMin) : null;
     const max = scoreMax.trim() ? Number(scoreMax) : null;
-    const scoreActive = min !== null || max !== null;
-    return allLots.filter((l) => {
-      if (q && !normalizeForMatch(`${l.title} ${albumById.get(l.id) ?? ""}`).includes(q))
+    const costMax = maxCost.trim() ? Number(maxCost) : null;
+    return items.filter((it) => {
+      const { lot, insight } = it;
+      if (q && !normalizeForMatch(`${lot.title} ${insight.album ?? ""}`).includes(q)) return false;
+      if (houseFilter && lot.house !== houseFilter) return false;
+      if (onlyLookout && !insight.lookout) return false;
+      if (onlyBid && !it.bidStatus) return false;
+      if (onlyWatched && !it.watched) return false;
+      if (rarityFilter && (insight.ai?.rarity ?? null) !== rarityFilter) return false;
+      if (min !== null && it.score < min) return false;
+      if (max !== null && it.score > max) return false;
+      if (dealFilter && it.eco.deal !== dealFilter) return false;
+      if (minCond && !gradeAtLeast(insight.condition.media, minCond)) return false;
+      if (costMax !== null && Number.isFinite(costMax) && (it.eco.total ?? Infinity) > costMax)
         return false;
-      if (houseFilter && l.house !== houseFilter) return false;
-      if (onlyLookout && !lookoutByLot.has(l.id)) return false;
-      if (onlyBid && !bidStatusById.has(l.idPeca)) return false;
-      if (rarityFilter && (aiById.get(l.id)?.rarity ?? null) !== rarityFilter) return false;
-      if (scoreActive) {
-        const s = aiById.get(l.id)?.score ?? null;
-        if (s === null) return false;
-        if (min !== null && s < min) return false;
-        if (max !== null && s > max) return false;
-      }
+      if (hideOwned && insight.owned && insight.owned.score >= OWNED_CONFIDENT_MIN) return false;
+      if (hideBadHouse && (insight.houseLevel === "vermelho" || insight.houseLevel === "laranja"))
+        return false;
+      if (onlyPriced && it.eco.ref === null) return false;
       return true;
     });
   }, [
-    allLots,
+    items,
     search,
     houseFilter,
     onlyLookout,
     onlyBid,
+    onlyWatched,
     rarityFilter,
     scoreMin,
     scoreMax,
-    aiById,
-    albumById,
-    lookoutByLot,
-    bidStatusById,
+    dealFilter,
+    minCond,
+    maxCost,
+    hideOwned,
+    hideBadHouse,
+    onlyPriced,
   ]);
-  const filtered = useMemo(
-    () =>
-      !activeDay
-        ? filteredAnyDay
-        : activeDay === FUTURE_TAB
-          ? filteredAnyDay.filter((l) => isFutureDay(l.dayKey, lastDay))
-          : filteredAnyDay.filter((l) => l.dayKey === activeDay),
-    [filteredAnyDay, activeDay, lastDay],
-  );
+  const sorted = useMemo(() => {
+    const byDay = !activeDay
+      ? filteredAnyDay
+      : activeDay === FUTURE_TAB
+        ? filteredAnyDay.filter((it) => isFutureDay(it.dayKey, lastDay))
+        : filteredAnyDay.filter((it) => it.dayKey === activeDay);
+    return [...byDay].sort(compareBy<AnaliseItem>(sort));
+  }, [filteredAnyDay, activeDay, lastDay, sort]);
 
-  // Dois Tops: vigiados × demais lotes. Só lotes já avaliados, maior nota primeiro.
-  const { topWatched, topRest } = useMemo(() => {
-    const ranked = filtered
-      .filter((l) => (aiById.get(l.id)?.score ?? null) !== null)
-      .sort((a, b) => (aiById.get(b.id)?.score ?? -1) - (aiById.get(a.id)?.score ?? -1));
-    return {
-      topWatched: ranked.filter((l) => watchedIds.has(l.idPeca)).slice(0, TOP_N),
-      topRest: ranked.filter((l) => !watchedIds.has(l.idPeca)).slice(0, TOP_N),
-    };
-  }, [filtered, aiById, watchedIds]);
+  // Mudou filtro, dia ou ordenação: volta para o primeiro bloco da lista.
+  const listKey = `${filteredAnyDay.length}|${activeDay}|${sort}`;
+  useEffect(() => setLimit(PAGE_SIZE), [listKey]);
+  const shown = sorted.slice(0, limit);
 
-  const evaluated = aiById.size;
-  const lookoutCount = lookoutCands.length ? lookoutByLot.size : 0;
-  const lookoutActiveItems = (lookoutQuery.data ?? []).filter((i) => i.status === "active").length;
   const filtersActive = Boolean(
     search ||
     houseFilter ||
@@ -606,7 +300,14 @@ function AnalisePage() {
     scoreMax ||
     rarityFilter ||
     onlyLookout ||
-    onlyBid,
+    onlyBid ||
+    onlyWatched ||
+    dealFilter ||
+    minCond ||
+    maxCost ||
+    hideOwned ||
+    hideBadHouse ||
+    onlyPriced,
   );
   const resetFilters = () => {
     setSearch("");
@@ -617,8 +318,16 @@ function AnalisePage() {
     setRarityFilter("");
     setOnlyLookout(false);
     setOnlyBid(false);
+    setOnlyWatched(false);
+    setDealFilter("");
+    setMinCond("");
+    setMaxCost("");
+    setHideOwned(false);
+    setHideBadHouse(false);
+    setOnlyPriced(false);
   };
   const bidCount = bidStatusById.size;
+  const watchedCount = items.filter((it) => it.watched).length;
 
   // Barra de dias no formato da home: passados em âmbar, futuros em azul, hoje neutro.
   const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
@@ -628,114 +337,9 @@ function AnalisePage() {
     Math.round((Date.parse(`${d}T00:00:00Z`) - Date.parse(`${todayKey}T00:00:00Z`)) / 86_400_000);
   const dayCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const l of filteredAnyDay) counts.set(l.dayKey, (counts.get(l.dayKey) ?? 0) + 1);
+    for (const it of filteredAnyDay) counts.set(it.dayKey, (counts.get(it.dayKey) ?? 0) + 1);
     return counts;
   }, [filteredAnyDay]);
-
-  /** Tabela de um Top: nota, título, casa/dia, valor atual, repassar IA e vigiar. */
-  const renderTop = (list: VinylLot[], emptyMsg: string) =>
-    list.length === 0 ? (
-      <p className="rounded-md border border-border bg-card p-3 text-sm text-muted-foreground">
-        {emptyMsg}
-      </p>
-    ) : (
-      <div className="overflow-x-auto rounded-md border border-border">
-        <table className="w-full min-w-[720px] border-collapse text-sm">
-          <thead>
-            <tr className="bg-secondary text-left text-xs uppercase tracking-wider text-muted-foreground">
-              <th className="px-3 py-2 font-medium">Nota</th>
-              <th className="px-3 py-2 font-medium">Título</th>
-              <th className="px-3 py-2 font-medium">Casa / dia</th>
-              <th className="px-3 py-2 text-right font-medium">Atual</th>
-              <th className="px-3 py-2 text-right font-medium">IA</th>
-              <th className="px-3 py-2 text-right font-medium">Vigiar</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.map((lot, i) => {
-              const ai = aiFor(lot)!;
-              const status = bidStatusFor(lot);
-              const watched = isWatched(lot);
-              return (
-                <tr
-                  key={lot.id}
-                  className={`border-t border-border/60 align-top ${rowStatusTone(status, watched)}`}
-                >
-                  <td className="px-3 py-2">
-                    <ScoreBadge
-                      ai={ai}
-                      market={marketFor(lot)}
-                      price={lot.price}
-                      rank={i + 1}
-                      lot={{
-                        id: lot.id,
-                        title: lot.title,
-                        price: lot.price,
-                        house: lot.house,
-                        image: lot.image,
-                      }}
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <LotTitle
-                      lot={lot}
-                      lookout={lookoutOf(lot)}
-                      album={albumFor(lot)}
-                      marketYear={marketFor(lot)?.year ?? null}
-                    />
-                    <LotSummary
-                      ai={ai}
-                      market={marketFor(lot)}
-                      price={lot.price}
-                      onEditTags={(tags) => saveTagsMut.mutate({ id: lot.id, tags })}
-                    />
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
-                    {lot.house} <HouseUf house={lot.house} uf={lot.uf} />
-                    <br />
-                    {formatDayLabel(lot.dayKey, days)} · {lot.time}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right">
-                    <span className="font-semibold text-primary">
-                      {currentPriceFor(lot) || "sem valor"}
-                    </span>
-                    {status ? (
-                      <div
-                        className={`mt-0.5 text-[11px] font-medium ${
-                          bidIsWinning(status)
-                            ? "text-green-600 dark:text-green-400"
-                            : "text-red-600 dark:text-red-400"
-                        }`}
-                      >
-                        {status}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <ReevaluateIconButton
-                      lot={{
-                        id: lot.id,
-                        title: lot.title,
-                        price: currentPriceFor(lot),
-                        house: lot.house,
-                        image: lot.image,
-                      }}
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <WatchButton
-                      watched={watched}
-                      busy={pending === lot.idPeca}
-                      onToggle={() => onToggleWatch(lot)}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    );
 
   return (
     <main className="min-h-screen bg-background">
@@ -757,9 +361,10 @@ function AnalisePage() {
                 </h1>
               </div>
               <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
-                Top {TOP_N} dos vigiados e Top {TOP_N} do restante, ranqueados por nota da IA
-                (raridade + oportunidade). ⭐ = combina com seus interesses; 🎯 = é um disco que
-                você está de olho.{" "}
+                Todos os lotes avaliados em uma lista, com a conta do lance (lance + frete, teto e
+                potencial contra o Discogs), estado do disco, “já tenho” e a situação da casa.
+                Ordene por nota ou por melhor negócio. ⭐ = combina com seus interesses; 🎯 = está
+                no De olho.{" "}
                 {evaluated ? `${evaluated} lote(s) avaliado(s).` : "Ainda sem avaliações."}
               </p>
             </div>
@@ -826,6 +431,21 @@ function AnalisePage() {
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Oportunidade
+                  </label>
+                  <select
+                    value={dealFilter}
+                    onChange={(e) => setDealFilter(e.target.value)}
+                    className={selectClass}
+                  >
+                    <option value="">Qualquer</option>
+                    <option value="barato">Barato</option>
+                    <option value="justo">Justo</option>
+                    <option value="caro">Caro</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     Raridade
                   </label>
                   <select
@@ -837,6 +457,24 @@ function AnalisePage() {
                     {RARITY_LEGEND.map((r) => (
                       <option key={r.key} value={r.key}>
                         {r.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Disco mínimo
+                  </label>
+                  <select
+                    value={minCond}
+                    onChange={(e) => setMinCond(e.target.value)}
+                    className={selectClass}
+                    title="Só lotes com o estado do disco igual ou melhor (lote sem estado conhecido fica de fora)"
+                  >
+                    <option value="">Qualquer</option>
+                    {["G+", "VG", "VG+", "NM"].map((g) => (
+                      <option key={g} value={g}>
+                        {g}
                       </option>
                     ))}
                   </select>
@@ -863,45 +501,140 @@ function AnalisePage() {
                     />
                   </div>
                 </div>
-                {/* Filtros liga/desliga no mesmo formato dos botões da página principal. */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setOnlyBid((v) => !v)}
-                    disabled={bidCount === 0}
-                    aria-pressed={onlyBid}
-                    className={filterChipClass(onlyBid)}
-                  >
-                    <Gavel className="h-3.5 w-3.5" />
-                    Com lance
-                    {bidCount ? (
-                      <span className="ml-0.5 text-muted-foreground">{bidCount}</span>
-                    ) : null}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setOnlyLookout((v) => !v)}
-                    disabled={lookoutActiveItems === 0}
-                    aria-pressed={onlyLookout}
-                    className={filterChipClass(onlyLookout)}
-                  >
-                    <Target className="h-3.5 w-3.5" />
-                    Só De olho
-                    {lookoutCount ? (
-                      <span className="ml-0.5 text-muted-foreground">{lookoutCount}</span>
-                    ) : null}
-                  </button>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Custo total até
+                  </label>
+                  <Input
+                    value={maxCost}
+                    onChange={(e) => setMaxCost(e.target.value)}
+                    placeholder="R$ (lance + frete)"
+                    inputMode="numeric"
+                    className="h-9 w-36"
+                  />
                 </div>
+              </div>
+
+              {/* Filtros liga/desliga no mesmo formato dos botões da página principal. */}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOnlyWatched((v) => !v)}
+                  disabled={watchedCount === 0}
+                  aria-pressed={onlyWatched}
+                  className={filterChipClass(onlyWatched)}
+                  title="Só os lotes que você está vigiando"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  Vigiados
+                  {watchedCount ? (
+                    <span className="ml-0.5 text-muted-foreground">{watchedCount}</span>
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOnlyBid((v) => !v)}
+                  disabled={bidCount === 0}
+                  aria-pressed={onlyBid}
+                  className={filterChipClass(onlyBid)}
+                >
+                  <Gavel className="h-3.5 w-3.5" />
+                  Com lance
+                  {bidCount ? (
+                    <span className="ml-0.5 text-muted-foreground">{bidCount}</span>
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOnlyLookout((v) => !v)}
+                  disabled={lookoutActiveItems === 0}
+                  aria-pressed={onlyLookout}
+                  className={filterChipClass(onlyLookout)}
+                >
+                  <Target className="h-3.5 w-3.5" />
+                  Só De olho
+                  {lookoutCount ? (
+                    <span className="ml-0.5 text-muted-foreground">{lookoutCount}</span>
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHideOwned((v) => !v)}
+                  aria-pressed={hideOwned}
+                  className={filterChipClass(hideOwned)}
+                  title="Esconde os discos que já estão na sua Coleção"
+                >
+                  <Disc3 className="h-3.5 w-3.5" />
+                  Ocultar já tenho
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHideBadHouse((v) => !v)}
+                  aria-pressed={hideBadHouse}
+                  className={filterChipClass(hideBadHouse)}
+                  title="Esconde lotes de casas com semáforo laranja ou vermelho"
+                >
+                  Ocultar casas ruins
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOnlyPriced((v) => !v)}
+                  aria-pressed={onlyPriced}
+                  className={filterChipClass(onlyPriced)}
+                  title="Só lotes com preço de referência no Discogs"
+                >
+                  Só com mercado
+                </button>
                 {filtersActive ? (
                   <Button variant="ghost" size="sm" onClick={resetFilters}>
                     <X className="mr-1 h-4 w-4" />
                     Limpar
                   </Button>
                 ) : null}
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    Ordenar por
+                    <select
+                      value={sort}
+                      onChange={(e) => setSort(e.target.value)}
+                      className={selectClass}
+                      aria-label="Ordenar por"
+                    >
+                      {SORT_KEYS.map((s) => (
+                        <option key={s.key} value={s.key}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div
+                    className="inline-flex overflow-hidden rounded-md border border-border"
+                    role="group"
+                    aria-label="Visualização"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setView("list")}
+                      aria-pressed={view === "list"}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium ${view === "list" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                    >
+                      <List className="h-3.5 w-3.5" /> Lista
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setView("cards")}
+                      aria-pressed={view === "cards"}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium ${view === "cards" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                    >
+                      <LayoutGrid className="h-3.5 w-3.5" /> Cards
+                    </button>
+                  </div>
+                </div>
               </div>
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">
-                  {filtered.length} lote(s) no filtro.
+                  {sorted.length} lote(s) no filtro, ordenados por{" "}
+                  {SORT_KEYS.find((s) => s.key === sort)?.label.toLowerCase()}.
                   {lookoutActiveItems
                     ? ` ${lookoutCount} casam com o De olho (${lookoutActiveItems} disco(s) na lista).`
                     : ""}
@@ -949,31 +682,49 @@ function AnalisePage() {
                 >
                   {FUTURE_LABEL}
                   <span className="ml-2 text-xs text-muted-foreground">
-                    {filteredAnyDay.filter((l) => isFutureDay(l.dayKey, lastDay)).length}
+                    {filteredAnyDay.filter((it) => isFutureDay(it.dayKey, lastDay)).length}
                   </span>
                 </TabsTrigger>
               </TabsList>
             </Tabs>
 
-            {/* ------- Top 30 — vigiados ------- */}
-            <TopSection
-              title={`Top ${Math.min(TOP_N, topWatched.length)} — vigiados`}
-              open={watchedOpen}
-              onToggle={() => setWatchedOpen((v) => !v)}
-              filtered={filtersActive}
-            >
-              {renderTop(topWatched, "Nenhum vigiado avaliado no filtro atual.")}
-            </TopSection>
-
-            {/* ------- Top 30 — restante ------- */}
-            <TopSection
-              title={`Top ${Math.min(TOP_N, topRest.length)} — restante`}
-              open={restOpen}
-              onToggle={() => setRestOpen((v) => !v)}
-              filtered={filtersActive}
-            >
-              {renderTop(topRest, "Nenhum lote avaliado no filtro atual.")}
-            </TopSection>
+            {/* ------- Lista única ------- */}
+            {shown.length === 0 ? (
+              <p className="rounded-md border border-border bg-card p-3 text-sm text-muted-foreground">
+                Nenhum lote avaliado no filtro atual.
+              </p>
+            ) : (
+              <div
+                className={
+                  view === "cards" ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "space-y-3"
+                }
+              >
+                {shown.map((it, i) => (
+                  <AnaliseLotRow
+                    key={it.lot.id}
+                    lot={it.lot}
+                    insight={it.insight}
+                    eco={it.eco}
+                    currentPrice={it.currentPrice}
+                    rank={i + 1}
+                    days={days}
+                    watched={it.watched}
+                    bidStatus={it.bidStatus}
+                    busy={pending === it.lot.idPeca}
+                    variant={view}
+                    onToggleWatch={onToggleWatch}
+                    onEditTags={onEditTags}
+                  />
+                ))}
+              </div>
+            )}
+            {sorted.length > shown.length ? (
+              <div className="flex justify-center">
+                <Button variant="outline" onClick={() => setLimit((n) => n + PAGE_SIZE)}>
+                  Mostrar mais ({sorted.length - shown.length} restantes)
+                </Button>
+              </div>
+            ) : null}
           </div>
         )}
       </div>

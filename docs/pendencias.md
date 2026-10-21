@@ -166,6 +166,6 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
 
 ## Código repetido (marcado com `// DUP(...)`; regra no AGENTS.md)
 
-Achar: `grep -rn "DUP(" src`. Pendentes: `DUP(pool)` — laço de workers com `cursor` em 8 lugares
+Achar: `grep -rn "DUP(" src`. Pendentes: `DUP(lot-insights)` — pipeline condição/mercado/demanda/Coleção da home (`use-dashboard-data.tsx`) × `useLotInsights` (Análise); `DUP(pool)` — laço de workers com `cursor` em 8 lugares
 (extrair `runPool`); `DUP(modelos)` — lista/padrão dos modelos Gemini em 4 arquivos (`ai-models.ts`).
 Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score.ts`.

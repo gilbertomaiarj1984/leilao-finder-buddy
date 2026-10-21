@@ -1,0 +1,85 @@
+// Página /analise no navegador: lista única, ordenação/visualização salvas, filtros, mobile.
+// Antes: `node tools/local-tests/analise-seed.mjs` e o servidor de `subir-servidor.sh` no ar.
+import { createRequire } from "node:module";
+import crypto from "node:crypto";
+const require = createRequire((process.env.PLAYWRIGHT_DIR ?? "/opt/node-tools/node_modules") + "/");
+const { chromium } = require("playwright");
+const BASE = process.env.BASE_URL ?? "http://127.0.0.1:3999";
+const SECRET = process.env.SESSION_SECRET ?? "segredo-de-teste-local";
+const OUT = process.env.OUT_DIR ?? "/tmp";
+const b64u = (b) => Buffer.from(b).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const payload = b64u(JSON.stringify({ email: "teste@example.com", exp: Date.now() + 3600e3 }));
+const cookie = `${payload}.${b64u(crypto.createHmac("sha256", SECRET).update(payload).digest())}`;
+let fails = 0;
+const ok = (n, c, extra) => { console.log(`${c ? "PASS" : "FAIL"}  ${n}${c ? "" : "  -> " + JSON.stringify(extra)}`); if (!c) fails++; };
+const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome", args: ["--no-sandbox"] });
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+await ctx.addCookies([{ name: "gs_session", value: cookie, url: BASE }]);
+const page = await ctx.newPage();
+const errors = [];
+page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
+page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource|favicon|net::ERR/.test(m.text())) errors.push("console: " + m.text()); });
+await page.goto(BASE + "/analise", { waitUntil: "networkidle" });
+await page.waitForSelector("article", { timeout: 15000 }).catch(() => {});
+const rows = () => page.locator("article");
+const titles = async () => (await rows().locator("a.font-semibold").allInnerTexts()).map((t) => t.trim());
+ok("lista única com os lotes avaliados", (await rows().count()) >= 8, await rows().count());
+let t = await titles();
+ok("ordem padrão: maior nota primeiro (Tim Maia)", t[0]?.includes("Tim Maia"), t.slice(0, 3));
+const body = await page.locator("main").innerText();
+ok("mostra custo total, teto e potencial", /teto barato/.test(body) && /potencial/.test(body) && /lance \+ frete/.test(body));
+ok("mostra estado do disco", /Disco VG\+/.test(body) && /Capa VG/.test(body));
+ok("mostra UF da casa", /\bSP\b/.test(body) && /\bRJ\b/.test(body));
+ok("sem 'Top 30'", !/Top \d+/.test(body));
+await page.screenshot({ path: `${OUT}/analise-desktop.png`, fullPage: true });
+// ordenar por melhor negócio
+await page.getByLabel("Ordenar por").selectOption("deal");
+t = await titles();
+ok("melhor negócio: ordem muda", t[0] !== undefined && !t[0].includes("Pink Floyd"), t.slice(0, 3));
+const dealOrder = t.join("|");
+// ordenar por horário
+await page.getByLabel("Ordenar por").selectOption("time");
+t = await titles();
+ok("horário: pregão mais cedo primeiro (Mutantes, hoje 18:00)", t[0]?.includes("Mutantes"), t.slice(0, 3));
+// persistência: ordem + visualização
+await page.getByLabel("Ordenar por").selectOption("potential");
+await page.getByRole("button", { name: "Cards" }).click();
+await page.reload({ waitUntil: "networkidle" });
+await page.waitForSelector("article");
+ok("ordenação salva como padrão", (await page.getByLabel("Ordenar por").inputValue()) === "potential");
+ok("visualização salva como padrão (cards)", (await page.getByRole("button", { name: "Cards" }).getAttribute("aria-pressed")) === "true");
+ok("cards em grade", (await page.locator("div.grid.gap-3 > article").count()) >= 8);
+await page.screenshot({ path: `${OUT}/analise-cards.png`, fullPage: true });
+await page.getByRole("button", { name: "Lista" }).click();
+// filtros
+await page.getByLabel("Ordenar por").selectOption("score");
+const before = await rows().count();
+await page.locator("select").filter({ hasText: "Barato" }).selectOption("barato");
+const nb = await rows().count();
+ok("filtro oportunidade=barato reduz a lista", nb > 0 && nb < before, { before, nb });
+await page.locator("select").filter({ hasText: "Barato" }).selectOption("");
+await page.locator("select", { has: page.locator("option", { hasText: "NM" }) }).selectOption("VG+");
+const nc = await rows().count();
+ok("disco mínimo VG+", nc > 0 && nc < before, { before, nc });
+await page.locator("select", { has: page.locator("option", { hasText: "NM" }) }).selectOption("");
+await page.getByPlaceholder("R$ (lance + frete)").fill("120");
+const ncost = await rows().count();
+ok("custo total até R$ 120", ncost > 0 && ncost < before, { ncost });
+await page.getByPlaceholder("R$ (lance + frete)").fill("");
+await page.getByRole("button", { name: "Só com mercado" }).click();
+ok("só com mercado mantém os lotes com Discogs", (await rows().count()) === before);
+await page.getByRole("button", { name: "Só com mercado" }).click();
+ok("chip Vigiados desabilitado sem vigiados", await page.getByRole("button", { name: /^Vigiados/ }).isDisabled());
+// mobile
+const mctx = await browser.newContext({ viewport: { width: 390, height: 800 } });
+await mctx.addCookies([{ name: "gs_session", value: cookie, url: BASE }]);
+const mp = await mctx.newPage();
+await mp.goto(BASE + "/analise", { waitUntil: "networkidle" });
+await mp.waitForSelector("article");
+const sw = await mp.evaluate(() => document.documentElement.scrollWidth);
+ok("mobile sem rolagem horizontal", sw <= 392, sw);
+await mp.screenshot({ path: `${OUT}/analise-mobile.png`, fullPage: false });
+ok("sem erros de console", errors.length === 0, errors.slice(0, 5));
+await browser.close();
+console.log(fails ? `${fails} falha(s)` : "tudo ok");
+process.exit(fails ? 1 : 0);
