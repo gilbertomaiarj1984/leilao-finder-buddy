@@ -6,6 +6,7 @@ import { useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNod
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
+import { AiReprocessPopover, type AiReprocessMode } from "@/components/vinyl/ai-reprocess-menu";
 import { reevaluateLot } from "@/lib/ai.functions";
 
 import {
@@ -420,7 +421,8 @@ function useReevaluate(lot: ReevalLot) {
   const queryClient = useQueryClient();
   const runReevaluate = useServerFn(reevaluateLot);
   const mutation = useMutation({
-    mutationFn: () => runReevaluate({ data: lot }),
+    mutationFn: (opts: { mode?: AiReprocessMode; hint?: string } = {}) =>
+      runReevaluate({ data: { ...lot, ...opts } }),
     onSuccess: (res: { row: { id: string } }) => {
       queryClient.setQueriesData({ queryKey: queryKeys.lotAi }, (old: unknown) =>
         Array.isArray(old)
@@ -437,26 +439,49 @@ function useReevaluate(lot: ReevalLot) {
   return mutation;
 }
 
+/** Menu 1 capa · 2 texto · 3 dica (o mesmo da Coleção) em volta do gatilho de um botão de IA do lote. */
+function ReevaluateMenu({
+  lot,
+  mutation,
+  trigger,
+}: {
+  lot: ReevalLot;
+  mutation: ReturnType<typeof useReevaluate>;
+  trigger: ReactNode;
+}) {
+  return (
+    <AiReprocessPopover
+      trigger={trigger}
+      hasImage={Boolean(lot.image)}
+      textLabel="No título do lote"
+      onPick={(mode, hint) => mutation.mutate({ mode, hint })}
+    />
+  );
+}
+
 function ReevaluateButton({ lot }: { lot: ReevalLot }) {
   const mutation = useReevaluate(lot);
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        mutation.mutate();
-      }}
-      disabled={mutation.isPending}
-      title="Refazer a consulta à IA com informações novas do lote"
-      className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-60"
-    >
-      {mutation.isPending ? (
-        <Loader2 className="h-3 w-3 animate-spin" />
-      ) : (
-        <RefreshCw className="h-3 w-3" />
-      )}
-      refazer consulta
-    </button>
+    <ReevaluateMenu
+      lot={lot}
+      mutation={mutation}
+      trigger={
+        <button
+          type="button"
+          onClick={(e) => e.stopPropagation()}
+          disabled={mutation.isPending}
+          title="Refazer a consulta à IA com informações novas do lote"
+          className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-60"
+        >
+          {mutation.isPending ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3 w-3" />
+          )}
+          refazer consulta
+        </button>
+      }
+    />
   );
 }
 
@@ -464,20 +489,25 @@ function ReevaluateButton({ lot }: { lot: ReevalLot }) {
 export function ReevaluateIconButton({ lot }: { lot: ReevalLot }) {
   const mutation = useReevaluate(lot);
   return (
-    <button
-      type="button"
-      onClick={() => mutation.mutate()}
-      disabled={mutation.isPending}
-      title="Repassar a IA neste lote (reavalia com o valor atual)"
-      aria-label="Repassar a IA neste lote"
-      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input shadow-sm hover:border-primary disabled:opacity-60"
-    >
-      {mutation.isPending ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <Sparkles className="h-4 w-4 text-primary" />
-      )}
-    </button>
+    <ReevaluateMenu
+      lot={lot}
+      mutation={mutation}
+      trigger={
+        <button
+          type="button"
+          disabled={mutation.isPending}
+          title="Repassar a IA neste lote (escolha: capa, texto ou uma dica sua)"
+          aria-label="Repassar a IA neste lote"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input shadow-sm hover:border-primary disabled:opacity-60"
+        >
+          {mutation.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Sparkles className="h-4 w-4 text-primary" />
+          )}
+        </button>
+      }
+    />
   );
 }
 
@@ -489,23 +519,26 @@ export function EvaluateCornerButton({ lot }: { lot: ReevalLot }) {
   const mutation = useReevaluate(lot);
   return (
     <div className="absolute right-2 top-2 z-10">
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          mutation.mutate();
-        }}
-        disabled={mutation.isPending}
-        title="Sem nota — avaliar este lote com a IA agora"
-        aria-label="Avaliar este lote com a IA"
-        className="flex items-center gap-0.5 rounded-full bg-zinc-500/80 px-2 py-0.5 text-xs font-bold text-white shadow hover:bg-primary disabled:opacity-60"
-      >
-        {mutation.isPending ? (
-          <Loader2 className="h-3 w-3 animate-spin" />
-        ) : (
-          <Sparkles className="h-3 w-3" />
-        )}
-      </button>
+      <ReevaluateMenu
+        lot={lot}
+        mutation={mutation}
+        trigger={
+          <button
+            type="button"
+            onClick={(e) => e.stopPropagation()}
+            disabled={mutation.isPending}
+            title="Sem nota — avaliar este lote com a IA (capa, texto ou uma dica sua)"
+            aria-label="Avaliar este lote com a IA"
+            className="flex items-center gap-0.5 rounded-full bg-zinc-500/80 px-2 py-0.5 text-xs font-bold text-white shadow hover:bg-primary disabled:opacity-60"
+          >
+            {mutation.isPending ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Sparkles className="h-3 w-3" />
+            )}
+          </button>
+        }
+      />
     </div>
   );
 }

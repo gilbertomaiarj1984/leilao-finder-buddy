@@ -14,7 +14,8 @@ import { db } from "./db-client.server";
 import { runText } from "./ai-provider.server";
 import { getAiProvider } from "./app-state.server";
 import { resolveGeminiModel, SYNC_CONCURRENCY } from "./ai-eval.server";
-import { discogsConfigured, fetchDiscogsTracklist } from "./discogs.server";
+import { discogsConfigured, fetchDiscogsTracklist, findReleaseByCode } from "./discogs.server";
+import { parseDiscCode } from "./disc-code";
 import { getAllLotMarket } from "./lot-market.server";
 import type { AiProvider } from "./ai-provider.server";
 import {
@@ -228,6 +229,7 @@ export async function refreshLotTracklist(
   lotId: string,
   provider: AiProvider,
   useAi: boolean,
+  code?: string | null,
 ): Promise<{ tracklist: Track[]; rated: boolean }> {
   if (!discogsConfigured()) {
     throw new Error("O Discogs não está configurado (DISCOGS_TOKEN ausente no servidor).");
@@ -246,7 +248,13 @@ export async function refreshLotTracklist(
     .select("release_id, matched")
     .eq("id", lotId)
     .maybeSingle();
-  const fresh = await buildTracklist(album, mk?.matched ? (mk.release_id ?? null) : null);
+  // Com código de barras/catálogo lido pelo usuário, o release vem do código (certeiro).
+  const parsed = code ? parseDiscCode(code) : null;
+  const byCode = parsed ? await findReleaseByCode(parsed) : null;
+  const releaseId = byCode?.releaseId ?? (mk?.matched ? (mk.release_id ?? null) : null);
+  const fresh =
+    (await buildTracklist(album, releaseId)) ??
+    (byCode ? await buildTracklist(album, mk?.matched ? (mk.release_id ?? null) : null) : null);
   if (!fresh) throw new Error("O Discogs não encontrou as faixas deste disco.");
 
   // Preserva a fama já conhecida (por título) para a lista nova.

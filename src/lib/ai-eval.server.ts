@@ -41,6 +41,16 @@ import {
 } from "./ai-provider.server";
 import { extractJsonObject } from "./json-extract";
 
+/** Tamanho máximo da dica livre do colecionador (a mesma da Coleção). */
+const HINT_MAX = 600;
+
+/**
+ * Opções da reavaliação SOB DEMANDA de um lote (mesmo menu do reprocesso da Coleção):
+ * `image` usa a capa (o padrão), `text` ignora a capa e vai só pelo título; `hint` é a dica livre
+ * do colecionador (prioridade máxima, vale só para essa nota — não é gravada).
+ */
+type EvalOptions = { mode?: "image" | "text"; hint?: string | null };
+
 /** Teto de lotes avaliados por rodada de cron (evita batches gigantes). */
 const MAX_PER_ROUND = 800;
 
@@ -241,6 +251,7 @@ export function buildUserPrompt(
   lot: EvalLot,
   ctx?: LotContext | null,
   cfg: PanelConfig = DEFAULT_PANEL_CONFIG,
+  hint?: string | null,
 ): string {
   const price = parsePrice(lot.price);
   const info: Record<string, unknown> = {
@@ -250,8 +261,17 @@ export function buildUserPrompt(
     tem_imagem: Boolean(usableImage(lot.image)),
   };
   if (ctx) info["contexto"] = contextForPrompt(ctx, price, cfg);
+  const dica = hint?.trim();
+  if (dica) info["dica_do_colecionador"] = dica.slice(0, HINT_MAX);
   return (
-    USER_INSTRUCTIONS + "Disco:\n" + JSON.stringify(info) + "\n\nResponda só com o objeto JSON."
+    USER_INSTRUCTIONS +
+    (dica
+      ? "A dica_do_colecionador vem de quem tem o disco em mãos: dê PRIORIDADE a ela sobre o " +
+        "título, a capa e os demais campos para identificar o disco certo.\n"
+      : "") +
+    "Disco:\n" +
+    JSON.stringify(info) +
+    "\n\nResponda só com o objeto JSON."
   );
 }
 
@@ -260,11 +280,12 @@ function buildEvalRequest(
   lot: EvalLot,
   ctx?: LotContext | null,
   cfg: PanelConfig = DEFAULT_PANEL_CONFIG,
+  hint?: string | null,
 ): AiRequest {
   return {
     system: SYSTEM_PROMPT,
     maxTokens: 600,
-    text: buildUserPrompt(lot, ctx, cfg),
+    text: buildUserPrompt(lot, ctx, cfg, hint),
     image: usableImage(lot.image),
     json: true,
   };
@@ -655,6 +676,7 @@ export class ProviderTracker {
 export async function evalLotsSync(
   lots: EvalLot[],
   provider: AiProvider,
+  opts: EvalOptions = {},
 ): Promise<SyncOutcome<LotAiRow>> {
   if (!lots.length)
     return { rows: [], served: null, switched: false, failed: 0, error: null, attemptErrors: {} };
@@ -676,7 +698,12 @@ export async function evalLotsSync(
       if (!lot) return;
       try {
         const r = await runText(
-          buildEvalRequest(lot, contexts.get(lot.id), cfg),
+          buildEvalRequest(
+            opts.mode === "text" ? { ...lot, image: null } : lot,
+            contexts.get(lot.id),
+            cfg,
+            opts.hint,
+          ),
           provider,
           geminiModel,
         );

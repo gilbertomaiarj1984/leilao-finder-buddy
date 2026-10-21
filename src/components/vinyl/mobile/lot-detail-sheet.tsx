@@ -643,6 +643,7 @@ export function LotDetailSheet(
           </div>
         )}
       </div>
+      {tracklistRefresh?.dialog}
     </BottomSheet>
   );
 }

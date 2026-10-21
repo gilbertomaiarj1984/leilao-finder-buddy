@@ -669,6 +669,7 @@ function ColecaoPage() {
         title="Ler código para buscar as faixas"
         confirmLabel="Salvar código e buscar faixas"
         skipLabel="Buscar só pelo nome"
+        askBeforeCamera
         provider={aiProvider}
         onClose={() => setScanItem(null)}
         onSkip={() => {
