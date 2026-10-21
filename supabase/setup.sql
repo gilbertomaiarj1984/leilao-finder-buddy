@@ -184,6 +184,8 @@ ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS num_for_sale_br integer;
 -- Preço sugerido de TODAS as condições (BRL), ex.: {"NM": 66.27, "VG+": 50.68}. O veredicto usa a
 -- condição do lote. NULL = ainda não coletado (o cron preenche); {} = consultado, sem sugestões.
 ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS suggested_by_condition jsonb;
+-- Evidência do casamento com o Discogs (país, formato, cobertura do título/artista): auditar um preço estranho.
+ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS match_info jsonb;
 
 -- (A antiga tabela `wantlist_items` — "Sondagem" — foi descontinuada na v0.149.0, migrada para
 -- `lookout_items` (De olho) e removida na v0.151.0.)

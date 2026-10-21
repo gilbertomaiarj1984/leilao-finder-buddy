@@ -414,6 +414,7 @@ async function runCronStep(step: string, url: URL): Promise<Response> {
               price_low_br: m.priceLowBr,
               price_high_br: m.priceHighBr,
               num_for_sale_br: m.numForSaleBr,
+              match_info: m.matchInfo,
             },
           ]);
         } catch (error) {
