@@ -6,8 +6,8 @@ import { PregaoRatingDialog } from "@/components/vinyl/pregao-rating-dialog";
 import { LEVEL_META } from "@/lib/house-rating";
 import { useHouseRatingsQuery } from "@/lib/queries";
 import { useServerFn } from "@tanstack/react-start";
-import { ChevronDown, ChevronUp, Package, Truck } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronUp, GripVertical, Package, Truck } from "lucide-react";
+import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,8 @@ import { usePersistedState } from "@/lib/persisted-state";
 import {
   approveShipment,
   editShipment,
+  joinPregoes,
+  leavePregaoShipment,
   receiveShipment,
   setPregaoNote,
   setPregaoStatus,
@@ -33,8 +35,11 @@ import {
   GUARD_ALERT_DAYS,
   AUCTIONEER_FEE_RATE,
   REFERENCE_FREIGHT,
+  JOINABLE_STATUSES,
   STATUS_LABEL,
+  bundleShipments,
   canBundle,
+  canJoinShipment,
   groupByHouse,
   groupByPregao,
   guardDays,
@@ -91,6 +96,7 @@ export function PregaoView({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [bundleOpen, setBundleOpen] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
 
   const groups = useMemo(() => groupByPregao(purchases, shipping), [purchases, shipping]);
   const summary = useMemo(() => summarizeByStatus(groups), [groups]);
@@ -112,6 +118,22 @@ export function PregaoView({
     onError: (e: Error) => toast.error(e.message || "Não foi possível marcar como recebida"),
   });
 
+  const join = useServerFn(joinPregoes);
+  const joinMut = useMutation({
+    mutationFn: (v: { fromId: string; ontoId: string }) => join({ data: v }),
+    onSuccess: () => {
+      onChanged();
+      toast.success("Pregões agrupados: seguem juntos na mesma remessa.");
+    },
+    onError: (e: Error) => toast.error(e.message || "Não foi possível agrupar os pregões"),
+  });
+  const leave = useServerFn(leavePregaoShipment);
+  const leaveMut = useMutation({
+    mutationFn: (idLeilao: string) => leave({ data: { idLeilao } }),
+    onSuccess: onChanged,
+    onError: (e: Error) => toast.error(e.message || "Não foi possível separar o pregão"),
+  });
+
   // Pregões que saem de "na guarda" (ou somem) deixam a seleção.
   useEffect(() => {
     setSelected((prev) => {
@@ -126,7 +148,8 @@ export function PregaoView({
   const visible = groups.filter((g) =>
     filter === "todos" ? g.state.status !== "recebido" : g.state.status === filter,
   );
-  const others = visible.filter((g) => g.state.status !== "guarda");
+  const others = bundleShipments(visible.filter((g) => g.state.status !== "guarda"));
+  const dragging = dragId ? (groups.find((g) => g.idLeilao === dragId) ?? null) : null;
   const keepByHouse = groupByHouse(visible.filter((g) => g.state.status === "guarda"));
   const houseTotals = useMemo(() => totalsByHouse(visible), [visible]);
   const keepHouses = new Set(groups.filter((g) => g.state.status === "guarda").map((g) => g.house))
@@ -142,6 +165,12 @@ export function PregaoView({
     <PregaoCard
       key={g.idLeilao}
       group={g}
+      canDrag={JOINABLE_STATUSES.includes(g.state.status)}
+      dropOk={!!dragging && canJoinShipment(dragging, g)}
+      joinOptions={groups.filter((o) => canJoinShipment(g, o))}
+      onDragId={setDragId}
+      onDropHere={(fromId) => joinMut.mutate({ fromId, ontoId: g.idLeilao })}
+      onLeave={() => leaveMut.mutate(g.idLeilao)}
       today={today}
       expanded={open.has(g.idLeilao)}
       selected={selected.has(g.idLeilao)}
@@ -226,7 +255,22 @@ export function PregaoView({
         </div>
       ) : (
         <div className="space-y-3">
-          {others.map(renderCard)}
+          {others.map((o) =>
+            o.kind === "single" ? (
+              renderCard(o.group)
+            ) : (
+              <ShipmentBundle
+                key={o.shipment.id + o.groups[0]!.state.status}
+                groups={o.groups}
+                shipment={o.shipment}
+                dropOk={!!dragging && canJoinShipment(dragging, o.groups[0]!)}
+                onDropHere={(fromId) => joinMut.mutate({ fromId, ontoId: o.groups[0]!.idLeilao })}
+                onReceive={() => recvMut.mutate(o.shipment.id)}
+              >
+                {o.groups.map(renderCard)}
+              </ShipmentBundle>
+            ),
+          )}
           {keepByHouse.map((h) => {
             const ids = h.groups.map((g) => g.idLeilao);
             const allPicked = ids.every((id) => selected.has(id));
@@ -457,8 +501,93 @@ function FilterChip({
   );
 }
 
+const DRAG_TYPE = "text/plain";
+
+/** Props de alvo de soltar (HTML5 drag and drop) comuns ao card e ao bloco da remessa. */
+function useDropTarget(enabled: boolean, onDropId: (fromId: string) => void) {
+  const [over, setOver] = useState(false);
+  return {
+    over: enabled && over,
+    props: {
+      onDragOver: (e: DragEvent) => {
+        if (!enabled) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = "move";
+        setOver(true);
+      },
+      onDragLeave: (e: DragEvent) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
+      },
+      onDrop: (e: DragEvent) => {
+        setOver(false);
+        if (!enabled) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const id = e.dataTransfer.getData(DRAG_TYPE);
+        if (id) onDropId(id);
+      },
+    },
+  };
+}
+
+/** Pregões da mesma casa enviados juntos (mesma remessa): ficam num bloco só. */
+function ShipmentBundle({
+  groups,
+  shipment,
+  dropOk,
+  onDropHere,
+  onReceive,
+  children,
+}: {
+  groups: PregaoGroup<Purchase>[];
+  shipment: { freight: number; tracking: string };
+  dropOk: boolean;
+  onDropHere: (fromId: string) => void;
+  onReceive: () => void;
+  children: React.ReactNode;
+}) {
+  const drop = useDropTarget(dropOk, onDropHere);
+  const first = groups[0]!;
+  const inTransit = first.state.status === "transito";
+  return (
+    <section
+      {...drop.props}
+      aria-label={`Enviados juntos · ${first.house}`}
+      className={`space-y-3 rounded-md border p-3 ${drop.over ? "border-cyan-500 ring-2 ring-cyan-500/30" : "border-cyan-300 dark:border-cyan-900"}`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="flex flex-wrap items-center gap-x-1 text-sm font-semibold">
+          <Truck className="mr-1 h-4 w-4" />
+          Enviados juntos ·{" "}
+          {first.house ? <HouseLight house={first.house} className="-mx-0.5" /> : null}
+          {first.house}
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
+            {groups.length} pregões · {groups.reduce((n, g) => n + g.purchases.length, 0)} discos ·{" "}
+            {brl(groups.reduce((n, g) => n + g.total, 0))}
+            {shipment.freight > 0 ? ` · frete ${brl(shipment.freight)}` : ""}
+            {shipment.tracking ? ` · ${shipment.tracking}` : ""}
+          </span>
+        </h3>
+        {inTransit ? (
+          <Button size="sm" onClick={onReceive}>
+            Marcar remessa como recebida
+          </Button>
+        ) : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 function PregaoCard({
   group: g,
+  canDrag,
+  dropOk,
+  joinOptions,
+  onDragId,
+  onDropHere,
+  onLeave,
   today,
   expanded,
   selected,
@@ -473,6 +602,14 @@ function PregaoCard({
   onSend,
 }: {
   group: PregaoGroup<Purchase>;
+  /** "A enviar"/"em trânsito": dá para arrastar este pregão sobre outro da mesma casa. */
+  canDrag: boolean;
+  dropOk: boolean;
+  /** Pregões da mesma casa/status com quem este pode seguir junto (alternativa ao arrastar). */
+  joinOptions: PregaoGroup<Purchase>[];
+  onDragId: (id: string | null) => void;
+  onDropHere: (fromId: string) => void;
+  onLeave: () => void;
   today: string;
   expanded: boolean;
   selected: boolean;
@@ -508,10 +645,18 @@ function PregaoCard({
   const { data: ratings } = useHouseRatingsQuery();
   const rating = ratings?.ratings[g.idLeilao];
   const [rateOpen, setRateOpen] = useState(false);
+  const drop = useDropTarget(dropOk, onDropHere);
+  const joinWith = useServerFn(joinPregoes);
+  const joinMut = useMutation({
+    mutationFn: (ontoId: string) => joinWith({ data: { fromId: g.idLeilao, ontoId } }),
+    onSuccess: onChanged,
+    onError: (e: Error) => toast.error(e.message || "Não foi possível agrupar os pregões"),
+  });
 
   return (
     <article
-      className={`rounded-md border bg-card ${selected ? "border-violet-500 ring-2 ring-violet-500/20" : "border-border"}`}
+      {...drop.props}
+      className={`rounded-md border bg-card ${selected ? "border-violet-500 ring-2 ring-violet-500/20" : drop.over ? "border-cyan-500 ring-2 ring-cyan-500/30" : "border-border"}`}
     >
       <div className="flex flex-wrap items-center gap-3 px-3 py-3">
         {status === "guarda" ? (
@@ -528,6 +673,23 @@ function PregaoCard({
                 : "Juntar numa remessa"
             }
           />
+        ) : canDrag ? (
+          <span
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(DRAG_TYPE, g.idLeilao);
+              e.dataTransfer.effectAllowed = "move";
+              const card = e.currentTarget.closest("article");
+              if (card) e.dataTransfer.setDragImage(card, 16, 16);
+              onDragId(g.idLeilao);
+            }}
+            onDragEnd={() => onDragId(null)}
+            className="-mx-1 cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing"
+            title="Arraste sobre outro pregão da mesma casa para enviarem juntos"
+            aria-label={`Arrastar o pregão ${g.idLeilao} para juntar a outro`}
+          >
+            <GripVertical className="h-4 w-4" />
+          </span>
         ) : (
           <span className="w-4" aria-hidden />
         )}
@@ -625,6 +787,28 @@ function PregaoCard({
                 </label>
                 <span>Frete da remessa {brl(g.shipment.freight)}</span>
               </>
+            ) : null}
+            {canDrag && joinOptions.length > 0 ? (
+              <label className="flex items-center gap-2">
+                Juntar com
+                <select
+                  value=""
+                  onChange={(e) => e.target.value && joinMut.mutate(e.target.value)}
+                  className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                >
+                  <option value="">escolher pregão…</option>
+                  {joinOptions.map((o) => (
+                    <option key={o.idLeilao} value={o.idLeilao}>
+                      {o.idLeilao} · {brDate(o.date)} · {o.purchases.length} disco(s)
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {canDrag && g.shipment ? (
+              <Button size="sm" variant="outline" onClick={onLeave}>
+                Separar da remessa
+              </Button>
             ) : null}
             {status === "transito" ? (
               <Button size="sm" onClick={onReceive}>

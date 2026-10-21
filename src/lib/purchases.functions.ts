@@ -133,3 +133,28 @@ export const receiveShipment = createServerFn({ method: "POST" })
     const { markShipmentReceived } = await import("./purchase-shipping.server");
     await markShipmentReceived(data.shipmentId);
   });
+
+export const joinPregoes = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { fromId?: string; ontoId?: string } | undefined) => {
+    if (!input?.fromId || typeof input.fromId !== "string") throw new Error("Pregão inválido.");
+    if (!input.ontoId || typeof input.ontoId !== "string") throw new Error("Pregão inválido.");
+    return { fromId: input.fromId, ontoId: input.ontoId };
+  })
+  .handler(async ({ context, data }) => {
+    await guard(context);
+    const { joinShipment } = await import("./purchase-shipping.server");
+    return await joinShipment(data.fromId, data.ontoId);
+  });
+
+export const leavePregaoShipment = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { idLeilao?: string } | undefined) => {
+    if (!input?.idLeilao || typeof input.idLeilao !== "string") throw new Error("Pregão inválido.");
+    return { idLeilao: input.idLeilao };
+  })
+  .handler(async ({ context, data }) => {
+    await guard(context);
+    const { leaveShipment } = await import("./purchase-shipping.server");
+    await leaveShipment(data.idLeilao);
+  });
