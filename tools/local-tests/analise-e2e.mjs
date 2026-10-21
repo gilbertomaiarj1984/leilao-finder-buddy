@@ -27,7 +27,7 @@ ok("lista única com os lotes avaliados", (await rows().count()) >= 8, await row
 let t = await titles();
 ok("ordem padrão: maior nota primeiro (Tim Maia)", t[0]?.includes("Tim Maia"), t.slice(0, 3));
 const body = await page.locator("main").innerText();
-ok("mostra custo total, teto e potencial", /teto barato/.test(body) && /potencial/.test(body) && /lance \+ frete/.test(body));
+ok("mostra valor do lote (sem frete), frete estimado à parte, teto e potencial", /teto barato/.test(body) && /potencial/.test(body) && /valor do lote/.test(body) && /\+ frete estimado R\$\s?25/.test(body));
 ok("mostra estado do disco", /Disco VG\+/.test(body) && /Capa VG/.test(body));
 ok("mostra UF da casa", /\bSP\b/.test(body) && /\bRJ\b/.test(body));
 ok("sem 'Top 30'", !/Top \d+/.test(body));
@@ -62,10 +62,10 @@ await page.locator("select", { has: page.locator("option", { hasText: "NM" }) })
 const nc = await rows().count();
 ok("disco mínimo VG+", nc > 0 && nc < before, { before, nc });
 await page.locator("select", { has: page.locator("option", { hasText: "NM" }) }).selectOption("");
-await page.getByPlaceholder("R$ (lance + frete)").fill("120");
+await page.getByPlaceholder("R$ (valor do lote)").fill("120");
 const ncost = await rows().count();
-ok("custo total até R$ 120", ncost > 0 && ncost < before, { ncost });
-await page.getByPlaceholder("R$ (lance + frete)").fill("");
+ok("valor do lote até R$ 120", ncost > 0 && ncost < before, { ncost });
+await page.getByPlaceholder("R$ (valor do lote)").fill("");
 await page.getByRole("button", { name: "Só com mercado" }).click();
 ok("só com mercado mantém os lotes com Discogs", (await rows().count()) === before);
 await page.getByRole("button", { name: "Só com mercado" }).click();
@@ -90,7 +90,7 @@ await page.getByRole("button", { name: "Lista" }).click();
 const rita = page.locator("article", { hasText: "Rita Lee" }).first();
 await rita.getByRole("button", { name: /Por que esta nota/ }).click();
 const det = await rita.innerText();
-ok("painel mostra evidências e a conta do lance", /Raridade:/.test(det) && /Teto para ainda ser barato/.test(det) && /Casa:/.test(det));
+ok("painel mostra evidências e a conta do lance", /Raridade:/.test(det) && /Teto para ainda ser barato/.test(det) && /fora da conta/.test(det) && /Casa:/.test(det));
 ok("painel mostra vendas passadas e a barra de faixa", /Vendas passadas: 3 venda/.test(det) && (await rita.locator('[role="img"]').count()) >= 1, det.slice(-500));
 await page.screenshot({ path: `${OUT}/analise-detalhe.png`, fullPage: false });
 // ---- fase 3: cobertura da IA, nota defasada, horário do pregão ----

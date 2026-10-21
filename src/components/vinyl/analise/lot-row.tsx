@@ -42,6 +42,8 @@ import { PriceRangeBar } from "./price-range-bar";
 type AnaliseRowProps = {
   lot: VinylLot;
   insight: LotInsight;
+  /** Frete estimado do leilão (UF), mostrado à parte; não entra na conta. */
+  freight: number;
   /** Conta do lance com o valor ATUAL (já corrigido quando o lance é meu e está ganhando). */
   eco: LotEconomics;
   /** Valor atual exibido (texto do lote ou meu lance vencendo). */
@@ -91,13 +93,14 @@ function Cover({ image }: { image: string | null }) {
 
 /**
  * Uma linha (ou card) da Análise: capa, nota, título, as marcas que mudam a decisão (estado do
- * disco, "já tenho", semáforo da casa, procura, vigia/lance) e a conta do lance (custo total,
+ * disco, "já tenho", semáforo da casa, procura, vigia/lance) e a conta do lance (valor do lote,
  * teto, potencial). Tudo já vem resolvido pela tela — o componente só desenha.
  */
 function AnaliseLotRowImpl({
   lot,
   insight,
   eco,
+  freight,
   currentPrice,
   rank,
   past,
@@ -215,7 +218,7 @@ function AnaliseLotRowImpl({
             {eco.deal !== "indefinido" ? (
               <span
                 className={`${pill} bg-secondary ${dealTone(eco.deal)}`}
-                title="Lance + frete ÷ preço sugerido do Discogs para o estado do disco"
+                title="Valor do lote ÷ Discogs (preço sugerido para o estado do disco + frete)"
               >
                 {dealLabel(eco.deal)}
                 {eco.ratio !== null ? ` · ${Math.round(eco.ratio * 100)}% do mercado` : ""}
@@ -335,22 +338,36 @@ function AnaliseLotRowImpl({
           }`}
         >
           <div className="flex items-baseline justify-between gap-2 sm:block">
-            <span className="text-[11px] text-muted-foreground sm:block">lance + frete</span>
+            <span className="text-[11px] text-muted-foreground sm:block">valor do lote</span>
             <span className="text-lg font-bold text-foreground">
               {eco.total !== null ? fmtMoney(eco.total, "BRL") : currentPrice || "sem valor"}
             </span>
           </div>
+          <p
+            className="text-[11px] text-muted-foreground"
+            title="Estimativa fixa do painel de IA, pela UF da casa. Não entra na conta abaixo."
+          >
+            + frete estimado {fmtMoney(freight, "BRL")}
+          </p>
           {eco.ref !== null ? (
             <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-muted-foreground">
-              <dt>mercado ({condition.media ?? "G+"})</dt>
+              <dt
+                title={
+                  eco.refShipping > 0
+                    ? `Discogs: disco ${fmtMoney(eco.ref - eco.refShipping, "BRL")} + frete ${fmtMoney(eco.refShipping, "BRL")} (vendedores embutem margem no frete)`
+                    : "Discogs: total dos vendedores do Brasil, já com o frete deles"
+                }
+              >
+                Discogs ({condition.media ?? "G+"})
+              </dt>
               <dd className="font-medium text-foreground">{fmtMoney(eco.ref, "BRL")}</dd>
-              <dt title="Maior lance que ainda deixa o lote barato (≤ 70% do mercado, já com o frete)">
+              <dt title="Maior valor de lote que ainda fica barato (≤ 70% do Discogs com frete)">
                 teto barato
               </dt>
               <dd className="font-medium text-green-700 dark:text-green-400">
                 {fmtMoney(eco.capCheap, "BRL")}
               </dd>
-              <dt title="Mercado − lance − frete">potencial</dt>
+              <dt title="Discogs (preço + frete) − valor do lote">potencial</dt>
               <dd
                 className={`font-medium ${
                   (eco.potential ?? 0) >= 0

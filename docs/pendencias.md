@@ -183,3 +183,9 @@ Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score
   decisão da Coleção).
 - **Pesos do índice de garimpo** são palpite: calibrar com compras reais (`purchases`) antes de tratá-lo como
   critério padrão.
+
+- **Conta do lote com e sem frete (v0.162.0)**: a Análise usa o valor real do lote (frete à parte; Discogs = preço +
+  frete), mas `marketDeal` (home, `daily-digest`, De olho, calibração) e o contexto do prompt da IA
+  (`lote_mais_frete_brl`, `razao_lote_vs_sugerido`) ainda somam o frete do leilão ao lote. Decidir se unifica
+  (subir `PROMPT_VERSION` reavalia até 800 lotes por rodada) e se o frete do Discogs passa a vir da mediana real
+  dos anúncios BR (hoje usa a mesma estimativa fixa do painel).
