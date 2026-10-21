@@ -676,7 +676,44 @@ Selo `LiveLotNow` (`src/components/vinyl/live-lot-now.tsx`): "🔨 Lote 457" + m
 > `watched-accum` poda vigia ausente só se o leilão ainda não começou; lookout não corta mais por
 > horário. As menções a "3h" nas seções abaixo são histórico.
 
-## Lotes sem lance ao fim do pregão + saída de "Acontecendo agora" (v0.89.0)
+## Visão "Lotes sem lance" do dia de hoje (v0.156.0)
+
+Substitui o antigo "lotes sem lance (N de M)" da linha da casa (seções abaixo, v0.89.x, ficam
+como histórico). A linha da casa agora só tem `PresencialLink` (`presencial-link.tsx`): link
+"pregão presencial" que **some** quando o pregão encerra (`useAuctionStatus`).
+
+- **Ícone `PackageOpen` + contador** colado à aba **Hoje** da barra de dias (desktop,
+  `dashboard-header.tsx`) e chip **"Sem lance (N)"** na faixa de visões do dia (mobile,
+  `mobile-dashboard-header.tsx`). Só no dia corrente (dias passados/futuros não têm); N = casas de
+  hoje com pelo menos 1 lote sem lance achado. Estado `unsoldViewDay`/`setUnsoldViewDay` em
+  `use-dashboard-data.tsx` (só sessão), exclusivo com Vigiados/Lances do dia.
+- **`useTodayUnsold(lots, todayKey)`** (`use-today-unsold.ts`): para cada casa de hoje já iniciada,
+  status via `trackedAuctionStatus` (peça/total do presencial + "já visto ao vivo") e
+  `getUnsoldLots`. Casa **encerrada** → tudo que não vendeu; casa **ao vivo** → só lotes que já
+  passaram no pregão (`currentLote` = lote em pregão agora; `isLotePassed`, `vinyl-parse.ts`) e
+  sem venda, refeito a cada 60 s, então a lista cresce conforme os lotes são achados. Casa "em
+  breve" fica de fora. Mesmas `queryKey`s do polling do presencial e de `unsold-lots` (dedup entre
+  cabeçalho e visão). Um lote recém-passado pode aparecer um instante antes de o catálogo
+  marcá-lo vendido; some no refetch seguinte.
+- **`UnsoldView`** (`dashboard/unsold-view.tsx`, renderizada no `DayTab` de hoje): botão "Voltar ao
+  dia", busca local, seção por casa (abre/fecha, "N de M sem lance", "Ao vivo · buscando…" /
+  "Encerrado"), cards `UnsoldLotCard` (lote recém-achado ganha destaque verde por 3 s).
+- **Servidor:** `getUnsoldLots` ganha `currentLote` opcional (`unsold-lots.server.ts`; cache de 45 s
+  quando informado, 5 min sem ele).
+- **Removido:** override manual "marcar encerrado" (`manually-finished-auctions.ts`,
+  `use-manually-finished.ts`, botões 🏁/"reabrir") — a lista não depende mais de sinal de fim, já
+  vai aparecendo por casa. `trackedAuctionStatus` perdeu o sinal `manual`.
+
+### UF ao lado do nome da casa (v0.156.0)
+
+`HouseUf` (`house-uf.tsx`) mostra "SP", "RJ"… ao lado do nome da casa em todas as telas (grade do
+dia, Vigiados, Lances, cards de origem, Compras, Pregões, Análise, Ao vivo, De olho, calibração).
+`uf` explícito (quando o item já traz) vence; senão vem de `getHouseUfs` → mapa `houseKey` → UF
+(moda da UF por casa na tabela `lots`, `pickHouseUfs` em `house-uf.ts`), cacheado 1 h
+(`useHouseUfsQuery`). Telas que já exibiam a UF por outro caminho (Ao vivo agora, detalhe do lote
+mobile, card de compra) não foram duplicadas.
+
+## Lotes sem lance ao fim do pregão + saída de "Acontecendo agora" (v0.89.0) — HISTÓRICO, substituído na v0.156.0
 
 Reaproveita o mesmo dado de `getPresencialNow` (`peça atual`/`total`) como sinal PRECISO de que
 os lotes de uma casa acabaram (`peca >= total`) — bem mais confiável que a janela de 3h
@@ -737,7 +774,7 @@ telas), com `isFinished` derivado.
 - **Sem NENHUM sinal automático de fim** (nem presencial nem heurística de 3h): comportamento
   idêntico ao de antes desta versão — MAS ver override manual abaixo (v0.89.4).
 
-### Override manual — "marcar pregão como encerrado" (v0.89.4)
+### Override manual — "marcar pregão como encerrado" (v0.89.4) — REMOVIDO na v0.156.0
 
 Achado do usuário: uma casa com **131 lotes** terminou o pregão bem antes das 3h (comum — um
 pregão roda ~40s/lote), e ficou sem NENHUM sinal de fim: o preciso (`peça = total`) não

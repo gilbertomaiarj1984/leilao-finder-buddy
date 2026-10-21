@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 
-import { useManuallyFinished } from "./use-manually-finished";
 import { usePresencialNow } from "./use-presencial-now";
 import { isSeenLive, markSeenLive } from "@/lib/auction-seen-live";
 import { trackedAuctionStatus } from "@/lib/vinyl-parse";
@@ -29,7 +28,6 @@ export function useAuctionStatus(
   const { now, isFinished, inProgress } = usePresencialNow(
     base && base !== "upcoming" ? url : null,
   );
-  const { finished: manual, markFinished, unmarkFinished } = useManuallyFinished(idLeilao, dayKey);
   const [seenLive, setSeenLive] = useState(() => isSeenLive(idLeilao, dayKey));
 
   useEffect(() => {
@@ -41,8 +39,8 @@ export function useAuctionStatus(
   const status = trackedAuctionStatus(
     base,
     dayKey,
-    { inProgress, finished: isFinished, seenLive, manual },
+    { inProgress, finished: isFinished, seenLive },
     todaySP(),
   );
-  return { status, manual, markFinished, unmarkFinished };
+  return { status };
 }

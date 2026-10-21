@@ -808,13 +808,25 @@ export function auctionStarted(dayKey: string, time: string, now: number = Date.
 /**
  * true quando o DIA do leilão já passou (data em São Paulo anterior a hoje). Único corte por
  * calendário que sobrou — não há mais janela fixa de horas após o início: o fim de um pregão
- * de hoje vem do acompanhamento lote a lote (`trackedAuctionStatus`) ou da marcação manual.
+ * de hoje vem do acompanhamento lote a lote (`trackedAuctionStatus`).
  */
 export function auctionDayPassed(dayKey: string, now: number = Date.now()): boolean {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
     new Date(now),
   );
   return Boolean(dayKey) && dayKey < today;
+}
+
+/**
+ * O lote já passou no pregão em andamento? Compara o nº do lote com o do lote em pregão agora
+ * (`currentLote`, de `getPresencialNow`): só conta quando os dois são numéricos e o lote é
+ * ANTERIOR ao atual (o pregão corre em ordem de lote). Sem nº (ou ilegível) → não dá pra
+ * afirmar, fica de fora.
+ */
+export function isLotePassed(lote: string | null, currentLote: string): boolean {
+  const n = Number.parseInt(lote ?? "", 10);
+  const cur = Number.parseInt(currentLote, 10);
+  return Number.isFinite(n) && Number.isFinite(cur) && n < cur;
 }
 
 /** Sinais do acompanhamento lote a lote do pregão (ver `useAuctionStatus`). */
@@ -825,8 +837,6 @@ type AuctionTracking = {
   finished: boolean;
   /** já vimos este pregão em andamento (`inProgress`) antes — o presencial parou de responder = acabou. */
   seenLive: boolean;
-  /** usuário marcou "encerrado" à mão. */
-  manual: boolean;
 };
 
 /**
@@ -834,7 +844,7 @@ type AuctionTracking = {
  * (pregões longos, 200+ lotes, passavam de 3h e apareciam "Encerrado" com o leilão rolando).
  * `base` é o status do horário (`houseAuctionInfo`): "upcoming"/null passam intactos (o início
  * é fato do horário). Já iniciado: dia anterior → encerrado; fim sinalizado (peça = total ou
- * marcação manual) → encerrado; peças pela frente → ao vivo; presencial sem resposta depois de
+ * pregão com peças esgotadas) → encerrado; peças pela frente → ao vivo; presencial sem resposta depois de
  * já ter sido visto ao vivo → encerrado; sem nenhum sinal → ao vivo (não dá pra saber).
  */
 export function trackedAuctionStatus(
@@ -845,7 +855,7 @@ export function trackedAuctionStatus(
 ): "upcoming" | "live" | "ended" | null {
   if (base === null || base === "upcoming") return base;
   if (dayKey && dayKey < today) return "ended";
-  if (tracking.finished || tracking.manual) return "ended";
+  if (tracking.finished) return "ended";
   if (tracking.inProgress) return "live";
   return tracking.seenLive ? "ended" : "live";
 }

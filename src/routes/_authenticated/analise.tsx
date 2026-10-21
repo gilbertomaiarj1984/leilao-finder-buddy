@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
+import { HouseUf } from "@/components/vinyl/house-uf";
 import {
   ArrowLeft,
   Binoculars,
@@ -690,7 +691,7 @@ function AnalisePage() {
                     />
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
-                    {lot.house}
+                    {lot.house} <HouseUf house={lot.house} uf={lot.uf} />
                     <br />
                     {formatDayLabel(lot.dayKey, days)} · {lot.time}
                   </td>

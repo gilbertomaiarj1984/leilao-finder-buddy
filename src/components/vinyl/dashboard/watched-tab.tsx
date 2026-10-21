@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TabsContent } from "@/components/ui/tabs";
 import { HouseLight } from "@/components/vinyl/house-light";
+import { HouseUf } from "@/components/vinyl/house-uf";
 import { AuctionStatusInline, HouseStatBadges } from "@/components/vinyl/badges";
 import {
   catalogAuctionInfo,
@@ -32,7 +33,7 @@ import {
   watchedMatchesSearch,
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
-import { PresencialOrUnsoldLink } from "@/components/vinyl/presencial-or-unsold-link";
+import { PresencialLink } from "@/components/vinyl/presencial-link";
 import { useDragAutoScroll } from "@/components/vinyl/use-drag-autoscroll";
 import {
   clearAnalyticsAlias,
@@ -626,6 +627,7 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                                       <span className="font-semibold text-foreground">
                                         {h.house}
                                       </span>
+                                      <HouseUf house={h.house} />
                                       <span className="font-medium">Pregão {c.idLeilao}</span>
                                       {c.dayKeys.length > 1 ? (
                                         <Badge variant="outline">multi-dia</Badge>
@@ -636,7 +638,7 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                                       <AuctionStatusInline info={info} />
                                       <div className="ml-auto flex flex-wrap items-center gap-3">
                                         {info?.presencialUrl ? (
-                                          <PresencialOrUnsoldLink
+                                          <PresencialLink
                                             presencialUrl={info.presencialUrl}
                                             idLeilao={info.idLeilao}
                                             dayKey={info.dayKey}
@@ -697,6 +699,7 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                               {houseGroup.house}
                             </span>
                           </button>
+                          <HouseUf house={houseGroup.house} />
                           <HouseLight house={houseGroup.house} />
                           <Badge variant="secondary">{houseLots.length} lote(s)</Badge>
                           {houseGroup.multi ? (
@@ -720,7 +723,7 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                               <AuctionStatusInline info={singleInfo} />
                               <div className="ml-auto flex flex-wrap items-center gap-3">
                                 {singleInfo?.presencialUrl ? (
-                                  <PresencialOrUnsoldLink
+                                  <PresencialLink
                                     presencialUrl={singleInfo.presencialUrl}
                                     idLeilao={singleInfo.idLeilao}
                                     dayKey={singleInfo.dayKey}
@@ -793,7 +796,7 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                                     <AuctionStatusInline info={info} />
                                     <div className="ml-auto flex flex-wrap items-center gap-3">
                                       {info?.presencialUrl ? (
-                                        <PresencialOrUnsoldLink
+                                        <PresencialLink
                                           presencialUrl={info.presencialUrl}
                                           idLeilao={info.idLeilao}
                                           dayKey={info.dayKey}

@@ -33,6 +33,7 @@ import {
 import { getAnalyticsAliases, getLotPastSales } from "@/lib/analytics.functions";
 import {
   getLotCondition,
+  getHouseUfs,
   getLotMarket,
   getVinylLots,
   getVinylLotsRange,
@@ -77,6 +78,7 @@ export const queryKeys = {
   lookoutOverview: ["lookout-overview"],
   analyticsAliases: ["analytics-aliases"],
   houseRatings: ["house-ratings"],
+  houseUfs: ["house-ufs"],
 } as const;
 
 const MIN = 60 * 1000;
@@ -503,6 +505,23 @@ export function useLookoutOverviewQuery(opts: { history: boolean }) {
     staleTime: 15 * MIN,
     refetchOnWindowFocus: false,
     retry: false,
+  });
+}
+
+/** UF por casa (`houseKey` → "SP"); acessória: erro vira vazio. Muda raramente. */
+export function useHouseUfsQuery() {
+  const fetchUfs = useServerFn(getHouseUfs);
+  return useQuery<Record<string, string>>({
+    queryKey: queryKeys.houseUfs,
+    queryFn: async () => {
+      try {
+        return await fetchUfs();
+      } catch {
+        return {};
+      }
+    },
+    staleTime: HOUR,
+    refetchOnWindowFocus: false,
   });
 }
 

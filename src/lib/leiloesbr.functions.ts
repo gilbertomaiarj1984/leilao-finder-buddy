@@ -116,11 +116,18 @@ export const getPresencialNow = createServerFn({ method: "GET" })
     return await fetchPresencialNow(data.url);
   });
 
-/** Lotes sem lance de um leilão já terminado — sob demanda, quando o card mostra que acabou. */
+/**
+ * Lotes sem lance de um leilão — sob demanda, pela visão "Sem lance" do dia. Leilão encerrado:
+ * tudo que não vendeu; em andamento (`currentLote`): só o que já passou no pregão.
+ */
 export const getUnsoldLots = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .inputValidator(
-    (input: { idLeilao?: string; presencialUrl?: string; dayKey?: string } | undefined) => {
+    (
+      input:
+        | { idLeilao?: string; presencialUrl?: string; dayKey?: string; currentLote?: string }
+        | undefined,
+    ) => {
       const idLeilao = typeof input?.idLeilao === "string" ? input.idLeilao.trim() : "";
       const presencialUrl =
         typeof input?.presencialUrl === "string" ? input.presencialUrl.trim() : "";
@@ -128,14 +135,21 @@ export const getUnsoldLots = createServerFn({ method: "GET" })
       if (!idLeilao || !presencialUrl || !dayKey) {
         throw new Error("idLeilao, presencialUrl e dayKey obrigatórios.");
       }
-      return { idLeilao, presencialUrl, dayKey };
+      const currentLote =
+        typeof input?.currentLote === "string" ? input.currentLote.trim() || null : null;
+      return { idLeilao, presencialUrl, dayKey, currentLote };
     },
   )
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { getUnsoldLotsForAuction } = await import("./unsold-lots.server");
-    return await getUnsoldLotsForAuction(data.idLeilao, data.presencialUrl, data.dayKey);
+    return await getUnsoldLotsForAuction(
+      data.idLeilao,
+      data.presencialUrl,
+      data.dayKey,
+      data.currentLote,
+    );
   });
 
 // Preenche o nº do lote (via catálogo da casa) em blocos de leilões, para caber no
@@ -326,4 +340,14 @@ export const getLotMarket = createServerFn({ method: "GET" })
       console.error("[lot-market] não foi possível ler o mercado", error);
       return [];
     }
+  });
+
+/** UF de cada casa (`houseKey` → "SP"), para mostrar ao lado do nome da casa em toda a UI. */
+export const getHouseUfs = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getHouseUfs: read } = await import("./house-uf.server");
+    return await read();
   });

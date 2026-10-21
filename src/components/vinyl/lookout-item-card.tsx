@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { dealLabel, dealTone } from "@/components/vinyl/ai-score-utils";
 import { HouseLight } from "@/components/vinyl/house-light";
+import { HouseUf } from "@/components/vinyl/house-uf";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -180,6 +181,7 @@ export function LookoutItemCard({
       <span>{h.soldDate ? shortDay(h.soldDate) : "—"}</span>
       <HouseLight house={h.house} className="-mx-1" />
       <span>{h.house}</span>
+      <HouseUf house={h.house} />
       {h.media || h.sleeve ? (
         <span title="Grau do disco / da capa">
           {h.media ? `Disco ${h.media}` : ""}
