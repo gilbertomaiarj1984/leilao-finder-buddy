@@ -204,6 +204,14 @@ cfg)` respeita `blocks` e `hiddenFields`), **Correlação de condições** (`rul
 image})` chama `evalLotsSync` **direto** (ignora o cache por `title_hash` — é justamente
   para reavaliar com base em informação nova do lote, ex.: imagem trocada) e faz
   `upsertLotAi([row])`. Provedor: o PADRÃO do usuário (`resolveAiProvider`/`getAiProvider`).
+  **Menu de opções (v0.173.0):** os três botões (✨ do card sem nota, "refazer consulta", ✨ da Análise)
+  abrem `AiReprocessPopover` (`ai-reprocess-menu.tsx`, o MESMO menu do reprocesso da Coleção): 1 · capa
+  (`mode:"image"`, desabilitada sem imagem), 2 · só o título (`mode:"text"` → `evalLotsSync` zera a imagem),
+  3 · dica livre (`hint` ≤600, prioridade máxima no prompt via `buildUserPrompt`; vale só para aquela nota,
+  não é persistida nem entra no `title_hash`).
+  **Buscar faixas (v0.173.0):** nunca abre a câmera direto — `DiscCodeScannerDialog` com `askBeforeCamera`
+  (Coleção e lotes, via `useLotTracklistRefresh`) pergunta "Abrir a câmera" ou "Buscar só pelo nome"; nos
+  lotes o código lido vai em `refreshLotTracklistFn({id, code})` e escolhe o release do Discogs.
   Self-contained em `ai-score.tsx` (`ReevaluateButton`): `useMutation` grava a linha devolvida
   direto no cache `["lot-ai"]` (mesmo padrão da edição de tags) — sem invalidar/reler tudo, o
   card/linha atualizam sozinhos. Só aparece quando o chamador passa o prop `lot` (dados

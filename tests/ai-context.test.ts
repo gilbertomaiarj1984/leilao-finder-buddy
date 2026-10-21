@@ -100,6 +100,15 @@ describe("contexto da avaliação", () => {
     expect(buildUserPrompt(lot)).not.toContain("contexto");
   });
 
+  test("a dica do colecionador entra com prioridade; sem dica o prompt não a menciona", () => {
+    const lot = { id: "1", title: "LP Fulano", price: "R$ 40,00", house: "X", image: null };
+    const withHint = buildUserPrompt(lot, null, undefined, "  LP de 1979, selo Philips  ");
+    expect(withHint).toContain('"dica_do_colecionador":"LP de 1979, selo Philips"');
+    expect(withHint).toContain("PRIORIDADE");
+    expect(buildUserPrompt(lot)).not.toContain("dica_do_colecionador");
+    expect(buildUserPrompt(lot, null, undefined, "   ")).not.toContain("dica_do_colecionador");
+  });
+
   test("o hash de avaliação carrega a versão do prompt; a identificação não", () => {
     expect(evalHash("ABC").startsWith(`${titleHash("ABC")}.p${PROMPT_VERSION}.`)).toBe(true);
     expect(evalHash("ABC")).not.toBe(titleHash("ABC"));

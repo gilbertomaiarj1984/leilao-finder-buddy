@@ -73,6 +73,7 @@ export function DiscCodeScannerDialog({
   title = "Ler código do disco",
   confirmLabel = "Usar este código",
   skipLabel,
+  askBeforeCamera = false,
   provider,
   onConfirm,
   onSkip,
@@ -83,6 +84,8 @@ export function DiscCodeScannerDialog({
   confirmLabel?: string;
   /** Quando presente, mostra o botão para seguir sem código (ex.: buscar só por nome). */
   skipLabel?: string;
+  /** Não abre a câmera de cara: antes pergunta “abrir a câmera” ou seguir sem ela (buscar faixas). */
+  askBeforeCamera?: boolean;
   provider?: "anthropic" | "gemini";
   onConfirm: (code: string, info: DiscogsCodeInfo | null) => void;
   onSkip?: () => void;
@@ -94,6 +97,7 @@ export function DiscCodeScannerDialog({
   const lookup = useServerFn(lookupDiscCode);
   const readPhoto = useServerFn(readDiscCodePhoto);
 
+  const [cameraOn, setCameraOn] = useState(!askBeforeCamera);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -130,7 +134,7 @@ export function DiscCodeScannerDialog({
 
   // Câmera + leitura contínua do código de barras enquanto o diálogo está aberto e sem escolha.
   useEffect(() => {
-    if (!open || picked) return;
+    if (!open || picked || !cameraOn) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     setCameraError(null);
@@ -183,11 +187,12 @@ export function DiscCodeScannerDialog({
       if (timer) clearTimeout(timer);
       stopCamera();
     };
-  }, [open, picked, pick, stopCamera]);
+  }, [open, picked, cameraOn, pick, stopCamera]);
 
   // Fecha limpando o estado (e soltando a câmera).
   function close() {
     stopCamera();
+    setCameraOn(!askBeforeCamera);
     setPicked(null);
     setCandidates([]);
     setManual("");
@@ -224,8 +229,9 @@ export function DiscCodeScannerDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Aponte para o código de barras (leitura automática) ou use “Ler texto” para o
-            número/código impresso no disco ou na capa.
+            {cameraOn
+              ? "Aponte para o código de barras (leitura automática) ou use “Ler texto” para o número/código impresso no disco ou na capa."
+              : "Com o código de barras ou o nº do disco a busca acerta o disco exato. A câmera só abre se você pedir."}
           </DialogDescription>
         </DialogHeader>
 
@@ -257,6 +263,30 @@ export function DiscCodeScannerDialog({
                 O Discogs não achou este código — você ainda pode salvá-lo no disco.
               </p>
             )}
+          </div>
+        ) : !cameraOn ? (
+          <div className="space-y-3">
+            <Button type="button" className="w-full" onClick={() => setCameraOn(true)}>
+              <Camera className="mr-2 h-4 w-4" />
+              Abrir a câmera
+            </Button>
+            <form
+              className="flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void pick(manual);
+              }}
+            >
+              <Input
+                value={manual}
+                onChange={(e) => setManual(e.target.value)}
+                placeholder="ou digite o código de barras / nº do disco"
+                inputMode="text"
+              />
+              <Button type="submit" variant="outline" disabled={!manual.trim() || checking}>
+                OK
+              </Button>
+            </form>
           </div>
         ) : (
           <div className="space-y-3">

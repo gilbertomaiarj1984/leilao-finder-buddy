@@ -127,7 +127,15 @@ export const reevaluateLot = createServerFn({ method: "POST" })
   .inputValidator(
     (
       input:
-        | { id?: string; title?: string; price?: string; house?: string; image?: string | null }
+        | {
+            id?: string;
+            title?: string;
+            price?: string;
+            house?: string;
+            image?: string | null;
+            mode?: string;
+            hint?: string;
+          }
         | undefined,
     ) => {
       if (!input?.id || typeof input.id !== "string") throw new Error("Lote inválido.");
@@ -138,6 +146,8 @@ export const reevaluateLot = createServerFn({ method: "POST" })
         price: typeof input.price === "string" ? input.price : "",
         house: typeof input.house === "string" ? input.house : "",
         image: typeof input.image === "string" ? input.image : null,
+        mode: input.mode === "text" ? ("text" as const) : ("image" as const),
+        hint: typeof input.hint === "string" ? input.hint.trim().slice(0, 600) : "",
       };
     },
   )
@@ -151,7 +161,8 @@ export const reevaluateLot = createServerFn({ method: "POST" })
     const { getAiProvider } = await import("./app-state.server");
     const provider = await getAiProvider();
     const { upsertLotAi, getLotTracklist, toClientRow } = await import("./lot-ai.server");
-    const { rows, error } = await evalLotsSync([data], provider);
+    const { mode, hint, ...lot } = data;
+    const { rows, error } = await evalLotsSync([lot], provider, { mode, hint });
     const row = rows[0];
     if (!row) throw new Error(error || "A IA não conseguiu reavaliar este lote.");
     // A linha devolvida SUBSTITUI a do cache do cliente: `hasTracklist` precisa refletir as faixas
@@ -184,9 +195,12 @@ export const reevaluateLot = createServerFn({ method: "POST" })
  */
 export const refreshLotTracklistFn = createServerFn({ method: "POST" })
   .middleware([requireAuth])
-  .inputValidator((input: { id?: string } | undefined) => {
+  .inputValidator((input: { id?: string; code?: string } | undefined) => {
     if (!input?.id || typeof input.id !== "string") throw new Error("Lote inválido.");
-    return { id: input.id };
+    return {
+      id: input.id,
+      code: typeof input.code === "string" ? input.code.trim().slice(0, 40) : "",
+    };
   })
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
@@ -194,7 +208,7 @@ export const refreshLotTracklistFn = createServerFn({ method: "POST" })
     const { aiConfigured } = await import("./ai-eval.server");
     const { getAiProvider } = await import("./app-state.server");
     const { refreshLotTracklist } = await import("./tracklist-step.server");
-    return await refreshLotTracklist(data.id, await getAiProvider(), aiConfigured());
+    return await refreshLotTracklist(data.id, await getAiProvider(), aiConfigured(), data.code);
   });
 
 /**

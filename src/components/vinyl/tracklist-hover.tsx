@@ -87,50 +87,54 @@ export function TracklistHover({
       : "Tracklist ainda não disponível — vem com a análise da IA";
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(o) => {
-        if (o) setWanted(true);
-        setOpen(o && has);
-      }}
-    >
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          onMouseEnter={show}
-          onMouseLeave={hide}
-          onClick={canRequest ? request : undefined}
-          disabled={canRequest && busy}
-          className={`flex items-center rounded-full px-1.5 py-1 text-white shadow ${
-            has ? "bg-sky-600" : canRequest ? "bg-zinc-500 hover:bg-sky-600" : "bg-zinc-500/50"
-          }`}
-          title={open ? undefined : tip}
-          aria-label={tip}
-        >
-          <ListMusic className={`h-3.5 w-3.5 ${busy ? "animate-pulse" : ""}`} />
-        </button>
-      </PopoverTrigger>
-      {has ? (
-        <PopoverContent
-          // Celular: ao lado esquerdo não cabe (vazava da tela); embaixo o Radix desloca p/ dentro.
-          side={isMobile ? "bottom" : "left"}
-          align={isMobile ? "end" : "start"}
-          collisionPadding={12}
-          className="max-h-[min(70vh,var(--radix-popover-content-available-height))] w-80 max-w-[calc(100vw-1.5rem)] overflow-y-auto p-3 text-xs"
-          onMouseEnter={show}
-          onMouseLeave={hide}
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          {tracks.length ? (
-            <TracklistContent tracklist={tracks} title={title} refresh={refresh} />
-          ) : (
-            <p className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" /> Carregando faixas…
-            </p>
-          )}
-        </PopoverContent>
-      ) : null}
-    </Popover>
+    <>
+      <Popover
+        open={open}
+        onOpenChange={(o) => {
+          if (o) setWanted(true);
+          setOpen(o && has);
+        }}
+      >
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            onMouseEnter={show}
+            onMouseLeave={hide}
+            onClick={canRequest ? request : undefined}
+            disabled={canRequest && busy}
+            className={`flex items-center rounded-full px-1.5 py-1 text-white shadow ${
+              has ? "bg-sky-600" : canRequest ? "bg-zinc-500 hover:bg-sky-600" : "bg-zinc-500/50"
+            }`}
+            title={open ? undefined : tip}
+            aria-label={tip}
+          >
+            <ListMusic className={`h-3.5 w-3.5 ${busy ? "animate-pulse" : ""}`} />
+          </button>
+        </PopoverTrigger>
+        {has ? (
+          <PopoverContent
+            // Celular: ao lado esquerdo não cabe (vazava da tela); embaixo o Radix desloca p/ dentro.
+            side={isMobile ? "bottom" : "left"}
+            align={isMobile ? "end" : "start"}
+            collisionPadding={12}
+            className="max-h-[min(70vh,var(--radix-popover-content-available-height))] w-80 max-w-[calc(100vw-1.5rem)] overflow-y-auto p-3 text-xs"
+            onMouseEnter={show}
+            onMouseLeave={hide}
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            {tracks.length ? (
+              <TracklistContent tracklist={tracks} title={title} refresh={refresh} />
+            ) : (
+              <p className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" /> Carregando faixas…
+              </p>
+            )}
+          </PopoverContent>
+        ) : null}
+      </Popover>
+      {/* Pergunta “câmera ou só pelo nome” (fora do Popover, que fecha ao tirar o mouse). */}
+      {lotRefresh?.dialog}
+    </>
   );
 }
 
