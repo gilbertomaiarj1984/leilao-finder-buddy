@@ -1,6 +1,6 @@
 import { auctionDayPassed, auctionStarted, presencialUrlFrom, type VinylLot } from "./vinyl-parse";
 
-export type LiveAuction = {
+type LiveAuction = {
   idLeilao: string;
   house: string;
   houseUrl: string | null;
@@ -14,7 +14,7 @@ export type LiveAuction = {
 };
 
 /** Leilão do dia com a URL do pregão presencial e o status derivado do horário. */
-export type PresencialAuction = LiveAuction & {
+type PresencialAuction = LiveAuction & {
   presencialUrl: string | null;
   status: "upcoming" | "live" | "ended";
 };
@@ -152,7 +152,7 @@ export async function pruneSeenAuctions(): Promise<{ pruned: number }> {
     const captured = await getSalesCaptured();
     if (!captured.size) return { pruned: 0 };
 
-    // `day_key` é sempre a data em São Paulo (ver `todayDayKey`) — usar `.toISOString()` (UTC)
+    // `day_key` é sempre a data em São Paulo (data de hoje em São Paulo) — usar `.toISOString()` (UTC)
     // aqui desalinharia o corte por até algumas horas perto da virada do dia.
     const cutoffDate = new Date(Date.now() - SEEN_AUCTIONS_RETENTION_DAYS * 24 * 60 * 60 * 1000);
     const cutoff = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
@@ -177,31 +177,3 @@ export async function pruneSeenAuctions(): Promise<{ pruned: number }> {
 }
 
 /** Data de hoje (YYYY-MM-DD) no fuso de São Paulo — mesmo formato de `day_key`. */
-function todayDayKey(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
-}
-
-/**
- * Todos os leilões de vinil do DIA (data de hoje em São Paulo), com o link do
- * pregão presencial de cada casa e o status (em breve / ao vivo / encerrado),
- * derivado do horário de início. Best-effort: [] em erro.
- */
-export async function listTodayAuctions(): Promise<PresencialAuction[]> {
-  try {
-    const { db } = await import("@/lib/db-client.server");
-    const today = todayDayKey();
-    const { data, error } = await db
-      .from("seen_auctions")
-      .select(
-        "id_leilao, house, house_url, entry_url, day_key, start_time, starts_at, lot_count, sample_titles, uf",
-      )
-      .eq("day_key", today)
-      .order("starts_at", { ascending: true });
-    if (error) throw error;
-    const now = Date.now();
-    return (data as Row[] | null)?.map((row) => toPresencialAuction(row, now)) ?? [];
-  } catch (error) {
-    console.error("[leiloesbr] falha ao listar leilões do dia", error);
-    return [];
-  }
-}

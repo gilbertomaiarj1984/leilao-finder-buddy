@@ -10,7 +10,6 @@ import {
   Library,
   LayoutGrid,
   LogOut,
-  Radio,
   ShoppingBag,
   Sparkles,
   type LucideIcon,
@@ -33,7 +32,6 @@ const HOME_NAV_KEY = "ui-state:home-nav";
 
 // Telas acessadas pelo Menu (mesmos destinos dos botões do cabeçalho do desktop).
 const MENU_TILES: { to: string; label: string; icon: LucideIcon }[] = [
-  { to: "/ao-vivo", label: "Ao vivo", icon: Radio },
   { to: "/analise", label: "Análise", icon: Sparkles },
   { to: "/olho", label: "De olho", icon: Binoculars },
   { to: "/colecao", label: "Coleção", icon: Library },

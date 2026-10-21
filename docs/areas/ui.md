@@ -74,6 +74,11 @@
   status. **Filtros** (valem p/ os dois Tops): busca, casa, faixa de nota, raridade,
   "Só sondagem", "Com lance" (dia = barra de dias; "Vigiando" saiu — virou o 1º Top). **Tags editáveis** (×/＋ no hover, `setLotTags` →
   `updateLotTags`, otimista, com toast; só em lotes com linha em `lot_ai`).
+- **Página Ao vivo, botão e proxy `/api/live` — REMOVIDOS (v0.157.0).** A visão "Sem lance" de hoje e o
+  badge/`LiveLotNow` da grade cobrem o acompanhamento; saíram `ao-vivo.tsx`, o botão do cabeçalho,
+  o item do menu mobile, `openLiveAuction`/`getTodayAuctions`/`listTodayAuctions`, o proxy autenticado
+  (`leiloesbr-live.server.ts`, `LIVE_PROXY_SECRET`, `getSessionCookieLenient`, `absorbSetCookie`).
+  `isPublicHost` foi para `src/lib/public-host.ts`. O texto histórico da página/proxy abaixo não vale mais.
 - **`_authenticated/ao-vivo.tsx` (Ao vivo):** pregão presencial das casas com vinil **do dia**
   (`America/Sao_Paulo`), **um card por casa**, badge de status derivado do horário
   (`upcoming`/`live`/`ended`, `refetchInterval` 60s). URL do pregão montada de `seen_auctions`:

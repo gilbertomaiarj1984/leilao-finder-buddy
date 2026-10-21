@@ -8,7 +8,6 @@ import {
   Library,
   LogOut,
   PackageOpen,
-  Radio,
   ShoppingBag,
   SlidersHorizontal,
   Sparkles,
@@ -101,17 +100,6 @@ export function DashboardHeader({
             {/* No mobile a barra de ações rola na horizontal (uma linha), para o header sticky
           ficar baixo e não atrapalhar; no desktop volta a quebrar em linhas (flex-wrap). */}
             <div className="flex w-full items-center gap-2 overflow-x-auto sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible">
-              <Button
-                variant="outline"
-                size="sm"
-                asChild
-                title="Leilões ao vivo (pregão presencial)"
-              >
-                <Link to="/ao-vivo">
-                  <Radio className="mr-2 h-4 w-4" />
-                  Ao vivo
-                </Link>
-              </Button>
               <Button variant="outline" size="sm" asChild title="Análise de lotes com IA">
                 <Link to="/analise">
                   <Sparkles className="mr-2 h-4 w-4" />

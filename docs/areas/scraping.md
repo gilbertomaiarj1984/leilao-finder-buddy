@@ -36,8 +36,7 @@
 - **Sessão logada é POR ORIGEM** (`getSessionCookieFor(origin)`): `leiloesbr.com.br` para
   conta/vigias/lances e o **domínio de cada casa** para o pregão presencial (mesma plataforma,
   mesmo `login.asp`, mas cada domínio tem seu próprio `ASPSESSIONID`). `getSessionCookie()` é o
-  atalho para `BASE_URL`. `absorbSetCookie` mantém o jar da origem vivo com os `Set-Cookie` que a
-  casa devolve durante o pregão.
+  atalho para `BASE_URL`.
 
 ## Endpoints de catálogo/peça — fonte de verdade (PRIORIDADE nas consultas)
 
