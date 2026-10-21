@@ -29,6 +29,11 @@ bun run tools/local-tests/cadeia-ia.ts               # 19 verificações (usa a 
 bun run tools/local-tests/cron-lock.ts    # imprime {"a":{busy:false},"b":{busy:true},"c":{busy:false},"d":{busy:false}}
 ```
 
+## 2b'. Alerta de teto de lance (v0.171.0)
+```sh
+bun run tools/local-tests/teto-alert.ts   # lote caro: 0 avisos; lote barato: detecta o aviso (push desligado aqui)
+```
+
 ## 2c. Backup e deploy (scripts de shell, sem banco)
 ```sh
 bash tools/local-tests/backup-script.sh    # docker/backup/backup.sh com pg_dump/aws falsos (4 casos)

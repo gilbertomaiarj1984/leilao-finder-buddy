@@ -557,8 +557,8 @@ async function runCronStep(step: string, url: URL): Promise<Response> {
     // Web Push de "pregão de lote vigiado começando": chamado a cada 15 min pelo `watch-alert.yml`
     // (janela de 30 min, dedupe por pregão em `app_state.watch_start_notified`); no-op sem VAPID_*.
     if (step === "watchalert") {
-      const { notifyWatchedStarting } = await import("./watch-alerts.server");
-      return json(await notifyWatchedStarting());
+      const { runWatchAlerts } = await import("./watch-alerts.server");
+      return json(await runWatchAlerts());
     }
 
     // Resumo diário por e-mail (Gmail) dos melhores lotes — chamado 1x/dia pelo `daily-digest.yml`
