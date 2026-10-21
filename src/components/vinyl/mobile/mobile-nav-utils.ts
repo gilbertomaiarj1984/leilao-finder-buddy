@@ -8,14 +8,7 @@ export function homeTabOf(tab: string): HomeTab {
 }
 
 /** Telas acessadas pelo Menu (a barra destaca "Menu" quando uma delas está aberta). */
-const MENU_ROUTES = [
-  "/ao-vivo",
-  "/analise",
-  "/olho",
-  "/colecao",
-  "/compras",
-  "/vinil-analytics",
-] as const;
+const MENU_ROUTES = ["/analise", "/olho", "/colecao", "/compras", "/vinil-analytics"] as const;
 
 export function isMenuRoute(pathname: string): boolean {
   return MENU_ROUTES.some((r) => pathname === r || pathname.startsWith(`${r}/`));

@@ -4,7 +4,7 @@
  * polling da plataforma — ver `presencial-now.ts` para o formato. Best-effort: `null` em erro.
  */
 import { publicFetch } from "./leiloesbr-auth.server";
-import { isPublicHost } from "./leiloesbr-live.server";
+import { isPublicHost } from "./public-host";
 import { parsePregaoResponse, parsePresencialIds, type PresencialNow } from "./presencial-now";
 
 // Endpoint comum da plataforma (`novoPresencial.defineLeRegistro("")` no navegador).

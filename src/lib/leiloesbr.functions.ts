@@ -68,36 +68,6 @@ export const getLiveAuctions = createServerFn({ method: "GET" })
     return await listLiveAuctions();
   });
 
-/** Leilões de vinil do DIA com o link do pregão presencial de cada casa e o status. */
-export const getTodayAuctions = createServerFn({ method: "GET" })
-  .middleware([requireAuth])
-  .handler(async ({ context }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { listTodayAuctions } = await import("./leiloesbr-auctions.server");
-    return await listTodayAuctions();
-  });
-
-/**
- * Emite a URL do PROXY autenticado para abrir o pregão presencial JÁ LOGADO dentro
- * do app (iframe ou nova aba). Recebe a `presencialUrl` da casa e devolve um caminho
- * no nosso domínio (`/api/live/...`) com um token de curta duração. Só o e-mail
- * autorizado consegue emitir.
- */
-export const openLiveAuction = createServerFn({ method: "POST" })
-  .middleware([requireAuth])
-  .inputValidator((input: { url?: string } | undefined) => {
-    const url = typeof input?.url === "string" ? input.url.trim() : "";
-    if (!url) throw new Error("URL do pregão obrigatória.");
-    return { url };
-  })
-  .handler(async ({ context, data }) => {
-    const { assertAllowed } = await import("./access.server");
-    assertAllowed(context.claims?.["email"] as string | undefined);
-    const { buildLiveProxyUrl } = await import("./leiloesbr-live.server");
-    return { proxyUrl: await buildLiveProxyUrl(data.url) };
-  });
-
 /**
  * Lote em pregão AGORA (nº do lote + "peça x de y") no presencial de uma casa, para o selo ao
  * lado de "Ao vivo agora". Best-effort: `null` quando não há pregão ou a casa não respondeu.

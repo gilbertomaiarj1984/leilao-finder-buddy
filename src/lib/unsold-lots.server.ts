@@ -17,7 +17,7 @@
  */
 import { db } from "@/lib/db-client.server";
 
-import { isPublicHost } from "./leiloesbr-live.server";
+import { isPublicHost } from "./public-host";
 import { isLotePassed } from "./vinyl-parse";
 
 type UnsoldLot = {
