@@ -169,3 +169,17 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
 Achar: `grep -rn "DUP(" src`. Pendentes: `DUP(lot-insights)` — pipeline condição/mercado/demanda/Coleção da home (`use-dashboard-data.tsx`) × `useLotInsights` (Análise); `DUP(pool)` — laço de workers com `cursor` em 8 lugares
 (extrair `runPool`); `DUP(modelos)` — lista/padrão dos modelos Gemini em 4 arquivos (`ai-models.ts`).
 Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score.ts`.
+
+## Análise de Lotes — o que ficou de fora das fases 1–4 (v0.161.0)
+
+- **Alerta "vigiado passou/está abaixo do teto de lance"**: exige o valor AO VIVO do lote (a varredura geral
+  defasa até 6 h) e a conta de mercado no servidor (`getAllLotMarket` + `withConditionAnchor` + `lotEconomics`,
+  como o `daily-digest`). Pensar em aviso de **cruzamento** (snapshot lote → "abaixo"/"acima" em `app_state`), não
+  de "continua abaixo". Sem `lot_market` casado o alerta não existe.
+- **Medir o efeito do contexto do prompt** (comparar notas antes/depois da v0.142.0 pela calibração do painel).
+- **Pendentes exatos**: a cobertura da Análise conta lote sem `lot_ai`/sem nota; o servidor também reavalia por
+  mudança de título/versão do prompt (hash só existe no servidor). Uma server fn de contagem daria o número exato.
+- **`DUP(lot-insights)`**: migrar a home para `useLotInsights` (hoje a cópia dela também alimenta os diálogos de
+  decisão da Coleção).
+- **Pesos do índice de garimpo** são palpite: calibrar com compras reais (`purchases`) antes de tratá-lo como
+  critério padrão.

@@ -465,6 +465,13 @@ export async function handleCron(request: Request): Promise<Response | null> {
       return json(await notifyOutbidBids());
     }
 
+    // Web Push de "pregão de lote vigiado começando": chamado a cada 15 min pelo `watch-alert.yml`
+    // (janela de 30 min, dedupe por pregão em `app_state.watch_start_notified`); no-op sem VAPID_*.
+    if (step === "watchalert") {
+      const { notifyWatchedStarting } = await import("./watch-alerts.server");
+      return json(await notifyWatchedStarting());
+    }
+
     // Resumo diário por e-mail (Gmail) dos melhores lotes — chamado 1x/dia pelo `daily-digest.yml`
     // (8:30 BRT); no máximo um por dia (`app_state.daily_digest_sent`); no-op sem GMAIL_*.
     if (step === "dailydigest") {

@@ -346,3 +346,93 @@ export function buildInterestMatcher(interests: string[]): (text: string) => boo
     return terms.some((term) => t.includes(term));
   };
 }
+
+// ---- Índice de garimpo --------------------------------------------------------------------------
+
+type GarimpoPartKey = "negocio" | "nota" | "estado" | "procura" | "casa";
+
+export type GarimpoPart = {
+  key: GarimpoPartKey;
+  label: string;
+  /** Peso no índice (soma 100). */
+  weight: number;
+  /** 0–1. Sem dado vale `neutral` (e `known` fica false) — nunca penaliza nem premia no escuro. */
+  value: number;
+  known: boolean;
+};
+
+export type Garimpo = {
+  /** 0–100. */
+  index: number;
+  parts: GarimpoPart[];
+  /** O disco já está na Coleção: o índice cai pela metade. */
+  ownedPenalty: boolean;
+};
+
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
+/**
+ * Índice de garimpo (EXPERIMENTAL): um número 0–100 que junta o que decide uma boa compra, para
+ * ordenar a lista — NÃO substitui a nota da IA. Cada parte vai de 0 a 1 e tem peso fixo:
+ * negócio 35 (custo ÷ mercado: ≤ 50% = 1, ≥ 115% = 0), nota da IA 25, estado do disco 15 (nota de
+ * estado 0–100), procura 15 (want ÷ have: 3× ou mais = 1) e casa 10 (semáforo). Disco que já está
+ * na Coleção vale metade. Parte sem dado fica neutra e marcada `known: false`.
+ */
+export function garimpoIndex(input: {
+  eco: LotEconomics;
+  score: number | null;
+  conditionScore: number | null;
+  want: number | null;
+  have: number | null;
+  houseLevel: "verde" | "amarelo" | "laranja" | "vermelho" | null;
+  ownedConfident: boolean;
+}): Garimpo {
+  const ratio = input.eco.ratio;
+  const heat =
+    input.want !== null && input.want > 0 ? input.want / Math.max(input.have ?? 0, 1) : null;
+  const house = { verde: 1, amarelo: 0.6, laranja: 0.3, vermelho: 0 } as const;
+  const parts: GarimpoPart[] = [
+    {
+      key: "negocio",
+      label: "Negócio (custo ÷ mercado)",
+      weight: 35,
+      known: ratio !== null,
+      value:
+        ratio !== null ? clamp01((DEAL_BAND_EXPENSIVE - ratio) / (DEAL_BAND_EXPENSIVE - 0.5)) : 0.4,
+    },
+    {
+      key: "nota",
+      label: "Nota da IA",
+      weight: 25,
+      known: input.score !== null,
+      value: input.score !== null ? clamp01(input.score / 100) : 0.4,
+    },
+    {
+      key: "estado",
+      label: "Estado do disco",
+      weight: 15,
+      known: input.conditionScore !== null,
+      value: input.conditionScore !== null ? clamp01(input.conditionScore / 100) : 0.5,
+    },
+    {
+      key: "procura",
+      label: "Procura no Discogs",
+      weight: 15,
+      known: heat !== null,
+      value: heat !== null ? clamp01(heat / 3) : 0.3,
+    },
+    {
+      key: "casa",
+      label: "Casa (semáforo)",
+      weight: 10,
+      known: input.houseLevel !== null,
+      value: input.houseLevel !== null ? house[input.houseLevel] : 0.6,
+    },
+  ];
+  const raw = parts.reduce((sum, p) => sum + p.weight * p.value, 0);
+  return {
+    index: Math.round(input.ownedConfident ? raw / 2 : raw),
+    parts,
+    ownedPenalty: input.ownedConfident,
+  };
+}

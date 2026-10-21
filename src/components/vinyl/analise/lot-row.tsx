@@ -29,7 +29,7 @@ import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { demandRatio, gradeAtLeast } from "@/lib/analise-rank";
-import type { LotEconomics } from "@/lib/lot-score";
+import type { Garimpo, LotEconomics } from "@/lib/lot-score";
 import type { AuctionChip } from "@/lib/analise-time";
 import type { PastSales } from "@/lib/past-sales";
 import type { LotInsight } from "@/lib/use-lot-insights";
@@ -53,6 +53,8 @@ type AnaliseRowProps = {
   chip: AuctionChip | null;
   /** A nota foi dada quando o lote custava bem menos que hoje. */
   stale: boolean;
+  /** Índice de garimpo (experimental) e suas partes. */
+  garimpo: Garimpo;
   /** "Por que esta nota" aberto. */
   open: boolean;
   onToggleOpen: (id: string) => void;
@@ -101,6 +103,7 @@ function AnaliseLotRowImpl({
   past,
   chip,
   stale,
+  garimpo,
   open,
   onToggleOpen,
   days,
@@ -222,6 +225,16 @@ function AnaliseLotRowImpl({
                 {dealLabel(ai.deal)}
               </span>
             ) : null}
+            <span
+              className={`${pill} bg-primary/10 text-primary`}
+              title={`Índice de garimpo (experimental): ${garimpo.parts
+                .map(
+                  (p) => `${p.label} ${Math.round(p.value * 100)}%${p.known ? "" : " (sem dado)"}`,
+                )
+                .join(" · ")}${garimpo.ownedPenalty ? " · já tenho: metade" : ""}`}
+            >
+              Garimpo {garimpo.index}
+            </span>
             {ai?.rarity ? (
               <span className={`${pill} bg-secondary`}>
                 <RarityLabel rarity={ai.rarity} />
@@ -376,7 +389,9 @@ function AnaliseLotRowImpl({
         </div>
       </div>
 
-      {open ? <LotDetail lot={lot} insight={insight} eco={eco} past={past} /> : null}
+      {open ? (
+        <LotDetail lot={lot} insight={insight} eco={eco} past={past} garimpo={garimpo} />
+      ) : null}
 
       <footer className="flex items-center justify-end gap-2 border-t border-border/60 bg-secondary/30 px-3 py-1.5">
         <Button

@@ -4,7 +4,7 @@ import { ExternalLink } from "lucide-react";
 import { TracklistHover } from "@/components/vinyl/tracklist-hover";
 import { fmtMoney, formatAiAlbum } from "@/lib/lot-score";
 import { buildEvidence, type EvidenceTone } from "@/lib/analise-evidence";
-import type { LotEconomics } from "@/lib/lot-score";
+import type { Garimpo, LotEconomics } from "@/lib/lot-score";
 import { analyticsGroupSearch, type PastSales } from "@/lib/past-sales";
 import type { LotInsight } from "@/lib/use-lot-insights";
 import { lotOpenUrl, type VinylLot } from "@/lib/vinyl-parse";
@@ -25,11 +25,13 @@ export function LotDetail({
   insight,
   eco,
   past,
+  garimpo,
 }: {
   lot: VinylLot;
   insight: LotInsight;
   eco: LotEconomics;
   past: PastSales | null;
+  garimpo: Garimpo;
 }) {
   const { ai, market, condition, owned, lookout, houseLevel } = insight;
   const evidence = buildEvidence({
@@ -66,6 +68,33 @@ export function LotDetail({
         </ul>
         {ai?.reason ? (
           <p className="mt-2 text-xs italic text-muted-foreground">“{ai.reason}”</p>
+        ) : null}
+        <h4 className="mb-1.5 mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Índice de garimpo: {garimpo.index}
+          <span className="ml-1 font-normal normal-case tracking-normal">(experimental)</span>
+        </h4>
+        <ul className="space-y-1">
+          {garimpo.parts.map((p) => (
+            <li key={p.key} className="grid grid-cols-[1fr_72px_auto] items-center gap-2 text-xs">
+              <span className={p.known ? "" : "text-muted-foreground"}>
+                {p.label} <span className="text-muted-foreground">· peso {p.weight}</span>
+              </span>
+              <span className="h-1.5 overflow-hidden rounded-full bg-secondary" aria-hidden>
+                <span
+                  className={`block h-full rounded-full ${p.known ? "bg-primary" : "bg-muted-foreground/40"}`}
+                  style={{ width: `${Math.round(p.value * 100)}%` }}
+                />
+              </span>
+              <span className="w-9 text-right tabular-nums text-muted-foreground">
+                {p.known ? `${Math.round(p.value * 100)}%` : "sem dado"}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {garimpo.ownedPenalty ? (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Já está na sua Coleção: o índice vale metade.
+          </p>
         ) : null}
         {ai?.evalPrice ? (
           <p className="mt-1 text-xs text-muted-foreground">
