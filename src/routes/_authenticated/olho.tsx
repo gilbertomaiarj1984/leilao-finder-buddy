@@ -53,8 +53,9 @@ import {
   type LookoutArtistGroups,
   type LookoutItem,
 } from "@/lib/lookout-match";
+import { filterByLookoutDay, lookoutDayOptions } from "@/lib/lookout-day-filter";
 import type { LookoutOverview, LookoutUpcoming } from "@/lib/lookout-matches.server";
-import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
+import { localDayKey, usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
 import {
   queryKeys,
   useAnalyticsAliasesQuery,
@@ -188,7 +189,8 @@ function OlhoPage() {
   // abrir a página ou resolver outros lotes (✓/✕) não os apaga.
   const markAllSeen = () => {
     setShowNew(false);
-    const keys = (overview?.upcoming ?? []).filter((m) => m.isNew).map(notifyKey);
+    // Só o que está na tela: com um dia escolhido, os novos de outros dias continuam novos.
+    const keys = upcomingList.filter((m) => m.isNew).map(notifyKey);
     if (!keys.length) return;
     void runSeen({ data: { keys } })
       .then(() => queryClient.invalidateQueries({ queryKey: queryKeys.lookoutOverview }))
@@ -460,7 +462,8 @@ function OlhoPage() {
   // "Adquirido": tira o disco (com TODOS os álbuns juntados) do De olho e para de vigiar todos os
   // lotes dele que estão na vigia.
   const acquireItem = async (item: LookoutItem) => {
-    const toUnwatch = (upcomingByItem.get(item.id) ?? []).filter((m) => watchedIds.has(m.idPeca));
+    // Todos os lotes do disco, não só os do dia filtrado.
+    const toUnwatch = allUpcoming.filter((m) => m.itemId === item.id && watchedIds.has(m.idPeca));
     let failed = 0;
     for (const m of toUnwatch) {
       try {
@@ -478,9 +481,17 @@ function OlhoPage() {
 
   // Destaque dos itens novos (artista, disco e lote) só nesta visita: "Marcar como vistos" o apaga.
   const [showNew, setShowNew] = useState(true);
-  const upcomingList = useMemo(
+  const allUpcoming = useMemo(
     () => (overview?.upcoming ?? []).map((m) => (showNew || !m.isNew ? m : { ...m, isNew: false })),
     [overview, showNew],
+  );
+  // Filtro por dia: os próximos 10 dias (hoje + 9); vazio = todos. Com um dia escolhido, só os
+  // lotes por vir daquele dia entram na tela (discos sem lote naquele dia somem da lista).
+  const [dayPick, setDayPick] = useState("");
+  const dayOptions = useMemo(() => lookoutDayOptions(localDayKey(), allUpcoming), [allUpcoming]);
+  const upcomingList = useMemo(
+    () => filterByLookoutDay(allUpcoming, dayPick),
+    [allUpcoming, dayPick],
   );
   const upcomingByItem = useMemo(() => {
     const map = new Map<string, LookoutUpcoming[]>();
@@ -566,7 +577,7 @@ function OlhoPage() {
   const [openLotId, setOpenLotId] = useState<string | null>(null);
   const openLot = (overview?.upcoming ?? []).find((m) => m.lotId === openLotId) ?? null;
   const openItem = items.find((i) => i.id === openId) ?? null;
-  const totalUpcoming = overview?.upcoming.length ?? 0;
+  const totalUpcoming = upcomingList.length;
   const newCount = upcomingList.filter((m) => m.isNew).length;
   // Com lote por vir no topo (álbuns com lote primeiro dentro do artista), depois os "sem lote
   // por vir"; a ordem alfabética é mantida dentro de cada bloco.
@@ -575,11 +586,14 @@ function OlhoPage() {
     const withU: ArtistGroup[] = [];
     const without: ArtistGroup[] = [];
     for (const g of filteredGroups) {
-      const sorted = [...g.items].sort((a, b) => Number(hasUpcoming(b)) - Number(hasUpcoming(a)));
+      const sorted = [...g.items]
+        .filter((it) => !dayPick || hasUpcoming(it))
+        .sort((a, b) => Number(hasUpcoming(b)) - Number(hasUpcoming(a)));
+      if (!sorted.length) continue;
       (sorted.some(hasUpcoming) ? withU : without).push({ ...g, items: sorted });
     }
     return { withUpcoming: withU, withoutUpcoming: without };
-  }, [filteredGroups, upcomingByItem]);
+  }, [filteredGroups, upcomingByItem, dayPick]);
   const visibleGroups = useMemo(
     () => [...withUpcoming, ...withoutUpcoming],
     [withUpcoming, withoutUpcoming],
@@ -821,8 +835,55 @@ function OlhoPage() {
                 </div>
               </div>
             ) : null}
+            {active.length ? (
+              <div
+                className="flex items-center gap-1.5 overflow-x-auto pb-1"
+                role="group"
+                aria-label="Filtrar por dia"
+              >
+                <span className="shrink-0 text-xs font-medium text-muted-foreground">Dia:</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={dayPick ? "outline" : "secondary"}
+                  aria-pressed={!dayPick}
+                  className="h-8 shrink-0 px-2.5"
+                  onClick={() => setDayPick("")}
+                >
+                  Todos
+                </Button>
+                {dayOptions.map((d) => (
+                  <Button
+                    key={d.dayKey}
+                    type="button"
+                    size="sm"
+                    variant={dayPick === d.dayKey ? "secondary" : "outline"}
+                    aria-pressed={dayPick === d.dayKey}
+                    className={`h-8 shrink-0 px-2.5 ${d.count ? "" : "text-muted-foreground"}`}
+                    onClick={() => setDayPick(dayPick === d.dayKey ? "" : d.dayKey)}
+                    title={`${d.count} lote(s) por vir em ${d.label}`}
+                  >
+                    <span className="font-semibold">{d.weekday}</span>
+                    <span className="ml-1">{d.label}</span>
+                    <span
+                      className={`ml-1.5 rounded-full px-1.5 text-[10px] font-bold ${
+                        d.count
+                          ? "bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {d.count}
+                    </span>
+                  </Button>
+                ))}
+              </div>
+            ) : null}
             {active.length && !visibleGroups.length ? (
-              <p className="text-sm text-muted-foreground">Nenhum artista encontrado.</p>
+              <p className="text-sm text-muted-foreground">
+                {dayPick
+                  ? "Nenhum lote por vir neste dia para os discos de olho."
+                  : "Nenhum artista encontrado."}
+              </p>
             ) : null}
             {[
               { key: "with", title: "Com lote por vir", list: withUpcoming },
