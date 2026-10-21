@@ -1,11 +1,13 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ExternalLink, Loader2, Plus, RefreshCw, Sparkles, Star, X } from "lucide-react";
+import { ExternalLink, Loader2, Plus, RotateCw, Sparkles, Star, X } from "lucide-react";
 import { useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { AiReprocessPopover, type AiReprocessMode } from "@/components/vinyl/ai-reprocess-menu";
 import { reevaluateLot } from "@/lib/ai.functions";
 
@@ -382,13 +384,14 @@ export function ScoreBadge({
   market,
   price,
   rank,
-  lot,
+  lotId,
 }: {
   ai: LotAi;
   market?: LotMarket;
   price?: string;
   rank?: number;
-  lot?: ReevalLot;
+  /** Habilita o bloco "vendas passadas" do painel. */
+  lotId?: string;
 }) {
   if (ai.score === null) return <span className="text-muted-foreground">—</span>;
   return (
@@ -406,14 +409,14 @@ export function ScoreBadge({
           </button>
         }
       >
-        <ScoreDetails ai={ai} market={market} price={price} lot={lot} />
+        <ScoreDetails ai={ai} market={market} price={price} lotId={lotId} />
       </HoverDetails>
     </div>
   );
 }
 
 /**
- * Botão "refazer consulta" do painel de detalhes: reavalia o lote NA HORA (ignora o cache
+ * Hook da IA por lote (botão do card): reavalia o lote NA HORA (ignora o cache
  * por título) e atualiza o cache local (`queryKeys.lotAi`) com o resultado — a nota/raridade/
  * oportunidade do card/linha atualizam sozinhas, sem precisar recarregar a página.
  */
@@ -459,8 +462,21 @@ function ReevaluateMenu({
   );
 }
 
-function ReevaluateButton({ lot }: { lot: ReevalLot }) {
+/**
+ * Botão de IA do card/linha do lote (padrão do card da Coleção: ícone ↻ na fileira de ações):
+ * abre o menu 1 capa · 2 texto · 3 dica e reavalia o lote com o `price` dado. Presente em todo
+ * card de lote (desktop, folha do celular e linhas da Análise) — não mora mais no painel da nota.
+ */
+export function ReevaluateIconButton({
+  lot,
+  className,
+}: {
+  lot: ReevalLot;
+  /** Substitui o visual padrão (botão `ghost` pequeno) — ex.: os botões grandes do rodapé do celular. */
+  className?: string;
+}) {
   const mutation = useReevaluate(lot);
+  const Icon = mutation.isPending ? Loader2 : RotateCw;
   return (
     <ReevaluateMenu
       lot={lot}
@@ -468,43 +484,18 @@ function ReevaluateButton({ lot }: { lot: ReevalLot }) {
       trigger={
         <button
           type="button"
+          disabled={mutation.isPending}
           onClick={(e) => e.stopPropagation()}
-          disabled={mutation.isPending}
-          title="Refazer a consulta à IA com informações novas do lote"
-          className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-60"
-        >
-          {mutation.isPending ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <RefreshCw className="h-3 w-3" />
-          )}
-          refazer consulta
-        </button>
-      }
-    />
-  );
-}
-
-/** Botão só-ícone das tabelas da Análise: repassa a IA no lote (reavalia com o `price` dado). */
-export function ReevaluateIconButton({ lot }: { lot: ReevalLot }) {
-  const mutation = useReevaluate(lot);
-  return (
-    <ReevaluateMenu
-      lot={lot}
-      mutation={mutation}
-      trigger={
-        <button
-          type="button"
-          disabled={mutation.isPending}
-          title="Repassar a IA neste lote (escolha: capa, texto ou uma dica sua)"
+          title="Repassar a IA neste lote (capa, texto ou uma dica sua)"
           aria-label="Repassar a IA neste lote"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input shadow-sm hover:border-primary disabled:opacity-60"
-        >
-          {mutation.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Sparkles className="h-4 w-4 text-primary" />
+          className={cn(
+            className ?? buttonVariants({ size: "sm", variant: "ghost" }),
+            "disabled:opacity-60",
           )}
+        >
+          <Icon
+            className={cn(className ? "h-5 w-5" : "h-4 w-4", mutation.isPending && "animate-spin")}
+          />
         </button>
       }
     />
@@ -548,13 +539,13 @@ export function ScoreDetails({
   ai,
   market,
   price,
-  lot,
+  lotId,
 }: {
   ai: LotAi;
   market?: LotMarket;
   price?: string;
-  // Dados do lote para o botão "refazer consulta" — sem eles, o botão simplesmente não aparece.
-  lot?: ReevalLot;
+  /** Habilita o bloco "vendas passadas" (histórico do mesmo disco nos leilões acompanhados). */
+  lotId?: string;
 }) {
   // A oportunidade vale mais calculada AGORA (valor do lote × preço do Discogs na condição do disco + frete,
   // com a configuração atual do painel) do que a gravada pela IA, que pode ter saído com dado antigo.
@@ -563,12 +554,9 @@ export function ScoreDetails({
   const opportunity = fromMarket ? marketVerdict : ai.deal;
   return (
     <div className="space-y-1.5 text-xs">
-      <div className="flex items-center justify-between gap-1.5">
-        <div className="flex items-center gap-1.5 font-semibold text-foreground">
-          <Sparkles className="h-3.5 w-3.5 text-primary" />
-          Nota {ai.score ?? "—"} / 100
-        </div>
-        {lot ? <ReevaluateButton lot={lot} /> : null}
+      <div className="flex items-center gap-1.5 font-semibold text-foreground">
+        <Sparkles className="h-3.5 w-3.5 text-primary" />
+        Nota {ai.score ?? "—"} / 100
       </div>
       {ai.album ? <p className="font-medium text-foreground">{ai.album}</p> : null}
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-muted-foreground">
@@ -608,7 +596,7 @@ export function ScoreDetails({
         </div>
       ) : null}
       {market?.matched ? <MarketBlock market={market} price={price} /> : null}
-      {lot ? <PastSalesBlock lotId={lot.id} price={price} /> : null}
+      {lotId ? <PastSalesBlock lotId={lotId} price={price} /> : null}
     </div>
   );
 }
@@ -622,12 +610,12 @@ export function ScoreCorner({
   ai,
   market,
   price,
-  lot,
+  lotId,
 }: {
   ai: LotAi;
   market?: LotMarket;
   price?: string;
-  lot?: ReevalLot;
+  lotId?: string;
 }) {
   if (ai.score === null) return null;
   return (
@@ -644,7 +632,7 @@ export function ScoreCorner({
           </button>
         }
       >
-        <ScoreDetails ai={ai} market={market} price={price} lot={lot} />
+        <ScoreDetails ai={ai} market={market} price={price} lotId={lotId} />
       </HoverDetails>
     </div>
   );

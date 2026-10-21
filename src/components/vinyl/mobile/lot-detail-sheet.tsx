@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
-import { ScoreDetails } from "@/components/vinyl/ai-score";
+import { ReevaluateIconButton, ScoreDetails } from "@/components/vinyl/ai-score";
 import { formatAiAlbum, scoreTone } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import { TracklistContent } from "@/components/vinyl/tracklist-hover";
@@ -432,22 +432,7 @@ export function LotDetailSheet(
           ai ? (
             <Box>
               <div className="text-sm [&_.text-xs]:text-sm">
-                <ScoreDetails
-                  ai={ai}
-                  market={market}
-                  price={lot.price}
-                  lot={
-                    lot.id
-                      ? {
-                          id: lot.id,
-                          title: lot.title,
-                          price: lot.price,
-                          house: lot.house,
-                          image: lot.image,
-                        }
-                      : undefined
-                  }
-                />
+                <ScoreDetails ai={ai} market={market} price={lot.price} lotId={lot.id} />
               </div>
             </Box>
           ) : (
@@ -620,6 +605,18 @@ export function LotDetailSheet(
               >
                 <Binoculars className="h-5 w-5" />
               </button>
+            ) : null}
+            {lot.id ? (
+              <ReevaluateIconButton
+                className="grid h-12 w-12 place-items-center rounded-xl border border-border"
+                lot={{
+                  id: lot.id,
+                  title: lot.title,
+                  price: lot.price,
+                  house: lot.house,
+                  image: lot.image,
+                }}
+              />
             ) : null}
             <a
               href={lotOpenUrl(lot.url, lot.title, lot.lote)}

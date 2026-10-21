@@ -155,21 +155,7 @@ function AnaliseLotRowImpl({
       >
         <div className="flex flex-col items-start gap-1.5">
           <Cover image={lot.image} />
-          {ai ? (
-            <ScoreBadge
-              ai={ai}
-              market={market}
-              price={currentPrice}
-              rank={rank}
-              lot={{
-                id: lot.id,
-                title: lot.title,
-                price: currentPrice,
-                house: lot.house,
-                image: lot.image,
-              }}
-            />
-          ) : null}
+          {ai ? <ScoreBadge ai={ai} market={market} price={currentPrice} rank={rank} /> : null}
         </div>
 
         <div className="min-w-0 space-y-1.5">
@@ -451,6 +437,7 @@ function AnaliseLotRowImpl({
           <Trash2 className="h-4 w-4 text-muted-foreground" />
         </Button>
         <ReevaluateIconButton
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input shadow-sm hover:border-primary"
           lot={{
             id: lot.id,
             title: lot.title,
