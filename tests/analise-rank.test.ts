@@ -38,6 +38,12 @@ describe("compareBy", () => {
     const d = item({ id: "d", score: null });
     expect(ids([d, b, a, c].sort(compareBy("score")))).toBe("a,c,b,d");
   });
+  test("índice de garimpo: maior primeiro, empate na nota", () => {
+    const x = item({ id: "x", score: 50, garimpo: 80 });
+    const y = item({ id: "y", score: 90, garimpo: 80 });
+    const z = item({ id: "z", score: 99, garimpo: null });
+    expect(ids([z, x, y].sort(compareBy("garimpo")))).toBe("y,x,z");
+  });
   test("melhor negócio: menor custo ÷ mercado; sem mercado no fim", () => {
     expect(ids([a, c, b].sort(compareBy("deal")))).toBe("b,a,c");
   });

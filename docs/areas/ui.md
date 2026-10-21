@@ -97,6 +97,16 @@
     iniciado dentre os lotes visíveis (mesma chave `["presencial-now", url]` da home e da visão "Sem lance");
     casas fora da plataforma ficam sem andamento ("ao vivo" só nas 6 h seguintes ao início). Nova visão pronta
     **"Começando logo"** (começa em até 2 h ou começou há menos de 3 h).
+  - **Fase 4 (v0.161.0):** **índice de garimpo** (experimental, `garimpoIndex` em `lot-score.ts`, testado): 0–100 =
+    negócio 35 (custo ÷ mercado: ≤ 50% vale tudo, ≥ 115% zera) + nota da IA 25 + estado do disco 15 + procura
+    (want ÷ have, 3× = máximo) 15 + semáforo da casa 10; parte sem dado fica neutra e marcada "sem dado"; disco já
+    na Coleção vale metade. Aparece como pílula "Garimpo N" na linha, com as partes no painel "Por que esta nota",
+    e como ordenação "Índice de garimpo" — NÃO substitui a nota da IA. **Aviso de pregão começando**
+    (`watch-alerts.ts`/`.server.ts`, step `watchalert`, workflow `watch-alert.yml` a cada 15 min entre 8h e
+    23h45 de Brasília, fora do grupo de concorrência das varreduras): Web Push quando o pregão de um lote
+    **vigiado** começa em até 30 min (tolera 10 min de atraso do agendador), um aviso por pregão com os lotes,
+    dedupe em `app_state.watch_start_notified` (`idLeilao|dia`, gravado só depois do envio); no-op sem VAPID_*
+    ou sem aparelho inscrito.
   - Teste local no navegador: `tools/local-tests/analise-seed.mjs` + `analise-e2e.mjs`.
 - **`_authenticated/analise.tsx` (Análise, remodelada na v0.113.0):** dois **Top 30 por nota**
   recolhíveis — **vigiados** (`watchedIds`) e **restante** — sob a barra de filtros e a **barra

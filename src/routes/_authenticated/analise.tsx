@@ -47,6 +47,7 @@ import {
   type SortKey,
 } from "@/lib/analise-rank";
 import { priceRoseSinceEval } from "@/lib/ai-reprice";
+import { garimpoIndex, type Garimpo } from "@/lib/lot-score";
 import { auctionChip, startsInMinutes } from "@/lib/analise-time";
 import { useBidCoveredAlerts } from "@/lib/bid-alerts";
 import { FUTURE_LABEL, FUTURE_TAB, isFutureDay } from "@/lib/day-bar";
@@ -88,6 +89,7 @@ type AnaliseItem = RankInput &
     score: number;
     /** A nota foi dada a um preço bem menor que o de hoje (`priceRoseSinceEval`). */
     stale: boolean;
+    garimpoFull: Garimpo;
     lot: VinylLot;
     insight: LotInsight;
     currentPrice: string;
@@ -268,11 +270,22 @@ function AnalisePage() {
       const status = bidStatusById.get(lot.idPeca) ?? null;
       const myBid = myBidById.get(lot.idPeca);
       const currentPrice = status && bidIsWinning(status) && myBid ? myBid : lot.price;
+      const eco = lotEconomics(currentPrice, insight.market);
+      const ownedConfident = Boolean(insight.owned && insight.owned.score >= OWNED_CONFIDENT_MIN);
+      const garimpoFull = garimpoIndex({
+        eco,
+        score,
+        conditionScore: insight.condition.score,
+        want: insight.market?.want ?? null,
+        have: insight.market?.have ?? null,
+        houseLevel: insight.houseLevel,
+        ownedConfident,
+      });
       out.push({
         lot,
         insight,
         score,
-        eco: lotEconomics(currentPrice, insight.market),
+        eco,
         dayKey: lot.dayKey,
         time: lot.time,
         want: insight.market?.want ?? null,
@@ -284,7 +297,9 @@ function AnalisePage() {
         radar: Boolean(insight.lookout) || Boolean(insight.ai?.matchesInterests),
         hasBid: status !== null,
         weakDisc: insight.condition.media !== null && !gradeAtLeast(insight.condition.media, "VG"),
-        ownedConfident: Boolean(insight.owned && insight.owned.score >= OWNED_CONFIDENT_MIN),
+        ownedConfident,
+        garimpoFull,
+        garimpo: garimpoFull.index,
         startsInMin: startsInMinutes(lot.dayKey, lot.time, nowMin * 60_000),
         // Só avisa quando a nota TEM preço gravado (nota antiga sem `eval_price` reavalia 1× pelo cron).
         stale:
@@ -495,6 +510,7 @@ function AnalisePage() {
         progress: progressByAuction.get(`${it.lot.idLeilao}|${it.lot.dayKey}`) ?? null,
       })}
       stale={it.stale}
+      garimpo={it.garimpoFull}
       open={openIds.has(it.lot.id)}
       onToggleOpen={onToggleOpen}
       days={days}

@@ -6,10 +6,11 @@
 import type { LotEconomics } from "./lot-score";
 import { auctionStartMs } from "./vinyl-parse";
 
-export type SortKey = "score" | "deal" | "potential" | "time" | "demand";
+export type SortKey = "score" | "garimpo" | "deal" | "potential" | "time" | "demand";
 
 export const SORT_KEYS: { key: SortKey; label: string }[] = [
   { key: "score", label: "Nota da IA" },
+  { key: "garimpo", label: "Índice de garimpo (experimental)" },
   { key: "deal", label: "Melhor negócio" },
   { key: "potential", label: "Potencial em R$" },
   { key: "time", label: "Horário do pregão" },
@@ -28,6 +29,8 @@ export type RankInput = {
   time: string;
   want: number | null;
   have: number | null;
+  /** Índice de garimpo 0–100 (`garimpoIndex`); ausente = sem índice. */
+  garimpo?: number | null;
 };
 
 /** Procura no Discogs: quem quer ÷ quem tem (sem dado → 0). */
@@ -49,6 +52,8 @@ export function compareBy<T extends RankInput>(key: SortKey): (a: T, b: T) => nu
   switch (key) {
     case "score":
       return byScore;
+    case "garimpo":
+      return (a, b) => (b.garimpo ?? -1) - (a.garimpo ?? -1) || byScore(a, b);
     case "deal":
       // Menor "custo ÷ mercado" primeiro; sem referência de mercado vai para o fim.
       return (a, b) => (a.eco.ratio ?? MISSING) - (b.eco.ratio ?? MISSING) || byScore(a, b);

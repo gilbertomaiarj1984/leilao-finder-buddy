@@ -109,6 +109,15 @@ await page.getByRole("button", { name: /Analisar pendentes/ }).click();
 await page.waitForTimeout(2500);
 const toast = await page.locator("[data-sonner-toast]").allInnerTexts();
 ok("Analisar pendentes responde com aviso (sem IA configurada aqui)", toast.length > 0, toast);
+// ---- fase 4: índice de garimpo ----
+ok("pílula do índice de garimpo na linha", /Garimpo \d+/.test(await page.locator("article").first().innerText()));
+await page.getByLabel("Ordenar por").selectOption("garimpo");
+const g1 = await titles();
+ok("ordenar por índice de garimpo", g1.length >= 8, g1);
+await page.getByLabel("Ordenar por").selectOption("score");
+await page.locator("article").first().getByRole("button", { name: /Por que esta nota/ }).click();
+ok("painel mostra o índice e as partes", await page.locator("article").first().getByText(/Índice de garimpo: \d+/).waitFor({ timeout: 3000 }).then(() => true, () => false));
+await page.locator("article").first().getByRole("button", { name: /Por que esta nota/ }).click();
 // mobile
 const mctx = await browser.newContext({ viewport: { width: 390, height: 800 } });
 await mctx.addCookies([{ name: "gs_session", value: cookie, url: BASE }]);
