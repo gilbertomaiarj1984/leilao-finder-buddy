@@ -12,6 +12,7 @@ type OwnedFeedback = {
 };
 
 const VERIFIED_HOUSES_KEY = "verified_houses";
+const WATCH_REMOVED_KEY = "watch_removed";
 const USER_INTERESTS_KEY = "user_interests";
 const AI_BATCH_KEY = "ai_batch";
 const AI_IDENT_BATCH_KEY = "ai_ident_batch";
@@ -68,6 +69,59 @@ export async function setVerifiedHouses(keys: string[]): Promise<{ savedAt: stri
     throw new Error(`Não foi possível gravar as casas verificadas: ${error.message}`);
   }
   return { savedAt };
+}
+
+/** Tempo que um "desvigiado" fica registrado — cobre a vida máxima de um item no acumulador do cliente. */
+const WATCH_REMOVED_TTL_MS = 4 * 24 * 60 * 60 * 1000;
+
+async function readWatchRemoved(): Promise<Record<string, string>> {
+  const { data, error } = await db
+    .from("app_state")
+    .select("value")
+    .eq("key", WATCH_REMOVED_KEY)
+    .maybeSingle();
+  if (error) throw error;
+  const value = data?.value;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const cutoff = Date.now() - WATCH_REMOVED_TTL_MS;
+  const out: Record<string, string> = {};
+  for (const [id, at] of Object.entries(value as Record<string, unknown>))
+    if (typeof at === "string" && Date.parse(at) > cutoff) out[id] = at;
+  return out;
+}
+
+/**
+ * Ids de lotes que o usuário DESVIGIOU pelo app (global, em `app_state` — vale para todos os
+ * dispositivos). O acumulador de vigiados fica no `localStorage` de cada aparelho e, depois que o
+ * leilão começa, "sumiu da conta" não distingue "desvigiei" de "o leilão acabou"; este registro
+ * desfaz a ambiguidade e faz o desvigiar em um aparelho valer nos outros.
+ */
+export async function getWatchRemoved(): Promise<string[]> {
+  try {
+    return Object.keys(await readWatchRemoved());
+  } catch (error) {
+    console.error("[app-state] não foi possível ler os desvigiados (usando vazio)", error);
+    return [];
+  }
+}
+
+/** Registra (`watched=false`) ou limpa (`watched=true`, revigiou) o desvigiado de um lote. */
+export async function setWatchRemoved(id: string, watched: boolean): Promise<void> {
+  try {
+    const current = await readWatchRemoved();
+    if (watched) delete current[id];
+    else current[id] = new Date().toISOString();
+    const { error } = await db
+      .from("app_state")
+      .upsert(
+        { key: WATCH_REMOVED_KEY, value: current, updated_at: new Date().toISOString() },
+        { onConflict: "key" },
+      );
+    if (error) throw error;
+  } catch (error) {
+    // Best-effort: a vigia em si já foi sincronizada com o LeilõesBR.
+    console.error("[app-state] não foi possível gravar o desvigiado", error);
+  }
 }
 
 /**

@@ -93,6 +93,7 @@ export function mergeWatchedAccum<T extends { id: string; date: string; time?: s
   acc: Map<string, T>,
   fresh: T[],
   storageKey: string,
+  removedIds: ReadonlySet<string> = new Set(),
 ): T[] {
   const freshIds = new Set(fresh.map((item) => item.id));
   for (const item of fresh) acc.set(item.id, item);
@@ -100,6 +101,12 @@ export function mergeWatchedAccum<T extends { id: string; date: string; time?: s
   const validBidDays = new Set(recentDayKeys(BID_RETENTION_DAYS));
   for (const [id, item] of acc) {
     if (accumItemExpired(item, todayKey, validBidDays)) {
+      acc.delete(id);
+      continue;
+    }
+    // Desvigiado em OUTRO dispositivo: a conta já não traz o lote, mas com o leilão em andamento
+    // a regra abaixo o manteria aqui. `removedIds` (servidor) é quem diz que foi desvigia de fato.
+    if (removedIds.has(id) && !freshIds.has(id)) {
       acc.delete(id);
       continue;
     }

@@ -14,6 +14,16 @@ export const listWatched = createServerFn({ method: "GET" })
     return await listWatchedFromSite({ maxAgeMs: data.force ? 0 : ACCOUNT_CACHE_MS });
   });
 
+/** Ids desvigiados pelo app em qualquer dispositivo (ver `getWatchRemoved`). */
+export const listWatchRemoved = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getWatchRemoved } = await import("./app-state.server");
+    return await getWatchRemoved();
+  });
+
 export const toggleWatch = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((input: { idPeca: string; idLeilao: string; base: string; watch: boolean }) => {
@@ -35,6 +45,8 @@ export const toggleWatch = createServerFn({ method: "POST" })
         { idPeca: data.idPeca, idLeilao: data.idLeilao, base: data.base },
         data.watch,
       );
+      const { setWatchRemoved } = await import("./app-state.server");
+      await setWatchRemoved(`${data.idLeilao}-${data.idPeca}`, watched);
       return { watched };
     } finally {
       // Senão a próxima leitura (até `ACCOUNT_CACHE_MS`) devolveria a conta de antes do toggle e
