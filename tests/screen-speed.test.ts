@@ -49,6 +49,16 @@ describe("mergeWatchedAccum (mesma regra depois da extração de accumItemExpire
     expect(out.map((i) => i.id)).toEqual(["b"]);
   });
 
+  test("leilão já iniciado: sem registro de desvigiado o item fica; com ele (outro aparelho) sai", () => {
+    const item = { id: "a", date: br(today), time: "00:01" };
+    expect(mergeWatchedAccum(new Map([["a", item]]), [], "k").map((i) => i.id)).toEqual(["a"]);
+    expect(mergeWatchedAccum(new Map([["a", item]]), [], "k", new Set(["a"]))).toEqual([]);
+    // se a conta ainda traz o lote (revigiado), o registro não o derruba
+    expect(
+      mergeWatchedAccum(new Map([["a", item]]), [item], "k", new Set(["a"])).map((i) => i.id),
+    ).toEqual(["a"]);
+  });
+
   test("lance ausente do fetch fica (só a data poda lances)", () => {
     const acc = new Map([["a", { id: "a", date: br(yesterday) }]]);
     expect(mergeWatchedAccum(acc, [], "k").map((i) => i.id)).toEqual(["a"]);

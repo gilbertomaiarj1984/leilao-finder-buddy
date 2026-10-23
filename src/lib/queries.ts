@@ -20,7 +20,7 @@ import {
 } from "@/lib/collection.functions";
 import type { CollectionItem } from "@/lib/collection.server";
 import type { MyBid } from "@/lib/leiloesbr-bids.server";
-import { listWatched } from "@/lib/leiloesbr-watch.functions";
+import { listWatched, listWatchRemoved } from "@/lib/leiloesbr-watch.functions";
 import type { WatchedLot } from "@/lib/leiloesbr-watch.server";
 import {
   getAiProvider,
@@ -157,6 +157,7 @@ function useAccountQuery<T extends { id: string; date: string; time?: string }>(
   queryKey: readonly string[],
   storageKey: string,
   fetchFresh: (force: boolean) => Promise<T[]>,
+  fetchRemoved?: () => Promise<string[]>,
 ) {
   const accumRef = useRef<Map<string, T> | null>(null);
   if (accumRef.current === null) accumRef.current = loadAccum<T>(storageKey);
@@ -172,12 +173,18 @@ function useAccountQuery<T extends { id: string; date: string; time?: string }>(
     queryFn: async () => {
       const force = forceRef.current;
       forceRef.current = false;
-      const fresh = await fetchFresh(force);
-      return mergeWatchedAccum(accumRef.current!, fresh, storageKey);
+      const [fresh, removed] = await Promise.all([
+        fetchFresh(force),
+        // Falha ao ler os desvigiados não pode derrubar a tela: segue só com a conta.
+        fetchRemoved ? fetchRemoved().catch(() => []) : Promise.resolve<string[]>([]),
+      ]);
+      return mergeWatchedAccum(accumRef.current!, fresh, storageKey, new Set(removed));
     },
     placeholderData: placeholder,
     staleTime: 5 * MIN,
-    refetchOnWindowFocus: false,
+    // Voltar ao app (aba/PWA reaberto) depois de `staleTime` relê a conta: é como mudanças feitas
+    // em outro dispositivo aparecem sem recarregar a página.
+    refetchOnWindowFocus: true,
   });
   const refetchFresh = () => {
     forceRef.current = true;
@@ -188,8 +195,12 @@ function useAccountQuery<T extends { id: string; date: string; time?: string }>(
 
 export function useWatchedQuery() {
   const fetchWatched = useServerFn(listWatched);
-  return useAccountQuery<WatchedLot>(queryKeys.watched, WATCHED_ACCUM_STORAGE_KEY, (force) =>
-    fetchWatched({ data: { force } }),
+  const fetchRemoved = useServerFn(listWatchRemoved);
+  return useAccountQuery<WatchedLot>(
+    queryKeys.watched,
+    WATCHED_ACCUM_STORAGE_KEY,
+    (force) => fetchWatched({ data: { force } }),
+    () => fetchRemoved(),
   );
 }
 

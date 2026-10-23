@@ -143,6 +143,7 @@
   (Vigiados "Por casa", catálogo multi-dia: faixa grossa no topo do card com data · hora do lote — prop `dateBar` do `LotCard`.)
   (Vigiados "Por casa": lotes de um catálogo multi-dia ordenados por data crescente, depois nº do lote.)
   (Ao desvigiar, o toast "Vigia removida" fica 5 s com ação "Desfazer" que revigia o lote.)
+  (v0.177.0: **sincronia entre dispositivos** — o acumulador de vigiados é por aparelho (`localStorage`); desvigiar pelo app grava o id em `app_state.watch_removed` (`setWatchRemoved`, TTL 4 dias, limpo ao revigiar) e `useWatchedQuery` o passa a `mergeWatchedAccum(…, removedIds)`, que apaga o item mesmo com o leilão em andamento. Desvigiar direto no site do LeilõesBR só some em outro aparelho antes do início do leilão. Vigiados/Lances relêem a conta ao focar o app após `staleTime` (5 min).)
   (v0.124.1: o toggle de vigia também atualiza o acumulador/cache de **lances** (`bid.watched`, que é o que o card da aba Lances lê) e, para lote fora da varredura geral, monta o `WatchedLot` a partir do lance — senão o botão ficava em "Vigiar" e o lote não entrava em Vigiados até recarregar.)
   raridade/oportunidade/motivo/tags + faixa Discogs; botão de vigiar + borda colorida por
   status. **Filtros** (valem p/ os dois Tops): busca, casa, faixa de nota, raridade,
