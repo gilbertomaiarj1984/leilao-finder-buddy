@@ -539,6 +539,7 @@ function OlhoPage() {
         }}
         onUnmerge={(lotId) => unmergeMut.mutate({ itemId: it.id, lotId })}
         onMoveLot={(lotId) => moveLotMut.mutate({ lotId, itemId: it.id })}
+        onMoveLotTo={(lotId, itemId) => moveLotMut.mutate({ lotId, itemId })}
         onIdentify={() => identifyMut.mutate(it.id)}
         identifying={identifyingId === it.id}
         onDismissPending={(lotIds) => dismissPendingMut.mutate(lotIds)}

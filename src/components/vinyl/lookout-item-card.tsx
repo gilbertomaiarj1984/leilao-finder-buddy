@@ -1,6 +1,7 @@
 import { useDragAutoScroll } from "@/components/vinyl/use-drag-autoscroll";
 import {
   ArrowDown,
+  ArrowRightLeft,
   ArrowUp,
   Binoculars,
   Check,
@@ -90,6 +91,7 @@ export function LookoutItemCard({
   onDelete,
   onMerge,
   onMoveLot,
+  onMoveLotTo,
   onUnmerge,
   onWatch,
   onOpenLot,
@@ -122,6 +124,8 @@ export function LookoutItemCard({
   onUnmerge: (lotId: string) => void;
   /** Lote arrastado de outro cartão e solto neste: passa a ser deste disco (corrige o casamento). */
   onMoveLot: (lotId: string) => void;
+  /** Move SÓ este lote "por vir" para outro disco da lista (seletor, sem arrastar). */
+  onMoveLotTo: (lotId: string, targetItemId: string) => void;
   onWatch: (m: LookoutUpcoming) => void;
   /** Abre o cartão completo do lote (clicar na linha do lote por vir). */
   onOpenLot: (m: LookoutUpcoming) => void;
@@ -139,6 +143,8 @@ export function LookoutItemCard({
   const autoScroll = useDragAutoScroll();
   const [editing, setEditing] = useState(false);
   const [merging, setMerging] = useState(false);
+  // Lote "por vir" com o seletor "mover para outro disco" aberto (um por vez).
+  const [movingLotId, setMovingLotId] = useState<string | null>(null);
   const [termText, setTermText] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -586,7 +592,7 @@ export function LookoutItemCard({
                     }}
                     onClick={(e) => {
                       // Clicar no lote (fora dos botões/links) abre o cartão completo dele.
-                      if ((e.target as HTMLElement).closest("button, a")) return;
+                      if ((e.target as HTMLElement).closest("button, a, select")) return;
                       onOpenLot(m);
                     }}
                     className={`flex cursor-pointer flex-wrap items-center gap-3 rounded border p-2 ${
@@ -721,6 +727,19 @@ export function LookoutItemCard({
                           <X className="h-4 w-4" />
                         </Button>
                       ) : null}
+                      {!m.isOrigin && mergeOptions.length > 0 ? (
+                        <Button
+                          size="sm"
+                          variant={movingLotId === m.lotId ? "secondary" : "ghost"}
+                          onClick={() =>
+                            setMovingLotId((cur) => (cur === m.lotId ? null : m.lotId))
+                          }
+                          aria-label="Mover só este lote para outro disco"
+                          title="Mover só este lote para outro disco da lista (casou com o disco errado)"
+                        >
+                          <ArrowRightLeft className="h-4 w-4" />
+                        </Button>
+                      ) : null}
                       {!m.isOrigin ? (
                         <Button
                           size="sm"
@@ -752,6 +771,26 @@ export function LookoutItemCard({
                         </a>
                       </Button>
                     </div>
+                    {movingLotId === m.lotId ? (
+                      <select
+                        value=""
+                        autoFocus
+                        onChange={(e) => {
+                          if (!e.target.value) return;
+                          setMovingLotId(null);
+                          onMoveLotTo(m.lotId, e.target.value);
+                        }}
+                        aria-label="Mover este lote para o disco…"
+                        className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                      >
+                        <option value="">Mover só este lote para o disco…</option>
+                        {mergeOptions.map((o) => (
+                          <option key={o.id} value={o.id}>
+                            {lookoutLabel(o) || o.title}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
                   </li>
                 );
               })}
