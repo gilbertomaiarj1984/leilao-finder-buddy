@@ -455,9 +455,10 @@ async function runGroq(req: AiRequest, model: string, withImage = false): Promis
       { role: "system", content: req.system },
       { role: "user", content: userContent },
     ],
-    // Modelos de raciocínio (gpt-oss, Qwen3) gastam o teto de saída "pensando" e podem estourá-lo
-    // ANTES de emitir a resposta (content vazio) — mesma lição do Gemini: folga de orçamento.
-    max_tokens: req.maxTokens + 2048,
+    // O gpt-oss gasta o teto de saída "pensando" e pode estourá-lo ANTES de emitir a resposta
+    // (content vazio) — mesma lição do Gemini: folga de orçamento. O Qwen roda com raciocínio
+    // desligado (`none`), então não precisa; folga menor também poupa o TPM do free tier (8K).
+    max_tokens: req.maxTokens + (model.startsWith("openai/gpt-oss") ? 2048 : 0),
     temperature: 0.2,
     ...groqReasoningParams(model),
     ...(req.json ? { response_format: { type: "json_object" } } : {}),
