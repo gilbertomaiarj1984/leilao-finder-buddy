@@ -302,12 +302,17 @@ const UNCLASSIFIED_HINTS = [
 // nomes de artista — usados para descartar candidatos espúrios em `extractArtist`.
 const LABEL_WORDS = new Set(["artista", "album", "albuns", "titulo", "faixa", "faixas"]);
 
+// Cabeçalho de casa "IMPORTADO FRANÇA! 1 DISCO. ÁLBUM - ARTISTA (ano). Selo X": o país de origem
+// (até 3 palavras, terminado em "!" ou ".") descreve a prensagem, nunca o artista.
+const IMPORTED_HEADER = /^importado\b(?:\s+[\wÀ-ÿ]+){0,3}\s*[!.]\s*/i;
+
 const PREFIX_PATTERNS: RegExp[] = [
   /^alerta\s+raridade\b\s*[-:–,.]?\s*/i,
   /^lote\s+(?:especial|extra)(?:\s+de\s+(?:fechamento|encerramento))?\b\s*[-:–,.]?\s*/i,
   /^lote\s+de\s+(?:fechamento|encerramento)\b\s*[-:–,.]?\s*/i,
   /^lote\s*(n?[ºo°]?\s*\d+)?\s*[-:–]?\s*/i,
-  /^\d+\s*(lps?|discos?|vinis|compactos?)\b\s*[-:–]?\s*/i,
+  /^\d+\s*(lps?|discos?|vinis|compactos?)\b\s*[-:–.,]?\s*/i,
+  IMPORTED_HEADER,
   /^(belissimo|belíssimo|belo|raro|rarissimo|raríssimo|antigo|otimo|ótimo|excelente)\s+/i,
   /^(lps?|long\s*play|discos?\s*de\s*vinil|disco\s*de\s*vinil|discos?|vinis|vinil|compactos?|compacto|bolach[aã]o|album|álbum)\b\s*[-:–,.]?\s*(?:(?:de|do|da|dos|das)\s+(?=\S))?/i,
 ];
@@ -315,6 +320,11 @@ const PREFIX_PATTERNS: RegExp[] = [
 // Palavra de FORMATO que sobra no início depois do prefixo "Álbum"/"LP" ("ÁLBUM DUPLO. X - Y",
 // "LP Triplo - X"): descreve o disco, nunca é o artista. Sem tirá-la, o candidato vira "Duplo".
 const FORMAT_WORD_PREFIX = /^(?:duplo|triplo|qu[aá]druplo)\b\s*[-:–,.]?\s*/i;
+
+// "ÁLBUM - ARTISTA (1983). Selo VIRGIN 70132": o artista vem depois do último " - " (o `.+` guloso
+// do álbum fica com os demais) e termina em "(ano)" e/ou na ficha da gravadora ("Selo ...").
+const ALBUM_DASH_ARTIST_RE =
+  /^.+\s[-–—]\s([^-–—|]+?)\s*(?:\(\s*(?:19|20)\d{2}\s*\)\s*)?\.?\s*selo\b/i;
 
 /** Rótulo do "artista" para lotes que são um conjunto/coleção de vários discos. */
 export const LOTE_LABEL = "Lote";
@@ -545,11 +555,13 @@ export function extractArtist(title: string): string {
 
   let rest = title.replace(/\s+/g, " ").trim();
   let changed = true;
+  let importedHeader = false;
   while (changed) {
     changed = false;
     for (const pattern of PREFIX_PATTERNS) {
       const next = rest.replace(pattern, "");
       if (next !== rest) {
+        if (pattern === IMPORTED_HEADER) importedHeader = true;
         rest = next.trim();
         changed = true;
       }
@@ -568,11 +580,18 @@ export function extractArtist(title: string): string {
   const knownPrefixMatch = matchKnownArtistAtStart(rest, getBundledKnownArtistIndex());
   if (knownPrefixMatch) return canonicalizeCollapsedArtist(knownPrefixMatch);
 
-  // "ÁLBUM DUPLO. ABSOLUTELY LIVE - ROD STEWART (1982)": com a palavra de formato na frente, há
-  // casas que escrevem "ÁLBUM - ARTISTA" (e outras "ARTISTA - ÁLBUM"), então a heurística de
-  // separador abaixo trocaria artista por álbum. Só um nome CONHECIDO resolve com segurança; sem
-  // ele fica sem artista (não classificados), e o reforço server-side/IA identifica depois.
-  if (formatWord) {
+  // "ÁLBUM DUPLO. ABSOLUTELY LIVE - ROD STEWART (1982). Selo X" / "IMPORTADO FRANÇA! 1 DISCO.
+  // PICTURE BOOK - SIMPLY RED. Selo X": com o cabeçalho de casa na frente, o título é "ÁLBUM -
+  // ARTISTA" (o artista é o trecho depois do ÚLTIMO " - ", antes de "(ano)"/". Selo"), e a
+  // heurística de separador abaixo trocaria artista por álbum. Sem esse molde, só um nome
+  // CONHECIDO resolve com segurança; sem ele fica sem artista (não classificados) e o reforço
+  // server-side/IA identifica depois.
+  if (formatWord || importedHeader) {
+    const labelled = rest.match(ALBUM_DASH_ARTIST_RE);
+    if (labelled) {
+      const name = labelled[1]!.replace(/\s+(vol\.?|volume)\s*\d*$/i, "").trim();
+      return canonicalizeCollapsedArtist(titleCase(name));
+    }
     const known = matchKnownArtist(rest, getBundledKnownArtistIndex());
     return known ? canonicalizeCollapsedArtist(known) : "";
   }

@@ -96,6 +96,34 @@ describe("isDiscBundle", () => {
 });
 
 describe("extractArtist", () => {
+  test('cabeçalho "IMPORTADO <país>! 1 DISCO." não vira o artista', () => {
+    expect(
+      extractArtist(
+        "IMPORTADO FRANÇA! 1 DISCO. HYPERBOREA - TANGERINE DREAM (1983). Selo VIRGIN 70132.",
+      ),
+    ).toBe("Tangerine Dream");
+    expect(
+      extractArtist("IMPORTADO FRANÇA! 1 DISCO. PICTURE BOOK - SIMPLY RED. Selo ELEKTRA EKT 27."),
+    ).toBe("Simply Red");
+    // Artista desconhecido: vem do trecho depois do último " - " (molde "ÁLBUM - ARTISTA. Selo").
+    expect(
+      extractArtist(
+        "IMPORTADO EQUADOR! 1 DISCO. OJOS AZULES - LOS JOKER'S VOL. 6 (1974). Selo ESTELAR",
+      ),
+    ).toBe("Los Joker's");
+    expect(
+      extractArtist("IMPORTADO ESTADOS UNIDOS! 1 DISCO. FOO - BAR - THE BAND (1970). Selo X"),
+    ).toBe("The Band");
+    // Sem " - " nem nome conhecido: sem artista, nunca o cabeçalho.
+    expect(
+      extractArtist("IMPORTADO COLÔMBIA! 1 DISCO. COMO ES GRANDE MI AMOR POR TI. Selo CBS 14468."),
+    ).toBe("");
+    expect(
+      extractArtist(
+        "IMPORTADO COLÔMBIA! 1 DISCO. EL REY: ROBERTO CARLOS EN ESPAÑOL (1973). Selo CBS",
+      ),
+    ).toBe("Roberto Carlos");
+  });
   test('"ÁLBUM DUPLO." não vira o artista "Duplo"', () => {
     // Álbum antes do artista: só o nome conhecido no título resolve.
     expect(
