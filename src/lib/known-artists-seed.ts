@@ -1655,4 +1655,12 @@ export const KNOWN_ARTISTS_SEED: string[] = [
   "Zimbo Trio",
   "Zucchero",
   "ZZ Top",
+  "Gonzaguinha",
+  "Gloria Gaynor",
+  "Roberta Kelly",
+  "Sammy Davis Jr.",
+  "Shalamar",
+  "Simply Red",
+  "Stephanie Mills",
+  "Thelma Houston",
 ];

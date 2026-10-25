@@ -306,14 +306,32 @@ const LABEL_WORDS = new Set(["artista", "album", "albuns", "titulo", "faixa", "f
 // (até 3 palavras, terminado em "!" ou ".") descreve a prensagem, nunca o artista.
 const IMPORTED_HEADER = /^importado\b(?:\s+[\wÀ-ÿ]+){0,3}\s*[!.]\s*/i;
 
+// Descrição do formato no início de títulos em prosa ("Disco de vinil de 12 polegadas, 33 rpm, da
+// cantora X, álbum "Y""): polegadas/rotação descrevem o disco, nunca são o artista.
+const PROSE_FORMAT_HEADER =
+  /^(?:(?:de\s+)?\d{1,2}\s*(?:polegadas?|pol\b\.?|"|''|rpm)|(?:em\s+)?formato\s+(?:lp|ep|compacto|vinil))\s*[,;.:-]?\s*/i;
+
+// "da cantora Thelma Houston, …", "LP do grupo Shalamar, …": o artista vem depois do papel
+// ("cantor/grupo/banda…"), com o artigo antes. Exige "d[aeo]" (senão "Grupo Fundo de Quintal",
+// "Trio Mocotó", "Banda Black Rio" perderiam a primeira palavra do próprio nome).
+const ARTIST_ROLE_RE =
+  /\bd[aeo]s?\s+(cantor[ae]?s?|cantora|grupo|banda|artista|dupla|duo|trio|conjunto|orquestra|compositor[ae]?|int[eé]rprete|vocalista)\s+(.+?)(?=\s*[,;(]|\s+[áa]lbum\b|\s+lan[cç]ad|\s+pel[oa]\b|\s+-\s|\s*$)/i;
+
 const PREFIX_PATTERNS: RegExp[] = [
+  // "Lp ÓTIMO ESTADO TRACY CHAPMAN": a ficha de estado antes do nome não é parte dele.
+  /^(?:em\s+)?(?:[óo]timo|bom|excelente|perfeito|muito\s+bom|regular)\s+estado\b[\s,;:.-]*/i,
   /^alerta\s+raridade\b\s*[-:–,.]?\s*/i,
   /^lote\s+(?:especial|extra)(?:\s+de\s+(?:fechamento|encerramento))?\b\s*[-:–,.]?\s*/i,
   /^lote\s+de\s+(?:fechamento|encerramento)\b\s*[-:–,.]?\s*/i,
   /^lote\s*(n?[ºo°]?\s*\d+)?\s*[-:–]?\s*/i,
   /^\d+\s*(lps?|discos?|vinis|compactos?)\b\s*[-:–.,]?\s*/i,
   IMPORTED_HEADER,
-  /^(belissimo|belíssimo|belo|raro|rarissimo|raríssimo|antigo|otimo|ótimo|excelente)\s+/i,
+  /^(?:belissimo|belíssimo|belo|raro|rarissimo|raríssimo|antigo|otimo|ótimo|excelente|autografad[oa]|lacrad[oa]|importad[oa])(?:\s*[,:;]\s*|\s+)/i,
+  // "LP DE LANÇAMENTO DE Wanderley Cardoso…": o lançamento é o tipo do disco, não o artista.
+  /^(?:de\s+)?lan[cç]amento\s+d[aeo]s?\s+/i,
+  // "DOIS LPs: EARTH WIND & FIRE…" (2 discos de UM álbum; 3+ já é lote em `isDiscBundle`).
+  /^(?:dois|duas|2)\s+(?:lps?|discos?|vinis)\b\s*[-:–,.]?\s*/i,
+  PROSE_FORMAT_HEADER,
   /^(lps?|long\s*play|discos?\s*de\s*vinil|disco\s*de\s*vinil|discos?|vinis|vinil|compactos?|compacto|bolach[aã]o|album|álbum)\b\s*[-:–,.]?\s*(?:(?:de|do|da|dos|das)\s+(?=\S))?/i,
 ];
 
@@ -354,7 +372,8 @@ export function collectionNeedsIdentification(item: { artist: string; album: str
 // "Artistas" que na verdade são um balaio de LOTE/lixo de catálogo (não um nome real): o próprio
 // "Lote", códigos de casa tipo "Discos5"/"Discos 6" e placeholders de pregão ("Proposta de Lote
 // Para Leilão"). Já normalizados (sem acento/caixa/pontuação). Alvo da IA de identificação.
-const JUNK_ARTIST_RE = /^discos?\s*\d+$/;
+const JUNK_ARTIST_RE =
+  /^(?:discos?\s*\d+|\d{1,2}\s*(?:polegadas?|rpm)|(?:dois|duas)\s+lps?|em\s+formato\b.*|importado\b.*|autografad[oa]|lacrad[oa])$/;
 const LOTE_PLACEHOLDER_HINTS = ["proposta de lote", "lote para leilao"];
 
 // Sinais no TÍTULO de que o disco é uma coletânea (vários artistas / sucessos / trilha /
@@ -543,6 +562,24 @@ function extractStructuredArtist(title: string): string | null {
 }
 
 /**
+ * Artista de uma frase descritiva já sem o cabeçalho de formato: `"Transa" de Caetano Veloso,…`,
+ * `Experience de Gloria Gaynor, pela gravadora…`, `Sammy Davis Jr.'s Greatest Hits, catálogo…`.
+ * `null` quando nenhum desses moldes aparece (segue a heurística normal).
+ */
+function extractProseArtist(rest: string): string | null {
+  const quoted = rest.match(/^["“][^"”]+["”]\s+d[aeo]s?\s+([^,;"“]+)/i);
+  if (quoted) return quoted[1]!.trim();
+  const of = rest.match(/^([^,;"“]+?)\s+d[aeo]s?\s+([^,;"“]+?)\s*(?:[,;]|$)/i);
+  if (of) {
+    const albumWords = of[1]!.trim().split(/\s+/).length;
+    const artistWords = of[2]!.trim().split(/\s+/).length;
+    if (albumWords <= 5 && artistWords <= 4) return of[2]!.trim();
+  }
+  const possessive = rest.match(/^([^,;"“]+?)['’]s\s+\S/);
+  return possessive ? possessive[1]!.trim() : null;
+}
+
+/**
  * Best-effort artist extraction from a lot title. Returns `LOTE_LABEL` for lots that are a
  * bundle of several discs, and "" when the title looks like a compilation / soundtrack or
  * no artist can be isolated.
@@ -553,15 +590,31 @@ export function extractArtist(title: string): string {
   const structured = extractStructuredArtist(title);
   if (structured !== null) return structured;
 
+  // "…da cantora Thelma Houston, álbum…" / "LP do grupo Shalamar…": o papel nomeia o artista.
+  const byRole = title.match(ARTIST_ROLE_RE);
+  if (byRole) {
+    // "da Banda Black Rio" (Banda maiúsculo, título em caixa mista) é o NOME da banda; "da banda
+    // Queen" é só o papel. Em título todo em maiúsculas não dá para distinguir: vale o papel.
+    const role = byRole[1]!;
+    const partOfName =
+      /^(?:grupo|banda|dupla|duo|trio|conjunto|orquestra)$/i.test(role) &&
+      /^[A-ZÀ-Ý]/.test(role) &&
+      title !== title.toUpperCase();
+    const name = ((partOfName ? `${role} ` : "") + byRole[2]!).replace(/[\s"“”.]+$/g, "").trim();
+    if (name && !isGenericArtist(name)) return canonicalizeCollapsedArtist(titleCase(name));
+  }
+
   let rest = title.replace(/\s+/g, " ").trim();
   let changed = true;
   let importedHeader = false;
+  let proseHeader = false;
   while (changed) {
     changed = false;
     for (const pattern of PREFIX_PATTERNS) {
       const next = rest.replace(pattern, "");
       if (next !== rest) {
         if (pattern === IMPORTED_HEADER) importedHeader = true;
+        if (pattern === PROSE_FORMAT_HEADER) proseHeader = true;
         rest = next.trim();
         changed = true;
       }
@@ -594,6 +647,17 @@ export function extractArtist(title: string): string {
     }
     const known = matchKnownArtist(rest, getBundledKnownArtistIndex());
     return known ? canonicalizeCollapsedArtist(known) : "";
+  }
+
+  // Título em PROSA ("Disco de vinil 33 RPM, álbum Experience de Gloria Gaynor, pela gravadora…",
+  // "álbum Sammy Davis Jr.'s Greatest Hits, catálogo…"): o artista não abre a frase.
+  if (proseHeader) {
+    const prose = extractProseArtist(rest);
+    if (prose) rest = prose;
+    else {
+      const known = matchKnownArtist(rest, getBundledKnownArtistIndex());
+      if (known) return canonicalizeCollapsedArtist(known);
+    }
   }
 
   // "Grandes Sucessos de Ray Charles" → candidato = "Ray Charles" (tira o padrão ANTES do
@@ -633,6 +697,11 @@ export function extractArtist(title: string): string {
   // incluso), não parte do nome — sempre tem espaço nos dois lados (bandas com barra no próprio
   // nome, tipo "AC/DC", nunca têm espaço ANTES da barra, então não caem aqui).
   candidate = candidate.replace(/\s+c\/\s+.*$/i, "").trim();
+  // "EARTH WIND & FIRE EM ÓTIMO ESTADO": a ficha de estado não é parte do nome do artista.
+  candidate = candidate
+    .replace(/\s+em\s+(?:[óo]timo|bom|excelente|perfeito|muito\s+bom|regular)\b.*$/i, "")
+    .replace(/\s+(?:m[ií]dia|disco|capa)$/i, "") // "…STORMY MÍDIA EM ÓTIMO ESTADO"
+    .trim();
   // "BEBETO 1981" → "Bebeto": ano de lançamento colado no fim do candidato (comum em títulos
   // "ARTISTA ANO" sem outro separador antes do próximo campo) não é parte do nome do artista.
   candidate = candidate.replace(/\s+(19|20)\d{2}$/, "").trim();

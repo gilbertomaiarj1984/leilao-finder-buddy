@@ -214,6 +214,15 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
 - **Retenção de `lots` (v0.92.0):** a poda não apaga mais dias passados até 10 dias atrás, nem futuros até +14; `step=chunk|enrich&ext=1` cobre +5..+14 (cron 02:00 BRT).
 - **`step=lookoutnotify` (v0.107.0):** aviso push (ntfy.sh) de lotes novos que casam com um disco "De olho" — roda no `refresh.yml` depois de aiident/market e antes de `prune`, com `call_soft` (não reprova a run). No-op sem `NTFY_TOPIC`. Mecânica em `colecao-sondagem-compras.md`.
 
+- **Títulos em PROSA e rótulos de formato/estado (v0.182.0):** `extractArtist` descarta, em loop, os prefixos de
+  `PREFIX_PATTERNS` — formato ("de 12 polegadas", "33 rpm", "em formato LP"; `PROSE_FORMAT_HEADER`),
+  adjetivos (autografado, lacrado, importado, raro…), "de lançamento de", "dois LPs:" (3+ já é lote) e a ficha
+  de estado ("ÓTIMO ESTADO") — e ainda corta "em ótimo estado"/"mídia" do fim do candidato. O artista vem, em
+  ordem: do papel com artigo (`ARTIST_ROLE_RE`: "da cantora/artista/grupo/banda X"; "Banda" maiúscula em título
+  de caixa mista é parte do nome — "Banda Black Rio"), da frase em prosa (`extractProseArtist`: `"Y" de X`,
+  `Y de X,`, possessivo `X's …`; só quando o cabeçalho de formato apareceu), de um nome do bundle em qualquer
+  ponto, e por fim da heurística de separador. `isGenericArtist` cobre os rótulos soltos ("12 Polegadas",
+  "33 Rpm", "Dois LPs", "Em Formato…", "Importado…", "Autografado").
 - **Cabeçalho de casa ≠ artista (v0.181.1):** depois dos prefixos (`álbum`, `lp`, `1 disco.`…), `extractArtist` descarta o cabeçalho "IMPORTADO <país>!/." (`IMPORTED_HEADER`) e a palavra de formato inicial (`FORMAT_WORD_PREFIX`: duplo/triplo/quádruplo). Com qualquer um dos dois o título segue o molde de casa "ÁLBUM - ARTISTA (ano). Selo X" (oposto de "ARTISTA - ÁLBUM"): o artista é o trecho depois do último " - " antes de "(ano)"/". Selo" (`ALBUM_DASH_ARTIST_RE`, "Vol. N" final removido); sem o molde só vale um nome do bundle (`matchKnownArtist`); senão "" (não classificados → `fillMissingArtists` com `known_artists` / IA), nunca o álbum nem "Duplo"/"Importado …". Lotes já gravados com o grupo antigo são regravados na próxima varredura.
 - **Chamariz de casa ≠ lote (v0.129.1):** `isDiscBundle` descarta antes da detecção "ALERTA RARIDADE", "lote especial/extra (de fechamento/encerramento)" e tudo após "Classificação técnica" (ficha de estado); `extractArtist` remove esses prefixos e trata "|" como separador.
 - **"LP de X - Álbum" (v0.154.0):** o prefixo de tipo (`LP`/`Disco de Vinil`/…) também leva um "de/do/da" colado (`PREFIX_PATTERNS`); antes o artista saía "De Creedence Clearwater Revival" (Bruce Angeiras).
