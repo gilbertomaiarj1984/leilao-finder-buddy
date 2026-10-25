@@ -148,6 +148,24 @@ export function pickBestRelease(target: ReleaseTarget, results: SearchHit[]): Re
   return { hit: best, titleCov: bestTitleCov, artistCov: bestArtistCov };
 }
 
+/**
+ * O master/release achado serve para o álbum que o usuário digitou? Para álbum HOMÔNIMO ("Caetano
+ * Veloso — Caetano Veloso") o ano é o que distingue os discos: se o Discogs não tem o master do ano
+ * pedido e devolve o "mais parecido" (outro ano), usá-lo funde dois discos diferentes. Então, com
+ * ano pedido, o do resultado precisa estar a ≤1 ano; sem ano pedido, não se adivinha. Álbum não
+ * homônimo aceita qualquer ano (a diferença é reedição do mesmo álbum).
+ */
+export function masterMatchesTarget(
+  selfTitled: boolean,
+  targetYear: number | null,
+  hitYear: number | string | undefined,
+): boolean {
+  if (!selfTitled) return true;
+  const y = Number(hitYear);
+  if (!targetYear || !Number.isFinite(y) || y <= 0) return false;
+  return Math.abs(y - targetYear) <= 1;
+}
+
 /** Evidência do casamento que vai para `lot_market.match_info` (auditoria de um preço estranho). */
 export type MatchInfo = {
   /** Como achou: `br` = busca restrita ao Brasil; `any` = busca sem país. */

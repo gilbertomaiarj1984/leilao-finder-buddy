@@ -402,9 +402,7 @@ export function matchLookoutForLot(
     let score = Math.max(ownedScore(cand, identity), byTerm);
     if (score < LOOKOUT_MATCH_MIN) continue;
     // Reedição moderna × original e homônimo de outro master: não é o disco que o usuário quer.
-    if (
-      !lotEditionAllows(item, { edition: identity.edition ?? null, masterId: identity.masterId })
-    ) {
+    if (!lotEditionAllows(item, { edition: identity.edition ?? null })) {
       continue;
     }
     // Disco de nome genérico: só o ano distingue. Outro ano → não é este disco; sem ano → "a
@@ -514,7 +512,7 @@ export function lookoutOwnedInCollection(
       if (score < LOOKOUT_MATCH_MIN) continue;
       // Ter o relançamento moderno não é ter o original (nem o contrário); homônimo de outro master também não.
       const ownedEdition: LotEdition = c.edition ?? "original";
-      if (!lotEditionAllows(item, { edition: ownedEdition, masterId: c.masterId })) continue;
+      if (!lotEditionAllows(item, { edition: ownedEdition })) continue;
       const prev = best.get(item.id);
       if (prev && prev.score >= score) continue;
       best.set(item.id, {

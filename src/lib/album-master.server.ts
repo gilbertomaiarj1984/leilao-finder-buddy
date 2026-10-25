@@ -42,10 +42,39 @@ async function fillTable(
   return done;
 }
 
+const MASTERS_VERSION_KEY = "masters_version";
+const MASTERS_VERSION = 2;
+
+/**
+ * v0.182.1: a 1ª versão da busca (v0.182.0) aceitava o master de OUTRO ano para álbum homônimo
+ * (Caetano Veloso 1968 recebia o master do 1986 e virava "o mesmo disco"). Uma vez, devolve a NULL
+ * os masters já gravados (>0) para o passo refazê-los com a regra nova; 0 ("sem master") fica.
+ */
+async function resetStaleMasters(): Promise<void> {
+  const { data } = await db
+    .from("app_state")
+    .select("value")
+    .eq("key", MASTERS_VERSION_KEY)
+    .maybeSingle();
+  if (Number((data as { value?: unknown } | null)?.value) >= MASTERS_VERSION) return;
+  for (const table of ["lookout_items", "collection_items"] as const) {
+    const { error } = await db.from(table).update({ master_id: null }).gt("master_id", 0);
+    if (error) throw error;
+  }
+  const { error } = await db
+    .from("app_state")
+    .upsert(
+      { key: MASTERS_VERSION_KEY, value: MASTERS_VERSION, updated_at: new Date().toISOString() },
+      { onConflict: "key" },
+    );
+  if (error) throw error;
+}
+
 export async function fillMissingMasters(
   max = 10,
 ): Promise<{ lookout: number; collection: number; skipped: boolean }> {
   if (!discogsConfigured()) return { lookout: 0, collection: 0, skipped: true };
+  await resetStaleMasters();
   const lookout = await fillTable("lookout_items", max);
   const collection = await fillTable("collection_items", max);
   return { lookout, collection, skipped: false };

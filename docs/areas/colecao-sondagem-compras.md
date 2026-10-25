@@ -498,5 +498,8 @@ continuam sendo "o disco". Núcleo puro/client-safe em `src/lib/album-edition.ts
   itens do De olho/Coleção são preenchidos por `lookupMaster` (busca `type=master`, pontuada por
   `pickBestRelease` com o ano; homônimo SEM ano não é adivinhado → 0) no passo **`masters`** do cron
   (`album-master.server.ts`, `refresh.yml`) e na hora ao adicionar por texto. NULL = não consultado;
-  0 = consultado sem master; mudar artista/álbum/ano devolve o item a NULL. O Discogs só entra
+  0 = consultado sem master; mudar artista/álbum/ano devolve o item a NULL. **Homônimo (v0.182.1):** o master só vale se o
+  ano dele estiver a ≤1 ano do pedido (`masterMatchesTarget`) — sem isso o Discogs devolvia o master "mais parecido" (outro
+  ano) e a regra "mesmo master = mesmo disco" fundia Caetano Veloso 1968 com o de 1986; o passo `masters` zera uma vez os
+  masters antigos (`app_state.masters_version`). O master do LOTE não rejeita casamento (só a edição e o ano do lote). O Discogs só entra
   como evidência: sem master vale a marca/o ano.

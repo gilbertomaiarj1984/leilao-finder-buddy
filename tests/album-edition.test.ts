@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { masterMatchesTarget } from "@/lib/discogs-match";
 import {
   detectModernReissue,
   lotEditionAllows,
@@ -62,7 +63,7 @@ describe("sameAlbum", () => {
 });
 
 describe("lotEditionAllows", () => {
-  const item = { artist: "Caetano Veloso", album: "Transa" };
+  const item = {};
   test("lote de reedição moderna não casa com item comum", () => {
     expect(lotEditionAllows(item, { edition: "modern" })).toBe(false);
     expect(lotEditionAllows({ ...item, edition: "modern" }, { edition: "modern" })).toBe(true);
@@ -73,10 +74,23 @@ describe("lotEditionAllows", () => {
     expect(lotEditionAllows(wantModern, { edition: "period" })).toBe(false);
     expect(lotEditionAllows(wantModern, { edition: null })).toBe(true);
   });
-  test("homônimo: masters diferentes rejeitam; só vale para homônimo", () => {
-    const self = { artist: "Caetano Veloso", album: "Caetano Veloso", masterId: 1 };
-    expect(lotEditionAllows(self, { edition: null, masterId: 2 })).toBe(false);
-    expect(lotEditionAllows(self, { edition: null, masterId: 1 })).toBe(true);
-    expect(lotEditionAllows({ ...item, masterId: 1 }, { edition: null, masterId: 2 })).toBe(true);
+  test("o master do Discogs do lote não rejeita (o release do lote é palpite; o ano valida o homônimo)", () => {
+    expect(lotEditionAllows({ edition: null }, { edition: null })).toBe(true);
+  });
+});
+
+describe("masterMatchesTarget — não usar o master de OUTRO ano p/ álbum homônimo", () => {
+  test("Caetano Veloso 1968 não aceita o master de 1986 (era isso que fundia os dois discos)", () => {
+    expect(masterMatchesTarget(true, 1968, 1986)).toBe(false);
+    expect(masterMatchesTarget(true, 1968, "1968")).toBe(true);
+    expect(masterMatchesTarget(true, 1968, 1969)).toBe(true);
+  });
+  test("homônimo sem ano pedido ou sem ano no resultado: não adivinha", () => {
+    expect(masterMatchesTarget(true, null, 1968)).toBe(false);
+    expect(masterMatchesTarget(true, 1968, undefined)).toBe(false);
+  });
+  test("álbum não homônimo aceita qualquer ano (a diferença é reedição)", () => {
+    expect(masterMatchesTarget(false, 1990, 1979)).toBe(true);
+    expect(masterMatchesTarget(false, null, undefined)).toBe(true);
   });
 });
