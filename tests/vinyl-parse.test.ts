@@ -96,6 +96,23 @@ describe("isDiscBundle", () => {
 });
 
 describe("extractArtist", () => {
+  test('"ÁLBUM DUPLO." não vira o artista "Duplo"', () => {
+    // Álbum antes do artista: só o nome conhecido no título resolve.
+    expect(
+      extractArtist("ÁLBUM DUPLO. ABSOLUTELY LIVE - ROD STEWART (1982). Selo WARNER BROS."),
+    ).toBe("Rod Stewart");
+    expect(
+      extractArtist("ÁLBUM DUPLO. ALL THE BEST! - PAUL McCARTNEY (1987). Selo PARLOPHONE"),
+    ).toBe("Paul McCartney");
+    expect(
+      extractArtist("ÁLBUM DUPLO. GOLD AND PLATINUM - LYNYRD SKYNYRD. Selo MCA 300 740."),
+    ).toBe("Lynyrd Skynyrd");
+    // Artista antes do álbum, com o formato na frente.
+    expect(extractArtist("LP DUPLO - Elis Regina - Falso Brilhante")).toBe("Elis Regina");
+    expect(extractArtist("ÁLBUM TRIPLO. Fulano Desconhecido Xyz - Quarteto Qwerty")).toBe("");
+    // Sem nenhum nome conhecido: sem artista (nunca o álbum nem "Duplo").
+    expect(extractArtist("ÁLBUM DUPLO. 66 POEMAS ESCOLHIDOS RECITADOS PELO AUTOR")).toBe("");
+  });
   test('tira "de/do/da" colado ao tipo ("LP de X - Álbum")', () => {
     expect(
       extractArtist("LP de Creedence Clearwater Revival - Green River (1969); Em bom estado."),

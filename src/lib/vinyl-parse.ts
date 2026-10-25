@@ -312,6 +312,10 @@ const PREFIX_PATTERNS: RegExp[] = [
   /^(lps?|long\s*play|discos?\s*de\s*vinil|disco\s*de\s*vinil|discos?|vinis|vinil|compactos?|compacto|bolach[aã]o|album|álbum)\b\s*[-:–,.]?\s*(?:(?:de|do|da|dos|das)\s+(?=\S))?/i,
 ];
 
+// Palavra de FORMATO que sobra no início depois do prefixo "Álbum"/"LP" ("ÁLBUM DUPLO. X - Y",
+// "LP Triplo - X"): descreve o disco, nunca é o artista. Sem tirá-la, o candidato vira "Duplo".
+const FORMAT_WORD_PREFIX = /^(?:duplo|triplo|qu[aá]druplo)\b\s*[-:–,.]?\s*/i;
+
 /** Rótulo do "artista" para lotes que são um conjunto/coleção de vários discos. */
 export const LOTE_LABEL = "Lote";
 
@@ -552,6 +556,9 @@ export function extractArtist(title: string): string {
     }
   }
 
+  const formatWord = rest.match(FORMAT_WORD_PREFIX);
+  if (formatWord) rest = rest.slice(formatWord[0].length).trim();
+
   // Título no formato "<CASA-PREFIXO> ARTISTA ÁLBUM ANO" sem NENHUM separador ("-"/":"/"|")
   // entre artista e álbum: a heurística de candidato abaixo (que corta no separador, ou usa
   // a frase inteira quando não há um) não tem como isolar só o artista e ou descarta tudo
@@ -560,6 +567,15 @@ export function extractArtist(title: string): string {
   // — resolve direto, sem passar pela heurística de corte por separador/tamanho abaixo.
   const knownPrefixMatch = matchKnownArtistAtStart(rest, getBundledKnownArtistIndex());
   if (knownPrefixMatch) return canonicalizeCollapsedArtist(knownPrefixMatch);
+
+  // "ÁLBUM DUPLO. ABSOLUTELY LIVE - ROD STEWART (1982)": com a palavra de formato na frente, há
+  // casas que escrevem "ÁLBUM - ARTISTA" (e outras "ARTISTA - ÁLBUM"), então a heurística de
+  // separador abaixo trocaria artista por álbum. Só um nome CONHECIDO resolve com segurança; sem
+  // ele fica sem artista (não classificados), e o reforço server-side/IA identifica depois.
+  if (formatWord) {
+    const known = matchKnownArtist(rest, getBundledKnownArtistIndex());
+    return known ? canonicalizeCollapsedArtist(known) : "";
+  }
 
   // "Grandes Sucessos de Ray Charles" → candidato = "Ray Charles" (tira o padrão ANTES do
   // dash-split abaixo: aqui não há "-", o nome vem depois de "de/do" no fim do título). Só a
