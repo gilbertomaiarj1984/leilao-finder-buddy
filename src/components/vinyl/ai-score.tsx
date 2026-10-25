@@ -430,6 +430,7 @@ function useReevaluate(lot: ReevalLot) {
     onSuccess: (res: {
       row: { id: string };
       ai?: AiUsed;
+      marketFilled?: boolean;
       fame?: { rated: boolean; used: AiUsed | null; error: string | null } | null;
     }) => {
       queryClient.setQueriesData({ queryKey: queryKeys.lotAi }, (old: unknown) =>
@@ -439,6 +440,8 @@ function useReevaluate(lot: ReevalLot) {
             : [...old, res.row]
           : old,
       );
+      // O servidor também consulta o Discogs do lote: o preço/comparação aparece sem recarregar.
+      if (res.marketFilled) void queryClient.invalidateQueries({ queryKey: queryKeys.lotMarket });
       toast.success(`Nota da IA atualizada${formatAiUsed(res.ai)}`);
       // A fama das faixas roda depois da nota; se a IA falhou nela, o balão diz o motivo.
       if (res.fame?.error) toast.warning(`Faixas: a fama falhou — ${res.fame.error}`);

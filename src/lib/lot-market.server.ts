@@ -105,7 +105,7 @@ export async function updateSuggestionMaps(
   return n;
 }
 
-export async function upsertLotMarket(rows: LotMarketRow[]): Promise<number> {
+async function upsertLotMarket(rows: LotMarketRow[]): Promise<number> {
   if (!rows.length) return 0;
   const { db } = await import("@/lib/db-client.server");
   const checkedAt = new Date().toISOString();
@@ -165,4 +165,42 @@ export function selectLotsForMarket(
     if (out.length >= max) break;
   }
   return out;
+}
+
+/**
+ * Consulta o Discogs de UM lote e grava `lot_market` (âncora de preço/demanda). Ponto único do
+ * `step=market` do cron e do "refazer" sob demanda — antes só o cron preenchia o mercado, então
+ * um lote analisado/refeito na tela ficava sem os dados do Discogs até a próxima rodada. Lança
+ * em falha transitória do Discogs (nada é gravado; o lote volta na próxima).
+ */
+export async function fetchAndStoreMarket(t: {
+  id: string;
+  album: string | null;
+  title: string;
+}): Promise<number> {
+  const { fetchMarket } = await import("./discogs.server");
+  const basis = marketBasis(t.album, t.title);
+  const m = await fetchMarket(t.album, t.title);
+  return await upsertLotMarket([
+    {
+      id: t.id,
+      basis,
+      matched: m.matched,
+      release_id: m.releaseId,
+      release_title: m.releaseTitle,
+      year: m.year,
+      num_for_sale: m.numForSale,
+      lowest_price: m.lowestPrice,
+      currency: m.currency,
+      suggested_price: m.suggestedPrice,
+      suggested_condition: m.suggestedCondition,
+      suggested_by_condition: m.suggestedByCondition,
+      have: m.have,
+      want: m.want,
+      price_low_br: m.priceLowBr,
+      price_high_br: m.priceHighBr,
+      num_for_sale_br: m.numForSaleBr,
+      match_info: m.matchInfo,
+    },
+  ]);
 }
