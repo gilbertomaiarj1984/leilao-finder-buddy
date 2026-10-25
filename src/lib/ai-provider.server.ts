@@ -63,7 +63,7 @@ const ANTHROPIC_DEFAULT_MODEL = "claude-haiku-5-5";
 // DUP(modelos): lista/padrão dos modelos Gemini repetidos em 4 arquivos — centralizar em `ai-models.ts`.
 const GEMINI_DEFAULT_MODEL = "gemini-3.1-flash-lite";
 /** Espelha `GROQ_DEFAULT_MODEL` de `ai-provider.ts` (client-safe; este arquivo não importa de lá). */
-const GROQ_DEFAULT_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+const GROQ_DEFAULT_MODEL = "openai/gpt-oss-120b";
 /**
  * Modelo efetivo do provedor. Pro Gemini, `geminiModel` (a escolha do usuário, persistida em
  * `app_state.gemini_model` — ver `resolveGeminiModel` em `ai-eval.server.ts`) tem prioridade;
@@ -398,6 +398,13 @@ async function runGemini(req: AiRequest, model: string): Promise<string> {
 
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 
+/** Raciocínio mínimo nos modelos que raciocinam (a tarefa é só extrair/classificar JSON). */
+function groqReasoningParams(model: string): Record<string, unknown> {
+  if (model.startsWith("openai/gpt-oss")) return { reasoning_effort: "low" };
+  if (model.startsWith("qwen/qwen3")) return { reasoning_effort: "none" };
+  return {};
+}
+
 async function runGroq(req: AiRequest, model: string): Promise<string> {
   const key = process.env["GROQ_API_KEY"];
   if (!key) throw new Error("GROQ_API_KEY ausente");
@@ -406,7 +413,12 @@ async function runGroq(req: AiRequest, model: string): Promise<string> {
     { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
   > = [];
   // O Groq aceita data URL ou URL pública (ele mesmo baixa) — só repassa URL que passa no filtro SSRF.
-  if (req.image && (req.image.startsWith("data:image/") || isSafeImageUrl(req.image))) {
+  // Modelo sem visão (ex.: gpt-oss) devolve 400 se receber imagem, então a capa só vai nos de visão.
+  if (
+    req.image &&
+    /scout|maverick|vision/i.test(model) &&
+    (req.image.startsWith("data:image/") || isSafeImageUrl(req.image))
+  ) {
     userContent.push({ type: "image_url", image_url: { url: req.image } });
   }
   userContent.push({ type: "text", text: req.text });
@@ -417,8 +429,11 @@ async function runGroq(req: AiRequest, model: string): Promise<string> {
       { role: "system", content: req.system },
       { role: "user", content: userContent },
     ],
-    max_tokens: req.maxTokens,
+    // Modelos de raciocínio (gpt-oss, Qwen3) gastam o teto de saída "pensando" e podem estourá-lo
+    // ANTES de emitir a resposta (content vazio) — mesma lição do Gemini: folga de orçamento.
+    max_tokens: req.maxTokens + 2048,
     temperature: 0.2,
+    ...groqReasoningParams(model),
     ...(req.json ? { response_format: { type: "json_object" } } : {}),
   });
 

@@ -13,8 +13,10 @@ precedência — ver bullet do seletor de modelo abaixo). **Opcional:** sem NENH
 chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer provedor").
 
 - **Groq (free tier, v0.178.0):** terceiro provedor (`GROQ_API_KEY`, override `GROQ_MODEL`; padrão
-  `meta-llama/llama-4-scout-17b-16e-instruct`, com visão — id vindo da doc pública, **não testado**
-  contra a API; se der 400, ajuste `GROQ_MODEL`). Adaptador `runGroq` em `ai-provider.server.ts`:
+  `openai/gpt-oss-120b`, só texto; o Llama 4 Scout deu 404 em produção na v0.178.0 — liste os ids reais
+  com `GET api.groq.com/openai/v1/models`). v0.179.0: modelos de raciocínio recebem `reasoning_effort`
+  baixo e `max_tokens + 2048` de folga (senão `content` vem vazio e a fama das faixas/avaliação falham
+  em silêncio); a capa só vai a modelo com visão (`scout|maverick|vision`). Adaptador `runGroq` em `ai-provider.server.ts`:
   REST OpenAI-compatível (`api.groq.com/openai/v1/chat/completions`, `response_format: json_object`
   quando `req.json`, capa como `image_url` — URL só se passar em `isSafeImageUrl`), retry nos 5xx;
   429 do free tier vira quota → failover. **Um só modelo, sem seletor/persistência** (a caixa de IA

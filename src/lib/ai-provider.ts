@@ -75,11 +75,11 @@ export function isAnthropicModel(value: unknown): value is AnthropicModel {
 
 /**
  * Modelo do Groq (OpenAI-compatível, free tier com limite de requisições/tokens por minuto). Um
- * só, com VISÃO (lê a capa), então não há seletor de modelo/persistência como no Claude/Gemini;
- * override por env `GROQ_MODEL` no servidor. ⚠️ Id vindo da documentação pública, ainda não
- * testado contra a API — se voltar 400 (modelo desativado), ajuste `GROQ_MODEL`.
+ * só, sem seletor/persistência como no Claude/Gemini; override por env `GROQ_MODEL`. O Llama 4
+ * Scout (visão) deu 404 em produção (v0.178.0); o padrão é o `gpt-oss-120b`, que só lê TEXTO (a
+ * capa não é enviada a modelo sem visão). Ids reais: `GET api.groq.com/openai/v1/models`.
  */
-export const GROQ_DEFAULT_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+export const GROQ_DEFAULT_MODEL = "openai/gpt-oss-120b";
 
 /** Opção da caixa única de IA: provedor + modelo + rótulo com preço. */
 type AiModelOption = { provider: AiProvider; model: string; label: string };
@@ -99,7 +99,7 @@ export const AI_MODEL_OPTIONS: readonly AiModelOption[] = [
   {
     provider: "groq" as const,
     model: GROQ_DEFAULT_MODEL,
-    label: "Llama 4 Scout · grátis (limites/min)",
+    label: "gpt-oss 120B · grátis (limites/min)",
   },
 ];
 
