@@ -1,4 +1,5 @@
 import { db } from "@/lib/db-client.server";
+import { sameAlbumYear } from "@/lib/vinyl-parse";
 
 /**
  * "Ficar de olho" (tabela `lookout_items`): discos que o usuário quer muito e quer reconhecer
@@ -181,8 +182,13 @@ export async function addLookoutFromLot(input: AddLookoutInput): Promise<Lookout
     (key
       ? all.find(
           (i) =>
-            lookoutIdentityKey(i.artist, i.album) === key ||
-            i.merged.some((m) => lookoutIdentityKey(m.artist, m.album) === key),
+            (lookoutIdentityKey(i.artist, i.album) === key &&
+              sameAlbumYear(input.artist, input.album, input.year, i.year)) ||
+            i.merged.some(
+              (m) =>
+                lookoutIdentityKey(m.artist, m.album) === key &&
+                sameAlbumYear(input.artist, input.album, input.year, m.year),
+            ),
         )
       : undefined);
   if (found) {
@@ -240,8 +246,13 @@ export async function addLookoutManual(input: {
   const found = key
     ? all.find(
         (i) =>
-          lookoutIdentityKey(i.artist, i.album) === key ||
-          i.merged.some((m) => lookoutIdentityKey(m.artist, m.album) === key),
+          (lookoutIdentityKey(i.artist, i.album) === key &&
+            sameAlbumYear(input.artist, input.album, input.year, i.year)) ||
+          i.merged.some(
+            (m) =>
+              lookoutIdentityKey(m.artist, m.album) === key &&
+              sameAlbumYear(input.artist, input.album, input.year, m.year),
+          ),
       )
     : undefined;
   if (found) {

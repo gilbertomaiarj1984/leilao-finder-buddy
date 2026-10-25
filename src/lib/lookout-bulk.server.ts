@@ -39,7 +39,9 @@ export async function addLookoutFromText(
       json: true,
       text:
         `Linha: ${JSON.stringify(text)}\n` +
-        (yearHint ? `Ano citado: ${yearHint}\n` : "") +
+        (yearHint
+          ? `Ano citado: ${yearHint} (o usuário quer o álbum DESSE ano; vários artistas têm discos homônimos de anos diferentes)\n`
+          : "") +
         'Devolva {"artist": "...", "album": "...", "year": 1999 ou null}.',
     },
     provider,
@@ -53,7 +55,8 @@ export async function addLookoutFromText(
     return { status: "unresolved", reason: "a IA não identificou artista e álbum" };
   }
   const y = Number(obj?.["year"]);
-  const year = Number.isFinite(y) && y >= 1900 && y <= 2100 ? Math.round(y) : yearHint;
+  // O ano que o usuário digitou vale mais que o da IA (que erra entre homônimos/reedições).
+  const year = yearHint ?? (Number.isFinite(y) && y >= 1900 && y <= 2100 ? Math.round(y) : null);
   const { item: base, created } = await addLookoutManual({
     artist: titleCase(artist),
     album,

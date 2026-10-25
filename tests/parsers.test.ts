@@ -15,6 +15,27 @@ test("parseLookoutBulk (lista colada do De olho, que substituiu a Sondagem)", ()
   expect(items[1]).toMatchObject({ text: "Raul Seixas - Gita", year: null });
 });
 
+test("ano sem parênteses no fim da linha (De olho e Coleção)", () => {
+  const [a, b, c] = parseLookoutBulk(
+    "caetano veloso - caetano veloso 1968\nPrince - 1999\nCaetano Veloso 1968 - Caetano Veloso",
+  );
+  expect(a).toMatchObject({ year: 1968 });
+  expect(b).toMatchObject({ year: null }); // "1999" é o nome do álbum
+  expect(c).toMatchObject({ year: 1968 });
+  const { items } = parseCollectionBulkText("Caetano Veloso - Caetano Veloso 1968\nPrince - 1999");
+  expect(items.map((i) => [i.artist, i.album, i.year])).toEqual([
+    ["Caetano Veloso", "Caetano Veloso", 1968],
+    ["Prince", "1999", null],
+  ]);
+});
+
+test("homônimos de anos diferentes não são o mesmo disco na importação da Coleção", () => {
+  const { items } = parseCollectionBulkText(
+    "Caetano Veloso - Caetano Veloso (1968)\nCaetano Veloso - Caetano Veloso (1986)\nCaetano Veloso - Caetano Veloso (1986)",
+  );
+  expect(items.map((i) => i.year)).toEqual([1968, 1986]);
+});
+
 test("parseCollectionBulkText", () => {
   const { items, error } = parseCollectionBulkText(
     "Chico Buarque - Construção (1971)\nRaul Seixas - Gita",

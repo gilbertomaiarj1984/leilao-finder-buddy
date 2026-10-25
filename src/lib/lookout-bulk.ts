@@ -13,6 +13,8 @@ type LookoutBulkEntry = {
   year: number | null;
 };
 
+import { extractLooseYear } from "@/lib/vinyl-parse";
+
 export const LOOKOUT_BULK_MAX = 200;
 
 const YEAR_RE = /\((?:[^()]*?)\b((?:19|20)\d{2})\b[^()]*\)/;
@@ -33,7 +35,8 @@ export function parseLookoutBulk(text: string): LookoutBulkEntry[] {
     if (seen.has(key)) continue;
     seen.add(key);
     const ym = clean.match(YEAR_RE);
-    out.push({ raw, text: clean.slice(0, 200), year: ym ? Number(ym[1]) : null });
+    const year = ym ? Number(ym[1]) : (extractLooseYear(clean)?.year ?? null);
+    out.push({ raw, text: clean.slice(0, 200), year });
     if (out.length >= LOOKOUT_BULK_MAX) break;
   }
   return out;

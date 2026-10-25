@@ -303,7 +303,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   artista E álbum → "não identificado" (não cria). Cria via `addLookoutManual` — `lot_id`
   sintético `manual-<uuid>`, sem lote de origem, sem repetição (mesmo artista+álbum reaproveita/
   reativa). Depois busca a capa no Discogs (`searchCoverOptions`, prefere o mesmo ano) e grava
-  como na Coleção (`importCollectionCover`: comprime em webp na pasta da coleção) — best-effort. O ✨ Identificar usa artista+álbum quando o item não tem título de lote.
+  como na Coleção (`importCollectionCover`: comprime em webp na pasta da coleção) — best-effort. **Ano (v0.181.1):** `parseLookoutBulk` lê o ano entre parênteses OU solto na linha (`extractLooseYear`: em qualquer ponto da linha; "Prince - 1999" e "1984 - Van Halen" são o álbum, não o ano); o ano digitado vence o da IA. **Homônimos:** a deduplicação (`addLookoutFromLot`/`addLookoutManual`, `similarLookoutItems`, importação em massa da Coleção) usa `sameAlbumYear`/`isSelfTitledAlbum` (`vinyl-parse.ts`): álbum = nome do artista com anos conhecidos e diferentes é OUTRO disco (Caetano Veloso 1968 × 1986); nos demais, ano diferente = reedição, mesmo disco; ano desconhecido de um lado não separa. O ✨ Identificar usa artista+álbum quando o item não tem título de lote.
 - **"Já tenho" — tirar o que já está na Coleção (v0.123.0):** botão **Já tenho (N)** em `/olho`
   (aparece só com N>0) → `LookoutOwnedDialog`. `lookoutOwnedInCollection` (`lookout-match.ts`,
   puro) reaproveita o motor do casamento de lotes: cada disco da Coleção vira uma identidade de

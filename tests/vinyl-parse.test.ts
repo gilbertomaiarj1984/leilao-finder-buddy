@@ -17,6 +17,9 @@ import {
   parsePrice,
   pickCanonical,
   titleCase,
+  isSelfTitledAlbum,
+  sameAlbumYear,
+  extractLooseYear,
 } from "@/lib/vinyl-parse";
 
 describe("vinil x não-vinil", () => {
@@ -64,6 +67,42 @@ describe("vinil x não-vinil", () => {
   });
 });
 
+describe("homônimos e ano", () => {
+  test("isSelfTitledAlbum", () => {
+    expect(isSelfTitledAlbum("Caetano Veloso", "Caetano Veloso")).toBe(true);
+    expect(isSelfTitledAlbum("Caetano Veloso", "Transa")).toBe(false);
+    expect(isSelfTitledAlbum("Caetano Veloso", "")).toBe(false);
+  });
+  test("sameAlbumYear: só o homônimo de anos diferentes vira outro disco", () => {
+    expect(sameAlbumYear("Caetano Veloso", "Caetano Veloso", 1968, 1986)).toBe(false);
+    expect(sameAlbumYear("Caetano Veloso", "Caetano Veloso", 1968, null)).toBe(true);
+    expect(sameAlbumYear("Caetano Veloso", "Caetano Veloso", 1986, 1986)).toBe(true);
+    expect(sameAlbumYear("Pink Floyd", "The Wall", 1979, 2011)).toBe(true); // reedição
+  });
+  test("extractLooseYear: ano solto em qualquer ponto da linha", () => {
+    const y = (s: string) => extractLooseYear(s);
+    expect(y("caetano veloso - caetano veloso 1968")).toEqual({
+      year: 1968,
+      rest: "caetano veloso - caetano veloso",
+    });
+    expect(y("Caetano Veloso 1968 - Caetano Veloso")).toEqual({
+      year: 1968,
+      rest: "Caetano Veloso - Caetano Veloso",
+    });
+    expect(y("caetano veloso 1968")).toEqual({ year: 1968, rest: "caetano veloso" });
+    expect(y("Caetano Veloso - Caetano Veloso - 1968")).toEqual({
+      year: 1968,
+      rest: "Caetano Veloso - Caetano Veloso",
+    });
+    // O ano é o próprio álbum / a linha toda / não há ano.
+    expect(y("Prince - 1999")).toBeNull();
+    expect(y("1984 - Van Halen")).toBeNull();
+    expect(y("1999")).toBeNull();
+    expect(y("Chico Buarque - Construção")).toBeNull();
+    expect(y("Raul Seixas - Gita 12345")).toBeNull();
+  });
+});
+
 describe("isDiscBundle", () => {
   test("lotes com vários discos", () => {
     expect(isDiscBundle("Lote com 10 LPs")).toBe(true);
@@ -96,6 +135,51 @@ describe("isDiscBundle", () => {
 });
 
 describe("extractArtist", () => {
+  test('cabeçalho "IMPORTADO <país>! 1 DISCO." não vira o artista', () => {
+    expect(
+      extractArtist(
+        "IMPORTADO FRANÇA! 1 DISCO. HYPERBOREA - TANGERINE DREAM (1983). Selo VIRGIN 70132.",
+      ),
+    ).toBe("Tangerine Dream");
+    expect(
+      extractArtist("IMPORTADO FRANÇA! 1 DISCO. PICTURE BOOK - SIMPLY RED. Selo ELEKTRA EKT 27."),
+    ).toBe("Simply Red");
+    // Artista desconhecido: vem do trecho depois do último " - " (molde "ÁLBUM - ARTISTA. Selo").
+    expect(
+      extractArtist(
+        "IMPORTADO EQUADOR! 1 DISCO. OJOS AZULES - LOS JOKER'S VOL. 6 (1974). Selo ESTELAR",
+      ),
+    ).toBe("Los Joker's");
+    expect(
+      extractArtist("IMPORTADO ESTADOS UNIDOS! 1 DISCO. FOO - BAR - THE BAND (1970). Selo X"),
+    ).toBe("The Band");
+    // Sem " - " nem nome conhecido: sem artista, nunca o cabeçalho.
+    expect(
+      extractArtist("IMPORTADO COLÔMBIA! 1 DISCO. COMO ES GRANDE MI AMOR POR TI. Selo CBS 14468."),
+    ).toBe("");
+    expect(
+      extractArtist(
+        "IMPORTADO COLÔMBIA! 1 DISCO. EL REY: ROBERTO CARLOS EN ESPAÑOL (1973). Selo CBS",
+      ),
+    ).toBe("Roberto Carlos");
+  });
+  test('"ÁLBUM DUPLO." não vira o artista "Duplo"', () => {
+    // Álbum antes do artista: só o nome conhecido no título resolve.
+    expect(
+      extractArtist("ÁLBUM DUPLO. ABSOLUTELY LIVE - ROD STEWART (1982). Selo WARNER BROS."),
+    ).toBe("Rod Stewart");
+    expect(
+      extractArtist("ÁLBUM DUPLO. ALL THE BEST! - PAUL McCARTNEY (1987). Selo PARLOPHONE"),
+    ).toBe("Paul McCartney");
+    expect(
+      extractArtist("ÁLBUM DUPLO. GOLD AND PLATINUM - LYNYRD SKYNYRD. Selo MCA 300 740."),
+    ).toBe("Lynyrd Skynyrd");
+    // Artista antes do álbum, com o formato na frente.
+    expect(extractArtist("LP DUPLO - Elis Regina - Falso Brilhante")).toBe("Elis Regina");
+    expect(extractArtist("ÁLBUM TRIPLO. Fulano Desconhecido Xyz - Quarteto Qwerty")).toBe("");
+    // Sem nenhum nome conhecido: sem artista (nunca o álbum nem "Duplo").
+    expect(extractArtist("ÁLBUM DUPLO. 66 POEMAS ESCOLHIDOS RECITADOS PELO AUTOR")).toBe("");
+  });
   test('tira "de/do/da" colado ao tipo ("LP de X - Álbum")', () => {
     expect(
       extractArtist("LP de Creedence Clearwater Revival - Green River (1969); Em bom estado."),

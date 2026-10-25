@@ -302,15 +302,29 @@ const UNCLASSIFIED_HINTS = [
 // nomes de artista — usados para descartar candidatos espúrios em `extractArtist`.
 const LABEL_WORDS = new Set(["artista", "album", "albuns", "titulo", "faixa", "faixas"]);
 
+// Cabeçalho de casa "IMPORTADO FRANÇA! 1 DISCO. ÁLBUM - ARTISTA (ano). Selo X": o país de origem
+// (até 3 palavras, terminado em "!" ou ".") descreve a prensagem, nunca o artista.
+const IMPORTED_HEADER = /^importado\b(?:\s+[\wÀ-ÿ]+){0,3}\s*[!.]\s*/i;
+
 const PREFIX_PATTERNS: RegExp[] = [
   /^alerta\s+raridade\b\s*[-:–,.]?\s*/i,
   /^lote\s+(?:especial|extra)(?:\s+de\s+(?:fechamento|encerramento))?\b\s*[-:–,.]?\s*/i,
   /^lote\s+de\s+(?:fechamento|encerramento)\b\s*[-:–,.]?\s*/i,
   /^lote\s*(n?[ºo°]?\s*\d+)?\s*[-:–]?\s*/i,
-  /^\d+\s*(lps?|discos?|vinis|compactos?)\b\s*[-:–]?\s*/i,
+  /^\d+\s*(lps?|discos?|vinis|compactos?)\b\s*[-:–.,]?\s*/i,
+  IMPORTED_HEADER,
   /^(belissimo|belíssimo|belo|raro|rarissimo|raríssimo|antigo|otimo|ótimo|excelente)\s+/i,
   /^(lps?|long\s*play|discos?\s*de\s*vinil|disco\s*de\s*vinil|discos?|vinis|vinil|compactos?|compacto|bolach[aã]o|album|álbum)\b\s*[-:–,.]?\s*(?:(?:de|do|da|dos|das)\s+(?=\S))?/i,
 ];
+
+// Palavra de FORMATO que sobra no início depois do prefixo "Álbum"/"LP" ("ÁLBUM DUPLO. X - Y",
+// "LP Triplo - X"): descreve o disco, nunca é o artista. Sem tirá-la, o candidato vira "Duplo".
+const FORMAT_WORD_PREFIX = /^(?:duplo|triplo|qu[aá]druplo)\b\s*[-:–,.]?\s*/i;
+
+// "ÁLBUM - ARTISTA (1983). Selo VIRGIN 70132": o artista vem depois do último " - " (o `.+` guloso
+// do álbum fica com os demais) e termina em "(ano)" e/ou na ficha da gravadora ("Selo ...").
+const ALBUM_DASH_ARTIST_RE =
+  /^.+\s[-–—]\s([^-–—|]+?)\s*(?:\(\s*(?:19|20)\d{2}\s*\)\s*)?\.?\s*selo\b/i;
 
 /** Rótulo do "artista" para lotes que são um conjunto/coleção de vários discos. */
 export const LOTE_LABEL = "Lote";
@@ -541,16 +555,21 @@ export function extractArtist(title: string): string {
 
   let rest = title.replace(/\s+/g, " ").trim();
   let changed = true;
+  let importedHeader = false;
   while (changed) {
     changed = false;
     for (const pattern of PREFIX_PATTERNS) {
       const next = rest.replace(pattern, "");
       if (next !== rest) {
+        if (pattern === IMPORTED_HEADER) importedHeader = true;
         rest = next.trim();
         changed = true;
       }
     }
   }
+
+  const formatWord = rest.match(FORMAT_WORD_PREFIX);
+  if (formatWord) rest = rest.slice(formatWord[0].length).trim();
 
   // Título no formato "<CASA-PREFIXO> ARTISTA ÁLBUM ANO" sem NENHUM separador ("-"/":"/"|")
   // entre artista e álbum: a heurística de candidato abaixo (que corta no separador, ou usa
@@ -560,6 +579,22 @@ export function extractArtist(title: string): string {
   // — resolve direto, sem passar pela heurística de corte por separador/tamanho abaixo.
   const knownPrefixMatch = matchKnownArtistAtStart(rest, getBundledKnownArtistIndex());
   if (knownPrefixMatch) return canonicalizeCollapsedArtist(knownPrefixMatch);
+
+  // "ÁLBUM DUPLO. ABSOLUTELY LIVE - ROD STEWART (1982). Selo X" / "IMPORTADO FRANÇA! 1 DISCO.
+  // PICTURE BOOK - SIMPLY RED. Selo X": com o cabeçalho de casa na frente, o título é "ÁLBUM -
+  // ARTISTA" (o artista é o trecho depois do ÚLTIMO " - ", antes de "(ano)"/". Selo"), e a
+  // heurística de separador abaixo trocaria artista por álbum. Sem esse molde, só um nome
+  // CONHECIDO resolve com segurança; sem ele fica sem artista (não classificados) e o reforço
+  // server-side/IA identifica depois.
+  if (formatWord || importedHeader) {
+    const labelled = rest.match(ALBUM_DASH_ARTIST_RE);
+    if (labelled) {
+      const name = labelled[1]!.replace(/\s+(vol\.?|volume)\s*\d*$/i, "").trim();
+      return canonicalizeCollapsedArtist(titleCase(name));
+    }
+    const known = matchKnownArtist(rest, getBundledKnownArtistIndex());
+    return known ? canonicalizeCollapsedArtist(known) : "";
+  }
 
   // "Grandes Sucessos de Ray Charles" → candidato = "Ray Charles" (tira o padrão ANTES do
   // dash-split abaixo: aqui não há "-", o nome vem depois de "de/do" no fim do título). Só a
@@ -982,6 +1017,54 @@ export function catalogUrlFromLot(lot: { idLeilao: string; url: string }): strin
 // --- Base de nomes conhecidos (reforço da classificação de artista) ---
 
 /** Normalização para casar nomes: remove acentos e pontuação, baixa a caixa. */
+/**
+ * Disco HOMÔNIMO: o nome do álbum é só o nome do artista ("Caetano Veloso — Caetano Veloso").
+ * O nome não distingue um do outro (há vários, de anos diferentes) — só o ano.
+ */
+export function isSelfTitledAlbum(artist: string, album: string): boolean {
+  const albumWords = normalizeForMatch(album).split(" ").filter(Boolean);
+  const artistWords = new Set(normalizeForMatch(artist).split(" ").filter(Boolean));
+  return albumWords.length > 0 && albumWords.every((w) => artistWords.has(w));
+}
+
+/**
+ * Dois registros de MESMO artista+álbum (já comparados pelo nome) são o mesmo disco? Só deixam de
+ * ser quando o álbum é homônimo e os dois anos são conhecidos e diferentes (Caetano Veloso 1968 ×
+ * 1986). Nos demais discos o ano diferente é só reedição, então segue sendo o mesmo; ano
+ * desconhecido de um lado não separa.
+ */
+export function sameAlbumYear(
+  artist: string,
+  album: string,
+  yearA: number | null | undefined,
+  yearB: number | null | undefined,
+): boolean {
+  if (!yearA || !yearB || yearA === yearB) return true;
+  return !isSelfTitledAlbum(artist, album);
+}
+
+/**
+ * Ano citado SOLTO (sem parênteses) em qualquer ponto de uma linha digitada: "caetano veloso -
+ * caetano veloso 1968", "Caetano Veloso 1968 - Caetano Veloso". Devolve o ano e a linha sem ele.
+ * Não vale quando o ano É o álbum de uma linha "A - B" ("Prince - 1999", "1984 - Van Halen") nem
+ * quando é a linha toda; com 3+ trechos um trecho só com o ano é ano mesmo. Vários: vale o último.
+ */
+export function extractLooseYear(text: string): { year: number; rest: string } | null {
+  const line = text.replace(/\s+/g, " ").trim();
+  const tokens = [...line.matchAll(/(?<![\d\w])(?:19|20)\d{2}(?![\d\w])/g)];
+  const last = tokens[tokens.length - 1];
+  if (!last || last.index === undefined) return null;
+  const segments = line.split(/\s[-–—/]\s/);
+  const loneSegment = segments.some((seg) => seg.trim() === last[0]);
+  if (loneSegment && segments.length <= 2) return null;
+  const rest = (line.slice(0, last.index) + line.slice(last.index + last[0].length))
+    .replace(/\s+/g, " ")
+    .replace(/(?:\s[-–—/])+\s*$/, "") // separador que ficou pendurado no fim
+    .replace(/\s[-–—/](?=\s[-–—/]\s)/g, "") // "A - - B" depois de tirar um trecho só com o ano
+    .trim();
+  return rest ? { year: Number(last[0]), rest } : null;
+}
+
 export function normalizeForMatch(value: string): string {
   return value
     .normalize("NFD")

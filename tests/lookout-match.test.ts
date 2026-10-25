@@ -336,7 +336,9 @@ describe("similarLookoutItems — lista os discos do artista para escolher", () 
     expect(similarLookoutItems([tm], input("Tim Maia", 1972))).toHaveLength(0);
   });
   test("mesmo artista, outro ano do disco homônimo / sem álbum → pergunta", () => {
-    expect(similarLookoutItems([tm], input("Tim Maia", 1971))).toHaveLength(0); // idêntico por nome
+    // Homônimo de OUTRO ano é outro disco (Tim Maia 1971 × 1972); sem ano de um lado, é o mesmo.
+    expect(similarLookoutItems([tm], input("Tim Maia", 1971))).toHaveLength(1);
+    expect(similarLookoutItems([tm], input("Tim Maia", null))).toHaveLength(0);
     expect(similarLookoutItems([tm], input("", 1971))).toHaveLength(1);
     expect(similarLookoutItems([tm], input("Tim Maia Racional", null))).toHaveLength(1);
   });
