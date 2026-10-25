@@ -2,7 +2,7 @@ import { parseAiAlbum } from "@/components/vinyl/ai-score-utils";
 import {
   lotEditionAllows,
   resolveLotEdition,
-  sameAlbum,
+  sameAlbumAsItem,
   type Edition,
   type LotEdition,
 } from "@/lib/album-edition";
@@ -194,28 +194,26 @@ export function similarLookoutItems(
     if (words(it.artist).join(" ") !== artistKey) continue;
     const known = [it, ...(it.merged ?? [])];
     if (known.some((k) => k.lotId === input.lotId)) return [];
+    // Mesmo nome E mesmo disco (álbum juntado sem ano herda o ano do item).
+    const asRef = {
+      artist: input.artist,
+      album: input.album,
+      year: input.year,
+      edition: input.edition ?? null,
+      masterId: input.masterId ?? null,
+    };
     if (
-      known.some(
-        (k) =>
-          words(k.album).join(" ") === albumKey &&
-          albumKey &&
-          sameAlbum(
-            {
-              artist: input.artist,
-              album: input.album,
-              year: input.year,
-              edition: input.edition ?? null,
-              masterId: input.masterId ?? null,
-            },
-            {
-              artist: input.artist,
-              album: input.album,
-              year: k.year,
-              edition: it.edition,
-              masterId: it.masterId,
-            },
-          ),
-      )
+      albumKey &&
+      sameAlbumAsItem(asRef, {
+        year: it.year,
+        edition: it.edition,
+        masterId: it.masterId,
+        nameMatches: words(it.album).join(" ") === albumKey,
+        merged: (it.merged ?? []).map((m) => ({
+          year: m.year,
+          nameMatches: words(m.album).join(" ") === albumKey,
+        })),
+      })
     ) {
       return []; // idêntico
     }

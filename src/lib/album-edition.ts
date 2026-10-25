@@ -84,6 +84,34 @@ export function sameAlbum(a: AlbumRef, b: AlbumRef): boolean {
 }
 
 /**
+ * O `input` (já com artista+álbum de MESMO nome) é o mesmo disco de um item que tem o álbum principal
+ * e álbuns juntados? Cada álbum juntado SEM ano herda o ano do item que o recebeu — senão um
+ * juntado sem ano ("ano desconhecido não separa") fazia o item de 1986 valer como "o mesmo disco"
+ * de qualquer ano (Caetano Veloso 1968 virava "já estava na lista (1986)").
+ */
+export function sameAlbumAsItem(
+  input: AlbumRef,
+  item: {
+    year: number | null;
+    edition?: Edition | null;
+    masterId?: number | null;
+    /** O álbum principal do item tem o mesmo nome (artista+álbum) do `input`. */
+    nameMatches: boolean;
+    merged: readonly { year: number | null; nameMatches: boolean }[];
+  },
+): boolean {
+  const ref = (year: number | null): AlbumRef => ({
+    artist: input.artist,
+    album: input.album,
+    year,
+    edition: item.edition ?? null,
+    masterId: item.masterId ?? null,
+  });
+  if (item.nameMatches && sameAlbum(input, ref(item.year))) return true;
+  return item.merged.some((m) => m.nameMatches && sameAlbum(input, ref(m.year ?? item.year)));
+}
+
+/**
  * Um lote (edição) pode casar com o item de olho/da Coleção `item`?
  * Rejeita quando: o lote é reedição moderna e o item não é; o item é moderno e o lote é
  * explicitamente original/de época. Lote de edição desconhecida (`null`) não rejeita item

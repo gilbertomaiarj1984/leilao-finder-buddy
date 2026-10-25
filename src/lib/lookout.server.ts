@@ -1,5 +1,5 @@
 import { db } from "@/lib/db-client.server";
-import { isEdition, sameAlbum, type Edition } from "@/lib/album-edition";
+import { isEdition, sameAlbumAsItem, type Edition } from "@/lib/album-edition";
 
 /**
  * "Ficar de olho" (tabela `lookout_items`): discos que o usuário quer muito e quer reconhecer
@@ -181,25 +181,24 @@ function isSameLookoutDisc(
     masterId: number | null;
   },
 ): boolean {
-  const ref = {
-    artist: input.artist,
-    album: input.album,
-    year: input.year,
-    edition: input.edition,
-    masterId: knownMaster(input.masterId),
-  };
-  const itemRef = (year: number | null) => ({
-    artist: input.artist,
-    album: input.album,
-    year,
-    edition: i.edition,
-    masterId: knownMaster(i.masterId),
-  });
-  return (
-    (lookoutIdentityKey(i.artist, i.album) === key && sameAlbum(ref, itemRef(i.year))) ||
-    i.merged.some(
-      (m) => lookoutIdentityKey(m.artist, m.album) === key && sameAlbum(ref, itemRef(m.year)),
-    )
+  return sameAlbumAsItem(
+    {
+      artist: input.artist,
+      album: input.album,
+      year: input.year,
+      edition: input.edition,
+      masterId: knownMaster(input.masterId),
+    },
+    {
+      year: i.year,
+      edition: i.edition,
+      masterId: knownMaster(i.masterId),
+      nameMatches: lookoutIdentityKey(i.artist, i.album) === key,
+      merged: i.merged.map((m) => ({
+        year: m.year,
+        nameMatches: lookoutIdentityKey(m.artist, m.album) === key,
+      })),
+    },
   );
 }
 
