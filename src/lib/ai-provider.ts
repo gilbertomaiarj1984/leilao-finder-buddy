@@ -99,7 +99,7 @@ export const AI_MODEL_OPTIONS: readonly AiModelOption[] = [
   {
     provider: "groq" as const,
     model: GROQ_DEFAULT_MODEL,
-    label: "gpt-oss 120B · grátis (limites/min)",
+    label: "gpt-oss 120B + Qwen (capa) · grátis (limites/min)",
   },
 ];
 

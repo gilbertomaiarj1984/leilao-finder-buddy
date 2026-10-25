@@ -405,7 +405,33 @@ function groqReasoningParams(model: string): Record<string, unknown> {
   return {};
 }
 
-async function runGroq(req: AiRequest, model: string): Promise<string> {
+/**
+ * Modelo do Groq para chamadas COM capa: `GROQ_VISION_MODEL`, senão o Qwen3.8 (⚠️ visão não
+ * confirmada — se o Groq recusar a imagem, `runGroqWithImage` cai para o modelo de texto).
+ */
+const GROQ_VISION_DEFAULT_MODEL = "qwen/qwen3.8-27b";
+
+function groqVisionModel(): string {
+  return process.env["GROQ_VISION_MODEL"] || GROQ_VISION_DEFAULT_MODEL;
+}
+
+/** Com capa: tenta o modelo de visão; se ele recusar a requisição (400/404), segue só com o texto. */
+async function runGroqWithImage(req: AiRequest, textModel: string): Promise<string> {
+  const visionModel = groqVisionModel();
+  try {
+    return await runGroq(req, visionModel, true);
+  } catch (error) {
+    const status = Number((error as { status?: number })?.status);
+    if (status !== 400 && status !== 404) throw error;
+    console.error(
+      `[ai-provider] Groq: ${visionModel} recusou a capa (HTTP ${status}) — seguindo só com o texto`,
+      error,
+    );
+    return await runGroq({ ...req, image: null }, textModel, false);
+  }
+}
+
+async function runGroq(req: AiRequest, model: string, withImage = false): Promise<string> {
   const key = process.env["GROQ_API_KEY"];
   if (!key) throw new Error("GROQ_API_KEY ausente");
 
@@ -413,10 +439,10 @@ async function runGroq(req: AiRequest, model: string): Promise<string> {
     { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
   > = [];
   // O Groq aceita data URL ou URL pública (ele mesmo baixa) — só repassa URL que passa no filtro SSRF.
-  // Modelo sem visão (ex.: gpt-oss) devolve 400 se receber imagem, então a capa só vai nos de visão.
+  // Modelo sem visão (ex.: gpt-oss) devolve 400 se receber imagem: a capa só vai no modelo de visão.
   if (
     req.image &&
-    /scout|maverick|vision/i.test(model) &&
+    withImage &&
     (req.image.startsWith("data:image/") || isSafeImageUrl(req.image))
   ) {
     userContent.push({ type: "image_url", image_url: { url: req.image } });
@@ -483,7 +509,12 @@ async function runOne(
     return { text: await runAnthropic(req, model), model };
   }
   const model = providerModel(provider, geminiModel);
-  if (provider === "groq") return { text: await runGroq(req, model), model };
+  if (provider === "groq") {
+    // Com capa usa o modelo de visão (e o devolve como `model`, para a UI/`lot_ai.model`).
+    return req.image
+      ? { text: await runGroqWithImage(req, model), model: groqVisionModel() }
+      : { text: await runGroq(req, model), model };
+  }
 
   return { text: await runGemini(req, model), model };
 }
