@@ -9,6 +9,7 @@ type LotMarketRow = {
   basis: string;
   matched: boolean;
   release_id: number | null;
+  master_id?: number | null;
   release_title: string | null;
   year: number | null;
   num_for_sale: number | null;
@@ -30,7 +31,7 @@ type LotMarketRow = {
 type MarketTarget = { id: string; album: string | null; title: string; price: string };
 
 const MARKET_COLS =
-  "id, basis, matched, release_id, release_title, year, num_for_sale, lowest_price, currency, suggested_price, suggested_condition, suggested_by_condition, have, want, price_low_br, price_high_br, num_for_sale_br";
+  "id, basis, matched, release_id, release_title, year, num_for_sale, lowest_price, currency, suggested_price, suggested_condition, suggested_by_condition, have, want, price_low_br, price_high_br, num_for_sale_br, master_id";
 
 /**
  * Base de invalidação do cache: o que de fato é consultado no Discogs (o álbum identificado e, sem
@@ -187,6 +188,7 @@ export async function fetchAndStoreMarket(t: {
       basis,
       matched: m.matched,
       release_id: m.releaseId,
+      master_id: m.masterId,
       release_title: m.releaseTitle,
       year: m.year,
       num_for_sale: m.numForSale,

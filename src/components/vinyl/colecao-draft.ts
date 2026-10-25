@@ -1,5 +1,6 @@
 // Rascunho editável de um disco da Coleção (formulário de adicionar/editar).
 
+import type { Edition } from "@/lib/album-edition";
 import type { CollectionItem } from "@/lib/collection.server";
 
 // --- Formulário de edição/adição ---
@@ -18,6 +19,7 @@ export type Draft = {
   notes: string;
   description: string;
   tags: string;
+  edition: Edition | null;
 };
 
 export const EMPTY_DRAFT: Draft = {
@@ -35,6 +37,7 @@ export const EMPTY_DRAFT: Draft = {
   notes: "",
   description: "",
   tags: "",
+  edition: null,
 };
 
 export function toDraft(item: CollectionItem): Draft {
@@ -53,5 +56,6 @@ export function toDraft(item: CollectionItem): Draft {
     notes: item.notes,
     description: item.description,
     tags: item.tags.join(", "),
+    edition: item.edition,
   };
 }

@@ -303,7 +303,10 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   artista E álbum → "não identificado" (não cria). Cria via `addLookoutManual` — `lot_id`
   sintético `manual-<uuid>`, sem lote de origem, sem repetição (mesmo artista+álbum reaproveita/
   reativa). Depois busca a capa no Discogs (`searchCoverOptions`, prefere o mesmo ano) e grava
-  como na Coleção (`importCollectionCover`: comprime em webp na pasta da coleção) — best-effort. **Ano (v0.181.1):** `parseLookoutBulk` lê o ano entre parênteses OU solto na linha (`extractLooseYear`: em qualquer ponto da linha; "Prince - 1999" e "1984 - Van Halen" são o álbum, não o ano); o ano digitado vence o da IA. **Homônimos:** a deduplicação (`addLookoutFromLot`/`addLookoutManual`, `similarLookoutItems`, importação em massa da Coleção) usa `sameAlbumYear`/`isSelfTitledAlbum` (`vinyl-parse.ts`): álbum = nome do artista com anos conhecidos e diferentes é OUTRO disco (Caetano Veloso 1968 × 1986); nos demais, ano diferente = reedição, mesmo disco; ano desconhecido de um lado não separa. O ✨ Identificar usa artista+álbum quando o item não tem título de lote.
+  como na Coleção (`importCollectionCover`: comprime em webp na pasta da coleção) — best-effort.
+  **Edição (v0.182.0):** a linha é pré-marcada como reedição moderna se citar "reedição/180g/remasterizado…"
+  (`detectModernReissue`) e o master do Discogs é consultado na hora (`lookupMaster`; falha → NULL e o
+  passo `masters` do cron tenta de novo). **Ano (v0.181.1):** `parseLookoutBulk` lê o ano entre parênteses OU solto na linha (`extractLooseYear`: em qualquer ponto da linha; "Prince - 1999" e "1984 - Van Halen" são o álbum, não o ano); o ano digitado vence o da IA. **Homônimos:** a deduplicação (`addLookoutFromLot`/`addLookoutManual`, `similarLookoutItems`, importação em massa da Coleção) usa `sameAlbumYear`/`isSelfTitledAlbum` (`vinyl-parse.ts`): álbum = nome do artista com anos conhecidos e diferentes é OUTRO disco (Caetano Veloso 1968 × 1986); nos demais, ano diferente = reedição, mesmo disco; ano desconhecido de um lado não separa. O ✨ Identificar usa artista+álbum quando o item não tem título de lote.
 - **"Já tenho" — tirar o que já está na Coleção (v0.123.0):** botão **Já tenho (N)** em `/olho`
   (aparece só com N>0) → `LookoutOwnedDialog`. `lookoutOwnedInCollection` (`lookout-match.ts`,
   puro) reaproveita o motor do casamento de lotes: cada disco da Coleção vira uma identidade de
@@ -462,3 +465,38 @@ updatedAt } }` (`house-rating.server.ts`; server fns `getHouseRatings`/`savePreg
 - **Valor atual ao vivo (v0.139.1):** `computeLookout` (`applyLivePrices`) sobrescreve `price`/`priceNum` de cada lote por vir com `VALOR_VALUE` do `peca.asp` (`fetchLotDetails`, até 200 lotes por chamada, ordem dia/hora, cache em memória de 3 min — v0.155.0: 3 min para pregão de hoje e 10 min para os dias seguintes); falha = mantém o valor da varredura (`lots.price`, cron 3×/dia, defasado). Vale também para o aviso externo (`lookoutnotify`: "atual" e comparação com o teto). **v0.155.0:** só a versão completa (`history: true`) pede o valor ao vivo; o contador do menu e a 1ª etapa de `/olho` usam a versão leve (`live: false`) — ver `docs/areas/ui.md`, "Desempenho das telas (v0.155.0)", itens 1 e 3.
 
 - **Borda por lance (v0.140.0):** em `/olho`, `useBidsQuery` (mesmo cache da home) vira `bidById` (id do lote → `status`/`myBid`) passado ao `LookoutItemCard`; linha "Por vir" com lance vencendo (`bidIsWinning`) = borda verde, superado (`bidIsCovered`) = vermelha + selo com o valor do meu lance; vence a borda fúcsia de "novo". Só o cartão do disco (não a linha-resumo).
+
+## Edição do disco: original × reedição (v0.182.0)
+
+Problema: o mesmo artista tem álbuns **homônimos** de anos diferentes (Caetano Veloso 1968 × 1986) e
+os lotes às vezes são **relançamentos modernos** do mesmo álbum — para o colecionador, o original e
+o relançamento moderno são discos diferentes (valor e interesse), enquanto reedições **de época**
+continuam sendo "o disco". Núcleo puro/client-safe em `src/lib/album-edition.ts`:
+
+- **Duas marcas** (`Edition`): `modern` (reedição moderna = OUTRO disco) e `period` (reedição de
+  época = MESMO disco do original, relevante só p/ homônimos); `null` = disco normal. Gravadas em
+  `lookout_items.edition` e `collection_items.edition` (caixas de seleção — `EditionCheckboxes` —
+  no editar do item do De olho e no editar da Coleção). Para o **lote** há ainda `original`
+  ("este lote NÃO é reedição"), só como sobrescrita (`LotEdition`).
+- **Lote:** edição efetiva = sobrescrita manual (`app_state.lot_edition`, por id do lote, 30 dias,
+  `getLotEditions`/`setLotEdition`, hook `useLotEditionsQuery`) > pré-marcação por palavras do
+  título (`detectModernReissue`: reedição, relançamento, reissue, remasterizado, 180/200g,
+  heavyweight, vinil colorido/transparente, picture disc, "edição de 20xx") > desconhecida. O botão
+  `LotEditionButton` (ícone Layers; autônomo como o `ReevaluateIconButton`) fica no card desktop, na
+  folha do celular e na linha da Análise.
+- **Identidade** (`sameAlbum`): moderna × não-moderna → outro disco; duas modernas → o mesmo
+  relançamento; homônimo com master conhecido nos dois lados → igual ⇔ mesmo master; marca "época"
+  → mesmo disco; senão a regra do ano (`sameAlbumYear`: só o homônimo de anos diferentes separa).
+  Usada na deduplicação do De olho (`addLookoutFromLot`/`addLookoutManual`, `similarLookoutItems`
+  — por isso um lote moderno do mesmo disco pergunta "criar novo ou inserir em existente?") e na
+  importação em massa da Coleção (`albumKey`).
+- **Casamento lote × item** (`matchLookoutForLot` → `lotEditionAllows`): lote moderno não casa com item
+  normal; item moderno rejeita lote explicitamente original/de época (edição desconhecida não rejeita);
+  homônimo com masters diferentes rejeita. Vínculo manual (✓) vale sempre. **Já tenho**
+  (`lookoutOwnedInCollection`): ter o moderno não é ter o original (e vice-versa).
+- **Master do Discogs** (`master_id`): `lot_market.master_id` vem do release casado (`SearchHit.master_id`);
+  itens do De olho/Coleção são preenchidos por `lookupMaster` (busca `type=master`, pontuada por
+  `pickBestRelease` com o ano; homônimo SEM ano não é adivinhado → 0) no passo **`masters`** do cron
+  (`album-master.server.ts`, `refresh.yml`) e na hora ao adicionar por texto. NULL = não consultado;
+  0 = consultado sem master; mudar artista/álbum/ano devolve o item a NULL. O Discogs só entra
+  como evidência: sem master vale a marca/o ano.

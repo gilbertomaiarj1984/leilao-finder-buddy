@@ -12,6 +12,7 @@ import {
 import { memo } from "react";
 
 import { Button } from "@/components/ui/button";
+import { LotEditionButton } from "@/components/vinyl/lot-edition-button";
 import {
   LotTags,
   RarityLabel,
@@ -436,6 +437,11 @@ function AnaliseLotRowImpl({
         >
           <Trash2 className="h-4 w-4 text-muted-foreground" />
         </Button>
+        <LotEditionButton
+          lotId={lot.id}
+          title={lot.title}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input shadow-sm hover:border-primary"
+        />
         <ReevaluateIconButton
           className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input shadow-sm hover:border-primary"
           lot={{

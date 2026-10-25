@@ -423,3 +423,95 @@ describe("lookoutOwnedInCollection", () => {
     expect(lookoutOwnedInCollection([arch], col)).toEqual([]);
   });
 });
+
+describe("edição (original × reedição moderna) e master do Discogs", () => {
+  const lot = (title: string, extra: Partial<Parameters<typeof buildLotIdentity>[0]> = {}) =>
+    buildLotIdentity({
+      title,
+      artist: "Chico Buarque",
+      album: "Chico Buarque - Construção",
+      ...extra,
+    });
+
+  test("lote de reedição moderna (palavras do título) não casa com o original", () => {
+    const cands = lookoutCandidates([item()]);
+    expect(
+      matchLookoutForLot(cands, "9-1", lot("LP Chico Buarque - Construção (1971) 180g reedição")),
+    ).toBeNull();
+    expect(
+      matchLookoutForLot(cands, "9-2", lot("LP Chico Buarque - Construção (1971)")),
+    ).not.toBeNull();
+  });
+
+  test("sobrescrita manual: marcado como original volta a casar; época não bloqueia", () => {
+    const cands = lookoutCandidates([item()]);
+    const title = "LP Chico Buarque - Construção (1971) reedição";
+    expect(
+      matchLookoutForLot(cands, "9-3", lot(title, { editionOverride: "original" })),
+    ).not.toBeNull();
+    expect(
+      matchLookoutForLot(cands, "9-4", lot(title, { editionOverride: "period" })),
+    ).not.toBeNull();
+    expect(
+      matchLookoutForLot(
+        cands,
+        "9-5",
+        lot("LP Chico Buarque - Construção", { editionOverride: "modern" }),
+      ),
+    ).toBeNull();
+  });
+
+  test("item marcado como reedição moderna casa o lote moderno e rejeita o explicitamente original", () => {
+    const cands = lookoutCandidates([item({ edition: "modern" })]);
+    expect(
+      matchLookoutForLot(cands, "9-6", lot("LP Chico Buarque - Construção 180g")),
+    ).not.toBeNull();
+    expect(
+      matchLookoutForLot(
+        cands,
+        "9-7",
+        lot("LP Chico Buarque - Construção", { editionOverride: "original" }),
+      ),
+    ).toBeNull();
+    // Edição desconhecida: não dá para saber, então não rejeita.
+    expect(matchLookoutForLot(cands, "9-8", lot("LP Chico Buarque - Construção"))).not.toBeNull();
+  });
+
+  test("homônimo: master diferente do lote rejeita; igual casa", () => {
+    const self = item({
+      artist: "Caetano Veloso",
+      album: "Caetano Veloso",
+      year: 1968,
+      masterId: 111,
+    });
+    const cands = lookoutCandidates([self]);
+    const mk = (masterId: number) =>
+      buildLotIdentity({
+        title: "LP Caetano Veloso - Caetano Veloso 1968",
+        artist: "Caetano Veloso",
+        album: "Caetano Veloso - Caetano Veloso",
+        marketMasterId: masterId,
+      });
+    expect(matchLookoutForLot(cands, "9-9", mk(222))).toBeNull();
+    expect(matchLookoutForLot(cands, "9-10", mk(111))).not.toBeNull();
+  });
+
+  test("Já tenho: o relançamento moderno não conta como ter o original (e vice-versa)", () => {
+    const wantOriginal = item();
+    const owned = (edition: "modern" | null) => [
+      { id: "c1", artist: "Chico Buarque", album: "Construção", year: 1971, edition },
+    ];
+    expect(lookoutOwnedInCollection([wantOriginal], owned(null))).toHaveLength(1);
+    expect(lookoutOwnedInCollection([wantOriginal], owned("modern"))).toHaveLength(0);
+    expect(lookoutOwnedInCollection([item({ edition: "modern" })], owned(null))).toHaveLength(0);
+    expect(lookoutOwnedInCollection([item({ edition: "modern" })], owned("modern"))).toHaveLength(
+      1,
+    );
+  });
+
+  test("similarLookoutItems: reedição moderna do mesmo disco pergunta em vez de juntar", () => {
+    const input = { artist: "Chico Buarque", album: "Construção", year: 1971, lotId: "9-11" };
+    expect(similarLookoutItems([item()], input)).toHaveLength(0);
+    expect(similarLookoutItems([item()], { ...input, edition: "modern" })).toHaveLength(1);
+  });
+});

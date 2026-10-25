@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { CoverPickerDialog } from "@/components/vinyl/cover-picker-dialog";
 import { DiscCodeScannerDialog } from "@/components/vinyl/disc-code-scanner-dialog";
+import { EditionCheckboxes } from "@/components/vinyl/edition-checkboxes";
 import { GradeSelect } from "@/components/vinyl/grade-select";
 import { GEMINI_IMPORT_PROMPT, parseCollectionBulkText } from "@/lib/collection-bulk";
 import { Draft } from "@/components/vinyl/colecao-draft";
@@ -311,6 +312,14 @@ export function EditDialog({
                 onChange={(e) => set({ year: e.target.value })}
               />
             </Field>
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-xs font-medium text-muted-foreground">Edição</span>
+              <EditionCheckboxes
+                value={draft.edition}
+                onChange={(edition) => set({ edition })}
+                disabled={saving}
+              />
+            </div>
             <Field label="Estado da mídia">
               <GradeSelect
                 value={draft.conditionMedia}

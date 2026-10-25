@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 
+import { isEdition, type Edition } from "@/lib/album-edition";
 import { requireAuth } from "@/lib/auth-middleware";
 import { isAiProvider } from "./ai-provider";
 
@@ -24,7 +25,10 @@ function normalizeInput(input: Record<string, unknown> | undefined) {
     tags?: string[];
     lotId?: string;
     originLotId?: string;
+    edition?: Edition | null;
   } = {};
+  if (input?.edition !== undefined)
+    patch.edition = isEdition(input.edition) ? (input.edition as Edition) : null;
   if (str(input?.artist) !== undefined) patch.artist = String(input!.artist);
   if (str(input?.album) !== undefined) patch.album = String(input!.album);
   if (str(input?.title) !== undefined) patch.title = String(input!.title);

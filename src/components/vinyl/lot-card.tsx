@@ -24,6 +24,7 @@ import { formatAiAlbum, type LotAi, type LotMarket } from "@/components/vinyl/ai
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
 import type { Condition } from "@/lib/grading";
 import type { ExclusionSignal } from "@/lib/lot-exclusion";
+import { LotEditionButton } from "@/components/vinyl/lot-edition-button";
 import { LOOKOUT_CONFIDENT_MIN, priceVsCeiling, type LookoutHit } from "@/lib/lookout-match";
 import {
   auctionStarted,
@@ -551,6 +552,7 @@ function LotCardDesktop({
                 />
               </Button>
             ) : null}
+            {lot.id ? <LotEditionButton lotId={lot.id} title={lot.title} /> : null}
             {lot.id ? (
               <ReevaluateIconButton
                 lot={{

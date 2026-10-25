@@ -186,6 +186,8 @@ ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS num_for_sale_br integer;
 ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS suggested_by_condition jsonb;
 -- Evidência do casamento com o Discogs (país, formato, cobertura do título/artista): auditar um preço estranho.
 ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS match_info jsonb;
+-- Master do Discogs do release casado (v0.182.0): o mesmo álbum e suas reedições compartilham o master.
+ALTER TABLE public.lot_market ADD COLUMN IF NOT EXISTS master_id integer;
 
 -- (A antiga tabela `wantlist_items` — "Sondagem" — foi descontinuada na v0.149.0, migrada para
 -- `lookout_items` (De olho) e removida na v0.151.0.)
@@ -334,6 +336,9 @@ CREATE INDEX IF NOT EXISTS collection_items_origin_lot_idx ON public.collection_
 ALTER TABLE public.collection_items ADD COLUMN IF NOT EXISTS tracklist jsonb;
 -- Código de barras (EAN/UPC) ou nº de catálogo do disco — lido pela câmera; ancora a busca no Discogs.
 ALTER TABLE public.collection_items ADD COLUMN IF NOT EXISTS barcode text NOT NULL DEFAULT '';
+-- Edição e master do Discogs (v0.182.0) — mesmo significado de `lookout_items.edition/master_id`.
+ALTER TABLE public.collection_items ADD COLUMN IF NOT EXISTS edition text;
+ALTER TABLE public.collection_items ADD COLUMN IF NOT EXISTS master_id integer;
 
 DROP TRIGGER IF EXISTS update_collection_items_updated_at ON public.collection_items;
 CREATE TRIGGER update_collection_items_updated_at BEFORE UPDATE ON public.collection_items
@@ -490,6 +495,11 @@ ALTER TABLE public.lookout_items ADD COLUMN IF NOT EXISTS merged jsonb NOT NULL 
 -- Palavras/frases extras do usuário ("1971", "edição de luxo"): um lote do MESMO artista que as
 -- contém casa com o item, mesmo com álbum/ano diferentes (v0.118.0).
 ALTER TABLE public.lookout_items ADD COLUMN IF NOT EXISTS terms jsonb NOT NULL DEFAULT '[]'::jsonb;
+-- Edição (v0.182.0): 'modern' = reedição moderna (outro disco p/ o colecionador); 'period' = reedição
+-- de época que é o MESMO disco do original (homônimos). NULL = disco normal. `master_id` = master do
+-- Discogs (liga original e reedições): NULL = ainda não consultado; 0 = consultado, sem master.
+ALTER TABLE public.lookout_items ADD COLUMN IF NOT EXISTS edition text;
+ALTER TABLE public.lookout_items ADD COLUMN IF NOT EXISTS master_id integer;
 
 DROP TRIGGER IF EXISTS update_lookout_items_updated_at ON public.lookout_items;
 CREATE TRIGGER update_lookout_items_updated_at BEFORE UPDATE ON public.lookout_items

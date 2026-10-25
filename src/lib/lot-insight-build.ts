@@ -5,6 +5,7 @@
  * tela tinha a sua cópia.
  */
 import { scoreCondition, type Condition, type Grade } from "./grading";
+import type { LotEdition } from "./album-edition";
 import { buildLotIdentity } from "./lookout-match";
 import {
   ownedMatchForLot,
@@ -61,8 +62,12 @@ export function demandMap(
 export function lotIdentityMap(
   lots: readonly { id: string; title: string; artist: string }[],
   albumById: ReadonlyMap<string, string | null>,
-  marketById: ReadonlyMap<string, { releaseTitle: string | null; year: number | null }>,
+  marketById: ReadonlyMap<
+    string,
+    { releaseTitle: string | null; year: number | null; masterId?: number | null }
+  >,
   aliases: Readonly<Record<string, string>>,
+  editions?: Readonly<Record<string, LotEdition>>,
 ): Map<string, LotIdentity> {
   const map = new Map<string, LotIdentity>();
   for (const lot of lots) {
@@ -76,6 +81,8 @@ export function lotIdentityMap(
           album: albumById.get(lot.id) ?? null,
           marketTitle: market?.releaseTitle ?? null,
           marketYear: market?.year ?? null,
+          marketMasterId: market?.masterId ?? null,
+          editionOverride: editions?.[lot.id] ?? null,
           aliases,
         }),
       );

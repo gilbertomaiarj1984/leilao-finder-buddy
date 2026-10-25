@@ -21,7 +21,7 @@ import {
 } from "./discogs-match";
 import { parseSuggestionMap, type SuggestionMap } from "./discogs-price";
 import { parseDiscogsTracklist, type RawTrack } from "./tracklist";
-import { normalizeForMatch } from "./vinyl-parse";
+import { isSelfTitledAlbum, normalizeForMatch } from "./vinyl-parse";
 
 const BASE = "https://api.discogs.com";
 const SITE = "https://www.discogs.com";
@@ -53,6 +53,8 @@ type MarketData = {
   numForSaleBr: number | null; // quantidade de anúncios de vendedores BR considerados
   /** Evidência do casamento (país, formato, cobertura) para auditar um preço estranho. */
   matchInfo: MatchInfo | null;
+  /** Master do release casado (liga o álbum às reedições): 0 = release sem master; null = não casou. */
+  masterId: number | null;
 };
 
 export function discogsConfigured(): boolean {
@@ -420,6 +422,7 @@ async function fetchMarketOnce(album: string | null, title: string): Promise<Mar
     priceHighBr: null,
     numForSaleBr: null,
     matchInfo: null,
+    masterId: null,
   };
 
   const found = await findRelease(album, title);
@@ -437,6 +440,7 @@ async function fetchMarketOnce(album: string | null, title: string): Promise<Mar
     have: hit.community?.have ?? null,
     want: hit.community?.want ?? null,
     matchInfo: found.info,
+    masterId: hit.master_id && hit.master_id > 0 ? hit.master_id : 0,
   };
 
   const stats = (await discogsGet(`/marketplace/stats/${releaseId}?curr_abbr=${CURRENCY}`)) as {
@@ -486,6 +490,38 @@ async function fetchMarketOnce(album: string | null, title: string): Promise<Mar
   if ((base.priceLowBr ?? base.priceHighBr) !== null) base.currency = CURRENCY;
 
   return base;
+}
+
+/**
+ * Master do Discogs do álbum (todas as reedições compartilham o master; discos HOMÔNIMOS têm
+ * masters diferentes) — usado para separar "outro álbum com o mesmo nome" de "reedição". Busca
+ * `type=master` (o `year` do master é o do lançamento ORIGINAL) pontuada por `pickBestRelease`;
+ * sem master no resultado, tenta o `master_id` de um release de vinil. `null` quando não casa
+ * com segurança — e, para álbum homônimo sem ano, também (adivinhar traria o master errado).
+ */
+export async function lookupMaster(
+  artist: string,
+  album: string,
+  year: number | null,
+): Promise<{ masterId: number; year: number | null } | null> {
+  const a = artist.trim();
+  const t = album.trim();
+  if (!a || !t || !discogsConfigured()) return null;
+  if (!year && isSelfTitledAlbum(a, t)) return null;
+  const target: ReleaseTarget = { artist: a, title: t, year };
+  const qs = `artist=${encodeURIComponent(a)}&release_title=${encodeURIComponent(t)}&per_page=25`;
+  const masters = pickBestRelease(target, await searchReleases(`type=master&${qs}`));
+  if (masters?.hit.id) {
+    const y = Number(masters.hit.year);
+    return { masterId: masters.hit.id, year: Number.isFinite(y) && y > 0 ? y : null };
+  }
+  const release = pickBestRelease(target, await searchReleases(`type=release&format=Vinyl&${qs}`));
+  const mid = release?.hit.master_id;
+  if (mid && mid > 0) {
+    const y = Number(release.hit.year);
+    return { masterId: mid, year: Number.isFinite(y) && y > 0 ? y : null };
+  }
+  return null;
 }
 
 /**

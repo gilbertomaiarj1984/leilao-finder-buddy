@@ -1,5 +1,5 @@
 import { db } from "@/lib/db-client.server";
-import { sameAlbumYear } from "@/lib/vinyl-parse";
+import { isEdition, sameAlbum, type Edition } from "@/lib/album-edition";
 
 /**
  * "Ficar de olho" (tabela `lookout_items`): discos que o usuário quer muito e quer reconhecer
@@ -40,6 +40,10 @@ export type LookoutRow = {
   merged: LookoutMergedRow[];
   /** Palavras/frases extras do usuário para o casamento (ex.: "1971"). */
   terms: string[];
+  /** `modern` = reedição moderna (outro disco); `period` = reedição de época do mesmo disco. */
+  edition: Edition | null;
+  /** Master do Discogs: null = não consultado; 0 = consultado sem master. */
+  masterId: number | null;
 };
 
 type DbRow = {
@@ -58,10 +62,12 @@ type DbRow = {
   status: string | null;
   merged: unknown;
   terms: unknown;
+  edition: string | null;
+  master_id: number | null;
 };
 
 const COLS =
-  "id, lot_id, artist, album, year, title, house, image, url, day_key, max_price, note, status, merged, terms";
+  "id, lot_id, artist, album, year, title, house, image, url, day_key, max_price, note, status, merged, terms, edition, master_id";
 
 /** Lista de frases limpa: strings não vazias, sem repetição, até 20. */
 function cleanTerms(v: unknown): string[] {
@@ -143,7 +149,58 @@ function toRow(r: DbRow): LookoutRow {
     status: toStatus(r.status),
     merged: toMerged(r.merged),
     terms: cleanTerms(r.terms),
+    edition: isEdition(r.edition) ? r.edition : null,
+    masterId: r.master_id ?? null,
   };
+}
+
+/** Master conhecido (>0) ou undefined — 0/null = sem informação para comparar. */
+function knownMaster(v: number | null | undefined): number | null {
+  return v && v > 0 ? v : null;
+}
+
+/** Master do Discogs já casado para um lote (`lot_market.master_id`), ou null. Best-effort. */
+export async function getLotMasterId(lotId: string): Promise<number | null> {
+  try {
+    const { data } = await db.from("lot_market").select("master_id").eq("id", lotId).maybeSingle();
+    return knownMaster((data as { master_id: number | null } | null)?.master_id);
+  } catch {
+    return null;
+  }
+}
+
+/** O registro `i` (ou um álbum juntado a ele) já é o disco descrito por `input`? */
+function isSameLookoutDisc(
+  i: LookoutRow,
+  key: string,
+  input: {
+    artist: string;
+    album: string;
+    year: number | null;
+    edition: Edition | null;
+    masterId: number | null;
+  },
+): boolean {
+  const ref = {
+    artist: input.artist,
+    album: input.album,
+    year: input.year,
+    edition: input.edition,
+    masterId: knownMaster(input.masterId),
+  };
+  const itemRef = (year: number | null) => ({
+    artist: input.artist,
+    album: input.album,
+    year,
+    edition: i.edition,
+    masterId: knownMaster(i.masterId),
+  });
+  return (
+    (lookoutIdentityKey(i.artist, i.album) === key && sameAlbum(ref, itemRef(i.year))) ||
+    i.merged.some(
+      (m) => lookoutIdentityKey(m.artist, m.album) === key && sameAlbum(ref, itemRef(m.year)),
+    )
+  );
 }
 
 /** Todos os itens (single-user; poucas linhas), mais recentes primeiro. */
@@ -166,6 +223,10 @@ type AddLookoutInput = {
   image: string | null;
   url: string;
   dayKey: string;
+  /** Edição pré-marcada (palavras do título / sobrescrita do lote); o usuário ajusta depois. */
+  edition?: Edition | null;
+  /** Master do Discogs do lote (de `lot_market`), quando já casado. */
+  masterId?: number | null;
 };
 
 /**
@@ -180,15 +241,14 @@ export async function addLookoutFromLot(input: AddLookoutInput): Promise<Lookout
   const found =
     all.find((i) => i.lotId === input.lotId || i.merged.some((m) => m.lotId === input.lotId)) ??
     (key
-      ? all.find(
-          (i) =>
-            (lookoutIdentityKey(i.artist, i.album) === key &&
-              sameAlbumYear(input.artist, input.album, input.year, i.year)) ||
-            i.merged.some(
-              (m) =>
-                lookoutIdentityKey(m.artist, m.album) === key &&
-                sameAlbumYear(input.artist, input.album, input.year, m.year),
-            ),
+      ? all.find((i) =>
+          isSameLookoutDisc(i, key, {
+            artist: input.artist,
+            album: input.album,
+            year: input.year,
+            edition: input.edition ?? null,
+            masterId: input.masterId ?? null,
+          }),
         )
       : undefined);
   if (found) {
@@ -221,6 +281,8 @@ export async function addLookoutFromLot(input: AddLookoutInput): Promise<Lookout
       url: input.url,
       day_key: input.dayKey,
       status: "active",
+      edition: input.edition ?? null,
+      master_id: input.masterId ?? null,
     })
     .select(COLS)
     .single();
@@ -240,19 +302,20 @@ export async function addLookoutManual(input: {
   artist: string;
   album: string;
   year: number | null;
+  edition?: Edition | null;
+  masterId?: number | null;
 }): Promise<{ item: LookoutRow; created: boolean }> {
   const all = await getAllLookout();
   const key = lookoutIdentityKey(input.artist, input.album);
   const found = key
-    ? all.find(
-        (i) =>
-          (lookoutIdentityKey(i.artist, i.album) === key &&
-            sameAlbumYear(input.artist, input.album, input.year, i.year)) ||
-          i.merged.some(
-            (m) =>
-              lookoutIdentityKey(m.artist, m.album) === key &&
-              sameAlbumYear(input.artist, input.album, input.year, m.year),
-          ),
+    ? all.find((i) =>
+        isSameLookoutDisc(i, key, {
+          artist: input.artist,
+          album: input.album,
+          year: input.year,
+          edition: input.edition ?? null,
+          masterId: input.masterId ?? null,
+        }),
       )
     : undefined;
   if (found) {
@@ -274,6 +337,8 @@ export async function addLookoutManual(input: {
       album: input.album.trim(),
       year: input.year,
       status: "active",
+      edition: input.edition ?? null,
+      master_id: input.masterId ?? null,
     })
     .select(COLS)
     .single();
@@ -291,6 +356,8 @@ type UpdateLookoutInput = {
   status?: LookoutRow["status"];
   terms?: string[];
   image?: string | null;
+  edition?: Edition | null;
+  masterId?: number | null;
 };
 
 /** Atualiza identidade (artista/álbum/ano), teto, nota ou status de um item. */
@@ -304,6 +371,13 @@ export async function updateLookoutItem(input: UpdateLookoutInput): Promise<Look
   if (input.status) patch["status"] = input.status;
   if (input.terms) patch["terms"] = cleanTerms(input.terms);
   if (input.image !== undefined) patch["image"] = input.image;
+  if (input.edition !== undefined) patch["edition"] = input.edition;
+  if (input.masterId !== undefined) patch["master_id"] = input.masterId;
+  // Mudou a identidade (artista/álbum/ano) → o master antigo deixa de valer; o passo do cron
+  // consulta de novo (NULL = ainda não consultado), a menos que o chamador já tenha um.
+  else if (input.artist !== undefined || input.album !== undefined || input.year !== undefined) {
+    patch["master_id"] = null;
+  }
   const { data, error } = await db
     .from("lookout_items")
     .update(patch)

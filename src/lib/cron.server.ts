@@ -513,6 +513,14 @@ async function runCronStep(step: string, url: URL): Promise<Response> {
       return json(await syncPurchasesIncremental());
     }
 
+    // Master do Discogs dos itens do De olho/Coleção sem master (separa homônimos de reedições).
+    // Poucos por chamada; no-op sem DISCOGS_TOKEN.
+    if (step === "masters") {
+      const { fillMissingMasters } = await import("./album-master.server");
+      const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 10, 1), 30);
+      return json(await fillMissingMasters(max));
+    }
+
     // Aviso externo (ntfy.sh) de lotes novos que casam com um disco marcado em "De olho"
     // (menu De olho). Dedupe em `app_state` (`lookout_notified`); no-op sem `NTFY_TOPIC`.
     if (step === "lookoutnotify") {

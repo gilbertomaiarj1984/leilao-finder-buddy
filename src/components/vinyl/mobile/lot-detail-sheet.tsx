@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
+import { LotEditionButton } from "@/components/vinyl/lot-edition-button";
 import { ReevaluateIconButton, ScoreDetails } from "@/components/vinyl/ai-score";
 import { formatAiAlbum, scoreTone } from "@/components/vinyl/ai-score-utils";
 import { ConditionBadges } from "@/components/vinyl/condition-badges";
@@ -605,6 +606,13 @@ export function LotDetailSheet(
               >
                 <Binoculars className="h-5 w-5" />
               </button>
+            ) : null}
+            {lot.id ? (
+              <LotEditionButton
+                lotId={lot.id}
+                title={lot.title}
+                className="grid h-12 w-12 place-items-center rounded-xl border border-border"
+              />
             ) : null}
             {lot.id ? (
               <ReevaluateIconButton

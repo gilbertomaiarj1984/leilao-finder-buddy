@@ -1,6 +1,7 @@
 // Server functions do "Ficar de olho" (`lookout_items`). Ver `lookout.server.ts`.
 import { createServerFn } from "@tanstack/react-start";
 
+import { isEdition, isLotEdition, resolveLotEdition, type Edition } from "@/lib/album-edition";
 import { requireAuth } from "@/lib/auth-middleware";
 
 const STATUSES = ["active", "acquired", "dismissed"] as const;
@@ -101,7 +102,15 @@ export const toggleLookout = createServerFn({ method: "POST" })
       return { item: null };
     }
     const { on: _on, itemId: _itemId, ...input } = data;
-    return { item: await addLookoutFromLot(input) };
+    // Edição pré-marcada (sobrescrita do lote > palavras do título) e master do Discogs do lote.
+    const [{ getLotEditions }, { getLotMasterId }] = await Promise.all([
+      import("./app-state.server"),
+      import("./lookout.server"),
+    ]);
+    const lotEdition = resolveLotEdition(input.title, (await getLotEditions())[input.lotId]);
+    const edition: Edition | null = lotEdition === "original" ? null : lotEdition;
+    const masterId = await getLotMasterId(input.lotId);
+    return { item: await addLookoutFromLot({ ...input, edition, masterId }) };
   });
 
 /** Atualiza identidade, teto, nota ou status de um item. */
@@ -119,6 +128,7 @@ export const updateLookout = createServerFn({ method: "POST" })
             note?: string;
             status?: string;
             terms?: string[];
+            edition?: string | null;
           }
         | undefined,
     ) => {
@@ -132,7 +142,10 @@ export const updateLookout = createServerFn({ method: "POST" })
         note?: string;
         status?: (typeof STATUSES)[number];
         terms?: string[];
+        edition?: Edition | null;
       } = { id: input.id };
+      if (input.edition !== undefined)
+        patch.edition = isEdition(input.edition) ? input.edition : null;
       if (typeof input.artist === "string") patch.artist = input.artist;
       if (typeof input.album === "string") patch.album = input.album;
       if (input.year !== undefined) patch.year = yearOrNull(input.year);
@@ -372,4 +385,32 @@ export const addLookoutByText = createServerFn({ method: "POST" })
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { addLookoutFromText } = await import("./lookout-bulk.server");
     return await addLookoutFromText(data.text, data.year);
+  });
+
+/** Edição marcada à mão por lote ("modern" | "period" | "original"), por id do lote. */
+export const getLotEditionsFn = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getLotEditions } = await import("./app-state.server");
+    return await getLotEditions();
+  });
+
+/** Marca (ou limpa, `edition: null`) a edição de um lote — vale para todos os dispositivos. */
+export const setLotEditionFn = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { lotId?: string; edition?: string | null } | undefined) => {
+    if (!input?.lotId || typeof input.lotId !== "string") throw new Error("lotId obrigatório");
+    return {
+      lotId: input.lotId,
+      edition: isLotEdition(input.edition) ? input.edition : null,
+    };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setLotEdition } = await import("./app-state.server");
+    await setLotEdition(data.lotId, data.edition);
+    return { ok: true as const };
   });

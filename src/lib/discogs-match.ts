@@ -6,6 +6,8 @@ import { normalizeForMatch } from "./vinyl-parse";
 
 export type SearchHit = {
   id?: number;
+  /** Master do release (0/ausente = sem master). Em resultados `type=master`, o próprio `id` é o master. */
+  master_id?: number;
   title?: string;
   year?: number | string;
   country?: string;

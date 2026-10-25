@@ -37,6 +37,7 @@ import {
   useExcludedLotsQuery,
   useHouseRatingsQuery,
   useLookoutLinksQuery,
+  useLotEditionsQuery,
   useLookoutQuery,
   useHomeLotAiQuery,
   useHomeLotConditionQuery,
@@ -89,6 +90,7 @@ export function useLotInsights(allLots: VinylLot[]) {
   const ratingsQuery = useHouseRatingsQuery();
   const lookoutQuery = useLookoutQuery();
   const lookoutLinksQuery = useLookoutLinksQuery();
+  const lotEditionsQuery = useLotEditionsQuery();
   const collectionQuery = useCollectionQuery();
   const collectionLinksQuery = useCollectionLinksQuery();
   const collectionFeedbackQuery = useCollectionFeedbackQuery();
@@ -145,8 +147,8 @@ export function useLotInsights(allLots: VinylLot[]) {
   // ---- Identidade do lote (De olho e Coleção) -----------------------------------------------
   const artistAliases = useMemo(() => aliasesQuery.data?.artists ?? {}, [aliasesQuery.data]);
   const identityById = useMemo(
-    () => lotIdentityMap(allLots, albumById, marketById, artistAliases),
-    [allLots, albumById, marketById, artistAliases],
+    () => lotIdentityMap(allLots, albumById, marketById, artistAliases, lotEditionsQuery.data),
+    [allLots, albumById, marketById, artistAliases, lotEditionsQuery.data],
   );
 
   // ---- De olho -----------------------------------------------------------------------------

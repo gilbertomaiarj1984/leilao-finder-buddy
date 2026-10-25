@@ -18,9 +18,12 @@ import {
   X,
 } from "lucide-react";
 import { dealLabel, dealTone } from "@/components/vinyl/ai-score-utils";
+import { EditionCheckboxes } from "@/components/vinyl/edition-checkboxes";
 import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { useState } from "react";
+
+import type { Edition } from "@/lib/album-edition";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +50,7 @@ export type LookoutPatch = {
   note?: string;
   status?: LookoutStatus;
   terms?: string[];
+  edition?: Edition | null;
 };
 
 function brl(n: number | null | undefined): string {
@@ -141,6 +145,7 @@ export function LookoutItemCard({
   const [artist, setArtist] = useState(item.artist);
   const [album, setAlbum] = useState(item.album);
   const [year, setYear] = useState(item.year ? String(item.year) : "");
+  const [edition, setEdition] = useState<Edition | null>(item.edition ?? null);
   const [ceiling, setCeiling] = useState(item.maxPrice ? String(item.maxPrice) : "");
   const [note, setNote] = useState(item.note);
   const archived = item.status !== "active";
@@ -160,6 +165,7 @@ export function LookoutItemCard({
       artist,
       album,
       year: Number.isFinite(y) && y >= 1900 && y <= 2100 ? Math.trunc(y) : null,
+      edition,
     });
     setEditing(false);
   };
@@ -304,6 +310,7 @@ export function LookoutItemCard({
                 inputMode="numeric"
                 aria-label="Ano"
               />
+              <EditionCheckboxes value={edition} onChange={setEdition} className="sm:col-span-3" />
               <div className="flex gap-2 sm:col-span-3">
                 <Button size="sm" onClick={saveIdentity}>
                   <Check className="mr-1 h-4 w-4" />
@@ -319,6 +326,11 @@ export function LookoutItemCard({
               <div className="min-w-0">
                 <h2 className="truncate text-base font-semibold text-foreground">
                   {lookoutLabel(item) || item.title || "Disco sem identificação"}
+                  {item.edition ? (
+                    <span className="ml-2 rounded bg-secondary px-1.5 py-0.5 align-middle text-[10px] font-medium text-muted-foreground">
+                      {item.edition === "modern" ? "reedição moderna" : "reedição de época"}
+                    </span>
+                  ) : null}
                 </h2>
                 <p className="truncate text-xs text-muted-foreground" title={item.title}>
                   <GripVertical
@@ -338,6 +350,7 @@ export function LookoutItemCard({
                     setArtist(item.artist);
                     setAlbum(item.album);
                     setYear(item.year ? String(item.year) : "");
+                    setEdition(item.edition ?? null);
                     setEditing(true);
                   }}
                   aria-label="Editar artista/álbum/ano"
