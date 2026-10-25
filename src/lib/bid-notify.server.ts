@@ -1,4 +1,4 @@
-import { formatCoveredLot } from "@/lib/lot-score";
+import { formatCoveredLot, formatCoveredWhere } from "@/lib/lot-score";
 import { newlyCoveredBids } from "@/lib/bid-transitions";
 import { db } from "@/lib/db-client.server";
 import { listMyBidsFromSite } from "@/lib/leiloesbr-bids.server";
@@ -60,7 +60,10 @@ export async function notifyOutbidBids(): Promise<{
     const r = await sendPushToAll({
       title:
         newlyCovered.length === 1 ? "Lance superado" : `${newlyCovered.length} lances superados`,
-      body: newlyCovered.map((b) => formatCoveredLot(b, null)).join("\n"),
+      // Por lote: nº/artista/álbum + dia, casa e leilão (o toque no aviso abre o app).
+      body: newlyCovered
+        .map((b) => `${formatCoveredLot(b, null)}\n${formatCoveredWhere(b)}`.trim())
+        .join("\n\n"),
       url: "/",
       tag: "bids-outbid",
     });
