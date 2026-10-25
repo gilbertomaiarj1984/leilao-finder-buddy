@@ -485,6 +485,43 @@ const CONDITION_SHEET_RE = /\bclassificacao\s+tecnica\b.*$/;
  * (ex.: "2 LPs") NÃO contam como lote.
  */
 export function isDiscBundle(title: string): boolean {
+  return discBundleKind(title) !== null;
+}
+
+/**
+ * true quando o título é um conjunto de ≥3 COMPACTOS avulsos descrito só por quantidade ("VINIL:
+ * 3 COMPACTOS: NEY MATOGROSSO, ROBERTO CARLOS E…") — vários artistas num lote só, sem a palavra
+ * "lote"/"kit". Continua sendo um conjunto (`isDiscBundle`), mas na tela vai para "Novelas,
+ * coletâneas e não classificados", não para "Lote".
+ */
+export function isCompactsBundle(title: string): boolean {
+  return discBundleKind(title) === "compactos";
+}
+
+// "Vários/diversos ARTISTAS" é coletânea de UM disco, não conjunto de vários discos.
+const VARIOUS_ARTISTS_PHRASE =
+  /\b(?:diversos|varios|varias)\s+(?:artistas?|interpretes?|autores?|cantores?|cantoras?|nomes|compositores?|musicos?|grupos?|bandas?)\b/g;
+
+// Lista de palavras-chave de busca colada no fim de alguns anúncios ("…descrição do lote. bolachão, long
+// play, fonograma, álbum de vinil, pressing, record, bolacha"): não descreve o lote.
+const SEO_KEYWORD_TAIL =
+  /\b(?:bolachao|bolacha|long play|fonograma|pressing|record)\s*,\s*(?:[^,.;]{2,30},\s*){2,}[^,.;]{2,30}\.?\s*$/;
+
+// "o lote"/"do lote"/"neste lote"… é o NOME do item no leilão (todo item vendido no site é um
+// "lote"), não um conjunto de discos.
+const LOTE_AS_ITEM =
+  /\b(?:d[oae]|n[oae]|dest[ae]|nest[ae]|est[ae]|ess[ae]|dess[ae]|pel[oa]|ao|o|a)\s+lote\b/g;
+
+const DISC_ALT = "(?:lps?|discos?|vinis|vinil|compactos?|bolach[aã]o|bolachoes|long play)";
+const LOTE_WITH_DISC = new RegExp(
+  `\\b(?:lote|kit)\\s+(?:com|de|composto\\s+(?:de|por)|formado\\s+(?:de|por)|contendo)\\s+(?:[\\w']+\\s+){0,3}${DISC_ALT}\\b`,
+);
+const LOTE_NEAR_DISC = new RegExp(`\\blote\\s+(?:[\\w']+\\s+){0,4}${DISC_ALT}\\b`);
+const VARIOUS_DISC = new RegExp(
+  `\\b(?:diversos|varios|varias)\\s+(?:[\\w']+\\s+){0,2}${DISC_ALT}\\b|\\b${DISC_ALT}\\s+(?:[\\w']+\\s+){0,1}(?:diversos|varios|varias)\\b`,
+);
+
+function discBundleKind(title: string): "lote" | "compactos" | null {
   const raw = normalize(title);
   // Remove o RÓTULO de numeração do início ("Lote 45 - ...", "Lote 09 vinil único...") ANTES
   // de qualquer checagem: senão o número do lote (ex.: "09") cola no disc word seguinte
@@ -493,30 +530,39 @@ export function isDiscBundle(title: string): boolean {
   // formato. A partir daqui `t` nunca mais vê esse número/rótulo.
   const t = raw
     .replace(CONDITION_SHEET_RE, "")
+    .replace(SEO_KEYWORD_TAIL, "")
     .replace(LOTE_PROMO_RE, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(LOTE_NUMBER_PREFIX, "");
-  if (/\b(lote|kit)\s+(com|de|composto\s+(de|por)|formado\s+(de|por)|contendo)\b/.test(t))
-    return true;
-  if (/\bcolecao de\b/.test(t) && DISC_WORD.test(t)) return true;
+  // "lote/kit com|de|contendo …" só vale com uma palavra de disco logo adiante ("lote de quatro discos",
+  // "kit com 5 compactos"): "lote de máximo apelo para design" é prosa sobre o item.
+  if (LOTE_WITH_DISC.test(t)) return "lote";
+  // "Coleção de discos Beatles": só no INÍCIO do título (no meio é prosa: "pronto para integrar uma
+  // coleção de discos importados").
+  if (/^colecao de\b/.test(t) && DISC_WORD.test(t)) return "lote";
+  // Quantidade ≥3 com a unidade no PLURAL ("20 LPs", "cinco discos", "3 compactos"). No singular o
+  // número é do título ("Xuxa 6 disco", "LP 12", "33 compacto", "catálogo 521lp"), nunca quantidade.
   const qty = t.match(
     new RegExp(
-      `\\b(\\d+|${NUM_WORD_RE})\\s*(lps?|discos?|vinis|vinil|compactos?|bolach[aã]o|bolachoes)\\b`,
+      `\\b(\\d{1,3}|${NUM_WORD_RE})\\s*(lps|discos|vinis|compactos|bolach[aã]o|bolachoes)\\b`,
     ),
   );
   if (qty) {
     const rawQty = qty[1]!;
     const n = /^\d+$/.test(rawQty) ? Number(rawQty) : NUM_WORDS[rawQty];
-    // Um ANO colado no formato ("Construção 1971 Disco VG+") não é quantidade.
-    const isYear = n != null && n >= 1900 && n <= 2099;
-    if (n != null && n >= 3 && !isYear) return true;
+    if (n != null && n >= 3) {
+      return /^compactos$/.test(qty[2]!) && !/\b(lote|kit)\b/.test(t) ? "compactos" : "lote";
+    }
   }
-  if (/\b(diversos|varios|varias)\b/.test(t) && DISC_WORD.test(t)) return true;
-  // "lote" sobrando em qualquer lugar (fora do rótulo já removido) + palavra de disco: cobre
-  // frases não previstas acima (ex.: "grande lote de discos", "lote surpresa de vinis").
-  if (/\blote\b/.test(t) && DISC_WORD.test(t)) return true;
-  return false;
+  // "diversos/vários" colado a uma palavra de disco ("150 discos diversos", "vários LPs de MPB"); longe
+  // dele é prosa ("série com diversos volumes", "diversos sucessos") ou nome de álbum ("Minas São Várias").
+  const noVarious = t.replace(VARIOUS_ARTISTS_PHRASE, " ");
+  if (VARIOUS_DISC.test(noVarious)) return "lote";
+  // "lote" sobrando (fora do rótulo de numeração e de "o/do/neste lote" = o próprio item) + palavra de
+  // disco: cobre frases não previstas acima (ex.: "grande lote de discos", "lote surpresa de vinis").
+  if (LOTE_NEAR_DISC.test(t.replace(LOTE_AS_ITEM, " "))) return "lote";
+  return null;
 }
 
 // "Grandes Sucessos de X" / "Sucessos de X" / "As Melhores de X" / "O Melhor de X" — um "best
@@ -558,8 +604,30 @@ function extractStructuredArtist(title: string): string | null {
     .trim();
   // Coletânea ("Various", "Vários") → "" como o resto de `extractArtist` (vai p/ não classificados).
   if (!first || isVariousArtists(first)) return "";
-  return canonicalizeCollapsedArtist(titleCase(first));
+  // "Kenny G (2)": o "(2)" é o desambiguador de homônimos do Discogs, não faz parte do nome.
+  return canonicalizeCollapsedArtist(titleCase(first.replace(/\s*\(\d{1,2}\)$/, "").trim()));
 }
+
+/**
+ * Títulos em MARKDOWN de algumas casas ("**LP BRUCE HORNSBY … 1987**LANÇADO EM 1987, ESTE É O ÁLBUM…",
+ * "# LP DON COSTA … (1981)**…**", "## LP CLUBE DO BOZO 1984 …"): o nome do disco é o 1º trecho em
+ * negrito/cabeçalho; o resto é descrição. Sem marcadores devolve o título como veio.
+ */
+function markdownHead(title: string): string {
+  if (!/^\s*(?:#+\s*)?\*\*|^\s*#+\s/.test(title)) return title;
+  const head = title.replace(/^\s*#+\s*/, "").replace(/^\s*\*+\s*/, "");
+  return (head.split(/\*\*/)[0] ?? head).trim();
+}
+
+// Atributos de anúncio colados DEPOIS do nome ("JORGE BEN IMPORTADO JAPÃO", "Clube da Esquina Raro", "Os
+// Brasas Capa Ruim", "Joanna Disco Lp Sem Teste", "… Reedição"): não fazem parte do nome do artista.
+const TRAILING_ATTRIBUTES =
+  /\s+(?:importad[oa](?:\s+(?:jap[aã]o|argentina|eua|usa|fran[cç]a|alemanha|inglaterra|it[aá]lia|espanha|holanda|canad[aá]|m[eé]xico|col[oô]mbia|portugal|uk))?|raro|rara|raridade|reedi[cç][aâ]o|lacrad[oa]|esgotad[oa]|original|capa\s+(?:ruim|n[aã]o\s+original|original|dupla)|disco\s+lp\s+sem\s+teste|sem\s+teste)$/i;
+
+// Início que é conector de frase ("E Compositor Britânico…", "De Jimmy Dorsey /registros…", "No
+// Cenário Sertanejo…"), nunca um nome de artista.
+const SENTENCE_CONNECTOR_START =
+  /^(?:e|de|do|da|dos|das|no|na|nos|nas|com|em|ao|para|por|durante|entre|sob|sobre|pel[oa]s?)\s/i;
 
 /**
  * Artista de uma frase descritiva já sem o cabeçalho de formato: `"Transa" de Caetano Veloso,…`,
@@ -585,13 +653,17 @@ function extractProseArtist(rest: string): string | null {
  * no artist can be isolated.
  */
 export function extractArtist(title: string): string {
+  // "3 COMPACTOS: A, B e C": conjunto de vários artistas — fica sem artista ("não classificados").
+  if (isCompactsBundle(title)) return "";
   if (isDiscBundle(title)) return LOTE_LABEL;
 
   const structured = extractStructuredArtist(title);
   if (structured !== null) return structured;
 
   // "…da cantora Thelma Houston, álbum…" / "LP do grupo Shalamar…": o papel nomeia o artista.
-  const byRole = title.match(ARTIST_ROLE_RE);
+  // O papel só vale na frase de abertura (antes de " / " e fora da descrição em markdown): mais
+  // adiante é prosa sobre OUTRA pessoa ("…da cantora norte-americana…", "…do trio americano de folk…").
+  const byRole = (markdownHead(title).split(/\s\/\s/)[0] ?? "").slice(0, 140).match(ARTIST_ROLE_RE);
   if (byRole) {
     // "da Banda Black Rio" (Banda maiúsculo, título em caixa mista) é o NOME da banda; "da banda
     // Queen" é só o papel. Em título todo em maiúsculas não dá para distinguir: vale o papel.
@@ -604,7 +676,7 @@ export function extractArtist(title: string): string {
     if (name && !isGenericArtist(name)) return canonicalizeCollapsedArtist(titleCase(name));
   }
 
-  let rest = title.replace(/\s+/g, " ").trim();
+  let rest = markdownHead(title).replace(/\s+/g, " ").trim();
   let changed = true;
   let importedHeader = false;
   let proseHeader = false;
@@ -680,7 +752,7 @@ export function extractArtist(title: string): string {
   // aqui; a checagem de coletânea roda só no CANDIDATO final (abaixo), que é o nome isolado,
   // não a frase toda. Só falha quando não sobra um nome específico (ex.: "Grandes Sucessos"
   // sozinho, "Trilha Sonora Novela Tieta" sem artista).
-  const parts = rest.split(/\s*\|\s*|\s[-–—:]\s|[-–—:](?=\s)|\s[-–—](?=\S)|\s*\/\/+\s*/);
+  const parts = rest.split(/\s*\|\s*|\s[-–—:]\s|[-–—:](?=\s)|\s[-–—](?=\S)|\s*\/\/+\s*|\s\/\s/);
   let candidate = (parts[0] ?? "").trim();
 
   // "ARTISTA ÁLBUM" sem separador e com nome errado ("JEAN LUC PNTY CIVILIZED EVIL"): tenta o nome
@@ -716,6 +788,26 @@ export function extractArtist(title: string): string {
   if (parts.length === 1 && candidate !== beforeEstado && candidate.split(/\s+/).length >= 4) {
     return "";
   }
+  // "CARLOS ALBERTO ANO DE LANÇAMENTO: 1967 FORMATO: LP": rótulos de ficha colados no nome.
+  candidate = candidate
+    .replace(/\s+(?:ano\s+de\s+lan[cç]amento|formato|gravadora|selo|cat[aá]logo)\b.*$/i, "")
+    .trim();
+  // "JORGE BEN IMPORTADO JAPÃO", "Clube da Esquina Raro": atributos do anúncio colados no nome.
+  for (let i = 0; i < 3; i += 1) {
+    const next = candidate.replace(TRAILING_ATTRIBUTES, "").trim();
+    if (next === candidate) break;
+    candidate = next;
+  }
+  // "LP JOE DASSIN JOE DASSIN / 1977": artista e álbum homônimo repetidos → um nome só.
+  const half = candidate.split(/\s+/);
+  if (half.length >= 2 && half.length % 2 === 0) {
+    const h = half.length / 2;
+    if (half.slice(0, h).join(" ").toLowerCase() === half.slice(h).join(" ").toLowerCase()) {
+      candidate = half.slice(0, h).join(" ");
+    }
+  }
+  // Frase que abre com conector ("E Compositor Britânico George Michael") não é nome de artista.
+  if (SENTENCE_CONNECTOR_START.test(candidate)) return "";
   // "BEBETO 1981" → "Bebeto": ano de lançamento colado no fim do candidato (comum em títulos
   // "ARTISTA ANO" sem outro separador antes do próximo campo) não é parte do nome do artista.
   candidate = candidate.replace(/\s+(19|20)\d{2}$/, "").trim();

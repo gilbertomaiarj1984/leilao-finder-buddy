@@ -5,6 +5,7 @@ import {
   decodeHtmlEntities,
   extractArtist,
   collectionNeedsIdentification,
+  isCompactsBundle,
   isDiscBundle,
   isLotePassed,
   UNCLASSIFIED_LABEL,
@@ -101,6 +102,71 @@ describe("homônimos e ano", () => {
     expect(y("1999")).toBeNull();
     expect(y("Chico Buarque - Construção")).toBeNull();
     expect(y("Raul Seixas - Gita 12345")).toBeNull();
+  });
+});
+
+describe("isDiscBundle — o que NÃO é lote (títulos reais do site)", () => {
+  test('todo item é um "lote": a palavra no texto do anúncio não faz conjunto', () => {
+    const boomShack =
+      "LP ÓTIMO ESTADO álbum 'Boom Shack A Lack', de Junior Reid, produzido por Prince Jammy; contém 10 faixas distribuídas em dois lados. Ambos os exemplares estão sem encarte. Estado geral conforme descrição do lote. bolachão, long play, fonograma, álbum de vinil, pressing, gravação em disco, record, bolacha";
+    expect(isDiscBundle(boomShack)).toBe(false);
+    expect(extractArtist(boomShack)).toBe("Junior Reid");
+    expect(isDiscBundle("Lp X |Em bom estado.| Verifique as imagens deste lote e disco")).toBe(
+      false,
+    );
+    expect(isDiscBundle("LP Fulano - conforme demonstrado nas imagens do lote, disco VG")).toBe(
+      false,
+    );
+  });
+  test('"vários artistas" é coletânea de um disco, não conjunto', () => {
+    expect(isDiscBundle("LP YO RAP VOLUME 2 VÁRIOS ARTISTAS 1990 LP PARA DJS COM COLETÂNEA")).toBe(
+      false,
+    );
+    expect(
+      isDiscBundle("LP Minas São Várias |Em bom estado.| Classificação técnica: disco vg+"),
+    ).toBe(false);
+    expect(
+      isDiscBundle(
+        "LP Série Super Erótica, que teve diversos volumes lançados, disco em ótimo estado",
+      ),
+    ).toBe(false);
+  });
+  test("número do título/formato, singular ou colado, não é quantidade", () => {
+    expect(isDiscBundle("DISCO LP XUXA 6 DISCO LP SEM TESTE")).toBe(false);
+    expect(isDiscBundle("LP BRASILEIRO 12 POLEGADAS 33 RPM catálogo 521lp")).toBe(false);
+    expect(isDiscBundle("COMPACTO BEATLES odeon 33 compacto número de catálogo 7ID")).toBe(false);
+  });
+  test("coleção de discos só vale no início; no meio é prosa", () => {
+    expect(isDiscBundle("Coleção de discos Beatles")).toBe(true);
+    expect(isDiscBundle("LP Raro, pronto para integrar uma coleção de discos importados")).toBe(
+      false,
+    );
+  });
+  test("lotes de verdade continuam sendo lote", () => {
+    expect(isDiscBundle("Lote com quatro discos de vinil long play de música sertaneja")).toBe(
+      true,
+    );
+    expect(isDiscBundle("Lote de Quatro discos de vinil long play contendo álbuns")).toBe(true);
+    expect(isDiscBundle("Lote surpresa de vinis variados")).toBe(true);
+    expect(isDiscBundle("BOX 4 LPS SELEÇÃO DUCAL")).toBe(true);
+    expect(isDiscBundle("150 discos diversos")).toBe(true);
+    expect(isDiscBundle("Lote de máximo apelo para design de interiores, vinil gigante raro")).toBe(
+      false,
+    );
+  });
+});
+
+describe("isCompactsBundle (3+ compactos avulsos sem a palavra lote)", () => {
+  test("vão para não classificados, sem artista", () => {
+    const t = "VINIL: 3 COMPACTOS: NEY MATOGROSSO, ROBERTO CARLOS E ALTEMART DUTRA. BOM";
+    expect(isDiscBundle(t)).toBe(true);
+    expect(isCompactsBundle(t)).toBe(true);
+    expect(extractArtist(t)).toBe("");
+  });
+  test('com a palavra "lote" segue sendo Lote', () => {
+    const t = "LOTE COM 5 COMPACTOS CURSO DE INGLÊS AUDIOVISUAL";
+    expect(isCompactsBundle(t)).toBe(false);
+    expect(extractArtist(t)).toBe("Lote");
   });
 });
 
@@ -208,6 +274,33 @@ describe("extractArtist — títulos em prosa e cabeçalhos de formato", () => {
     ],
     // Sem nome conhecido e sem separador: fica sem artista (nunca "artista = título inteiro").
     ["VINIL OTB LIVE AT MT FUJI EM ÓTIMO ESTADO, CAPA COM DESGASTES DE USO E TEMPO", ""],
+    // Markdown (**…** / #) usa só o 1º trecho; " / " separa campos; atributos do anúncio saem.
+    [
+      "**LP BRUCE HORNSBY AND THE RANGE THE WAY IT IS 1987**LANÇADO EM 1987, ESTE É O ÁLBUM DE ESTREIA",
+      "Bruce Hornsby and the Range",
+    ],
+    ["# LP FÁBIO JR. FÁBIO JR. 1994 NACIONAL COM ENCARTEÁLBUM DE FÁBIO JR.", "Fábio Jr"],
+    ["LP STEPHEN SCHLAKS / SENSITIVE AND DELICATE / LP , CAPA EM ÓTIMO ESTADO", "Stephen Schlaks"],
+    [
+      "LP JOE DASSIN JOE DASSIN / 1977 /ÁLBUM CLÁSSICO DO CONSAGRADO CANTOR FRANCO-AMERICANO",
+      "Joe Dassin",
+    ],
+    [
+      "**LP DUPLO DORIS DAY PRESENÇA DE DORIS DAY 2 LPS**ÁLBUM DUPLO, REUNINDO INTERPRETAÇÕES DA CANTORA NORTE-AMERICANA EM CLÁSSICOS",
+      "Doris Day",
+    ],
+    [
+      "LP NICKEL CREEK / NICKEL CREEK / ALBUM DUPLO 2 LPS / ACLAMADO ÁLBUM DO TRIO AMERICANO DE FOLK",
+      "Nickel Creek",
+    ],
+    [
+      "JORGE BEN IMPORTADO JAPÃO |Em excelente estado.| Classificação técnica: capa vg+",
+      "Jorge Ben",
+    ],
+    ["Os Brasas Capa Ruim", "Os Brasas"],
+    ["Álbum: Shut Up | Código: 066 | Artista(s): [`Kenny G (2)`] | Ano: 1990", "Kenny G"],
+    ["LP E COMPOSITOR BRITÂNICO GEORGE MICHAEL FAITH 1987", ""],
+    ["LP CARLOS ALBERTO ANO DE LANÇAMENTO: 1967 FORMATO: LP (VINIL) CONDIÇÃO", "Carlos Alberto"],
     // Nomes que COMEÇAM com o papel não perdem a palavra.
     ["LP Grupo Fundo de Quintal - Samba é no Fundo", "Grupo Fundo de Quintal"],
   ];

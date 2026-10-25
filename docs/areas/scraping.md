@@ -214,6 +214,18 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
 - **Retenção de `lots` (v0.92.0):** a poda não apaga mais dias passados até 10 dias atrás, nem futuros até +14; `step=chunk|enrich&ext=1` cobre +5..+14 (cron 02:00 BRT).
 - **`step=lookoutnotify` (v0.107.0):** aviso push (ntfy.sh) de lotes novos que casam com um disco "De olho" — roda no `refresh.yml` depois de aiident/market e antes de `prune`, com `call_soft` (não reprova a run). No-op sem `NTFY_TOPIC`. Mecânica em `colecao-sondagem-compras.md`.
 
+- **O que é "Lote" (v0.182.0, `discBundleKind`):** só conjunto de verdade — `lote/kit com|de|contendo` com palavra de disco
+  até 3 palavras adiante, quantidade ≥3 com a unidade no PLURAL (`3 compactos`, `cinco discos`), `diversos/vários` colado a
+  disco ("150 discos diversos"; "vários artistas" é coletânea), `coleção de discos` no INÍCIO e `lote …` com disco até 4
+  palavras adiante. "o/do/neste lote" é o próprio item (todo item do site é um "lote"); a lista de palavras-chave de SEO
+  no fim do anúncio e a "Classificação técnica" são descartadas antes. Conjunto de ≥3 **compactos** sem a palavra
+  lote/kit (`isCompactsBundle`) continua conjunto (sem Discogs/IA de álbum único), mas na tela vai para "Novelas,
+  coletâneas e não classificados" (`extractArtist` e `effectiveArtist` devolvem ""). Calibrado com 3150 títulos reais
+  (script de auditoria: buscar `busca_andamento.asp` em UTF-8 e comparar `isDiscBundle` antes/depois).
+- **Markdown, " / " e atributos (v0.182.0):** `markdownHead` usa só o 1º trecho de títulos `**LP X**descrição…`/`# LP X…`; ` / `
+  separa campos ("LP ARTISTA / ÁLBUM / …"); `TRAILING_ATTRIBUTES` tira "Importado Japão/Raro/Reedição/Lacrado/Capa
+  Ruim/Disco Lp Sem Teste" do fim do nome; `(2)` do Discogs sai do artista da ficha; frase que abre com conector
+  ("E Compositor…", "De Jimmy Dorsey…") não é artista. O papel ("da cantora X") só vale na frase de abertura.
 - **Títulos em PROSA e rótulos de formato/estado (v0.182.0):** `extractArtist` descarta, em loop, os prefixos de
   `PREFIX_PATTERNS` — formato ("de 12 polegadas", "33 rpm", "em formato LP"; `PROSE_FORMAT_HEADER`),
   adjetivos (autografado, lacrado, importado, raro…), "de lançamento de", "dois LPs:" (3+ já é lote) e a ficha

@@ -70,6 +70,7 @@ import {
   bidIsCovered,
   bidIsWinning,
   extractArtist,
+  isCompactsBundle,
   isDiscBundle,
   LOTE_LABEL,
   normalizeForMatch,
@@ -471,6 +472,8 @@ export function useDashboardData() {
   const effectiveArtist = (lot: { id: string; artist: string; title?: string }): string => {
     // Lote de vários discos vem primeiro: agrupa como "Lote" mesmo que a IA tenha
     // arriscado um álbum específico para o conjunto.
+    // Conjunto de compactos avulsos (vários artistas) não é "Lote": vai para os não classificados.
+    if (isCompactsBundle(lot.title ?? "")) return "";
     if (isDiscBundle(lot.title ?? "") || lot.artist === LOTE_LABEL) return LOTE_LABEL;
     const parsed = parseAiAlbum(albumById.get(lot.id) ?? null).artist;
     return parsed ? titleCase(parsed) : lot.artist;

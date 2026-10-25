@@ -1669,4 +1669,8 @@ export const KNOWN_ARTISTS_SEED: string[] = [
   "Paquito D'Rivera",
   "Kleiton & Kledir",
   "Junior Reid",
+  "Tonico e Tinoco",
+  "Bruce Hornsby and the Range",
+  "Doris Day",
+  "Nickel Creek",
 ];

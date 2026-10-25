@@ -186,6 +186,13 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
   texto; não há caixa por linha.
 - Discos já cadastrados ficam com `master_id` NULL até o passo `masters` rodar (10 por chamada).
 
+## Artista × álbum colados sem separador (auditoria de 3150 títulos, v0.182.0)
+
+Títulos como `LP BENNY GOODMAN THE COMPLETE GOODMAN VOL. 1 1935` ou `**LP THE FOUNDATIONS TOMORROW**` não têm separador:
+sem nome no bundle `KNOWN_ARTISTS_SEED` (nem com 1 erro de digitação) o parser devolve artista+álbum juntos (≤5 palavras) ou
+"" (>5). ~960 dos ~2270 títulos de vinil do conjunto auditado ainda ficam sem artista. Caminhos: ampliar o bundle com os artistas
+que a IA/`known_artists` já identificou (exportar `lot_ident.artist` mais frequentes), ou rodar a identificação por IA só nesses lotes.
+
 ## Código repetido (marcado com `// DUP(...)`; regra no AGENTS.md)
 
 Achar: `grep -rn "DUP(" src`. Pendentes: `DUP(pool)` — laço de workers com `cursor` em 8 lugares
