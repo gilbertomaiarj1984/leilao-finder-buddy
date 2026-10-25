@@ -1,3 +1,4 @@
+import { detectModernReissue, isEdition, type Edition } from "./album-edition";
 import { MAX_INPUT_PIXELS } from "./image-limits";
 import { parseAiAlbum } from "@/lib/lot-score";
 import { db } from "@/lib/db-client.server";
@@ -56,6 +57,11 @@ export type CollectionItem = {
   position: number;
   // Tracklist buscada pela IA (mesmo formato de `lot_ai.tracklist`); null = ainda não buscada.
   tracklist: Track[] | null;
+  // `modern` = reedição moderna (outro disco p/ o colecionador); `period` = reedição de época do
+  // MESMO disco (homônimos); null = disco normal. Ver `album-edition.ts`.
+  edition: Edition | null;
+  // Master do Discogs (liga original e reedições): null = não consultado; 0 = sem master.
+  masterId: number | null;
 };
 
 /** Colunas graváveis de `collection_items` (espelha `supabase/setup.sql`; todas opcionais). */
@@ -81,6 +87,8 @@ type CollectionItemWrite = Partial<{
   tags: string[];
   tracklist: Track[] | null;
   title: string;
+  edition: string | null;
+  master_id: number | null;
   uf: string;
   updated_at: string;
   won_date: string | null;
@@ -89,7 +97,7 @@ type CollectionItemWrite = Partial<{
 }>;
 
 const COLS =
-  "id, lot_id, origin_lot_id, source, artist, album, title, year, image, house, uf, won_price, won_date, condition_media, condition_sleeve, notes, description, tags, market_low, market_high, source_url, position, tracklist, barcode";
+  "id, lot_id, origin_lot_id, source, artist, album, title, year, image, house, uf, won_price, won_date, condition_media, condition_sleeve, notes, description, tags, market_low, market_high, source_url, position, tracklist, barcode, edition, master_id";
 
 type DbRow = {
   id: string;
@@ -116,6 +124,8 @@ type DbRow = {
   position: number;
   tracklist: unknown;
   barcode: string | null;
+  edition: string | null;
+  master_id: number | null;
 };
 
 function toItem(r: DbRow): CollectionItem {
@@ -144,6 +154,8 @@ function toItem(r: DbRow): CollectionItem {
     sourceUrl: r.source_url ?? "",
     position: r.position,
     tracklist: normalizeTracklist(r.tracklist),
+    edition: isEdition(r.edition) ? r.edition : null,
+    masterId: r.master_id ?? null,
   };
 }
 
@@ -174,11 +186,19 @@ function canonicalArtist(artist: string, title: string): string {
 
 /** Chave de duplicidade: artista+álbum normalizado. Vazia quando não há álbum (aí nunca
  * tratamos como duplicado — não dá para afirmar que dois "LP de Fulano" sejam o mesmo). */
-function albumKey(artist: string, album: string, year: number | null = null): string {
+function albumKey(
+  artist: string,
+  album: string,
+  year: number | null = null,
+  edition: Edition | null = null,
+): string {
   if (!album.trim()) return "";
-  const base = normalizeForMatch(`${artist} ${album}`);
-  // Homônimos (Caetano Veloso 1968 × 1986) só se distinguem pelo ano.
-  return year && isSelfTitledAlbum(artist, album) ? `${base} ${year}` : base;
+  let key = normalizeForMatch(`${artist} ${album}`);
+  // Reedição moderna é outro disco; homônimos (Caetano Veloso 1968 × 1986) só se distinguem pelo
+  // ano — exceto com a marca "época" (mesmo disco do original).
+  if (edition === "modern") key += " (moderna)";
+  else if (edition !== "period" && year && isSelfTitledAlbum(artist, album)) key += ` ${year}`;
+  return key;
 }
 
 /** Resultado de uma passada de re-identificação (o cliente repete em laço pelo `nextOffset`). */
@@ -569,6 +589,7 @@ type CollectionInput = {
   lotId?: string;
   // Disco extra de uma compra com vários LPs: grava só o rastro (`origin_lot_id`), sem vincular.
   originLotId?: string;
+  edition?: Edition | null;
 };
 
 /**
@@ -605,6 +626,12 @@ export async function addCollectionItem(input: CollectionInput): Promise<Collect
       notes: (input.notes ?? "").trim(),
       description: (input.description ?? "").trim(),
       tags: input.tags ?? [],
+      edition:
+        input.edition !== undefined
+          ? input.edition
+          : detectModernReissue(`${album} ${input.title ?? ""}`)
+            ? "modern"
+            : null,
       position,
     })
     .select(COLS)
@@ -634,7 +661,7 @@ export async function importCollectionText(
   const existing = await getAllCollection();
   const seen = new Set<string>();
   for (const i of existing) {
-    const k = albumKey(i.artist, i.album, i.year);
+    const k = albumKey(i.artist, i.album, i.year, i.edition);
     if (k) seen.add(k);
   }
   let pos = existing.reduce((max, i) => Math.max(max, i.position), 0);
@@ -644,7 +671,8 @@ export async function importCollectionText(
   for (const d of items) {
     const artist = canonicalArtist(d.artist ? titleCase(d.artist) : "", d.title);
     const album = d.album.trim();
-    const k = albumKey(artist, album, d.year);
+    const edition = detectModernReissue(`${album} ${d.title}`) ? "modern" : null;
+    const k = albumKey(artist, album, d.year, edition);
     if (k && seen.has(k)) {
       skipped += 1;
       continue;
@@ -667,6 +695,7 @@ export async function importCollectionText(
       condition_sleeve: d.conditionSleeve,
       notes: d.notes,
       tags: d.tags,
+      edition,
       position: pos,
     });
   }
@@ -702,6 +731,11 @@ export async function updateCollectionItem(
   if (typeof input.notes === "string") patch.notes = input.notes.trim();
   if (typeof input.description === "string") patch.description = input.description.trim();
   if (Array.isArray(input.tags)) patch.tags = input.tags;
+  if (input.edition !== undefined) patch.edition = input.edition;
+  // Mudou a identidade → o master antigo deixa de valer (NULL = o passo `masters` consulta de novo).
+  if (input.artist !== undefined || input.album !== undefined || input.year !== undefined) {
+    patch.master_id = null;
+  }
 
   const { data, error } = await db
     .from("collection_items")

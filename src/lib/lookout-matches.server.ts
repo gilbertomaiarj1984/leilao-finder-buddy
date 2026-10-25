@@ -1,5 +1,5 @@
 import { marketDeal, toLotMarket, withConditionAnchor } from "@/lib/lot-score";
-import { getAiPanelConfig, getAnalyticsAliases } from "@/lib/app-state.server";
+import { getAiPanelConfig, getAnalyticsAliases, getLotEditions } from "@/lib/app-state.server";
 import type { AnalyticsAliases, SaleRow } from "@/lib/analytics";
 import { shiftDayKey } from "@/lib/day-bar";
 import { getAllLotAiLean } from "@/lib/lot-ai.server";
@@ -207,7 +207,7 @@ export async function computeLookout(withHistory = true, live = true): Promise<L
     return { items, upcoming: [], history: [], newCount: 0, artistGroups };
   }
 
-  const [fullAliases, links, seen, aiRows, identRows, marketRows, condRows, panel] =
+  const [fullAliases, links, seen, aiRows, identRows, marketRows, condRows, panel, lotEditions] =
     await Promise.all([
       getAnalyticsAliases().catch(() => ({}) as AnalyticsAliases),
       getLookoutLinks(),
@@ -217,6 +217,7 @@ export async function computeLookout(withHistory = true, live = true): Promise<L
       getAllLotMarket().catch(() => []),
       getAllLotCondition().catch(() => []),
       getAiPanelConfig(),
+      getLotEditions(),
     ]);
   const condById = new Map(condRows.map((r) => [r.id, r]));
   const aliases: Record<string, string> = fullAliases.artists ?? {};
@@ -278,6 +279,8 @@ export async function computeLookout(withHistory = true, live = true): Promise<L
       album: albumById.get(lot.id) ?? null,
       marketTitle: market?.releaseTitle ?? null,
       marketYear: market?.year ?? null,
+      marketMasterId: market?.masterId ?? null,
+      editionOverride: lotEditions[lot.id] ?? null,
       knownYear: identYearById.get(lot.id) ?? null,
       aliases,
     });

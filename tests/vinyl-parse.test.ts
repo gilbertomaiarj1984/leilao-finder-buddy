@@ -5,6 +5,7 @@ import {
   decodeHtmlEntities,
   extractArtist,
   collectionNeedsIdentification,
+  isCompactsBundle,
   isDiscBundle,
   isLotePassed,
   UNCLASSIFIED_LABEL,
@@ -20,6 +21,7 @@ import {
   isSelfTitledAlbum,
   sameAlbumYear,
   extractLooseYear,
+  isGenericArtist,
 } from "@/lib/vinyl-parse";
 
 describe("vinil x não-vinil", () => {
@@ -103,6 +105,71 @@ describe("homônimos e ano", () => {
   });
 });
 
+describe("isDiscBundle — o que NÃO é lote (títulos reais do site)", () => {
+  test('todo item é um "lote": a palavra no texto do anúncio não faz conjunto', () => {
+    const boomShack =
+      "LP ÓTIMO ESTADO álbum 'Boom Shack A Lack', de Junior Reid, produzido por Prince Jammy; contém 10 faixas distribuídas em dois lados. Ambos os exemplares estão sem encarte. Estado geral conforme descrição do lote. bolachão, long play, fonograma, álbum de vinil, pressing, gravação em disco, record, bolacha";
+    expect(isDiscBundle(boomShack)).toBe(false);
+    expect(extractArtist(boomShack)).toBe("Junior Reid");
+    expect(isDiscBundle("Lp X |Em bom estado.| Verifique as imagens deste lote e disco")).toBe(
+      false,
+    );
+    expect(isDiscBundle("LP Fulano - conforme demonstrado nas imagens do lote, disco VG")).toBe(
+      false,
+    );
+  });
+  test('"vários artistas" é coletânea de um disco, não conjunto', () => {
+    expect(isDiscBundle("LP YO RAP VOLUME 2 VÁRIOS ARTISTAS 1990 LP PARA DJS COM COLETÂNEA")).toBe(
+      false,
+    );
+    expect(
+      isDiscBundle("LP Minas São Várias |Em bom estado.| Classificação técnica: disco vg+"),
+    ).toBe(false);
+    expect(
+      isDiscBundle(
+        "LP Série Super Erótica, que teve diversos volumes lançados, disco em ótimo estado",
+      ),
+    ).toBe(false);
+  });
+  test("número do título/formato, singular ou colado, não é quantidade", () => {
+    expect(isDiscBundle("DISCO LP XUXA 6 DISCO LP SEM TESTE")).toBe(false);
+    expect(isDiscBundle("LP BRASILEIRO 12 POLEGADAS 33 RPM catálogo 521lp")).toBe(false);
+    expect(isDiscBundle("COMPACTO BEATLES odeon 33 compacto número de catálogo 7ID")).toBe(false);
+  });
+  test("coleção de discos só vale no início; no meio é prosa", () => {
+    expect(isDiscBundle("Coleção de discos Beatles")).toBe(true);
+    expect(isDiscBundle("LP Raro, pronto para integrar uma coleção de discos importados")).toBe(
+      false,
+    );
+  });
+  test("lotes de verdade continuam sendo lote", () => {
+    expect(isDiscBundle("Lote com quatro discos de vinil long play de música sertaneja")).toBe(
+      true,
+    );
+    expect(isDiscBundle("Lote de Quatro discos de vinil long play contendo álbuns")).toBe(true);
+    expect(isDiscBundle("Lote surpresa de vinis variados")).toBe(true);
+    expect(isDiscBundle("BOX 4 LPS SELEÇÃO DUCAL")).toBe(true);
+    expect(isDiscBundle("150 discos diversos")).toBe(true);
+    expect(isDiscBundle("Lote de máximo apelo para design de interiores, vinil gigante raro")).toBe(
+      false,
+    );
+  });
+});
+
+describe("isCompactsBundle (3+ compactos avulsos sem a palavra lote)", () => {
+  test("vão para não classificados, sem artista", () => {
+    const t = "VINIL: 3 COMPACTOS: NEY MATOGROSSO, ROBERTO CARLOS E ALTEMART DUTRA. BOM";
+    expect(isDiscBundle(t)).toBe(true);
+    expect(isCompactsBundle(t)).toBe(true);
+    expect(extractArtist(t)).toBe("");
+  });
+  test('com a palavra "lote" segue sendo Lote', () => {
+    const t = "LOTE COM 5 COMPACTOS CURSO DE INGLÊS AUDIOVISUAL";
+    expect(isCompactsBundle(t)).toBe(false);
+    expect(extractArtist(t)).toBe("Lote");
+  });
+});
+
 describe("isDiscBundle", () => {
   test("lotes com vários discos", () => {
     expect(isDiscBundle("Lote com 10 LPs")).toBe(true);
@@ -131,6 +198,127 @@ describe("isDiscBundle", () => {
   });
   test("ano colado no formato não é quantidade", () => {
     expect(isDiscBundle("LP Vinil Chico Buarque - Construção 1971 Disco VG+ Capa VG")).toBe(false);
+  });
+});
+
+describe("extractArtist — títulos em prosa e cabeçalhos de formato", () => {
+  const cases: [string, string][] = [
+    [
+      'Disco de vinil de 12 polegadas, 33 rpm, da cantora Thelma Houston, álbum "Ready to Roll", lançado pelo selo Tamla',
+      "Thelma Houston",
+    ],
+    [
+      'Disco de vinil de 12 polegadas, LP do grupo Shalamar, álbum "Friends", lançado pelo selo Solar',
+      "Shalamar",
+    ],
+    [
+      'Disco de vinil, formato LP, da artista Roberta Kelly, álbum "Zodiac Lady". Selo RGE',
+      "Roberta Kelly",
+    ],
+    [
+      "LP de vinil da cantora Celeste, lançado pelo selo Pentagrama (referência LP PEN 001 A)",
+      "Celeste",
+    ],
+    [
+      "Disco de vinil 33 RPM, álbum Experience de Gloria Gaynor, pela gravadora MGM Records",
+      "Gloria Gaynor",
+    ],
+    ['Disco de vinil 33 RPM, álbum "Transa" de Caetano Veloso, selo Philips', "Caetano Veloso"],
+    [
+      "Disco de vinil, 33 RPM, álbum Sammy Davis Jr.'s Greatest Hits, catálogo RLP 77.018",
+      "Sammy Davis Jr.",
+    ],
+    [
+      'Disco de vinil 33 RPM, LP Baden Powell "Tempo Feliz", lançado pelo selo Forma',
+      "Baden Powell",
+    ],
+    // "Banda" com maiúscula em título de caixa mista é parte do nome; "da banda Queen" é papel.
+    [
+      "Disco de vinil em formato LP, álbum Maria Fumaça da Banda Black Rio, 1ª edição de 1977",
+      "Banda Black Rio",
+    ],
+    ["Disco de vinil 33 RPM, da banda Queen, álbum X", "Queen"],
+    // Adjetivo/estado/tipo antes do nome.
+    [
+      "VINIL AUTOGRAFADO, NATAN MARQUES E RICARDO LEÃO , COMBOIO MÍDIA EM ÓTIMO",
+      "Natan Marques e Ricardo Leão",
+    ],
+    [
+      "VINIL: AUTOGRAFADO, LP DE LANÇAMENTO DE Wanderley Cardoso O Jovem Romântico. EM BOM",
+      "Wanderley Cardoso",
+    ],
+    ["VINIL DOIS LPs: EARTH WIND & FIRE EM ÓTIMO ESTADO, CAPA COM DESGASTES", "Earth, Wind & Fire"],
+    [
+      "VINIL: Lp ÓTIMO ESTADO TRACY CHAPMAN , TRACY CHAPMAN , COM ENCARTE CAPA COM",
+      "Tracy Chapman",
+    ],
+    ["VINIL GONZAGUINHA GERAL EM ÓTIMO ESTADO, CAPA COM DESGASTES DE USO E TEMPO", "Gonzaguinha"],
+    ["LP IMPORTADO Pink Floyd - The Wall", "Pink Floyd"],
+    // Artista citado com papel / aspas simples; nome com erro de digitação; artista+álbum colados.
+    [
+      'Disco de vinil em formato LP duplo do artista Aqua Bassino, álbum "Rue de Paris". Conjunto',
+      "Aqua Bassino",
+    ],
+    [
+      "VINIL JEAN LUC PNTY CIVILIZED EVIL EM ÓTIMO ESTADO, CAPA COM DESGASTES DE USO E TEMPO",
+      "Jean-Luc Ponty",
+    ],
+    [
+      "VINIL LP WINTON MARSALIS BLUES ALLEN EM ÓTIMO ESTADO, CAPA COM DESGASTES DE USO",
+      "Wynton Marsalis",
+    ],
+    ["VINIL O MELHOR DE KLEITON & KLEDIR EM ÓTIMO ESTADO, CAPA COM DESGASTES", "Kleiton & Kledir"],
+    [
+      "LP ÓTIMO ESTADO álbum 'Boom Shack A Lack', de Junior Reid, produzido por Prince Jammy",
+      "Junior Reid",
+    ],
+    // Sem nome conhecido e sem separador: fica sem artista (nunca "artista = título inteiro").
+    ["VINIL OTB LIVE AT MT FUJI EM ÓTIMO ESTADO, CAPA COM DESGASTES DE USO E TEMPO", ""],
+    // Markdown (**…** / #) usa só o 1º trecho; " / " separa campos; atributos do anúncio saem.
+    [
+      "**LP BRUCE HORNSBY AND THE RANGE THE WAY IT IS 1987**LANÇADO EM 1987, ESTE É O ÁLBUM DE ESTREIA",
+      "Bruce Hornsby and the Range",
+    ],
+    ["# LP FÁBIO JR. FÁBIO JR. 1994 NACIONAL COM ENCARTEÁLBUM DE FÁBIO JR.", "Fábio Jr"],
+    ["LP STEPHEN SCHLAKS / SENSITIVE AND DELICATE / LP , CAPA EM ÓTIMO ESTADO", "Stephen Schlaks"],
+    [
+      "LP JOE DASSIN JOE DASSIN / 1977 /ÁLBUM CLÁSSICO DO CONSAGRADO CANTOR FRANCO-AMERICANO",
+      "Joe Dassin",
+    ],
+    [
+      "**LP DUPLO DORIS DAY PRESENÇA DE DORIS DAY 2 LPS**ÁLBUM DUPLO, REUNINDO INTERPRETAÇÕES DA CANTORA NORTE-AMERICANA EM CLÁSSICOS",
+      "Doris Day",
+    ],
+    [
+      "LP NICKEL CREEK / NICKEL CREEK / ALBUM DUPLO 2 LPS / ACLAMADO ÁLBUM DO TRIO AMERICANO DE FOLK",
+      "Nickel Creek",
+    ],
+    [
+      "JORGE BEN IMPORTADO JAPÃO |Em excelente estado.| Classificação técnica: capa vg+",
+      "Jorge Ben",
+    ],
+    ["Os Brasas Capa Ruim", "Os Brasas"],
+    ["Álbum: Shut Up | Código: 066 | Artista(s): [`Kenny G (2)`] | Ano: 1990", "Kenny G"],
+    ["LP E COMPOSITOR BRITÂNICO GEORGE MICHAEL FAITH 1987", ""],
+    ["LP CARLOS ALBERTO ANO DE LANÇAMENTO: 1967 FORMATO: LP (VINIL) CONDIÇÃO", "Carlos Alberto"],
+    // Nomes que COMEÇAM com o papel não perdem a palavra.
+    ["LP Grupo Fundo de Quintal - Samba é no Fundo", "Grupo Fundo de Quintal"],
+  ];
+  for (const [title, artist] of cases) {
+    test(title.slice(0, 60), () => expect(extractArtist(title)).toBe(artist));
+  }
+  test("formato/estado soltos não são artista (isGenericArtist)", () => {
+    for (const a of [
+      "12 Polegadas",
+      "33 Rpm",
+      "Dois LPs",
+      "Em Formato LP",
+      "Importado",
+      "Autografado",
+    ]) {
+      expect(isGenericArtist(a)).toBe(true);
+    }
+    expect(isGenericArtist("Banda Black Rio")).toBe(false);
   });
 });
 

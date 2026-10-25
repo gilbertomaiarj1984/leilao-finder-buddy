@@ -274,6 +274,15 @@ jobs:
           res="$(call "/api/cron?step=purchases")"
           echo "purchases: $res"
 
+          echo "== Master do Discogs dos itens do De olho/Coleção =="
+          # Liga cada disco ao master do Discogs (separa álbum homônimo de reedição). Poucos por
+          # chamada; no-op sem DISCOGS_TOKEN; falha só é avisada. Vem ANTES do aviso do De olho.
+          if res="$(call_soft "/api/cron?step=masters&max=10")"; then
+            echo "masters: $res"
+          else
+            echo "masters: falhou (não crítico) — $res"
+          fi
+
           echo "== Aviso de matches do \"De olho\" (push via ntfy.sh) =="
           # Lotes novos que casam (artista+álbum, confiança alta) com discos marcados em "De olho"
           # viram 1 push cada (dedupe em app_state). Vem DEPOIS da identificação/mercado (álbum

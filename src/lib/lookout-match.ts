@@ -1,10 +1,16 @@
 import { parseAiAlbum } from "@/components/vinyl/ai-score-utils";
 import {
+  lotEditionAllows,
+  resolveLotEdition,
+  sameAlbum,
+  type Edition,
+  type LotEdition,
+} from "@/lib/album-edition";
+import {
   COMPILATION_LABEL,
   normalizeForMatch,
   isDiscBundle,
   LOTE_LABEL,
-  sameAlbumYear,
   titleCase,
   UNCLASSIFIED_LABEL,
 } from "@/lib/vinyl-parse";
@@ -62,6 +68,10 @@ export type LookoutItem = {
   merged?: LookoutMerged[];
   /** Palavras/frases extras do usuário: lote do mesmo artista que as contém casa com o item. */
   terms?: string[];
+  /** `modern` = reedição moderna (outro disco); `period` = reedição de época do mesmo disco. */
+  edition?: Edition | null;
+  /** Master do Discogs (null/0 = não consultado/sem master). */
+  masterId?: number | null;
 };
 
 export type LookoutStatus = "active" | "acquired" | "dismissed";
@@ -159,7 +169,14 @@ function words(text: string): string[] {
  */
 export function similarLookoutItems(
   items: readonly LookoutItem[],
-  input: { artist: string; album: string; year: number | null; lotId: string },
+  input: {
+    artist: string;
+    album: string;
+    year: number | null;
+    lotId: string;
+    edition?: Edition | null;
+    masterId?: number | null;
+  },
 ): LookoutItem[] {
   const artistKey = words(input.artist).join(" ");
   if (
@@ -182,7 +199,22 @@ export function similarLookoutItems(
         (k) =>
           words(k.album).join(" ") === albumKey &&
           albumKey &&
-          sameAlbumYear(input.artist, input.album, input.year, k.year),
+          sameAlbum(
+            {
+              artist: input.artist,
+              album: input.album,
+              year: input.year,
+              edition: input.edition ?? null,
+              masterId: input.masterId ?? null,
+            },
+            {
+              artist: input.artist,
+              album: input.album,
+              year: k.year,
+              edition: it.edition,
+              masterId: it.masterId,
+            },
+          ),
       )
     ) {
       return []; // idêntico
@@ -291,6 +323,10 @@ export function buildLotIdentity(input: {
   marketYear?: number | null;
   /** Ano já conhecido por outra fonte (ex.: `lot_ident.year`) — entra nos anos do lote. */
   knownYear?: number | null;
+  /** Master do Discogs do release casado (`lot_market.master_id`). */
+  marketMasterId?: number | null;
+  /** Sobrescrita manual da edição do lote (`app_state.lot_edition`). */
+  editionOverride?: LotEdition | null;
   aliases?: Readonly<Record<string, string>>;
 }): LotIdentity {
   const parsed = parseAiAlbum(input.album ?? null).artist;
@@ -308,6 +344,9 @@ export function buildLotIdentity(input: {
     marketYear: input.marketYear ?? null,
   });
   if (input.knownYear && input.knownYear > 0) identity.years.add(input.knownYear);
+  identity.edition = resolveLotEdition(input.title ?? "", input.editionOverride);
+  identity.masterId =
+    input.marketMasterId && input.marketMasterId > 0 ? input.marketMasterId : null;
   return identity;
 }
 
@@ -362,6 +401,12 @@ export function matchLookoutForLot(
     const byTerm = termScore(item, cand, identity);
     let score = Math.max(ownedScore(cand, identity), byTerm);
     if (score < LOOKOUT_MATCH_MIN) continue;
+    // Reedição moderna × original e homônimo de outro master: não é o disco que o usuário quer.
+    if (
+      !lotEditionAllows(item, { edition: identity.edition ?? null, masterId: identity.masterId })
+    ) {
+      continue;
+    }
     // Disco de nome genérico: só o ano distingue. Outro ano → não é este disco; sem ano → "a
     // validar" (score limitado, nunca avisa nem conta como confirmado).
     let yearPending = false;
@@ -439,7 +484,14 @@ export type LookoutOwnedHit = {
  */
 export function lookoutOwnedInCollection(
   items: readonly LookoutItem[],
-  collection: readonly { id: string; artist: string; album: string; year: number | null }[],
+  collection: readonly {
+    id: string;
+    artist: string;
+    album: string;
+    year: number | null;
+    edition?: Edition | null;
+    masterId?: number | null;
+  }[],
   aliases?: Readonly<Record<string, string>>,
 ): LookoutOwnedHit[] {
   const cands = lookoutCandidates(items, aliases);
@@ -460,6 +512,9 @@ export function lookoutOwnedInCollection(
     for (const { c, identity } of owned) {
       const score = ownedScore(cand, identity);
       if (score < LOOKOUT_MATCH_MIN) continue;
+      // Ter o relançamento moderno não é ter o original (nem o contrário); homônimo de outro master também não.
+      const ownedEdition: LotEdition = c.edition ?? "original";
+      if (!lotEditionAllows(item, { edition: ownedEdition, masterId: c.masterId })) continue;
       const prev = best.get(item.id);
       if (prev && prev.score >= score) continue;
       best.set(item.id, {

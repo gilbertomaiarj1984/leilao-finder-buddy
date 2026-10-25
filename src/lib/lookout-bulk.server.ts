@@ -1,7 +1,9 @@
+import { detectModernReissue } from "@/lib/album-edition";
 import { titleCase } from "@/lib/vinyl-parse";
 
 import { aiConfigured, resolveAiProvider, resolveGeminiModel } from "./ai-eval.server";
 import { runText } from "./ai-provider.server";
+import { lookupMaster } from "./discogs.server";
 import { addLookoutManual, updateLookoutItem, type LookoutRow } from "./lookout.server";
 import { extractJsonObject } from "./json-extract";
 
@@ -57,10 +59,22 @@ export async function addLookoutFromText(
   const y = Number(obj?.["year"]);
   // O ano que o usuário digitou vale mais que o da IA (que erra entre homônimos/reedições).
   const year = yearHint ?? (Number.isFinite(y) && y >= 1900 && y <= 2100 ? Math.round(y) : null);
+  // Reedição moderna citada na linha ("180g", "reedição 2014"…) já vem pré-marcada; o master do
+  // Discogs (best-effort) separa homônimos de reedições na hora de evitar duplicata.
+  const edition = detectModernReissue(text) ? "modern" : null;
+  // Falha de rede deixa `null` (o passo `masters` do cron tenta de novo); 0 = consultado, sem master.
+  let masterId: number | null = null;
+  try {
+    masterId = (await lookupMaster(titleCase(artist), album, year))?.masterId ?? 0;
+  } catch (error) {
+    console.error("[lookout] não foi possível buscar o master no Discogs", error);
+  }
   const { item: base, created } = await addLookoutManual({
     artist: titleCase(artist),
     album,
     year,
+    edition,
+    masterId,
   });
   const item = base.image ? base : await attachDiscogsCover(base);
   return { status: created ? "added" : "existing", item, switched: r.switched };

@@ -191,6 +191,8 @@ export type LotMarket = {
   priceLowBr: number | null;
   priceHighBr: number | null;
   numForSaleBr: number | null;
+  /** Master do Discogs do release casado (0/null = sem master/ainda não consultado). */
+  masterId?: number | null;
 };
 
 /** Converte a linha do banco (snake_case) para o tipo da UI (camelCase). */
@@ -210,6 +212,7 @@ export function toLotMarket(r: {
   price_low_br?: number | null;
   price_high_br?: number | null;
   num_for_sale_br?: number | null;
+  master_id?: number | null;
 }): LotMarket {
   return {
     matched: r.matched,
@@ -224,6 +227,7 @@ export function toLotMarket(r: {
     suggestedByCondition: normalizeSuggestionMap(r.suggested_by_condition),
     have: r.have,
     want: r.want,
+    masterId: r.master_id ?? null,
     priceLowBr: r.price_low_br ?? null,
     priceHighBr: r.price_high_br ?? null,
     numForSaleBr: r.num_for_sale_br ?? null,

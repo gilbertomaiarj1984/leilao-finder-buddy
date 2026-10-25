@@ -42,7 +42,13 @@ import {
   listMyBids,
 } from "@/lib/leiloesbr.functions";
 import { getExcludedLotsForMatching, getTrashKeywordDenylist } from "@/lib/lot-exclusion.functions";
-import { getLookout, getLookoutLinks, getLookoutOverview } from "@/lib/lookout.functions";
+import {
+  getLotEditionsFn,
+  getLookout,
+  getLookoutLinks,
+  getLookoutOverview,
+} from "@/lib/lookout.functions";
+import type { LotEdition } from "@/lib/album-edition";
 import type { LookoutItem, LookoutLinks } from "@/lib/lookout-match";
 import type { LookoutOverview } from "@/lib/lookout-matches.server";
 import type { LotScope } from "@/lib/lot-scope";
@@ -78,6 +84,7 @@ export const queryKeys = {
   collectionFeedback: ["collection-feedback"],
   lookout: ["lookout"],
   lookoutLinks: ["lookout-links"],
+  lotEditions: ["lot-editions"],
   lookoutOverview: ["lookout-overview"],
   analyticsAliases: ["analytics-aliases"],
   houseRatings: ["house-ratings"],
@@ -556,6 +563,23 @@ export function useLookoutQuery() {
     staleTime: HOUR,
     refetchOnWindowFocus: false,
     retry: false,
+  });
+}
+
+/** Edição (original/época/moderna) marcada à mão por lote — sobrescreve a detecção por palavras. */
+export function useLotEditionsQuery() {
+  const fetchEditions = useServerFn(getLotEditionsFn);
+  return useQuery<Record<string, LotEdition>>({
+    queryKey: queryKeys.lotEditions,
+    queryFn: async () => {
+      try {
+        return ((await fetchEditions()) as Record<string, LotEdition>) ?? {};
+      } catch {
+        return {};
+      }
+    },
+    staleTime: HOUR,
+    refetchOnWindowFocus: false,
   });
 }
 

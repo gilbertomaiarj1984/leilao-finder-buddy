@@ -8,6 +8,10 @@
 - **API Discogs** (`api.discogs.com`, grátis; 60 req/min **com token** `DISCOGS_TOKEN`,
   opcional → no-op sem ele). `discogs.server.ts` sem SDK, `fetch` + **throttle ~1.1s**, parsing
   defensivo.
+- **Master (v0.182.0):** `SearchHit.master_id` → `lot_market.master_id` (0 = release sem master);
+  `lookupMaster(artist, album, year)` acha o master do álbum por `type=master` (o `year` do master é o
+  do lançamento original) e é usado para separar álbum homônimo de reedição — ver
+  `docs/areas/colecao-sondagem-compras.md` ("Edição do disco").
 - **Casamento estruturado:** `parseAlbum` quebra o `album` da IA em `{artista, título, ano}`;
   `fetchMarket(album, title)` busca `artist=…&release_title=…&format=Vinyl&per_page=25` (cai
   para texto livre só se não achar); `pickBestRelease` pontua cobertura do álbum + artista +

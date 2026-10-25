@@ -42,6 +42,7 @@ import {
   setVerifiedHouses,
 } from "@/lib/leiloesbr.functions";
 import type { AiProvider } from "@/lib/ai-provider";
+import { resolveLotEdition } from "@/lib/album-edition";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
 import { attachLookout, setLookoutLink, toggleLookout } from "@/lib/lookout.functions";
 import {
@@ -69,6 +70,7 @@ import {
   bidIsCovered,
   bidIsWinning,
   extractArtist,
+  isCompactsBundle,
   isDiscBundle,
   LOTE_LABEL,
   normalizeForMatch,
@@ -106,6 +108,7 @@ import {
   useLotsQuery,
   useLotsRangeQueries,
   useLookoutLinksQuery,
+  useLotEditionsQuery,
   useLookoutQuery,
   patchLotsCaches,
   useBidsQuery,
@@ -469,6 +472,8 @@ export function useDashboardData() {
   const effectiveArtist = (lot: { id: string; artist: string; title?: string }): string => {
     // Lote de vários discos vem primeiro: agrupa como "Lote" mesmo que a IA tenha
     // arriscado um álbum específico para o conjunto.
+    // Conjunto de compactos avulsos (vários artistas) não é "Lote": vai para os não classificados.
+    if (isCompactsBundle(lot.title ?? "")) return "";
     if (isDiscBundle(lot.title ?? "") || lot.artist === LOTE_LABEL) return LOTE_LABEL;
     const parsed = parseAiAlbum(albumById.get(lot.id) ?? null).artist;
     return parsed ? titleCase(parsed) : lot.artist;
@@ -476,6 +481,7 @@ export function useDashboardData() {
   // Perfil do colecionador: interesses digitados + artistas do De olho.
   const { matcher: matchesInterest } = useCollectorInterests();
   const lotMarketQuery = useHomeLotMarketQuery();
+  const lotEditionsQuery = useLotEditionsQuery();
   const aiPanelQuery = useAiPanelQuery();
   const marketById = useMemo(() => {
     const map = new Map<string, LotMarket>();
@@ -638,8 +644,15 @@ export function useDashboardData() {
   // Identidade de cada lote (título + artista efetivo + álbum IA + release Discogs), reusada
   // pelo casamento automático, pelo aprendizado e pela assinatura das decisões.
   const identityById = useMemo(
-    () => lotIdentityMap(lots.data?.lots ?? [], albumById, marketById, artistAliases),
-    [lots.data, albumById, marketById, artistAliases],
+    () =>
+      lotIdentityMap(
+        lots.data?.lots ?? [],
+        albumById,
+        marketById,
+        artistAliases,
+        lotEditionsQuery.data,
+      ),
+    [lots.data, albumById, marketById, artistAliases, lotEditionsQuery.data],
   );
   // Casamento AUTOMÁTICO cru (antes de override/aprendizado): peça exata (score 1) ou ≥50%.
   const ownedAutoById = useMemo(
@@ -909,7 +922,14 @@ export function useDashboardData() {
         // Marcando um disco novo: se há item parecido, pergunta antes de criar.
         if (!lookoutFor(lot).on) {
           const d = lookoutDraft(lot);
-          const candidates = similarLookoutItems(lookoutQuery.data ?? [], d);
+          // Reedição moderna (palavras do título/sobrescrita) e master do Discogs também decidem
+          // se é o MESMO disco de um item existente.
+          const lotEdition = resolveLotEdition(lot.title, lotEditionsQuery.data?.[lot.id]);
+          const candidates = similarLookoutItems(lookoutQuery.data ?? [], {
+            ...d,
+            edition: lotEdition === "modern" ? "modern" : null,
+            masterId: marketById.get(lot.id)?.masterId ?? null,
+          });
           if (candidates.length) {
             setLookoutAsk({ lot, candidates });
             return;

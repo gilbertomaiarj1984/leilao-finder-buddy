@@ -1,3 +1,4 @@
+import type { LotEdition } from "./album-edition";
 import {
   COMPILATION_LABEL,
   LOTE_LABEL,
@@ -37,6 +38,10 @@ export type LotIdentity = {
   artists?: string[][];
   albums?: string[][];
   bundle?: boolean;
+  /** Edição do lote (sobrescrita manual > palavras do título); `null`/ausente = desconhecida. */
+  edition?: LotEdition | null;
+  /** Master do Discogs do release casado do lote (0/ausente = desconhecido). */
+  masterId?: number | null;
 };
 
 /**

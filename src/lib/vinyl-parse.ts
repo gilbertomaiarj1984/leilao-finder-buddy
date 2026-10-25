@@ -306,14 +306,32 @@ const LABEL_WORDS = new Set(["artista", "album", "albuns", "titulo", "faixa", "f
 // (até 3 palavras, terminado em "!" ou ".") descreve a prensagem, nunca o artista.
 const IMPORTED_HEADER = /^importado\b(?:\s+[\wÀ-ÿ]+){0,3}\s*[!.]\s*/i;
 
+// Descrição do formato no início de títulos em prosa ("Disco de vinil de 12 polegadas, 33 rpm, da
+// cantora X, álbum "Y""): polegadas/rotação descrevem o disco, nunca são o artista.
+const PROSE_FORMAT_HEADER =
+  /^(?:(?:de\s+)?\d{1,2}\s*(?:polegadas?|pol\b\.?|"|''|rpm)|(?:em\s+)?formato\s+(?:lp|ep|compacto|vinil))\s*[,;.:-]?\s*/i;
+
+// "da cantora Thelma Houston, …", "LP do grupo Shalamar, …": o artista vem depois do papel
+// ("cantor/grupo/banda…"), com o artigo antes. Exige "d[aeo]" (senão "Grupo Fundo de Quintal",
+// "Trio Mocotó", "Banda Black Rio" perderiam a primeira palavra do próprio nome).
+const ARTIST_ROLE_RE =
+  /\bd[aeo]s?\s+(cantor[ae]?s?|cantora|grupo|banda|artista|dupla|duo|trio|conjunto|orquestra|compositor[ae]?|int[eé]rprete|vocalista)\s+(.+?)(?=\s*[,;(]|\s+[áa]lbum\b|\s+lan[cç]ad|\s+pel[oa]\b|\s+-\s|\s*$)/i;
+
 const PREFIX_PATTERNS: RegExp[] = [
+  // "Lp ÓTIMO ESTADO TRACY CHAPMAN": a ficha de estado antes do nome não é parte dele.
+  /^(?:em\s+)?(?:[óo]timo|bom|excelente|perfeito|muito\s+bom|regular)\s+estado\b[\s,;:.-]*/i,
   /^alerta\s+raridade\b\s*[-:–,.]?\s*/i,
   /^lote\s+(?:especial|extra)(?:\s+de\s+(?:fechamento|encerramento))?\b\s*[-:–,.]?\s*/i,
   /^lote\s+de\s+(?:fechamento|encerramento)\b\s*[-:–,.]?\s*/i,
   /^lote\s*(n?[ºo°]?\s*\d+)?\s*[-:–]?\s*/i,
   /^\d+\s*(lps?|discos?|vinis|compactos?)\b\s*[-:–.,]?\s*/i,
   IMPORTED_HEADER,
-  /^(belissimo|belíssimo|belo|raro|rarissimo|raríssimo|antigo|otimo|ótimo|excelente)\s+/i,
+  /^(?:belissimo|belíssimo|belo|raro|rarissimo|raríssimo|antigo|otimo|ótimo|excelente|autografad[oa]|lacrad[oa]|importad[oa])(?:\s*[,:;]\s*|\s+)/i,
+  // "LP DE LANÇAMENTO DE Wanderley Cardoso…": o lançamento é o tipo do disco, não o artista.
+  /^(?:de\s+)?lan[cç]amento\s+d[aeo]s?\s+/i,
+  // "DOIS LPs: EARTH WIND & FIRE…" (2 discos de UM álbum; 3+ já é lote em `isDiscBundle`).
+  /^(?:dois|duas|2)\s+(?:lps?|discos?|vinis)\b\s*[-:–,.]?\s*/i,
+  PROSE_FORMAT_HEADER,
   /^(lps?|long\s*play|discos?\s*de\s*vinil|disco\s*de\s*vinil|discos?|vinis|vinil|compactos?|compacto|bolach[aã]o|album|álbum)\b\s*[-:–,.]?\s*(?:(?:de|do|da|dos|das)\s+(?=\S))?/i,
 ];
 
@@ -354,7 +372,8 @@ export function collectionNeedsIdentification(item: { artist: string; album: str
 // "Artistas" que na verdade são um balaio de LOTE/lixo de catálogo (não um nome real): o próprio
 // "Lote", códigos de casa tipo "Discos5"/"Discos 6" e placeholders de pregão ("Proposta de Lote
 // Para Leilão"). Já normalizados (sem acento/caixa/pontuação). Alvo da IA de identificação.
-const JUNK_ARTIST_RE = /^discos?\s*\d+$/;
+const JUNK_ARTIST_RE =
+  /^(?:discos?\s*\d+|\d{1,2}\s*(?:polegadas?|rpm)|(?:dois|duas)\s+lps?|em\s+formato\b.*|importado\b.*|autografad[oa]|lacrad[oa])$/;
 const LOTE_PLACEHOLDER_HINTS = ["proposta de lote", "lote para leilao"];
 
 // Sinais no TÍTULO de que o disco é uma coletânea (vários artistas / sucessos / trilha /
@@ -466,6 +485,43 @@ const CONDITION_SHEET_RE = /\bclassificacao\s+tecnica\b.*$/;
  * (ex.: "2 LPs") NÃO contam como lote.
  */
 export function isDiscBundle(title: string): boolean {
+  return discBundleKind(title) !== null;
+}
+
+/**
+ * true quando o título é um conjunto de ≥3 COMPACTOS avulsos descrito só por quantidade ("VINIL:
+ * 3 COMPACTOS: NEY MATOGROSSO, ROBERTO CARLOS E…") — vários artistas num lote só, sem a palavra
+ * "lote"/"kit". Continua sendo um conjunto (`isDiscBundle`), mas na tela vai para "Novelas,
+ * coletâneas e não classificados", não para "Lote".
+ */
+export function isCompactsBundle(title: string): boolean {
+  return discBundleKind(title) === "compactos";
+}
+
+// "Vários/diversos ARTISTAS" é coletânea de UM disco, não conjunto de vários discos.
+const VARIOUS_ARTISTS_PHRASE =
+  /\b(?:diversos|varios|varias)\s+(?:artistas?|interpretes?|autores?|cantores?|cantoras?|nomes|compositores?|musicos?|grupos?|bandas?)\b/g;
+
+// Lista de palavras-chave de busca colada no fim de alguns anúncios ("…descrição do lote. bolachão, long
+// play, fonograma, álbum de vinil, pressing, record, bolacha"): não descreve o lote.
+const SEO_KEYWORD_TAIL =
+  /\b(?:bolachao|bolacha|long play|fonograma|pressing|record)\s*,\s*(?:[^,.;]{2,30},\s*){2,}[^,.;]{2,30}\.?\s*$/;
+
+// "o lote"/"do lote"/"neste lote"… é o NOME do item no leilão (todo item vendido no site é um
+// "lote"), não um conjunto de discos.
+const LOTE_AS_ITEM =
+  /\b(?:d[oae]|n[oae]|dest[ae]|nest[ae]|est[ae]|ess[ae]|dess[ae]|pel[oa]|ao|o|a)\s+lote\b/g;
+
+const DISC_ALT = "(?:lps?|discos?|vinis|vinil|compactos?|bolach[aã]o|bolachoes|long play)";
+const LOTE_WITH_DISC = new RegExp(
+  `\\b(?:lote|kit)\\s+(?:com|de|composto\\s+(?:de|por)|formado\\s+(?:de|por)|contendo)\\s+(?:[\\w']+\\s+){0,3}${DISC_ALT}\\b`,
+);
+const LOTE_NEAR_DISC = new RegExp(`\\blote\\s+(?:[\\w']+\\s+){0,4}${DISC_ALT}\\b`);
+const VARIOUS_DISC = new RegExp(
+  `\\b(?:diversos|varios|varias)\\s+(?:[\\w']+\\s+){0,2}${DISC_ALT}\\b|\\b${DISC_ALT}\\s+(?:[\\w']+\\s+){0,1}(?:diversos|varios|varias)\\b`,
+);
+
+function discBundleKind(title: string): "lote" | "compactos" | null {
   const raw = normalize(title);
   // Remove o RÓTULO de numeração do início ("Lote 45 - ...", "Lote 09 vinil único...") ANTES
   // de qualquer checagem: senão o número do lote (ex.: "09") cola no disc word seguinte
@@ -474,30 +530,39 @@ export function isDiscBundle(title: string): boolean {
   // formato. A partir daqui `t` nunca mais vê esse número/rótulo.
   const t = raw
     .replace(CONDITION_SHEET_RE, "")
+    .replace(SEO_KEYWORD_TAIL, "")
     .replace(LOTE_PROMO_RE, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(LOTE_NUMBER_PREFIX, "");
-  if (/\b(lote|kit)\s+(com|de|composto\s+(de|por)|formado\s+(de|por)|contendo)\b/.test(t))
-    return true;
-  if (/\bcolecao de\b/.test(t) && DISC_WORD.test(t)) return true;
+  // "lote/kit com|de|contendo …" só vale com uma palavra de disco logo adiante ("lote de quatro discos",
+  // "kit com 5 compactos"): "lote de máximo apelo para design" é prosa sobre o item.
+  if (LOTE_WITH_DISC.test(t)) return "lote";
+  // "Coleção de discos Beatles": só no INÍCIO do título (no meio é prosa: "pronto para integrar uma
+  // coleção de discos importados").
+  if (/^colecao de\b/.test(t) && DISC_WORD.test(t)) return "lote";
+  // Quantidade ≥3 com a unidade no PLURAL ("20 LPs", "cinco discos", "3 compactos"). No singular o
+  // número é do título ("Xuxa 6 disco", "LP 12", "33 compacto", "catálogo 521lp"), nunca quantidade.
   const qty = t.match(
     new RegExp(
-      `\\b(\\d+|${NUM_WORD_RE})\\s*(lps?|discos?|vinis|vinil|compactos?|bolach[aã]o|bolachoes)\\b`,
+      `\\b(\\d{1,3}|${NUM_WORD_RE})\\s*(lps|discos|vinis|compactos|bolach[aã]o|bolachoes)\\b`,
     ),
   );
   if (qty) {
     const rawQty = qty[1]!;
     const n = /^\d+$/.test(rawQty) ? Number(rawQty) : NUM_WORDS[rawQty];
-    // Um ANO colado no formato ("Construção 1971 Disco VG+") não é quantidade.
-    const isYear = n != null && n >= 1900 && n <= 2099;
-    if (n != null && n >= 3 && !isYear) return true;
+    if (n != null && n >= 3) {
+      return /^compactos$/.test(qty[2]!) && !/\b(lote|kit)\b/.test(t) ? "compactos" : "lote";
+    }
   }
-  if (/\b(diversos|varios|varias)\b/.test(t) && DISC_WORD.test(t)) return true;
-  // "lote" sobrando em qualquer lugar (fora do rótulo já removido) + palavra de disco: cobre
-  // frases não previstas acima (ex.: "grande lote de discos", "lote surpresa de vinis").
-  if (/\blote\b/.test(t) && DISC_WORD.test(t)) return true;
-  return false;
+  // "diversos/vários" colado a uma palavra de disco ("150 discos diversos", "vários LPs de MPB"); longe
+  // dele é prosa ("série com diversos volumes", "diversos sucessos") ou nome de álbum ("Minas São Várias").
+  const noVarious = t.replace(VARIOUS_ARTISTS_PHRASE, " ");
+  if (VARIOUS_DISC.test(noVarious)) return "lote";
+  // "lote" sobrando (fora do rótulo de numeração e de "o/do/neste lote" = o próprio item) + palavra de
+  // disco: cobre frases não previstas acima (ex.: "grande lote de discos", "lote surpresa de vinis").
+  if (LOTE_NEAR_DISC.test(t.replace(LOTE_AS_ITEM, " "))) return "lote";
+  return null;
 }
 
 // "Grandes Sucessos de X" / "Sucessos de X" / "As Melhores de X" / "O Melhor de X" — um "best
@@ -539,7 +604,47 @@ function extractStructuredArtist(title: string): string | null {
     .trim();
   // Coletânea ("Various", "Vários") → "" como o resto de `extractArtist` (vai p/ não classificados).
   if (!first || isVariousArtists(first)) return "";
-  return canonicalizeCollapsedArtist(titleCase(first));
+  // "Kenny G (2)": o "(2)" é o desambiguador de homônimos do Discogs, não faz parte do nome.
+  return canonicalizeCollapsedArtist(titleCase(first.replace(/\s*\(\d{1,2}\)$/, "").trim()));
+}
+
+/**
+ * Títulos em MARKDOWN de algumas casas ("**LP BRUCE HORNSBY … 1987**LANÇADO EM 1987, ESTE É O ÁLBUM…",
+ * "# LP DON COSTA … (1981)**…**", "## LP CLUBE DO BOZO 1984 …"): o nome do disco é o 1º trecho em
+ * negrito/cabeçalho; o resto é descrição. Sem marcadores devolve o título como veio.
+ */
+function markdownHead(title: string): string {
+  if (!/^\s*(?:#+\s*)?\*\*|^\s*#+\s/.test(title)) return title;
+  const head = title.replace(/^\s*#+\s*/, "").replace(/^\s*\*+\s*/, "");
+  return (head.split(/\*\*/)[0] ?? head).trim();
+}
+
+// Atributos de anúncio colados DEPOIS do nome ("JORGE BEN IMPORTADO JAPÃO", "Clube da Esquina Raro", "Os
+// Brasas Capa Ruim", "Joanna Disco Lp Sem Teste", "… Reedição"): não fazem parte do nome do artista.
+const TRAILING_ATTRIBUTES =
+  /\s+(?:importad[oa](?:\s+(?:jap[aã]o|argentina|eua|usa|fran[cç]a|alemanha|inglaterra|it[aá]lia|espanha|holanda|canad[aá]|m[eé]xico|col[oô]mbia|portugal|uk))?|raro|rara|raridade|reedi[cç][aâ]o|lacrad[oa]|esgotad[oa]|original|capa\s+(?:ruim|n[aã]o\s+original|original|dupla)|disco\s+lp\s+sem\s+teste|sem\s+teste)$/i;
+
+// Início que é conector de frase ("E Compositor Britânico…", "De Jimmy Dorsey /registros…", "No
+// Cenário Sertanejo…"), nunca um nome de artista.
+const SENTENCE_CONNECTOR_START =
+  /^(?:e|de|do|da|dos|das|no|na|nos|nas|com|em|ao|para|por|durante|entre|sob|sobre|pel[oa]s?)\s/i;
+
+/**
+ * Artista de uma frase descritiva já sem o cabeçalho de formato: `"Transa" de Caetano Veloso,…`,
+ * `Experience de Gloria Gaynor, pela gravadora…`, `Sammy Davis Jr.'s Greatest Hits, catálogo…`.
+ * `null` quando nenhum desses moldes aparece (segue a heurística normal).
+ */
+function extractProseArtist(rest: string): string | null {
+  const quoted = rest.match(/^["“'‘][^"”'’]+["”'’],?\s+d[aeo]s?\s+([^,;"“'‘]+)/i);
+  if (quoted) return quoted[1]!.trim();
+  const of = rest.match(/^([^,;"“]+?)\s+d[aeo]s?\s+([^,;"“]+?)\s*(?:[,;]|$)/i);
+  if (of) {
+    const albumWords = of[1]!.trim().split(/\s+/).length;
+    const artistWords = of[2]!.trim().split(/\s+/).length;
+    if (albumWords <= 5 && artistWords <= 4) return of[2]!.trim();
+  }
+  const possessive = rest.match(/^([^,;"“]+?)['’]s\s+\S/);
+  return possessive ? possessive[1]!.trim() : null;
 }
 
 /**
@@ -548,20 +653,40 @@ function extractStructuredArtist(title: string): string | null {
  * no artist can be isolated.
  */
 export function extractArtist(title: string): string {
+  // "3 COMPACTOS: A, B e C": conjunto de vários artistas — fica sem artista ("não classificados").
+  if (isCompactsBundle(title)) return "";
   if (isDiscBundle(title)) return LOTE_LABEL;
 
   const structured = extractStructuredArtist(title);
   if (structured !== null) return structured;
 
-  let rest = title.replace(/\s+/g, " ").trim();
+  // "…da cantora Thelma Houston, álbum…" / "LP do grupo Shalamar…": o papel nomeia o artista.
+  // O papel só vale na frase de abertura (antes de " / " e fora da descrição em markdown): mais
+  // adiante é prosa sobre OUTRA pessoa ("…da cantora norte-americana…", "…do trio americano de folk…").
+  const byRole = (markdownHead(title).split(/\s\/\s/)[0] ?? "").slice(0, 140).match(ARTIST_ROLE_RE);
+  if (byRole) {
+    // "da Banda Black Rio" (Banda maiúsculo, título em caixa mista) é o NOME da banda; "da banda
+    // Queen" é só o papel. Em título todo em maiúsculas não dá para distinguir: vale o papel.
+    const role = byRole[1]!;
+    const partOfName =
+      /^(?:grupo|banda|dupla|duo|trio|conjunto|orquestra)$/i.test(role) &&
+      /^[A-ZÀ-Ý]/.test(role) &&
+      title !== title.toUpperCase();
+    const name = ((partOfName ? `${role} ` : "") + byRole[2]!).replace(/[\s"“”.]+$/g, "").trim();
+    if (name && !isGenericArtist(name)) return canonicalizeCollapsedArtist(titleCase(name));
+  }
+
+  let rest = markdownHead(title).replace(/\s+/g, " ").trim();
   let changed = true;
   let importedHeader = false;
+  let proseHeader = false;
   while (changed) {
     changed = false;
     for (const pattern of PREFIX_PATTERNS) {
       const next = rest.replace(pattern, "");
       if (next !== rest) {
         if (pattern === IMPORTED_HEADER) importedHeader = true;
+        if (pattern === PROSE_FORMAT_HEADER) proseHeader = true;
         rest = next.trim();
         changed = true;
       }
@@ -596,6 +721,17 @@ export function extractArtist(title: string): string {
     return known ? canonicalizeCollapsedArtist(known) : "";
   }
 
+  // Título em PROSA ("Disco de vinil 33 RPM, álbum Experience de Gloria Gaynor, pela gravadora…",
+  // "álbum Sammy Davis Jr.'s Greatest Hits, catálogo…"): o artista não abre a frase.
+  if (proseHeader || /^["“'‘]/.test(rest)) {
+    const prose = extractProseArtist(rest);
+    if (prose) rest = prose;
+    else {
+      const known = matchKnownArtist(rest, getBundledKnownArtistIndex());
+      if (known) return canonicalizeCollapsedArtist(known);
+    }
+  }
+
   // "Grandes Sucessos de Ray Charles" → candidato = "Ray Charles" (tira o padrão ANTES do
   // dash-split abaixo: aqui não há "-", o nome vem depois de "de/do" no fim do título). Só a
   // PRIMEIRA palavra do resto entra na trava do qualificador de série (`.+$` é guloso e pegaria
@@ -616,8 +752,15 @@ export function extractArtist(title: string): string {
   // aqui; a checagem de coletânea roda só no CANDIDATO final (abaixo), que é o nome isolado,
   // não a frase toda. Só falha quando não sobra um nome específico (ex.: "Grandes Sucessos"
   // sozinho, "Trilha Sonora Novela Tieta" sem artista).
-  const parts = rest.split(/\s*\|\s*|\s[-–—:]\s|[-–—:](?=\s)|\s[-–—](?=\S)|\s*\/\/+\s*/);
+  const parts = rest.split(/\s*\|\s*|\s[-–—:]\s|[-–—:](?=\s)|\s[-–—](?=\S)|\s*\/\/+\s*|\s\/\s/);
   let candidate = (parts[0] ?? "").trim();
+
+  // "ARTISTA ÁLBUM" sem separador e com nome errado ("JEAN LUC PNTY CIVILIZED EVIL"): tenta o nome
+  // conhecido com UM erro de digitação no início.
+  if (parts.length === 1) {
+    const fuzzy = matchKnownArtistAtStartFuzzy(rest, getBundledKnownArtistIndex());
+    if (fuzzy) return canonicalizeCollapsedArtist(fuzzy);
+  }
 
   // Cut trailing sentences / album names / parentheses: "Artista. Produto original..."
   // NÃO corta em "/": bandas reais usam a barra no PRÓPRIO nome ("AC/DC") — cortar ali truncava
@@ -633,6 +776,38 @@ export function extractArtist(title: string): string {
   // incluso), não parte do nome — sempre tem espaço nos dois lados (bandas com barra no próprio
   // nome, tipo "AC/DC", nunca têm espaço ANTES da barra, então não caem aqui).
   candidate = candidate.replace(/\s+c\/\s+.*$/i, "").trim();
+  // "EARTH WIND & FIRE EM ÓTIMO ESTADO": a ficha de estado não é parte do nome do artista.
+  const beforeEstado = candidate;
+  candidate = candidate
+    .replace(/\s+em\s+(?:[óo]timo|bom|excelente|perfeito|muito\s+bom|regular)\b.*$/i, "")
+    .replace(/\s+(?:m[ií]dia|disco|capa)$/i, "") // "…STORMY MÍDIA EM ÓTIMO ESTADO"
+    .trim();
+  // "ARTISTA ÁLBUM EM ÓTIMO ESTADO" sem separador e sem nome conhecido: artista e álbum vêm
+  // colados e não dá para separar — melhor sem artista (a IA/identificação resolve) do que um
+  // "artista" que é o título inteiro ("Otb Live At Mt Fuji").
+  if (parts.length === 1 && candidate !== beforeEstado && candidate.split(/\s+/).length >= 4) {
+    return "";
+  }
+  // "CARLOS ALBERTO ANO DE LANÇAMENTO: 1967 FORMATO: LP": rótulos de ficha colados no nome.
+  candidate = candidate
+    .replace(/\s+(?:ano\s+de\s+lan[cç]amento|formato|gravadora|selo|cat[aá]logo)\b.*$/i, "")
+    .trim();
+  // "JORGE BEN IMPORTADO JAPÃO", "Clube da Esquina Raro": atributos do anúncio colados no nome.
+  for (let i = 0; i < 3; i += 1) {
+    const next = candidate.replace(TRAILING_ATTRIBUTES, "").trim();
+    if (next === candidate) break;
+    candidate = next;
+  }
+  // "LP JOE DASSIN JOE DASSIN / 1977": artista e álbum homônimo repetidos → um nome só.
+  const half = candidate.split(/\s+/);
+  if (half.length >= 2 && half.length % 2 === 0) {
+    const h = half.length / 2;
+    if (half.slice(0, h).join(" ").toLowerCase() === half.slice(h).join(" ").toLowerCase()) {
+      candidate = half.slice(0, h).join(" ");
+    }
+  }
+  // Frase que abre com conector ("E Compositor Britânico George Michael") não é nome de artista.
+  if (SENTENCE_CONNECTOR_START.test(candidate)) return "";
   // "BEBETO 1981" → "Bebeto": ano de lançamento colado no fim do candidato (comum em títulos
   // "ARTISTA ANO" sem outro separador antes do próximo campo) não é parte do nome do artista.
   candidate = candidate.replace(/\s+(19|20)\d{2}$/, "").trim();
@@ -1327,4 +1502,72 @@ let bundledKnownArtistIndex: KnownArtistIndex | null = null;
 function getBundledKnownArtistIndex(): KnownArtistIndex {
   if (!bundledKnownArtistIndex) bundledKnownArtistIndex = buildKnownArtistIndex(KNOWN_ARTISTS_SEED);
   return bundledKnownArtistIndex;
+}
+
+/** Distância de edição entre duas strings curtas, com teto (`max`+1 = "longe demais"). */
+function boundedEditDistance(a: string, b: string, max: number): number {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i += 1) {
+    const cur = [i];
+    let rowMin = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const v = Math.min(
+        prev[j]! + 1,
+        cur[j - 1]! + 1,
+        prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+      cur.push(v);
+      if (v < rowMin) rowMin = v;
+    }
+    if (rowMin > max) return max + 1;
+    prev = cur;
+  }
+  return prev[b.length]!;
+}
+
+// Nomes do índice agrupados por (1ª letra, nº de palavras) — a busca aproximada só compara dentro do balde.
+const fuzzyBuckets = new WeakMap<KnownArtistIndex, Map<string, string[]>>();
+function fuzzyBucketsOf(index: KnownArtistIndex): Map<string, string[]> {
+  let buckets = fuzzyBuckets.get(index);
+  if (!buckets) {
+    buckets = new Map();
+    for (const key of index.byNorm.keys()) {
+      const words = key.split(" ");
+      if (words.length < 2 || key.length < 8) continue; // nome curto/1 palavra: erro de digitação ambíguo
+      const bucket = `${key[0]}|${words.length}`;
+      const list = buckets.get(bucket);
+      if (list) list.push(key);
+      else buckets.set(bucket, [key]);
+    }
+    fuzzyBuckets.set(index, buckets);
+  }
+  return buckets;
+}
+
+/**
+ * Como `matchKnownArtistAtStart`, mas tolera UM erro de digitação (dois em nomes longos): "JEAN LUC
+ * PNTY …" → "Jean-Luc Ponty", "WINTON MARSALIS …" → "Wynton Marsalis". Só nomes de 2+ palavras e 8+
+ * letras (nome curto/único erra por pouco com outro nome real) e só quando o início do título não
+ * casa exato — chamado apenas no fallback de títulos "ARTISTA ÁLBUM" sem separador.
+ */
+function matchKnownArtistAtStartFuzzy(text: string, index: KnownArtistIndex): string {
+  const words = normalizeForMatch(text).split(" ").filter(Boolean);
+  const buckets = fuzzyBucketsOf(index);
+  for (let size = Math.min(index.maxWords, words.length, 5); size >= 2; size -= 1) {
+    const cand = words.slice(0, size).join(" ");
+    if (cand.length < 8) continue;
+    const limit = cand.length >= 14 ? 2 : 1;
+    let best = "";
+    let bestDist = limit + 1;
+    for (const key of buckets.get(`${cand[0]}|${size}`) ?? []) {
+      const d = boundedEditDistance(cand, key, limit);
+      if (d < bestDist) {
+        bestDist = d;
+        best = key;
+      }
+    }
+    if (best) return index.byNorm.get(best) ?? "";
+  }
+  return "";
 }

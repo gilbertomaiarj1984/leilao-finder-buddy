@@ -13,6 +13,7 @@ type OwnedFeedback = {
 
 const VERIFIED_HOUSES_KEY = "verified_houses";
 const WATCH_REMOVED_KEY = "watch_removed";
+const LOT_EDITION_KEY = "lot_edition";
 const USER_INTERESTS_KEY = "user_interests";
 const AI_BATCH_KEY = "ai_batch";
 const AI_IDENT_BATCH_KEY = "ai_ident_batch";
@@ -122,6 +123,65 @@ export async function setWatchRemoved(id: string, watched: boolean): Promise<voi
     // Best-effort: a vigia em si já foi sincronizada com o LeilõesBR.
     console.error("[app-state] não foi possível gravar o desvigiado", error);
   }
+}
+
+/** Sobrescrita manual da edição de um LOTE ("modern" | "period" | "original"), por id do lote. */
+type LotEditionMap = Record<string, "modern" | "period" | "original">;
+const LOT_EDITION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+async function readLotEditions(): Promise<Record<string, { e: string; at: string }>> {
+  const { data, error } = await db
+    .from("app_state")
+    .select("value")
+    .eq("key", LOT_EDITION_KEY)
+    .maybeSingle();
+  if (error) throw error;
+  const value = data?.value;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const cutoff = Date.now() - LOT_EDITION_TTL_MS;
+  const out: Record<string, { e: string; at: string }> = {};
+  for (const [id, v] of Object.entries(value as Record<string, unknown>)) {
+    const e = (v as { e?: unknown } | null)?.e;
+    const at = (v as { at?: unknown } | null)?.at;
+    if (
+      (e === "modern" || e === "period" || e === "original") &&
+      typeof at === "string" &&
+      Date.parse(at) > cutoff
+    ) {
+      out[id] = { e, at };
+    }
+  }
+  return out;
+}
+
+/** Edições marcadas à mão por lote (vale para todos os dispositivos). Falha → vazio. */
+export async function getLotEditions(): Promise<LotEditionMap> {
+  try {
+    const raw = await readLotEditions();
+    const out: LotEditionMap = {};
+    for (const [id, v] of Object.entries(raw)) out[id] = v.e as LotEditionMap[string];
+    return out;
+  } catch (error) {
+    console.error("[app-state] não foi possível ler as edições dos lotes (usando vazio)", error);
+    return {};
+  }
+}
+
+/** Grava (ou limpa, com `null`) a edição manual de um lote; expira em 30 dias (os lotes saem da janela). */
+export async function setLotEdition(
+  lotId: string,
+  edition: "modern" | "period" | "original" | null,
+): Promise<void> {
+  const current = await readLotEditions();
+  if (edition) current[lotId] = { e: edition, at: new Date().toISOString() };
+  else delete current[lotId];
+  const { error } = await db
+    .from("app_state")
+    .upsert(
+      { key: LOT_EDITION_KEY, value: current, updated_at: new Date().toISOString() },
+      { onConflict: "key" },
+    );
+  if (error) throw new Error(`Não foi possível gravar a edição do lote: ${error.message}`);
 }
 
 /**

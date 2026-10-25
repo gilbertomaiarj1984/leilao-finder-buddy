@@ -320,6 +320,7 @@ function ColecaoPage() {
           .split(",")
           .map((t) => t.trim())
           .filter(Boolean),
+        edition: d.edition,
       };
       return d.id ? updateItem({ data: { id: d.id, ...payload } }) : addItem({ data: payload });
     },

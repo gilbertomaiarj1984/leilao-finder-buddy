@@ -174,9 +174,24 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
 - **Imagens flutuantes** (`postgres:17-alpine`, `caddy:2`, `portainer:lts`): fixar o minor.
 - **Previews/Portainer** (S6) e **backup das fotos da Coleção** (B2): ver "Próximo" na revisão geral.
 
-## Discos homônimos em outras áreas (achado na v0.181.1)
+## Edição do disco — o que ficou de fora (v0.182.0)
 
-O De olho e a importação em massa da Coleção já separam homônimos (álbum = nome do artista) por ano. Ainda agrupam só por artista+álbum, sem ano: o **Vinil Analytics** (`albumKey` em `analytics.ts` — histórico/preço de "Caetano Veloso — Caetano Veloso" de anos diferentes cai no mesmo grupo), a varredura de compras → Coleção e o casamento com o Discogs/`lot_market`. Revisar se vale usar `isSelfTitledAlbum` + ano do lote (`lot_ident.year`) nessas chaves.
+- **"Já tenho" do LOTE** (selo no card, `ownedAutoMap`/`OwnedCandidate`): ainda não considera a edição —
+  ter o original ainda marca como "já tenho" o lote de um relançamento moderno. Passar `edition` da
+  Coleção para o candidato e rejeitar moderno × normal, como em `lookoutOwnedInCollection`.
+- **Vinil Analytics, varredura de compras → Coleção e preço do Discogs** ainda agrupam sem edição/master:
+  original e relançamento moderno misturam o histórico de preços. Usar `lot_market.master_id` + a edição
+  do lote (`detectModernReissue`/`lot_edition`) nas chaves.
+- **Adicionar por lista** (`LookoutBulkDialog`) e importação em massa da Coleção só pré-marcam a edição pelo
+  texto; não há caixa por linha.
+- Discos já cadastrados ficam com `master_id` NULL até o passo `masters` rodar (10 por chamada).
+
+## Artista × álbum colados sem separador (auditoria de 3150 títulos, v0.182.0)
+
+Títulos como `LP BENNY GOODMAN THE COMPLETE GOODMAN VOL. 1 1935` ou `**LP THE FOUNDATIONS TOMORROW**` não têm separador:
+sem nome no bundle `KNOWN_ARTISTS_SEED` (nem com 1 erro de digitação) o parser devolve artista+álbum juntos (≤5 palavras) ou
+"" (>5). ~960 dos ~2270 títulos de vinil do conjunto auditado ainda ficam sem artista. Caminhos: ampliar o bundle com os artistas
+que a IA/`known_artists` já identificou (exportar `lot_ident.artist` mais frequentes), ou rodar a identificação por IA só nesses lotes.
 
 ## Código repetido (marcado com `// DUP(...)`; regra no AGENTS.md)
 
