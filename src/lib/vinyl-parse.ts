@@ -1017,6 +1017,42 @@ export function catalogUrlFromLot(lot: { idLeilao: string; url: string }): strin
 // --- Base de nomes conhecidos (reforço da classificação de artista) ---
 
 /** Normalização para casar nomes: remove acentos e pontuação, baixa a caixa. */
+/**
+ * Disco HOMÔNIMO: o nome do álbum é só o nome do artista ("Caetano Veloso — Caetano Veloso").
+ * O nome não distingue um do outro (há vários, de anos diferentes) — só o ano.
+ */
+export function isSelfTitledAlbum(artist: string, album: string): boolean {
+  const albumWords = normalizeForMatch(album).split(" ").filter(Boolean);
+  const artistWords = new Set(normalizeForMatch(artist).split(" ").filter(Boolean));
+  return albumWords.length > 0 && albumWords.every((w) => artistWords.has(w));
+}
+
+/**
+ * Dois registros de MESMO artista+álbum (já comparados pelo nome) são o mesmo disco? Só deixam de
+ * ser quando o álbum é homônimo e os dois anos são conhecidos e diferentes (Caetano Veloso 1968 ×
+ * 1986). Nos demais discos o ano diferente é só reedição, então segue sendo o mesmo; ano
+ * desconhecido de um lado não separa.
+ */
+export function sameAlbumYear(
+  artist: string,
+  album: string,
+  yearA: number | null | undefined,
+  yearB: number | null | undefined,
+): boolean {
+  if (!yearA || !yearB || yearA === yearB) return true;
+  return !isSelfTitledAlbum(artist, album);
+}
+
+/**
+ * Ano citado SEM parênteses no FIM de uma linha digitada ("caetano veloso - caetano veloso 1968").
+ * Só vale quando sobra algo antes ("Prince - 1999" é o nome do álbum, não um ano).
+ */
+export function trailingYear(text: string): number | null {
+  const m = text.trim().match(/^(.*\S)\s+((?:19|20)\d{2})$/);
+  // Precisa sobrar "artista - álbum" (separador seguido de texto) antes do ano.
+  return m && /\s[-–—/]\s+\S/.test(m[1]!) ? Number(m[2]) : null;
+}
+
 export function normalizeForMatch(value: string): string {
   return value
     .normalize("NFD")

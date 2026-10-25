@@ -1,5 +1,5 @@
 import { normalizeGrade } from "@/lib/grading";
-import { normalizeForMatch } from "@/lib/vinyl-parse";
+import { isSelfTitledAlbum, normalizeForMatch, trailingYear } from "@/lib/vinyl-parse";
 
 /**
  * Um disco interpretado a partir do texto de importação em massa da Coleção. Espelha os campos
@@ -161,6 +161,14 @@ function draftFromLine(line: string): ParsedCollectionDraft | null {
       body = body.slice(0, paren.index).trim();
     }
   }
+  // "Artista - Álbum 1968" (ano solto no fim, sem parênteses).
+  if (year === null) {
+    const loose = trailingYear(body);
+    if (loose !== null) {
+      year = loose;
+      body = body.replace(/\s+\d{4}$/, "").trim();
+    }
+  }
 
   const parts = body.split(/\s[-–—/]\s/);
   let artist = "";
@@ -244,7 +252,9 @@ export function parseCollectionBulkText(text: string): ParsedCollectionBulk {
   const out: ParsedCollectionDraft[] = [];
   const seen = new Set<string>();
   for (const d of drafts) {
-    const key = d.album.trim() ? normalizeForMatch(`${d.artist} ${d.album}`) : "";
+    const base = d.album.trim() ? normalizeForMatch(`${d.artist} ${d.album}`) : "";
+    // Homônimos (mesmo nome do artista) de anos diferentes são discos diferentes.
+    const key = base && d.year && isSelfTitledAlbum(d.artist, d.album) ? `${base} ${d.year}` : base;
     if (key && seen.has(key)) continue;
     if (key) seen.add(key);
     out.push(d);

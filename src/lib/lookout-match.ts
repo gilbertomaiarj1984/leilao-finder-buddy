@@ -4,6 +4,7 @@ import {
   normalizeForMatch,
   isDiscBundle,
   LOTE_LABEL,
+  sameAlbumYear,
   titleCase,
   UNCLASSIFIED_LABEL,
 } from "@/lib/vinyl-parse";
@@ -176,7 +177,16 @@ export function similarLookoutItems(
     if (words(it.artist).join(" ") !== artistKey) continue;
     const known = [it, ...(it.merged ?? [])];
     if (known.some((k) => k.lotId === input.lotId)) return [];
-    if (known.some((k) => words(k.album).join(" ") === albumKey && albumKey)) return []; // idêntico
+    if (
+      known.some(
+        (k) =>
+          words(k.album).join(" ") === albumKey &&
+          albumKey &&
+          sameAlbumYear(input.artist, input.album, input.year, k.year),
+      )
+    ) {
+      return []; // idêntico
+    }
     const doubt = known.some((k) => {
       const kw = words(k.album);
       if (!kw.length || !albumWords.length) return true;

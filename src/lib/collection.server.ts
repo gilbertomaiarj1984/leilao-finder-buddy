@@ -11,6 +11,7 @@ import {
   COMPILATION_LABEL,
   isCompilation,
   isDiscBundle,
+  isSelfTitledAlbum,
   isVariousArtists,
   LOTE_LABEL,
   normalizeForMatch,
@@ -173,8 +174,11 @@ function canonicalArtist(artist: string, title: string): string {
 
 /** Chave de duplicidade: artista+álbum normalizado. Vazia quando não há álbum (aí nunca
  * tratamos como duplicado — não dá para afirmar que dois "LP de Fulano" sejam o mesmo). */
-function albumKey(artist: string, album: string): string {
-  return album.trim() ? normalizeForMatch(`${artist} ${album}`) : "";
+function albumKey(artist: string, album: string, year: number | null = null): string {
+  if (!album.trim()) return "";
+  const base = normalizeForMatch(`${artist} ${album}`);
+  // Homônimos (Caetano Veloso 1968 × 1986) só se distinguem pelo ano.
+  return year && isSelfTitledAlbum(artist, album) ? `${base} ${year}` : base;
 }
 
 /** Resultado de uma passada de re-identificação (o cliente repete em laço pelo `nextOffset`). */
@@ -630,7 +634,7 @@ export async function importCollectionText(
   const existing = await getAllCollection();
   const seen = new Set<string>();
   for (const i of existing) {
-    const k = albumKey(i.artist, i.album);
+    const k = albumKey(i.artist, i.album, i.year);
     if (k) seen.add(k);
   }
   let pos = existing.reduce((max, i) => Math.max(max, i.position), 0);
@@ -640,7 +644,7 @@ export async function importCollectionText(
   for (const d of items) {
     const artist = canonicalArtist(d.artist ? titleCase(d.artist) : "", d.title);
     const album = d.album.trim();
-    const k = albumKey(artist, album);
+    const k = albumKey(artist, album, d.year);
     if (k && seen.has(k)) {
       skipped += 1;
       continue;

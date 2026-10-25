@@ -17,6 +17,9 @@ import {
   parsePrice,
   pickCanonical,
   titleCase,
+  isSelfTitledAlbum,
+  sameAlbumYear,
+  trailingYear,
 } from "@/lib/vinyl-parse";
 
 describe("vinil x não-vinil", () => {
@@ -61,6 +64,25 @@ describe("vinil x não-vinil", () => {
       false,
     );
     expect(looksNonVinyl("LP Cher - Heart of Stone")).toBe(false);
+  });
+});
+
+describe("homônimos e ano", () => {
+  test("isSelfTitledAlbum", () => {
+    expect(isSelfTitledAlbum("Caetano Veloso", "Caetano Veloso")).toBe(true);
+    expect(isSelfTitledAlbum("Caetano Veloso", "Transa")).toBe(false);
+    expect(isSelfTitledAlbum("Caetano Veloso", "")).toBe(false);
+  });
+  test("sameAlbumYear: só o homônimo de anos diferentes vira outro disco", () => {
+    expect(sameAlbumYear("Caetano Veloso", "Caetano Veloso", 1968, 1986)).toBe(false);
+    expect(sameAlbumYear("Caetano Veloso", "Caetano Veloso", 1968, null)).toBe(true);
+    expect(sameAlbumYear("Caetano Veloso", "Caetano Veloso", 1986, 1986)).toBe(true);
+    expect(sameAlbumYear("Pink Floyd", "The Wall", 1979, 2011)).toBe(true); // reedição
+  });
+  test("trailingYear", () => {
+    expect(trailingYear("caetano veloso - caetano veloso 1968")).toBe(1968);
+    expect(trailingYear("Prince - 1999")).toBeNull();
+    expect(trailingYear("Chico Buarque - Construção")).toBeNull();
   });
 });
 
