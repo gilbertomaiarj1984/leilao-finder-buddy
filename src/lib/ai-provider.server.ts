@@ -406,8 +406,8 @@ function groqReasoningParams(model: string): Record<string, unknown> {
 }
 
 /**
- * Modelo do Groq para chamadas COM capa: `GROQ_VISION_MODEL`, senão o Qwen3.8 (⚠️ visão não
- * confirmada — se o Groq recusar a imagem, `runGroqWithImage` cai para o modelo de texto).
+ * Modelo do Groq para chamadas COM capa: `GROQ_VISION_MODEL`, senão o Qwen3.8 (visão confirmada
+ * na doc do Groq; se ele recusar a imagem, `runGroqWithImage` cai para o modelo de texto).
  */
 const GROQ_VISION_DEFAULT_MODEL = "qwen/qwen3.8-27b";
 
