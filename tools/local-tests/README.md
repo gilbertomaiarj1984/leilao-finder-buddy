@@ -40,6 +40,13 @@ bash tools/local-tests/backup-script.sh    # docker/backup/backup.sh com pg_dump
 bash tools/local-tests/remote-deploy.sh    # docker/deploy/remote-deploy.sh com docker falso (6 verificações)
 ```
 
+## 2d. De olho: arrastar/mover/✕/+ em lotes "por vir" (v0.183.0)
+```sh
+bun run build && tools/local-tests/subir-servidor.sh &     # app em http://127.0.0.1:3999
+node tools/local-tests/olho-arrastar-e2e.mjs               # 23 verificações: arrasta cada linha (inclusive origens de álbum juntado), ⇄, ✕ e +
+```
+O teste semeia e apaga direto no banco (por fora do app) com ids de leilão novos a cada rodada, porque o servidor guarda um cache curto por lote.
+
 ## 3. Painel `/ia-painel` no navegador (desktop e celular)
 ```sh
 bun run build

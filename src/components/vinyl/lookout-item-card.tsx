@@ -1,6 +1,7 @@
 import { useDragAutoScroll } from "@/components/vinyl/use-drag-autoscroll";
 import {
   ArrowDown,
+  ArrowRightLeft,
   ArrowUp,
   Binoculars,
   Check,
@@ -90,6 +91,9 @@ export function LookoutItemCard({
   onDelete,
   onMerge,
   onMoveLot,
+  onMoveLotTo,
+  onDismissOrigin,
+  onSplitOrigin,
   onUnmerge,
   onWatch,
   onOpenLot,
@@ -122,6 +126,12 @@ export function LookoutItemCard({
   onUnmerge: (lotId: string) => void;
   /** Lote arrastado de outro cartão e solto neste: passa a ser deste disco (corrige o casamento). */
   onMoveLot: (lotId: string) => void;
+  /** Move SÓ este lote "por vir" para outro disco da lista (seletor, sem arrastar). */
+  onMoveLotTo: (lotId: string, targetItemId: string) => void;
+  /** "Não é este disco" numa linha de ORIGEM: o lote sai do disco e deixa de casar. */
+  onDismissOrigin: (lotId: string) => void;
+  /** "Criar disco novo a partir deste lote" numa linha de ORIGEM. */
+  onSplitOrigin: (lotId: string) => void;
   onWatch: (m: LookoutUpcoming) => void;
   /** Abre o cartão completo do lote (clicar na linha do lote por vir). */
   onOpenLot: (m: LookoutUpcoming) => void;
@@ -139,6 +149,10 @@ export function LookoutItemCard({
   const autoScroll = useDragAutoScroll();
   const [editing, setEditing] = useState(false);
   const [merging, setMerging] = useState(false);
+  // Lote "por vir" com o seletor "mover para outro disco" aberto (um por vez).
+  const [movingLotId, setMovingLotId] = useState<string | null>(null);
+  // Lotes que são a origem de um álbum JUNTADO a este disco: podem ser movidos sozinhos.
+  const mergedLotIds = new Set((item.merged ?? []).map((x) => x.lotId));
   const [termText, setTermText] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -566,6 +580,8 @@ export function LookoutItemCard({
                 const vs = priceVsCeiling(m.priceNum, item.maxPrice);
                 const watching = watchedIds.has(m.idPeca);
                 const bid = bidById.get(m.lotId);
+                // Origem do próprio disco (o lote que você marcou): fica; não arrasta nem leva o cartão.
+                const mainOrigin = m.isOrigin && !mergedLotIds.has(m.lotId);
                 const bidKind = !bid
                   ? null
                   : bidIsWinning(bid.status)
@@ -576,9 +592,14 @@ export function LookoutItemCard({
                 return (
                   <li
                     key={m.lotId}
-                    draggable={!m.isOrigin}
+                    draggable
                     onDragStart={(e) => {
                       e.stopPropagation();
+                      // Sem `draggable` o arrasto subiria ao cartão e levaria o DISCO INTEIRO (juntar).
+                      if (mainOrigin) {
+                        e.preventDefault();
+                        return;
+                      }
                       autoScroll.start();
                       e.dataTransfer.setData(LOT_DRAG_TYPE, m.lotId);
                       e.dataTransfer.setData("text/plain", m.title);
@@ -586,7 +607,7 @@ export function LookoutItemCard({
                     }}
                     onClick={(e) => {
                       // Clicar no lote (fora dos botões/links) abre o cartão completo dele.
-                      if ((e.target as HTMLElement).closest("button, a")) return;
+                      if ((e.target as HTMLElement).closest("button, a, select")) return;
                       onOpenLot(m);
                     }}
                     className={`flex cursor-pointer flex-wrap items-center gap-3 rounded border p-2 ${
@@ -599,9 +620,9 @@ export function LookoutItemCard({
                             : "border-border bg-background hover:bg-accent/30"
                     }`}
                     title={
-                      m.isOrigin
-                        ? "Clique para abrir o cartão completo do lote"
-                        : "Clique para abrir o cartão completo do lote (ou arraste para outro disco se casou errado)"
+                      mainOrigin
+                        ? "Este é o lote que você marcou. Clique para abrir o cartão completo do lote"
+                        : "Clique para abrir o cartão completo do lote (ou arraste só este lote para outro disco se casou errado)"
                     }
                   >
                     {m.image ? (
@@ -710,28 +731,48 @@ export function LookoutItemCard({
                           <Check className="h-4 w-4" />
                         </Button>
                       ) : null}
-                      {!m.isOrigin ? (
+                      {/* Sempre disponíveis (também na origem e depois de confirmar). */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          m.isOrigin ? onDismissOrigin(m.lotId) : onResolve(m, "dismiss")
+                        }
+                        aria-label="Não é este disco"
+                        title={
+                          m.isOrigin
+                            ? "Não é este disco — tira este lote do disco"
+                            : "Não é este disco"
+                        }
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                      {!mainOrigin && mergeOptions.length > 0 ? (
                         <Button
                           size="sm"
-                          variant="ghost"
-                          onClick={() => onResolve(m, "dismiss")}
-                          aria-label="Não é este disco"
-                          title="Não é este disco"
+                          variant={movingLotId === m.lotId ? "secondary" : "ghost"}
+                          onClick={() =>
+                            setMovingLotId((cur) => (cur === m.lotId ? null : m.lotId))
+                          }
+                          aria-label="Mover só este lote para outro disco"
+                          title="Mover só este lote para outro disco da lista (casou com o disco errado)"
                         >
-                          <X className="h-4 w-4" />
+                          <ArrowRightLeft className="h-4 w-4" />
                         </Button>
                       ) : null}
-                      {!m.isOrigin ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => onCreateFromLot(m)}
-                          aria-label="Criar novo álbum de olho a partir deste lote"
-                          title="Criar novo álbum de olho a partir deste lote"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      ) : null}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => (m.isOrigin ? onSplitOrigin(m.lotId) : onCreateFromLot(m))}
+                        aria-label="Criar novo álbum de olho a partir deste lote"
+                        title={
+                          m.isOrigin
+                            ? "Criar um disco novo a partir deste lote (ele deixa de ser origem deste disco)"
+                            : "Criar novo álbum de olho a partir deste lote"
+                        }
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
                       <Button
                         size="sm"
                         variant={watching ? "default" : "outline"}
@@ -752,6 +793,26 @@ export function LookoutItemCard({
                         </a>
                       </Button>
                     </div>
+                    {movingLotId === m.lotId ? (
+                      <select
+                        value=""
+                        autoFocus
+                        onChange={(e) => {
+                          if (!e.target.value) return;
+                          setMovingLotId(null);
+                          onMoveLotTo(m.lotId, e.target.value);
+                        }}
+                        aria-label="Mover este lote para o disco…"
+                        className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                      >
+                        <option value="">Mover só este lote para o disco…</option>
+                        {mergeOptions.map((o) => (
+                          <option key={o.id} value={o.id}>
+                            {lookoutLabel(o) || o.title}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
                   </li>
                 );
               })}

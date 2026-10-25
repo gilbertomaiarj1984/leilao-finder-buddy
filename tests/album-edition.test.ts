@@ -6,6 +6,7 @@ import {
   lotEditionAllows,
   resolveLotEdition,
   sameAlbum,
+  sameAlbumAsItem,
 } from "@/lib/album-edition";
 
 const caetano = (year: number | null, extra: object = {}) => ({
@@ -59,6 +60,32 @@ describe("sameAlbum", () => {
   test("álbum não homônimo: ano diferente é reedição, mesmo disco", () => {
     const wall = (y: number) => ({ artist: "Pink Floyd", album: "The Wall", year: y });
     expect(sameAlbum(wall(1979), wall(1985))).toBe(true);
+  });
+});
+
+describe("sameAlbumAsItem — álbum juntado sem ano herda o ano do item", () => {
+  const input = { artist: "Caetano Veloso", album: "Caetano Veloso", year: 1968 };
+  const mergedNoYear = [{ year: null, nameMatches: true }];
+  test("item de 1986 com juntado sem ano NÃO é o disco de 1968 (o bug do print)", () => {
+    expect(sameAlbumAsItem(input, { year: 1986, nameMatches: true, merged: mergedNoYear })).toBe(
+      false,
+    );
+  });
+  test("o mesmo ano, ou item sem ano algum, continua sendo o mesmo disco", () => {
+    expect(sameAlbumAsItem(input, { year: 1968, nameMatches: true, merged: mergedNoYear })).toBe(
+      true,
+    );
+    expect(sameAlbumAsItem(input, { year: null, nameMatches: true, merged: mergedNoYear })).toBe(
+      true,
+    );
+  });
+  test("juntado com ano próprio vale o ano dele", () => {
+    const merged = [{ year: 1968, nameMatches: true }];
+    expect(sameAlbumAsItem(input, { year: 1986, nameMatches: false, merged })).toBe(true);
+    expect(sameAlbumAsItem(input, { year: 1986, nameMatches: true, merged: [] })).toBe(false);
+  });
+  test("nome diferente nunca é o mesmo disco", () => {
+    expect(sameAlbumAsItem(input, { year: 1968, nameMatches: false, merged: [] })).toBe(false);
   });
 });
 

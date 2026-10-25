@@ -36,6 +36,8 @@ import {
   markLookoutSeen,
   mergeLookout,
   moveLookoutLot,
+  dismissLookoutOrigin,
+  splitLookoutOrigin,
   setLookoutLink,
   setLookoutArtistGroup,
   toggleLookout,
@@ -131,6 +133,8 @@ function OlhoPage() {
   const runMerge = useServerFn(mergeLookout);
   const runUnmerge = useServerFn(unmergeLookout);
   const runMoveLot = useServerFn(moveLookoutLot);
+  const runDismissOrigin = useServerFn(dismissLookoutOrigin);
+  const runSplitOrigin = useServerFn(splitLookoutOrigin);
   const runArtistGroup = useServerFn(setLookoutArtistGroup);
   const runToggleLookout = useServerFn(toggleLookout);
   const runSaveInterests = useServerFn(setUserInterests);
@@ -319,6 +323,27 @@ function OlhoPage() {
       rollback(ctx?.prev);
       toast.error((error as Error)?.message || "Não foi possível mover o lote");
     },
+  });
+  // Linhas de ORIGEM (lote marcado / origem de álbum juntado): "não é este disco" e "criar disco novo".
+  const dismissOriginMut = useMutation({
+    mutationFn: async (vars: { itemId: string; lotId: string }) =>
+      await runDismissOrigin({ data: vars }),
+    onSuccess: () => {
+      toast.success("Lote tirado deste disco");
+      refresh();
+    },
+    onError: (error: unknown) =>
+      toast.error((error as Error)?.message || "Não foi possível tirar o lote"),
+  });
+  const splitOriginMut = useMutation({
+    mutationFn: async (vars: { itemId: string; lotId: string }) =>
+      await runSplitOrigin({ data: vars }),
+    onSuccess: () => {
+      toast.success("Disco novo criado a partir do lote — ajuste artista/álbum/ano se precisar");
+      refresh();
+    },
+    onError: (error: unknown) =>
+      toast.error((error as Error)?.message || "Não foi possível criar o disco novo"),
   });
   const unmergeMut = useMutation({
     mutationFn: async (vars: { itemId: string; lotId: string }) => await runUnmerge({ data: vars }),
@@ -539,6 +564,9 @@ function OlhoPage() {
         }}
         onUnmerge={(lotId) => unmergeMut.mutate({ itemId: it.id, lotId })}
         onMoveLot={(lotId) => moveLotMut.mutate({ lotId, itemId: it.id })}
+        onMoveLotTo={(lotId, itemId) => moveLotMut.mutate({ lotId, itemId })}
+        onDismissOrigin={(lotId) => dismissOriginMut.mutate({ itemId: it.id, lotId })}
+        onSplitOrigin={(lotId) => splitOriginMut.mutate({ itemId: it.id, lotId })}
         onIdentify={() => identifyMut.mutate(it.id)}
         identifying={identifyingId === it.id}
         onDismissPending={(lotIds) => dismissPendingMut.mutate(lotIds)}
