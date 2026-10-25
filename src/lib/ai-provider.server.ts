@@ -63,7 +63,7 @@ const ANTHROPIC_DEFAULT_MODEL = "claude-haiku-5-5";
 // DUP(modelos): lista/padrão dos modelos Gemini repetidos em 4 arquivos — centralizar em `ai-models.ts`.
 const GEMINI_DEFAULT_MODEL = "gemini-3.1-flash-lite";
 /** Espelha `GROQ_DEFAULT_MODEL` de `ai-provider.ts` (client-safe; este arquivo não importa de lá). */
-const GROQ_DEFAULT_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+const GROQ_DEFAULT_MODEL = "openai/gpt-oss-120b";
 /**
  * Modelo efetivo do provedor. Pro Gemini, `geminiModel` (a escolha do usuário, persistida em
  * `app_state.gemini_model` — ver `resolveGeminiModel` em `ai-eval.server.ts`) tem prioridade;
@@ -398,7 +398,40 @@ async function runGemini(req: AiRequest, model: string): Promise<string> {
 
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 
-async function runGroq(req: AiRequest, model: string): Promise<string> {
+/** Raciocínio mínimo nos modelos que raciocinam (a tarefa é só extrair/classificar JSON). */
+function groqReasoningParams(model: string): Record<string, unknown> {
+  if (model.startsWith("openai/gpt-oss")) return { reasoning_effort: "low" };
+  if (model.startsWith("qwen/qwen3")) return { reasoning_effort: "none" };
+  return {};
+}
+
+/**
+ * Modelo do Groq para chamadas COM capa: `GROQ_VISION_MODEL`, senão o Qwen3.8 (visão confirmada
+ * na doc do Groq; se ele recusar a imagem, `runGroqWithImage` cai para o modelo de texto).
+ */
+const GROQ_VISION_DEFAULT_MODEL = "qwen/qwen3.8-27b";
+
+function groqVisionModel(): string {
+  return process.env["GROQ_VISION_MODEL"] || GROQ_VISION_DEFAULT_MODEL;
+}
+
+/** Com capa: tenta o modelo de visão; se ele recusar a requisição (400/404), segue só com o texto. */
+async function runGroqWithImage(req: AiRequest, textModel: string): Promise<string> {
+  const visionModel = groqVisionModel();
+  try {
+    return await runGroq(req, visionModel, true);
+  } catch (error) {
+    const status = Number((error as { status?: number })?.status);
+    if (status !== 400 && status !== 404) throw error;
+    console.error(
+      `[ai-provider] Groq: ${visionModel} recusou a capa (HTTP ${status}) — seguindo só com o texto`,
+      error,
+    );
+    return await runGroq({ ...req, image: null }, textModel, false);
+  }
+}
+
+async function runGroq(req: AiRequest, model: string, withImage = false): Promise<string> {
   const key = process.env["GROQ_API_KEY"];
   if (!key) throw new Error("GROQ_API_KEY ausente");
 
@@ -406,7 +439,12 @@ async function runGroq(req: AiRequest, model: string): Promise<string> {
     { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
   > = [];
   // O Groq aceita data URL ou URL pública (ele mesmo baixa) — só repassa URL que passa no filtro SSRF.
-  if (req.image && (req.image.startsWith("data:image/") || isSafeImageUrl(req.image))) {
+  // Modelo sem visão (ex.: gpt-oss) devolve 400 se receber imagem: a capa só vai no modelo de visão.
+  if (
+    req.image &&
+    withImage &&
+    (req.image.startsWith("data:image/") || isSafeImageUrl(req.image))
+  ) {
     userContent.push({ type: "image_url", image_url: { url: req.image } });
   }
   userContent.push({ type: "text", text: req.text });
@@ -417,8 +455,12 @@ async function runGroq(req: AiRequest, model: string): Promise<string> {
       { role: "system", content: req.system },
       { role: "user", content: userContent },
     ],
-    max_tokens: req.maxTokens,
+    // O gpt-oss gasta o teto de saída "pensando" e pode estourá-lo ANTES de emitir a resposta
+    // (content vazio) — mesma lição do Gemini: folga de orçamento. O Qwen roda com raciocínio
+    // desligado (`none`), então não precisa; folga menor também poupa o TPM do free tier (8K).
+    max_tokens: req.maxTokens + (model.startsWith("openai/gpt-oss") ? 2048 : 0),
     temperature: 0.2,
+    ...groqReasoningParams(model),
     ...(req.json ? { response_format: { type: "json_object" } } : {}),
   });
 
@@ -468,7 +510,12 @@ async function runOne(
     return { text: await runAnthropic(req, model), model };
   }
   const model = providerModel(provider, geminiModel);
-  if (provider === "groq") return { text: await runGroq(req, model), model };
+  if (provider === "groq") {
+    // Com capa usa o modelo de visão (e o devolve como `model`, para a UI/`lot_ai.model`).
+    return req.image
+      ? { text: await runGroqWithImage(req, model), model: groqVisionModel() }
+      : { text: await runGroq(req, model), model };
+  }
 
   return { text: await runGemini(req, model), model };
 }

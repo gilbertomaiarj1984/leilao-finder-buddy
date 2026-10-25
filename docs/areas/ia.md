@@ -13,8 +13,10 @@ precedência — ver bullet do seletor de modelo abaixo). **Opcional:** sem NENH
 chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer provedor").
 
 - **Groq (free tier, v0.178.0):** terceiro provedor (`GROQ_API_KEY`, override `GROQ_MODEL`; padrão
-  `meta-llama/llama-4-scout-17b-16e-instruct`, com visão — id vindo da doc pública, **não testado**
-  contra a API; se der 400, ajuste `GROQ_MODEL`). Adaptador `runGroq` em `ai-provider.server.ts`:
+  `openai/gpt-oss-120b`, só texto; o Llama 4 Scout deu 404 em produção na v0.178.0 — liste os ids reais
+  com `GET api.groq.com/openai/v1/models`). v0.179.0: modelos de raciocínio recebem `reasoning_effort`
+  baixo e `max_tokens + 2048` de folga (senão `content` vem vazio e a fama das faixas/avaliação falham
+  em silêncio); **Limites do free tier (doc oficial, `rate-limits`): `gpt-oss-120b` e `qwen3.8-27b` = 30 RPM, 1K req/dia, 8K tokens/min, 200K tokens/dia; imagem = 2048 tokens; 429 vira failover.** Confirmado na doc: Qwen3.8 tem visão (até 3 imagens), `reasoning_effort` `none` e JSON mode; gpt-oss aceita `low`. A capa só vai ao modelo de visão (`GROQ_VISION_MODEL`, padrão `qwen/qwen3.8-27b`, visão confirmada na doc): chamadas com capa usam esse modelo e, se o Groq responder 400/404, seguem só com o texto no `GROQ_MODEL`. Adaptador `runGroq` em `ai-provider.server.ts`:
   REST OpenAI-compatível (`api.groq.com/openai/v1/chat/completions`, `response_format: json_object`
   quando `req.json`, capa como `image_url` — URL só se passar em `isSafeImageUrl`), retry nos 5xx;
   429 do free tier vira quota → failover. **Um só modelo, sem seletor/persistência** (a caixa de IA
