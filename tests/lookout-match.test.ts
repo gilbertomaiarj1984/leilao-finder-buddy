@@ -477,25 +477,6 @@ describe("edição (original × reedição moderna) e master do Discogs", () => 
     expect(matchLookoutForLot(cands, "9-8", lot("LP Chico Buarque - Construção"))).not.toBeNull();
   });
 
-  test("homônimo: master diferente do lote rejeita; igual casa", () => {
-    const self = item({
-      artist: "Caetano Veloso",
-      album: "Caetano Veloso",
-      year: 1968,
-      masterId: 111,
-    });
-    const cands = lookoutCandidates([self]);
-    const mk = (masterId: number) =>
-      buildLotIdentity({
-        title: "LP Caetano Veloso - Caetano Veloso 1968",
-        artist: "Caetano Veloso",
-        album: "Caetano Veloso - Caetano Veloso",
-        marketMasterId: masterId,
-      });
-    expect(matchLookoutForLot(cands, "9-9", mk(222))).toBeNull();
-    expect(matchLookoutForLot(cands, "9-10", mk(111))).not.toBeNull();
-  });
-
   test("Já tenho: o relançamento moderno não conta como ter o original (e vice-versa)", () => {
     const wantOriginal = item();
     const owned = (edition: "modern" | null) => [

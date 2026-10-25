@@ -84,25 +84,18 @@ export function sameAlbum(a: AlbumRef, b: AlbumRef): boolean {
 }
 
 /**
- * Um lote (edição + master do Discogs) pode casar com o item de olho/da Coleção `item`?
+ * Um lote (edição) pode casar com o item de olho/da Coleção `item`?
  * Rejeita quando: o lote é reedição moderna e o item não é; o item é moderno e o lote é
  * explicitamente original/de época. Lote de edição desconhecida (`null`) não rejeita item
- * moderno (não dá para saber). Para homônimo, masters conhecidos e diferentes também rejeitam.
+ * moderno (não dá para saber). O master do Discogs NÃO rejeita lote: o release do lote é um
+ * palpite pelo título (pode ser de outro ano), e o ano do lote já valida o homônimo.
  */
 export function lotEditionAllows(
-  item: { artist: string; album: string; edition?: Edition | null; masterId?: number | null },
-  lot: { edition: LotEdition | null; masterId?: number | null },
+  item: { edition?: Edition | null },
+  lot: { edition: LotEdition | null },
 ): boolean {
   const itemModern = item.edition === "modern";
   if (lot.edition === "modern" && !itemModern) return false;
   if (itemModern && (lot.edition === "original" || lot.edition === "period")) return false;
-  if (
-    item.masterId &&
-    lot.masterId &&
-    item.masterId !== lot.masterId &&
-    isSelfTitledAlbum(item.artist, item.album)
-  ) {
-    return false;
-  }
   return true;
 }

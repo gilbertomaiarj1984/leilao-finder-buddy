@@ -12,6 +12,7 @@ import { parse } from "node-html-parser";
 import type { DiscCode, DiscogsCodeInfo } from "./disc-code";
 import {
   extractYear,
+  masterMatchesTarget,
   parseAlbum,
   pickBestRelease,
   toMatchInfo,
@@ -507,17 +508,18 @@ export async function lookupMaster(
   const a = artist.trim();
   const t = album.trim();
   if (!a || !t || !discogsConfigured()) return null;
-  if (!year && isSelfTitledAlbum(a, t)) return null;
+  const selfTitled = isSelfTitledAlbum(a, t);
+  if (!year && selfTitled) return null;
   const target: ReleaseTarget = { artist: a, title: t, year };
   const qs = `artist=${encodeURIComponent(a)}&release_title=${encodeURIComponent(t)}&per_page=25`;
   const masters = pickBestRelease(target, await searchReleases(`type=master&${qs}`));
-  if (masters?.hit.id) {
+  if (masters?.hit.id && masterMatchesTarget(selfTitled, year, masters.hit.year)) {
     const y = Number(masters.hit.year);
     return { masterId: masters.hit.id, year: Number.isFinite(y) && y > 0 ? y : null };
   }
   const release = pickBestRelease(target, await searchReleases(`type=release&format=Vinyl&${qs}`));
   const mid = release?.hit.master_id;
-  if (mid && mid > 0) {
+  if (mid && mid > 0 && masterMatchesTarget(selfTitled, year, release.hit.year)) {
     const y = Number(release.hit.year);
     return { masterId: mid, year: Number.isFinite(y) && y > 0 ? y : null };
   }
