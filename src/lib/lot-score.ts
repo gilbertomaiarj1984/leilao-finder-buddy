@@ -84,6 +84,21 @@ export function formatCoveredLot(
   return lote ? `Lote ${lote} — ${what}` : what;
 }
 
+const WEEKDAYS_PT = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+/**
+ * Onde/quando é o leilão do lance superado: `sáb 25/10/2026 · Casa X · leilão 1234`. A data vem de
+ * "Meus lances" (`dd/mm/yyyy`); data fora do formato é omitida, sem quebrar a linha.
+ */
+export function formatCoveredWhere(bid: { date: string; house: string; idLeilao: string }): string {
+  const m = bid.date.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const day = m
+    ? `${WEEKDAYS_PT[new Date(Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1]))).getUTCDay()]} ${bid.date.trim()}`
+    : "";
+  const auction = bid.idLeilao ? `leilão ${bid.idLeilao}` : "";
+  return [day, bid.house.trim(), auction].filter(Boolean).join(" · ");
+}
+
 /** Avaliação da IA consumida pela UI (o que compõe a nota do lote). */
 export type LotAi = {
   score: number | null;

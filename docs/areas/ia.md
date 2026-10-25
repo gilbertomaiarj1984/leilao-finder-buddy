@@ -23,6 +23,8 @@ chave, tudo faz **no-op** e o app segue normal (`aiConfigured` = "qualquer prove
   só grava o provedor). Ordem canônica: Claude → Gemini → Groq. Roda **síncrono** no cron
   (`firstSyncProvider`/`effectiveProvider`); o fallback do Claude sem créditos usa o primeiro
   provedor síncrono configurado, não mais o Gemini fixo.
+- **Balão com a IA usada (v0.180.0):** `formatAiUsed` (`ai-provider.ts`, client-safe) gera o sufixo `· IA: <provedor> <modelo>` dos balões de análise por dia/casa (`use-ai-actions.ts`), refazer nota (`ai-score.tsx`, devolve `ai` + `fame`) e atualizar faixas (`tracklist-refresh.tsx`, devolve `aiUsed`/`aiError`). A fama (`rateFameDetailed`) tenta 2× (com e sem modo JSON) e devolve o motivo da falha em vez de engoli-lo em silêncio.
+- **Mercado Discogs sob demanda (v0.180.0):** `fetchAndStoreMarket` (`lot-market.server.ts`) é o ponto único que consulta o Discogs e grava `lot_market`; o cron `step=market` (12 lotes/rodada, 3×/dia) e `reevaluateLot` (refazer a nota; roda antes das faixas, best-effort) o usam. A análise em massa (dia/casa) NÃO consulta o Discogs: esses lotes ficam sem o bloco de mercado até o cron passar.
 - **`runText(req, provider)`** é o ponto único: recebe uma requisição NEUTRA (`AiRequest`:
   system + texto + imagem opcional) e devolve `{text, provider, model, switched}`. Adaptadores:
   Anthropic via `@anthropic-ai/sdk` (`messages.create`); Gemini via **REST**

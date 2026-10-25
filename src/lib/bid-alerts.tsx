@@ -5,11 +5,12 @@
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
-import { formatCoveredLot } from "@/components/vinyl/ai-score-utils";
+import { formatCoveredLot, formatCoveredWhere } from "@/components/vinyl/ai-score-utils";
 
 import { newlyCoveredBids } from "./bid-transitions";
 import { loadAccum, saveAccum } from "./watched-accum";
 import type { MyBid } from "./leiloesbr-bids.server";
+import { lotOpenUrl } from "./vinyl-parse";
 
 // Snapshot do último `status` visto por lote (`id`), para só avisar na TRANSIÇÃO para
 // "Coberto" — sem isso, todo carregamento de página reavisaria de lotes já cobertos
@@ -39,16 +40,31 @@ export function useBidCoveredAlerts(
     snapshotRef.current = nextSnapshot;
     saveAccum(BID_STATUS_SNAPSHOT_KEY, nextSnapshot);
     if (newlyCovered.length === 0) return;
-    // Fica aberto até o usuário fechar (sem timeout) e mostra só nº do lote, artista e álbum.
+    // Fica aberto até o usuário fechar (sem timeout): por lote, nº/artista/álbum, dia e casa do
+    // leilão e um link para abrir o lote no leiloeiro.
     toast.warning(
       newlyCovered.length === 1 ? "Lance superado" : `${newlyCovered.length} lances superados`,
       {
-        description: newlyCovered
-          .map((b) => formatCoveredLot(b, albumForRef.current?.(b.id)))
-          .join("\n"),
+        description: (
+          <div className="flex flex-col gap-2">
+            {newlyCovered.map((b) => (
+              <div key={b.id} className="flex flex-col">
+                <span>{formatCoveredLot(b, albumForRef.current?.(b.id))}</span>
+                <span className="text-xs opacity-80">{formatCoveredWhere(b)}</span>
+                <a
+                  href={lotOpenUrl(b.url, b.title, b.lote)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-fit text-xs font-medium underline underline-offset-2"
+                >
+                  Ver lote no leiloeiro
+                </a>
+              </div>
+            ))}
+          </div>
+        ),
         duration: Infinity,
         closeButton: true,
-        style: { whiteSpace: "pre-line" },
       },
     );
   }, [bids]);

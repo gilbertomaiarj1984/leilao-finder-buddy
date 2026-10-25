@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { DiscCodeScannerDialog } from "@/components/vinyl/disc-code-scanner-dialog";
 import { refreshLotTracklistFn } from "@/lib/ai.functions";
+import { formatAiUsed } from "@/lib/ai-provider";
 import { queryKeys } from "@/lib/queries";
 
 export type TracklistRefresh = {
@@ -38,9 +39,11 @@ export function useLotTracklistRefresh(lotId?: string | null): TracklistRefresh 
             )
           : old,
       );
-      toast.success(
-        res.rated ? "Faixas do Discogs e fama da IA atualizadas" : "Faixas do Discogs atualizadas",
-      );
+      const used = formatAiUsed(res.aiUsed);
+      if (res.rated) toast.success(`Faixas do Discogs e fama da IA atualizadas${used}`);
+      else if (res.aiError)
+        toast.warning(`Faixas do Discogs atualizadas, mas a fama falhou: ${res.aiError}`);
+      else toast.success("Faixas do Discogs atualizadas");
     },
     onError: (error: Error) => toast.error(error.message || "Não foi possível atualizar as faixas"),
   });

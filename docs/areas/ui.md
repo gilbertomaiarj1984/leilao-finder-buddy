@@ -89,7 +89,7 @@
     laço de `analyzeOnDemand` da home — 25 lotes por chamada, provedor do topo, failover nos toasts — por dia, em
     sequência; escopo = dia escolhido, "Dias Futuros" ou, em "Todos", de hoje em diante). A home passou a usar o
     mesmo hook (`analyzeScope`). **Nota defasada**: pílula na linha quando `priceRoseSinceEval(eval_price,
-    preço atual)` (só com `eval_price` gravado) e botão **"Reavaliar defasadas"** (`useRepriceLots` →
+preço atual)` (só com `eval_price` gravado) e botão **"Reavaliar defasadas"** (`useRepriceLots` →
     `repriceLotAi`, 10 por chamada; o servidor reconfere e respeita o modo "off"). **Horário e andamento do
     pregão** (`analise-time.ts`, `use-auction-progress.ts`): chip "começa em N min" (≤ 24 h; ≤ 30 min fica
     amarelo), "ao vivo · lote 41/120 · faltam 47", "já passou", "pregão encerrado" — o início vem do horário
@@ -688,13 +688,13 @@ Três valores de **fontes diferentes** — não confundir:
 - **Detecção:** `bidIsCovered(status)` (`vinyl-parse.ts`, regex `/cobert/i`) identifica "fui
   superado". O evento a avisar é a **transição** para coberto — não o estado em si — senão todo
   reload avisaria de novo de um lote já coberto numa sessão anterior.
-- **`bid-alerts.ts`** (`detectNewlyCoveredBids` + hook `useBidCoveredAlerts`): compara o `status`
+- **`bid-alerts.tsx`** (`detectNewlyCoveredBids` + hook `useBidCoveredAlerts`): compara o `status`
   de cada `MyBid` contra um snapshot do último `status` visto por `id`, persistido em
   `localStorage` (`BID_STATUS_SNAPSHOT_KEY`) via os mesmos `loadAccum`/`saveAccum` genéricos de
   `watched-accum.ts` (chave compartilhada entre `index.tsx`/`analise.tsx`, igual ao acumulador de
   vigiados/lances). Quando há lote(s) recém-coberto(s), dispara `toast.warning` (`sonner`, já
   montado globalmente em `__root.tsx`) — um toast por lote, ou agrupado se vier mais de um na
-  mesma leva.
+  mesma leva. **v0.181.0:** o balão fica na tela até ser fechado (`duration: Infinity` + botão de fechar) e lista, por lote, "Lote N — Artista — Álbum", dia da semana + data, casa e nº do leilão (`formatCoveredWhere`, `lot-score.ts`) e o link "Ver lote no leiloeiro" (`lotOpenUrl`); o push do cron (`bid-notify.server.ts`) leva a mesma linha de dia/casa/leilão.
 - **v0.100.0:** o toast **não some sozinho** (`duration: Infinity` + `closeButton`) e lista só
   `Lote N — Artista — Álbum` por lote (`formatCoveredLot`, `ai-score-utils.ts`; álbum resolvido
   via `albumById`, passado ao hook como `albumFor`; sem álbum cai no título do lance).
@@ -1097,7 +1097,6 @@ Testes das partes puras: `tests/screen-speed.test.ts`.
   Com o app fechado o `sw.js` soma 1 por push (contador no cache `garimpo-meta`); o app aberto
   grava o número real.
 - **Não validado num aparelho real**: conferir permissão, notificação, toque (abre `/olho`) e selo.
-
 
 ## Painel de IA (`/ia-painel`, v0.143.0)
 

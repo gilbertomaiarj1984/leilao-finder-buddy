@@ -4,7 +4,12 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { analyzeOnDemand, repriceLotAi } from "@/lib/ai.functions";
-import { AI_PROVIDER_SHORT, formatFailoverTrail, type AiProvider } from "@/lib/ai-provider";
+import {
+  AI_PROVIDER_SHORT,
+  formatAiUsed,
+  formatFailoverTrail,
+  type AiProvider,
+} from "@/lib/ai-provider";
 import { queryKeys, useAiProviderQuery } from "@/lib/queries";
 
 type Scope = { day: string; house?: string; watched?: boolean };
@@ -15,6 +20,8 @@ type Summary = {
   scopeSize: number;
   lastError: string | null;
   switchedTo: AiProvider | null;
+  /** Último provedor que atendeu uma rodada (para o balão de conclusão). */
+  served: AiProvider | null;
   attemptErrors: Partial<Record<AiProvider, string>>;
 };
 
@@ -38,6 +45,7 @@ export function useAnalyzeScope() {
       into.failed += res.failed ?? 0;
       into.scopeSize = Math.max(into.scopeSize, res.scope ?? 0);
       if (res.error) into.lastError = res.error;
+      if (res.served) into.served = res.served;
       if (res.switched && res.served) into.switchedTo = res.served;
       if (res.attemptErrors) into.attemptErrors = { ...into.attemptErrors, ...res.attemptErrors };
       // Para quando não sobra nada OU quando a rodada não avaliou nada (lotes que falham sempre
@@ -57,7 +65,10 @@ export function useAnalyzeScope() {
       );
     }
     if (s.evaluated) {
-      toast.success(`IA avaliou ${s.evaluated} lote(s) ${doneText}`);
+      const used = formatAiUsed(
+        s.served ? { provider: s.served, model: "", switched: false } : null,
+      );
+      toast.success(`IA avaliou ${s.evaluated} lote(s) ${doneText}${used}`);
     } else if (s.failed) {
       // Havia lotes pendentes, mas a IA não devolveu nada (vazio/erro) — não é "já avaliado".
       toast.error(
@@ -88,6 +99,7 @@ export function useAnalyzeScope() {
         scopeSize: 0,
         lastError: null,
         switchedTo: null,
+        served: null,
         attemptErrors: {},
       };
       try {

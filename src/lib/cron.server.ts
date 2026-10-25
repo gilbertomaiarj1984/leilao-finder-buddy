@@ -335,19 +335,17 @@ async function runCronStep(step: string, url: URL): Promise<Response> {
     // `max` lotes ainda não casados (throttle interno respeita o rate limit). Sem
     // DISCOGS_TOKEN → no-op explícito.
     if (step === "market") {
-      const { discogsConfigured, fetchMarket, fetchSuggestionMap } =
-        await import("./discogs.server");
+      const { discogsConfigured, fetchSuggestionMap } = await import("./discogs.server");
       if (!discogsConfigured()) return json({ skipped: "DISCOGS_TOKEN não configurado" });
       const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
       const { getAllLotAiLean } = await import("./lot-ai.server");
       const { getAllLotIdent } = await import("./lot-ident.server");
       const {
         getAllLotMarket,
-        upsertLotMarket,
         selectLotsForMarket,
         selectMarketBackfill,
         updateSuggestionMaps,
-        marketBasis,
+        fetchAndStoreMarket,
       } = await import("./lot-market.server");
       const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 12, 1), 40);
       const [snapshot, aiRows, identRows, marketRows] = await Promise.all([
@@ -392,30 +390,7 @@ async function runCronStep(step: string, url: URL): Promise<Response> {
       let failed = 0;
       for (const t of targets) {
         try {
-          const basis = marketBasis(t.album, t.title);
-          const m = await fetchMarket(t.album, t.title);
-          updated += await upsertLotMarket([
-            {
-              id: t.id,
-              basis,
-              matched: m.matched,
-              release_id: m.releaseId,
-              release_title: m.releaseTitle,
-              year: m.year,
-              num_for_sale: m.numForSale,
-              lowest_price: m.lowestPrice,
-              currency: m.currency,
-              suggested_price: m.suggestedPrice,
-              suggested_condition: m.suggestedCondition,
-              suggested_by_condition: m.suggestedByCondition,
-              have: m.have,
-              want: m.want,
-              price_low_br: m.priceLowBr,
-              price_high_br: m.priceHighBr,
-              num_for_sale_br: m.numForSaleBr,
-              match_info: m.matchInfo,
-            },
-          ]);
+          updated += await fetchAndStoreMarket(t);
         } catch (error) {
           failed += 1;
           console.error(`[cron] market ${t.id}`, (error as Error)?.message);

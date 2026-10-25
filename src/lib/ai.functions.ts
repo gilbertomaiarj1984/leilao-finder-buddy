@@ -162,31 +162,58 @@ export const reevaluateLot = createServerFn({ method: "POST" })
     const provider = await getAiProvider();
     const { upsertLotAi, getLotTracklist, toClientRow } = await import("./lot-ai.server");
     const { mode, hint, ...lot } = data;
-    const { rows, error } = await evalLotsSync([lot], provider, { mode, hint });
+    const { rows, error, served, switched } = await evalLotsSync([lot], provider, { mode, hint });
     const row = rows[0];
     if (!row) throw new Error(error || "A IA não conseguiu reavaliar este lote.");
     // A linha devolvida SUBSTITUI a do cache do cliente: `hasTracklist` precisa refletir as faixas
     // que o banco mantém (a avaliação não as gera).
     await upsertLotAi([row]); // não zera as faixas já gravadas
     const prevTracks = row.tracklist ?? (await getLotTracklist(row.id));
+    // Qual IA deu a nota (e o motivo, se a fama das faixas falhar depois) — vai pro balão da UI.
+    const ai = { provider: served ?? provider, model: row.model, switched };
+    let marketFilled = false;
+    let fame: { rated: boolean; used: typeof ai | null; error: string | null } | null = null;
     // Lote recém-avaliado (ex.: sem nota e sem faixas): completa com a rotina da tracklist —
     // faixas do Discogs + fama pela IA. Best-effort: falha aqui não derruba a reavaliação.
     if (row.album) {
       try {
         const { discogsConfigured } = await import("./discogs.server");
         if (discogsConfigured()) {
+          // Mercado do Discogs ANTES das faixas: o release casado aqui é o que a tracklist usa.
+          // Best-effort — falha do Discogs não impede as faixas (que têm a própria busca).
+          try {
+            const { fetchAndStoreMarket } = await import("./lot-market.server");
+            await fetchAndStoreMarket({ id: row.id, album: row.album, title: data.title });
+            marketFilled = true;
+          } catch (marketError) {
+            console.error(`[reevaluateLot] mercado de ${row.id} falhou`, marketError);
+          }
           const { refreshLotTracklist } = await import("./tracklist-step.server");
           const r = await refreshLotTracklist(row.id, provider, true);
           return {
             row: { ...toClientRow({ ...row, tracklist: r.tracklist }) },
             tracklist: r.tracklist,
+            ai,
+            marketFilled,
+            fame: { rated: r.rated, used: r.aiUsed, error: r.aiError },
           };
         }
       } catch (error) {
         console.error(`[reevaluateLot] tracklist de ${row.id} falhou`, error);
+        fame = {
+          rated: false,
+          used: null,
+          error: (error as Error)?.message?.slice(0, 200) ?? "erro",
+        };
       }
     }
-    return { row: toClientRow({ ...row, tracklist: prevTracks }), tracklist: prevTracks };
+    return {
+      row: toClientRow({ ...row, tracklist: prevTracks }),
+      tracklist: prevTracks,
+      ai,
+      marketFilled,
+      fame,
+    };
   });
 
 /**
