@@ -476,6 +476,21 @@ export async function moveLookoutLot(lotId: string, itemId: string): Promise<voi
   const all = await getAllLookout();
   const item = all.find((i) => i.id === itemId);
   if (!item) throw new Error("Disco não encontrado");
+  // O lote é a ORIGEM de um álbum JUNTADO a outro disco: o vínculo sozinho não basta (a origem vale
+  // mais que qualquer vínculo), então o álbum sai do disco de origem e entra no destino.
+  const source = all.find((i) => i.id !== itemId && i.merged.some((m) => m.lotId === lotId));
+  if (source) {
+    const part = source.merged.find((m) => m.lotId === lotId)!;
+    const { error } = await db
+      .from("lookout_items")
+      .update({ merged: source.merged.filter((m) => m.lotId !== lotId) })
+      .eq("id", source.id);
+    if (error)
+      throw new Error(`Não foi possível tirar o lote do disco de origem: ${error.message}`);
+    await attachLookoutLot(itemId, part);
+  } else if (all.some((i) => i.id !== itemId && i.lotId === lotId)) {
+    throw new Error("Este é o lote que você marcou neste disco — não dá para tirá-lo daqui.");
+  }
   await setLookoutLink(lotId, itemId);
   const artist = item.artist.trim();
   const album = item.album.trim();
@@ -496,6 +511,70 @@ export async function moveLookoutLot(lotId: string, itemId: string): Promise<voi
       model: "manual",
     },
   ]);
+}
+
+/** Id sintético de "disco sem lote de origem" (mesmo formato de `addLookoutManual`). */
+const manualLotId = () => `manual-${crypto.randomUUID()}`;
+
+/**
+ * "Não é este disco" numa linha "por vir" que é ORIGEM (o lote que o usuário marcou, ou o de um álbum
+ * juntado): a origem vale mais que qualquer vínculo, então o lote precisa SAIR da origem antes de o
+ * ✕ (vínculo `false`) valer — álbum juntado é removido de `merged`; origem do próprio disco vira
+ * "sem lote de origem" (`manual-…`; o disco continua, só deixa de ter esse lote). Não-origem: só o ✕.
+ */
+export async function dismissLookoutLot(itemId: string, lotId: string): Promise<void> {
+  const item = (await getAllLookout()).find((i) => i.id === itemId);
+  if (!item) throw new Error("Disco não encontrado");
+  if (item.merged.some((m) => m.lotId === lotId)) {
+    const { error } = await db
+      .from("lookout_items")
+      .update({ merged: item.merged.filter((m) => m.lotId !== lotId) })
+      .eq("id", itemId);
+    if (error) throw new Error(`Não foi possível tirar o lote deste disco: ${error.message}`);
+  } else if (item.lotId === lotId) {
+    const { error } = await db
+      .from("lookout_items")
+      .update({ lot_id: manualLotId() })
+      .eq("id", itemId);
+    if (error) throw new Error(`Não foi possível tirar o lote deste disco: ${error.message}`);
+  }
+  await setLookoutLink(lotId, false);
+}
+
+/**
+ * "Criar disco novo a partir deste lote" numa linha que é ORIGEM: álbum juntado volta a ser disco
+ * próprio (`unmergeLookoutItem`); a origem do próprio disco passa para um disco NOVO (o antigo fica
+ * sem lote de origem, com seus dados), que já nasce com o lote como origem para o usuário ajustar
+ * artista/álbum/ano. Qualquer vínculo antigo do lote é limpo (a origem decide).
+ */
+export async function splitLookoutLot(itemId: string, lotId: string): Promise<void> {
+  const item = (await getAllLookout()).find((i) => i.id === itemId);
+  if (!item) throw new Error("Disco não encontrado");
+  if (item.merged.some((m) => m.lotId === lotId)) {
+    await unmergeLookoutItem(itemId, lotId);
+  } else if (item.lotId === lotId) {
+    const { error: upError } = await db
+      .from("lookout_items")
+      .update({ lot_id: manualLotId() })
+      .eq("id", itemId);
+    if (upError) throw new Error(`Não foi possível criar o disco novo: ${upError.message}`);
+    const { error } = await db.from("lookout_items").insert({
+      lot_id: lotId,
+      artist: item.artist,
+      album: item.album,
+      year: item.year,
+      title: item.title,
+      house: item.house,
+      image: item.image,
+      url: item.url,
+      day_key: item.dayKey,
+      status: "active",
+    });
+    if (error) throw new Error(`Não foi possível criar o disco novo: ${error.message}`);
+  } else {
+    throw new Error("Este lote não é a origem deste disco.");
+  }
+  await setLookoutLink(lotId, null);
 }
 
 /** Desfaz a junção de UM álbum: ele volta a ser um item próprio (ativo). */

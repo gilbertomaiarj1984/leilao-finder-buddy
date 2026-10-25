@@ -316,6 +316,38 @@ export const moveLookoutLot = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
+/** "Não é este disco" numa linha de ORIGEM (o lote sai do disco e deixa de casar). */
+export const dismissLookoutOrigin = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { itemId?: string; lotId?: string } | undefined) => {
+    if (!input?.itemId || typeof input.itemId !== "string") throw new Error("itemId obrigatório");
+    if (!input.lotId || typeof input.lotId !== "string") throw new Error("lotId obrigatório");
+    return { itemId: input.itemId, lotId: input.lotId };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { dismissLookoutLot } = await import("./lookout.server");
+    await dismissLookoutLot(data.itemId, data.lotId);
+    return { ok: true as const };
+  });
+
+/** "Criar disco novo a partir deste lote" numa linha de ORIGEM. */
+export const splitLookoutOrigin = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { itemId?: string; lotId?: string } | undefined) => {
+    if (!input?.itemId || typeof input.itemId !== "string") throw new Error("itemId obrigatório");
+    if (!input.lotId || typeof input.lotId !== "string") throw new Error("lotId obrigatório");
+    return { itemId: input.itemId, lotId: input.lotId };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { splitLookoutLot } = await import("./lookout.server");
+    await splitLookoutLot(data.itemId, data.lotId);
+    return { ok: true as const };
+  });
+
 /** Marca matches como vistos (ao abrir a página): zera o contador "novos" do menu. */
 export const markLookoutSeen = createServerFn({ method: "POST" })
   .middleware([requireAuth])
