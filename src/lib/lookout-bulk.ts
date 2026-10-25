@@ -13,7 +13,7 @@ type LookoutBulkEntry = {
   year: number | null;
 };
 
-import { trailingYear } from "@/lib/vinyl-parse";
+import { extractLooseYear } from "@/lib/vinyl-parse";
 
 export const LOOKOUT_BULK_MAX = 200;
 
@@ -35,7 +35,7 @@ export function parseLookoutBulk(text: string): LookoutBulkEntry[] {
     if (seen.has(key)) continue;
     seen.add(key);
     const ym = clean.match(YEAR_RE);
-    const year = ym ? Number(ym[1]) : trailingYear(clean);
+    const year = ym ? Number(ym[1]) : (extractLooseYear(clean)?.year ?? null);
     out.push({ raw, text: clean.slice(0, 200), year });
     if (out.length >= LOOKOUT_BULK_MAX) break;
   }

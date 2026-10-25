@@ -1044,13 +1044,25 @@ export function sameAlbumYear(
 }
 
 /**
- * Ano citado SEM parênteses no FIM de uma linha digitada ("caetano veloso - caetano veloso 1968").
- * Só vale quando sobra algo antes ("Prince - 1999" é o nome do álbum, não um ano).
+ * Ano citado SOLTO (sem parênteses) em qualquer ponto de uma linha digitada: "caetano veloso -
+ * caetano veloso 1968", "Caetano Veloso 1968 - Caetano Veloso". Devolve o ano e a linha sem ele.
+ * Não vale quando o ano É o álbum de uma linha "A - B" ("Prince - 1999", "1984 - Van Halen") nem
+ * quando é a linha toda; com 3+ trechos um trecho só com o ano é ano mesmo. Vários: vale o último.
  */
-export function trailingYear(text: string): number | null {
-  const m = text.trim().match(/^(.*\S)\s+((?:19|20)\d{2})$/);
-  // Precisa sobrar "artista - álbum" (separador seguido de texto) antes do ano.
-  return m && /\s[-–—/]\s+\S/.test(m[1]!) ? Number(m[2]) : null;
+export function extractLooseYear(text: string): { year: number; rest: string } | null {
+  const line = text.replace(/\s+/g, " ").trim();
+  const tokens = [...line.matchAll(/(?<![\d\w])(?:19|20)\d{2}(?![\d\w])/g)];
+  const last = tokens[tokens.length - 1];
+  if (!last || last.index === undefined) return null;
+  const segments = line.split(/\s[-–—/]\s/);
+  const loneSegment = segments.some((seg) => seg.trim() === last[0]);
+  if (loneSegment && segments.length <= 2) return null;
+  const rest = (line.slice(0, last.index) + line.slice(last.index + last[0].length))
+    .replace(/\s+/g, " ")
+    .replace(/(?:\s[-–—/])+\s*$/, "") // separador que ficou pendurado no fim
+    .replace(/\s[-–—/](?=\s[-–—/]\s)/g, "") // "A - - B" depois de tirar um trecho só com o ano
+    .trim();
+  return rest ? { year: Number(last[0]), rest } : null;
 }
 
 export function normalizeForMatch(value: string): string {

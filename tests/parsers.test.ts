@@ -16,9 +16,12 @@ test("parseLookoutBulk (lista colada do De olho, que substituiu a Sondagem)", ()
 });
 
 test("ano sem parênteses no fim da linha (De olho e Coleção)", () => {
-  const [a, b] = parseLookoutBulk("caetano veloso - caetano veloso 1968\nPrince - 1999");
+  const [a, b, c] = parseLookoutBulk(
+    "caetano veloso - caetano veloso 1968\nPrince - 1999\nCaetano Veloso 1968 - Caetano Veloso",
+  );
   expect(a).toMatchObject({ year: 1968 });
   expect(b).toMatchObject({ year: null }); // "1999" é o nome do álbum
+  expect(c).toMatchObject({ year: 1968 });
   const { items } = parseCollectionBulkText("Caetano Veloso - Caetano Veloso 1968\nPrince - 1999");
   expect(items.map((i) => [i.artist, i.album, i.year])).toEqual([
     ["Caetano Veloso", "Caetano Veloso", 1968],

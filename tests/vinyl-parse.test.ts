@@ -19,7 +19,7 @@ import {
   titleCase,
   isSelfTitledAlbum,
   sameAlbumYear,
-  trailingYear,
+  extractLooseYear,
 } from "@/lib/vinyl-parse";
 
 describe("vinil x não-vinil", () => {
@@ -79,10 +79,27 @@ describe("homônimos e ano", () => {
     expect(sameAlbumYear("Caetano Veloso", "Caetano Veloso", 1986, 1986)).toBe(true);
     expect(sameAlbumYear("Pink Floyd", "The Wall", 1979, 2011)).toBe(true); // reedição
   });
-  test("trailingYear", () => {
-    expect(trailingYear("caetano veloso - caetano veloso 1968")).toBe(1968);
-    expect(trailingYear("Prince - 1999")).toBeNull();
-    expect(trailingYear("Chico Buarque - Construção")).toBeNull();
+  test("extractLooseYear: ano solto em qualquer ponto da linha", () => {
+    const y = (s: string) => extractLooseYear(s);
+    expect(y("caetano veloso - caetano veloso 1968")).toEqual({
+      year: 1968,
+      rest: "caetano veloso - caetano veloso",
+    });
+    expect(y("Caetano Veloso 1968 - Caetano Veloso")).toEqual({
+      year: 1968,
+      rest: "Caetano Veloso - Caetano Veloso",
+    });
+    expect(y("caetano veloso 1968")).toEqual({ year: 1968, rest: "caetano veloso" });
+    expect(y("Caetano Veloso - Caetano Veloso - 1968")).toEqual({
+      year: 1968,
+      rest: "Caetano Veloso - Caetano Veloso",
+    });
+    // O ano é o próprio álbum / a linha toda / não há ano.
+    expect(y("Prince - 1999")).toBeNull();
+    expect(y("1984 - Van Halen")).toBeNull();
+    expect(y("1999")).toBeNull();
+    expect(y("Chico Buarque - Construção")).toBeNull();
+    expect(y("Raul Seixas - Gita 12345")).toBeNull();
   });
 });
 

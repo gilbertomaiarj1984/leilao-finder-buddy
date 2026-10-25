@@ -1,5 +1,5 @@
 import { normalizeGrade } from "@/lib/grading";
-import { isSelfTitledAlbum, normalizeForMatch, trailingYear } from "@/lib/vinyl-parse";
+import { isSelfTitledAlbum, extractLooseYear, normalizeForMatch } from "@/lib/vinyl-parse";
 
 /**
  * Um disco interpretado a partir do texto de importação em massa da Coleção. Espelha os campos
@@ -161,12 +161,12 @@ function draftFromLine(line: string): ParsedCollectionDraft | null {
       body = body.slice(0, paren.index).trim();
     }
   }
-  // "Artista - Álbum 1968" (ano solto no fim, sem parênteses).
+  // "Artista - Álbum 1968" / "Artista 1968 - Álbum" (ano solto, sem parênteses).
   if (year === null) {
-    const loose = trailingYear(body);
-    if (loose !== null) {
-      year = loose;
-      body = body.replace(/\s+\d{4}$/, "").trim();
+    const loose = extractLooseYear(body);
+    if (loose) {
+      year = loose.year;
+      body = loose.rest;
     }
   }
 
