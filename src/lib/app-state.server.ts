@@ -724,9 +724,9 @@ export async function setAiMode(mode: AiMode): Promise<{ savedAt: string }> {
  * Declarado localmente para o módulo do SERVIDOR não depender do client-safe `ai-provider.ts`
  * (mesma lição do `OwnedFeedback`). Precedência: `app_state` → env `AI_PROVIDER` → `anthropic`.
  */
-type AiProvider = "anthropic" | "gemini";
+type AiProvider = "anthropic" | "gemini" | "groq";
 
-const AI_PROVIDERS: readonly AiProvider[] = ["anthropic", "gemini"] as const;
+const AI_PROVIDERS: readonly AiProvider[] = ["anthropic", "gemini", "groq"] as const;
 
 function envDefaultProvider(): AiProvider {
   const env = process.env["AI_PROVIDER"];

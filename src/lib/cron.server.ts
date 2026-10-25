@@ -152,7 +152,7 @@ async function runCronStep(step: string, url: URL): Promise<Response> {
       if (!aiConfigured()) return json({ skipped: "nenhum provedor de IA configurado" });
       const { getPendingAiBatch, setPendingAiBatch, getAiMode, getAiProvider } =
         await import("./app-state.server");
-      const { providerSupportsBatch, providerConfigured, isQuotaError } =
+      const { providerSupportsBatch, effectiveProvider, firstSyncProvider, isQuotaError } =
         await import("./ai-provider.server");
       const { getAllLotAiLean, upsertLotAi } = await import("./lot-ai.server");
 
@@ -195,11 +195,7 @@ async function runCronStep(step: string, url: URL): Promise<Response> {
 
       // Provedor efetivo: o padrão, ou o primeiro configurado se o padrão não tiver chave.
       const preferred = await getAiProvider();
-      const provider = providerConfigured(preferred)
-        ? preferred
-        : providerConfigured("anthropic")
-          ? "anthropic"
-          : "gemini";
+      const provider = effectiveProvider(preferred);
 
       // 2) Sem pendente: seleciona os lotes sem avaliação (ou com título mudado).
       const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
@@ -273,15 +269,18 @@ async function runCronStep(step: string, url: URL): Promise<Response> {
           });
           return json({ submitted: count, batchId, mode, provider });
         } catch (error) {
-          if (!isQuotaError(error) || !providerConfigured("gemini")) throw error;
-          console.error("[cron] aieval: Claude sem créditos — failover síncrono p/ Gemini", error);
+          if (!isQuotaError(error) || !firstSyncProvider()) throw error;
+          console.error("[cron] aieval: Claude sem créditos — failover síncrono", error);
         }
       }
 
-      // 3b) Gemini (ou failover do Claude): síncrono em bloco (cap por rodada p/ caber no
+      // 3b) Gemini/Groq (ou failover do Claude): síncrono em bloco (cap por rodada p/ caber no
       // tempo do servidor; o laço do cron chama de novo até esgotar).
+      const syncProvider = providerSupportsBatch(provider)
+        ? (firstSyncProvider() ?? "gemini")
+        : provider;
       const toEvalSync = toEval.slice(0, GEMINI_SYNC_CAP);
-      const { rows, served, switched, failedIds } = await evalLotsSync(toEvalSync, "gemini");
+      const { rows, served, switched, failedIds } = await evalLotsSync(toEvalSync, syncProvider);
       const collected = await upsertLotAi(rows);
       const { noteAiResults } = await import("./ai-failures.server");
       await noteAiResults("eval", {
@@ -292,7 +291,7 @@ async function runCronStep(step: string, url: URL): Promise<Response> {
         collected,
         failed: failedIds?.length ?? 0,
         mode,
-        provider: served ?? "gemini",
+        provider: served ?? syncProvider,
         switched,
         sync: true,
         done: toEval.length <= GEMINI_SYNC_CAP,

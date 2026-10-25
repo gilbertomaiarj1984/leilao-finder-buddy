@@ -1,9 +1,10 @@
 /**
  * Camada PLUGÁVEL de provedores de IA (server-only). Abstrai a chamada de geração de
- * texto para que o resto do app não saiba QUAL modelo está atendendo. Hoje há dois:
+ * texto para que o resto do app não saiba QUAL modelo está atendendo. Hoje há três:
  *
  * - **anthropic** (Claude) — via `@anthropic-ai/sdk` (Messages + Batches API).
  * - **gemini** (Google) — via REST (`generativelanguage.googleapis.com`), sem SDK/dep nova.
+ * - **groq** — via REST OpenAI-compatível (`api.groq.com/openai/v1`), free tier; sem SDK/dep nova.
  *
  * O ponto central é `runText(req, provider)`: recebe uma requisição NEUTRA (system + texto +
  * imagem opcional) e devolve o texto do modelo. Faz **failover automático**: se o provedor
@@ -15,7 +16,10 @@
  */
 
 /** Espelha `AiProvider` de `ai-provider.ts` (client-safe) — mantenha em sincronia. */
-export type AiProvider = "anthropic" | "gemini";
+export type AiProvider = "anthropic" | "gemini" | "groq";
+
+/** Ordem canônica (tentativa/failover). Espelha `AI_PROVIDERS` de `ai-provider.ts`. */
+const PROVIDER_ORDER: readonly AiProvider[] = ["anthropic", "gemini", "groq"];
 
 /** Requisição neutra: uma única fala de usuário (texto + imagem opcional) + system. */
 export type AiRequest = {
@@ -58,6 +62,8 @@ const ANTHROPIC_DEFAULT_MODEL = "claude-haiku-5-5";
  */
 // DUP(modelos): lista/padrão dos modelos Gemini repetidos em 4 arquivos — centralizar em `ai-models.ts`.
 const GEMINI_DEFAULT_MODEL = "gemini-3.1-flash-lite";
+/** Espelha `GROQ_DEFAULT_MODEL` de `ai-provider.ts` (client-safe; este arquivo não importa de lá). */
+const GROQ_DEFAULT_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 /**
  * Modelo efetivo do provedor. Pro Gemini, `geminiModel` (a escolha do usuário, persistida em
  * `app_state.gemini_model` — ver `resolveGeminiModel` em `ai-eval.server.ts`) tem prioridade;
@@ -70,6 +76,7 @@ function providerModel(
 ): string {
   if (provider === "gemini")
     return geminiModel || process.env["GEMINI_MODEL"] || GEMINI_DEFAULT_MODEL;
+  if (provider === "groq") return process.env["GROQ_MODEL"] || GROQ_DEFAULT_MODEL;
   return anthropicModel || process.env["ANTHROPIC_MODEL"] || ANTHROPIC_DEFAULT_MODEL;
 }
 
@@ -95,17 +102,19 @@ export function invalidateAnthropicModelCache(): void {
 
 /** Nome da env com a chave de API do provedor. */
 function providerKeyEnv(provider: AiProvider): string {
-  return provider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY";
+  if (provider === "gemini") return "GEMINI_API_KEY";
+  if (provider === "groq") return "GROQ_API_KEY";
+  return "ANTHROPIC_API_KEY";
 }
 
 /** true quando o provedor tem chave de API configurada no ambiente. */
-export function providerConfigured(provider: AiProvider): boolean {
+function providerConfigured(provider: AiProvider): boolean {
   return Boolean(process.env[providerKeyEnv(provider)]);
 }
 
 /** Lista de provedores com chave (na ordem canônica). */
 function configuredProviders(): AiProvider[] {
-  return (["anthropic", "gemini"] as AiProvider[]).filter(providerConfigured);
+  return PROVIDER_ORDER.filter(providerConfigured);
 }
 
 /** true quando ao menos um provedor está configurado (senão a IA faz no-op). */
@@ -114,8 +123,25 @@ export function anyProviderConfigured(): boolean {
 }
 
 /**
+ * Provedor SÍNCRONO usado quando o Claude (Batches) não pode atender no cron: o primeiro
+ * configurado fora do Claude, na ordem canônica (Gemini, depois Groq). `null` = nenhum.
+ */
+export function firstSyncProvider(): AiProvider | null {
+  return configuredProviders().find((p) => !providerSupportsBatch(p)) ?? null;
+}
+
+/**
+ * Provedor efetivo: o preferido quando tem chave; senão o primeiro configurado na ordem
+ * canônica (Claude → Gemini → Groq); sem nenhuma chave, o último da ordem (a chamada vira no-op).
+ */
+export function effectiveProvider(preferred: AiProvider): AiProvider {
+  if (providerConfigured(preferred)) return preferred;
+  return configuredProviders()[0] ?? "gemini";
+}
+
+/**
  * Só a Anthropic tem Batches API nativa (assíncrona, ~50% mais barata) usada pelo cron.
- * O Gemini roda de forma síncrona no cron (ver `cron.server.ts`).
+ * Gemini e Groq rodam de forma síncrona no cron (ver `cron.server.ts`).
  */
 export function providerSupportsBatch(provider: AiProvider): boolean {
   return provider === "anthropic";
@@ -368,6 +394,68 @@ async function runGemini(req: AiRequest, model: string): Promise<string> {
   return out;
 }
 
+// --- Adaptador Groq (OpenAI-compatível, via REST) ------------------------------------------
+
+const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
+
+async function runGroq(req: AiRequest, model: string): Promise<string> {
+  const key = process.env["GROQ_API_KEY"];
+  if (!key) throw new Error("GROQ_API_KEY ausente");
+
+  const userContent: Array<
+    { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
+  > = [];
+  // O Groq aceita data URL ou URL pública (ele mesmo baixa) — só repassa URL que passa no filtro SSRF.
+  if (req.image && (req.image.startsWith("data:image/") || isSafeImageUrl(req.image))) {
+    userContent.push({ type: "image_url", image_url: { url: req.image } });
+  }
+  userContent.push({ type: "text", text: req.text });
+
+  const body = JSON.stringify({
+    model,
+    messages: [
+      { role: "system", content: req.system },
+      { role: "user", content: userContent },
+    ],
+    max_tokens: req.maxTokens,
+    temperature: 0.2,
+    ...(req.json ? { response_format: { type: "json_object" } } : {}),
+  });
+
+  // Mesmo retry com backoff do Gemini para erros transitórios (5xx); 429 (limite do free tier)
+  // não é re-tentado aqui — sobe como quota e o `runText` faz failover para o próximo provedor.
+  let resp: Response;
+  for (let attempt = 0; ; attempt += 1) {
+    resp = await fetch(GROQ_ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      body,
+      signal: AbortSignal.timeout(AI_CALL_TIMEOUT_MS),
+    });
+    if (resp.ok) break;
+    const detail = await resp.text().catch(() => "");
+    const err = new Error(`Groq HTTP ${resp.status}: ${detail.slice(0, 300)}`) as Error & {
+      status?: number;
+    };
+    err.status = resp.status;
+    if (attempt >= 2 || !isTransientError(err)) throw err;
+    await new Promise((r) => setTimeout(r, 800 * 2 ** attempt));
+  }
+
+  const data = (await resp.json()) as {
+    choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }>;
+  };
+  const choice = data.choices?.[0];
+  const out = choice?.message?.content ?? "";
+  // Nunca devolver "" em silêncio (viraria "nada a fazer" no parse) — ver `runGemini`.
+  if (!out.trim()) {
+    throw new Error(
+      `Groq não retornou texto (finishReason=${choice?.finish_reason ?? "desconhecido"})`,
+    );
+  }
+  return out;
+}
+
 // --- Orquestração: geração de texto com failover -------------------------------------------
 
 async function runOne(
@@ -380,13 +468,15 @@ async function runOne(
     return { text: await runAnthropic(req, model), model };
   }
   const model = providerModel(provider, geminiModel);
+  if (provider === "groq") return { text: await runGroq(req, model), model };
 
   return { text: await runGemini(req, model), model };
 }
 
 /** Rótulo curto do provedor pra mensagem de erro (evita puxar `ai-provider.ts` client-safe). */
 function providerLabel(provider: AiProvider): string {
-  return provider === "gemini" ? "Gemini" : "Claude";
+  if (provider === "gemini") return "Gemini";
+  return provider === "groq" ? "Groq" : "Claude";
 }
 
 /** Resume o motivo de uma falha numa frase curta e legível pro usuário final. */
@@ -401,7 +491,7 @@ function attemptErrorMessage(error: unknown): string {
  * Gera texto no provedor pedido; se ele falhar por **quota/sem créditos** OU por
  * **indisponibilidade transitória** (ex.: 503 "high demand" do Gemini) e houver outro provedor
  * configurado, **troca automaticamente** e tenta nele — na ORDEM CANÔNICA dos provedores
- * (`AI_PROVIDERS`, hoje Claude → Gemini; dá pra crescer a lista sem mexer nesta função). No
+ * (`AI_PROVIDERS`, hoje Claude → Gemini → Groq; dá pra crescer a lista sem mexer nesta função). No
  * caso do Gemini, ANTES de trocar de provedor por quota, `runOne` já tenta um downgrade para o
  * Flash-Lite (cota gratuita própria) — só cai pro Claude se o downgrade também falhar.
  * Cada provedor pulado (sem chave) ou que falhou vira uma entrada clara em `attemptErrors`,
@@ -421,9 +511,7 @@ export async function runText(
   const order = [
     provider,
     ...configuredProviders().filter((p) => p !== provider),
-    ...(["anthropic", "gemini"] as AiProvider[]).filter(
-      (p) => p !== provider && !providerConfigured(p),
-    ),
+    ...PROVIDER_ORDER.filter((p) => p !== provider && !providerConfigured(p)),
   ];
   const attemptErrors: Partial<Record<AiProvider, string>> = {};
 

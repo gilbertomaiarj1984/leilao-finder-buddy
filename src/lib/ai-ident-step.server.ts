@@ -24,7 +24,7 @@ export async function runAiIdentStep(maxParam?: number) {
   if (!aiConfigured()) return { skipped: "nenhum provedor de IA configurado" as const };
   const { getPendingAiIdentBatch, setPendingAiIdentBatch, getAiProvider } =
     await import("./app-state.server");
-  const { providerSupportsBatch, providerConfigured, isQuotaError } =
+  const { providerSupportsBatch, effectiveProvider, firstSyncProvider, isQuotaError } =
     await import("./ai-provider.server");
   const { getAllLotIdent, upsertLotIdent } = await import("./lot-ident.server");
 
@@ -49,11 +49,7 @@ export async function runAiIdentStep(maxParam?: number) {
 
   // Provedor efetivo (padrão, ou o primeiro configurado se o padrão não tiver chave).
   const preferred = await getAiProvider();
-  const provider = providerConfigured(preferred)
-    ? preferred
-    : providerConfigured("anthropic")
-      ? "anthropic"
-      : "gemini";
+  const provider = effectiveProvider(preferred);
   const useBatch = providerSupportsBatch(provider);
 
   const { scrapeVinylLots } = await import("./leiloesbr-scrape.server");
@@ -65,7 +61,11 @@ export async function runAiIdentStep(maxParam?: number) {
   const hashById = new Map(snapshot.lots.map((l) => [l.id, titleHash(l.title)]));
   const skip = await loadSkippableIds("ident", (id) => hashById.get(id) ?? null);
 
-  // Caminho SÍNCRONO (Gemini/failover): grava direto até o teto por rodada.
+  const syncProvider = providerSupportsBatch(provider)
+    ? (firstSyncProvider() ?? "gemini")
+    : provider;
+
+  // Caminho SÍNCRONO (Gemini/Groq/failover): grava direto até o teto por rodada.
   const runSync = async (
     lots: Parameters<typeof identLotsSyncRows>[0],
     withImage: boolean,
@@ -75,7 +75,7 @@ export async function runAiIdentStep(maxParam?: number) {
     const { rows, served, switched, failedIds } = await identLotsSyncRows(
       toSync,
       withImage,
-      "gemini",
+      syncProvider,
     );
     const collected = await upsertLotIdent(rows);
     await noteAiResults("ident", {
@@ -86,7 +86,7 @@ export async function runAiIdentStep(maxParam?: number) {
       collected,
       failed: failedIds?.length ?? 0,
       source,
-      provider: served ?? "gemini",
+      provider: served ?? syncProvider,
       switched,
       sync: true as const,
       done: lots.length <= GEMINI_SYNC_CAP,
@@ -107,8 +107,8 @@ export async function runAiIdentStep(maxParam?: number) {
         });
         return { submitted: count, batchId, source: "title" as const, provider };
       } catch (error) {
-        if (!isQuotaError(error) || !providerConfigured("gemini")) throw error;
-        console.error("[aiident] Claude sem créditos — failover Gemini (título)", error);
+        if (!isQuotaError(error) || !firstSyncProvider()) throw error;
+        console.error("[aiident] Claude sem créditos — failover síncrono (título)", error);
       }
     }
     return await runSync(toIdent, false, "title");
@@ -128,8 +128,8 @@ export async function runAiIdentStep(maxParam?: number) {
         });
         return { submitted: count, batchId, source: "image" as const, provider };
       } catch (error) {
-        if (!isQuotaError(error) || !providerConfigured("gemini")) throw error;
-        console.error("[aiident] Claude sem créditos — failover Gemini (capa)", error);
+        if (!isQuotaError(error) || !firstSyncProvider()) throw error;
+        console.error("[aiident] Claude sem créditos — failover síncrono (capa)", error);
       }
     }
     return await runSync(toReident, true, "image");

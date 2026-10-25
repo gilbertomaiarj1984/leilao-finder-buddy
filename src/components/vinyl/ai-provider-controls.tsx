@@ -1,5 +1,5 @@
 /**
- * Caixa ÚNICA de IA: provedor + modelo juntos (Claude e Gemini, do mais barato ao mais caro,
+ * Caixa ÚNICA de IA: provedor + modelo juntos (Claude, Gemini e Groq, do mais barato ao mais caro,
  * com o preço de cada modelo — US$ por 1M de tokens entrada/saída). Escolher uma opção grava o
  * provedor padrão E o modelo daquele provedor em `app_state`; todo recurso do site (síncrono e
  * assíncrono) usa essa escolha. O modelo do OUTRO provedor continua valendo no failover por
@@ -32,6 +32,7 @@ import {
   AI_PROVIDER_LABELS,
   AI_PROVIDER_SHORT,
   AI_PROVIDERS,
+  GROQ_DEFAULT_MODEL,
   isAnthropicModel,
   isGeminiModel,
   type AiProvider,
@@ -57,28 +58,34 @@ export function AiModelSelect({ disabled, className }: { disabled?: boolean; cla
 
   const provider: AiProvider = providerQuery.data ?? "anthropic";
   const model =
-    provider === "gemini"
-      ? (geminiQuery.data ?? "gemini-3.1-flash-lite")
-      : (anthropicQuery.data ?? "claude-haiku-5-5");
+    provider === "groq"
+      ? GROQ_DEFAULT_MODEL
+      : provider === "gemini"
+        ? (geminiQuery.data ?? "gemini-3.1-flash-lite")
+        : (anthropicQuery.data ?? "claude-haiku-5-5");
 
   const onChange = (value: string) => {
     const [p, m] = value.split("|") as [AiProvider, string];
     const prevProvider = providerQuery.data;
+    // Groq tem um único modelo (sem persistência de modelo): só o provedor é gravado.
+    const modelKey =
+      p === "gemini" ? queryKeys.geminiModel : p === "anthropic" ? queryKeys.anthropicModel : null;
     const prevModel = p === "gemini" ? geminiQuery.data : anthropicQuery.data;
-    const modelKey = p === "gemini" ? queryKeys.geminiModel : queryKeys.anthropicModel;
     queryClient.setQueryData(queryKeys.aiProvider, p); // otimista
-    queryClient.setQueryData(modelKey, m);
+    if (modelKey) queryClient.setQueryData(modelKey, m);
     const saveModel =
-      p === "gemini" && isGeminiModel(m)
-        ? runSetGemini({ data: { model: m } })
-        : isAnthropicModel(m)
-          ? runSetAnthropic({ data: { model: m } })
-          : Promise.reject(new Error("Modelo de IA inválido"));
+      p === "groq"
+        ? Promise.resolve()
+        : p === "gemini" && isGeminiModel(m)
+          ? runSetGemini({ data: { model: m } })
+          : isAnthropicModel(m)
+            ? runSetAnthropic({ data: { model: m } })
+            : Promise.reject(new Error("Modelo de IA inválido"));
     void Promise.all([runSetProvider({ data: { provider: p } }), saveModel])
       .then(() => toast.success(`IA: ${AI_PROVIDER_SHORT[p]} · ${m}`))
       .catch((error: unknown) => {
         queryClient.setQueryData(queryKeys.aiProvider, prevProvider);
-        queryClient.setQueryData(modelKey, prevModel);
+        if (modelKey) queryClient.setQueryData(modelKey, prevModel);
         toast.error((error as Error)?.message || "Não foi possível salvar a IA");
       });
   };

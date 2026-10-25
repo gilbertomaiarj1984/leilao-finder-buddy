@@ -31,7 +31,7 @@ Veja `.env.example`. Resumo:
 | `LEILOESBR_EMAIL`                           | servidor                  | único e-mail Google autorizado                              |
 | `LEILOESBR_SENHA`                           | servidor                  | login no site de leilões (scraper)                          |
 | `CRON_TOKEN`                                | servidor + GitHub Actions | protege o endpoint `/api/cron`                              |
-| `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`      | servidor                  | IA (avaliação/identificação) — Claude e/ou Gemini, opcional |
+| `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY` | servidor | IA (avaliação/identificação) — Claude, Gemini e/ou Groq (free tier), opcional |
 | `DISCOGS_TOKEN`                             | servidor                  | âncora de preço/mercado, opcional                           |
 | `COLLECTION_DIR` / `PUBLIC_BASE_URL`        | servidor                  | fotos da Coleção em disco (ver `.env.example`)              |
 | `NTFY_TOPIC` / `NTFY_SERVER`                | servidor                  | aviso push do "De olho" (ntfy.sh), opcional                 |
