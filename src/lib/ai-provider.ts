@@ -108,6 +108,20 @@ export function isGeminiModel(value: unknown): value is GeminiModel {
   return typeof value === "string" && (GEMINI_MODELS as readonly string[]).includes(value);
 }
 
+/** Qual IA (e modelo) atendeu uma chamada — vai do servidor para os balões (toasts) da UI. */
+export type AiUsed = { provider: AiProvider; model: string | null; switched: boolean };
+
+/**
+ * Sufixo dos balões de conclusão: `"IA: Groq · openai/gpt-oss-120b"` (com `" (trocou de
+ * provedor)"` quando o failover entrou). Sem dado devolve `""`.
+ */
+export function formatAiUsed(used: AiUsed | null | undefined): string {
+  if (!used) return "";
+  return ` · IA: ${AI_PROVIDER_SHORT[used.provider]}${used.model ? ` ${used.model}` : ""}${
+    used.switched ? " (failover)" : ""
+  }`;
+}
+
 /**
  * Monta uma frase curta com o motivo de cada provedor pulado/que falhou até a IA responder —
  * ex.: `"Claude: sem chave de API configurada · Gemini: sem créditos/quota"`. Devolve `""`

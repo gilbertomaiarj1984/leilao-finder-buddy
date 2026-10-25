@@ -42,24 +42,54 @@ export async function rateFame(
   provider: AiProvider,
   geminiModel: Awaited<ReturnType<typeof resolveGeminiModel>>,
 ): Promise<Track[] | null> {
-  try {
-    const r = await runText(
-      {
-        system: FAME_SYSTEM,
-        maxTokens: 400,
-        text: buildFamePrompt(album, tracks),
-        image: null,
-        json: true,
-      },
-      provider,
-      geminiModel,
-    );
-    const fames = parseFameText(r.text, tracks.length);
-    return fames.some(Boolean) ? applyFame(tracks, fames) : null;
-  } catch (error) {
-    console.error(`[tracklist] fama falhou em "${album}"`, error);
-    return null;
+  return (await rateFameDetailed(album, tracks, provider, geminiModel)).tracks;
+}
+
+/** Como `rateFame`, mas diz qual IA atendeu e, se falhou, o motivo (para o balão da UI). */
+type FameResult = {
+  tracks: Track[] | null;
+  used: { provider: AiProvider; model: string | null; switched: boolean } | null;
+  error: string | null;
+};
+
+/**
+ * Álbum específico sem fama = a IA falhou NAQUELA resposta (ex.: o modo JSON do Groq devolve 400
+ * `json_validate_failed` quando o modelo gera JSON inválido; resposta fora do formato). Por isso
+ * a 2ª tentativa roda SEM o modo JSON (o parser tolera cercas/texto em volta) antes de desistir.
+ */
+async function rateFameDetailed(
+  album: string,
+  tracks: Track[],
+  provider: AiProvider,
+  geminiModel: Awaited<ReturnType<typeof resolveGeminiModel>>,
+): Promise<FameResult> {
+  let failure = "erro";
+  for (const json of [true, false]) {
+    try {
+      const r = await runText(
+        {
+          system: FAME_SYSTEM,
+          maxTokens: 400,
+          text: buildFamePrompt(album, tracks),
+          image: null,
+          json,
+        },
+        provider,
+        geminiModel,
+      );
+      const used = { provider: r.provider, model: r.model, switched: r.switched };
+      const fames = parseFameText(r.text, tracks.length);
+      if (fames.some(Boolean)) return { tracks: applyFame(tracks, fames), used, error: null };
+      console.error(
+        `[tracklist] fama ilegível em "${album}" (json=${json}): ${r.text.slice(0, 200)}`,
+      );
+      failure = "a IA respondeu, mas sem a fama no formato esperado";
+    } catch (error) {
+      console.error(`[tracklist] fama falhou em "${album}" (json=${json})`, error);
+      failure = (error as Error)?.message?.slice(0, 200) || "erro";
+    }
   }
+  return { tracks: null, used: null, error: failure };
 }
 
 function todayKeySaoPaulo(): string {
@@ -230,7 +260,14 @@ export async function refreshLotTracklist(
   provider: AiProvider,
   useAi: boolean,
   code?: string | null,
-): Promise<{ tracklist: Track[]; rated: boolean }> {
+): Promise<{
+  tracklist: Track[];
+  rated: boolean;
+  /** IA que classificou a fama (null se não rodou ou falhou antes de responder). */
+  aiUsed: { provider: AiProvider; model: string | null; switched: boolean } | null;
+  /** Por que a fama não foi aplicada (IA ligada, mas falhou/ilegível). */
+  aiError: string | null;
+}> {
   if (!discogsConfigured()) {
     throw new Error("O Discogs não está configurado (DISCOGS_TOKEN ausente no servidor).");
   }
@@ -265,10 +302,14 @@ export async function refreshLotTracklist(
   );
   let tracklist = fresh.map((t) => ({ ...t, fame: known.get(t.title.toLowerCase()) ?? null }));
   let rated = false;
+  let aiUsed: Awaited<ReturnType<typeof rateFameDetailed>>["used"] = null;
+  let aiError: string | null = null;
   if (useAi) {
-    const r = await rateFame(album, fresh, provider, await resolveGeminiModel());
-    if (r) {
-      tracklist = r;
+    const r = await rateFameDetailed(album, fresh, provider, await resolveGeminiModel());
+    aiUsed = r.used;
+    aiError = r.error;
+    if (r.tracks) {
+      tracklist = r.tracks;
       rated = true;
     }
   }
@@ -276,5 +317,5 @@ export async function refreshLotTracklist(
   if (upErr) throw new Error(`Não foi possível gravar a tracklist: ${upErr.message}`);
   const { invalidateLotAiCache } = await import("./lot-ai.server");
   invalidateLotAiCache();
-  return { tracklist, rated };
+  return { tracklist, rated, aiUsed, aiError };
 }

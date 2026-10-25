@@ -10,6 +10,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AiReprocessPopover, type AiReprocessMode } from "@/components/vinyl/ai-reprocess-menu";
 import { reevaluateLot } from "@/lib/ai.functions";
+import { formatAiUsed, type AiUsed } from "@/lib/ai-provider";
 
 import {
   COMMISSION_PCT,
@@ -426,7 +427,11 @@ function useReevaluate(lot: ReevalLot) {
   const mutation = useMutation({
     mutationFn: (opts: { mode?: AiReprocessMode; hint?: string } = {}) =>
       runReevaluate({ data: { ...lot, ...opts } }),
-    onSuccess: (res: { row: { id: string } }) => {
+    onSuccess: (res: {
+      row: { id: string };
+      ai?: AiUsed;
+      fame?: { rated: boolean; used: AiUsed | null; error: string | null } | null;
+    }) => {
       queryClient.setQueriesData({ queryKey: queryKeys.lotAi }, (old: unknown) =>
         Array.isArray(old)
           ? old.some((r) => r && (r as { id: string }).id === res.row.id)
@@ -434,7 +439,11 @@ function useReevaluate(lot: ReevalLot) {
             : [...old, res.row]
           : old,
       );
-      toast.success("Nota da IA atualizada");
+      toast.success(`Nota da IA atualizada${formatAiUsed(res.ai)}`);
+      // A fama das faixas roda depois da nota; se a IA falhou nela, o balão diz o motivo.
+      if (res.fame?.error) toast.warning(`Faixas: a fama falhou — ${res.fame.error}`);
+      else if (res.fame?.rated && res.fame.used && res.fame.used.provider !== res.ai?.provider)
+        toast.info(`Fama das faixas${formatAiUsed(res.fame.used)}`);
     },
     onError: (error: Error) =>
       toast.error(error.message || "Não foi possível refazer a consulta à IA"),
