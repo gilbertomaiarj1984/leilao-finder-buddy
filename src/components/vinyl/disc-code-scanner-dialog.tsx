@@ -86,7 +86,7 @@ export function DiscCodeScannerDialog({
   skipLabel?: string;
   /** Não abre a câmera de cara: antes pergunta “abrir a câmera” ou seguir sem ela (buscar faixas). */
   askBeforeCamera?: boolean;
-  provider?: "anthropic" | "gemini";
+  provider?: "anthropic" | "gemini" | "groq";
   onConfirm: (code: string, info: DiscogsCodeInfo | null) => void;
   onSkip?: () => void;
   onClose: () => void;

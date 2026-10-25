@@ -35,7 +35,8 @@ export function ModelTab() {
           Vale para todo o site: avaliação, identificação, estado, Coleção e Vinil Analytics. Os
           preços mostrados são em US$ por 1M de tokens (entrada/saída). Se um provedor ficar sem
           créditos ou indisponível, o app troca para o outro automaticamente. Claude usa Batches
-          (assíncrono, mais barato) no cron; Gemini roda síncrono.
+          (assíncrono, mais barato) no cron; Gemini e Groq rodam síncronos. O Groq tem free tier,
+          com limite de requisições/tokens por minuto — estourou, o app troca para o próximo.
         </p>
       </section>
     </div>

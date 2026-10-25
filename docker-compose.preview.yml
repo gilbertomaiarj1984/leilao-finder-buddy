@@ -51,6 +51,7 @@ services:
       LEILOESBR_SENHA: ${LEILOESBR_SENHA}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
       DISCOGS_TOKEN: ${DISCOGS_TOKEN}
       COLLECTION_DIR: /data/collection
     volumes:

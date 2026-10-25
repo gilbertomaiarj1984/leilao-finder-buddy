@@ -18,7 +18,7 @@ export async function identifyLookoutItem(id: string): Promise<{
   usedImage: boolean;
   switched: boolean;
   error: string | null;
-  attemptErrors: Partial<Record<"anthropic" | "gemini", string>>;
+  attemptErrors: Partial<Record<"anthropic" | "gemini" | "groq", string>>;
 }> {
   if (!aiConfigured()) {
     throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");

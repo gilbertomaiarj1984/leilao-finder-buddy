@@ -32,7 +32,7 @@ import { DEAL_BAND_CHEAP, DEAL_BAND_EXPENSIVE } from "./lot-score";
 import {
   runText,
   resolveAnthropicModel,
-  providerConfigured,
+  effectiveProvider,
   toAnthropicMessageParams,
   anyProviderConfigured,
   getAnthropicClient,
@@ -884,13 +884,11 @@ export async function identLotsSyncRows(
 /**
  * Provedor EFETIVO para uma chamada síncrona sob demanda: o padrão do usuário
  * (`app_state.ai_provider`) quando tem chave configurada, senão o primeiro disponível
- * (Claude, depois Gemini). Mesmo critério usado pelo cron `aiident`.
+ * (Claude, Gemini, Groq). Mesmo critério usado pelo cron `aiident`.
  */
 export async function resolveAiProvider(): Promise<AiProvider> {
   const { getAiProvider } = await import("./app-state.server");
-  const preferred = await getAiProvider();
-  if (providerConfigured(preferred)) return preferred;
-  return providerConfigured("anthropic") ? "anthropic" : "gemini";
+  return effectiveProvider(await getAiProvider());
 }
 
 /**

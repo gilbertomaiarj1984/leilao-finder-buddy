@@ -8,21 +8,23 @@
  * no lado server — mantenha as duas listas em sincronia (são triviais e raramente mudam).
  */
 
-/** Provedores suportados. Anthropic (Claude) é o histórico; Gemini (Google) foi adicionado. */
-export type AiProvider = "anthropic" | "gemini";
+/** Provedores suportados. Anthropic (Claude) é o histórico; Gemini (Google) e Groq (free tier) foram adicionados. */
+export type AiProvider = "anthropic" | "gemini" | "groq";
 
-export const AI_PROVIDERS: readonly AiProvider[] = ["anthropic", "gemini"] as const;
+export const AI_PROVIDERS: readonly AiProvider[] = ["anthropic", "gemini", "groq"] as const;
 
 /** Rótulo curto para a UI (Select/diálogo). */
 export const AI_PROVIDER_LABELS: Record<AiProvider, string> = {
   anthropic: "Claude (Anthropic)",
   gemini: "Gemini (Google)",
+  groq: "Groq (free tier)",
 };
 
 /** Rótulo bem curto (chip/badge). */
 export const AI_PROVIDER_SHORT: Record<AiProvider, string> = {
   anthropic: "Claude",
   gemini: "Gemini",
+  groq: "Groq",
 };
 
 /** true quando o valor é um provedor conhecido (validação de entrada client/server). */
@@ -71,6 +73,14 @@ export function isAnthropicModel(value: unknown): value is AnthropicModel {
   return typeof value === "string" && (ANTHROPIC_MODELS as readonly string[]).includes(value);
 }
 
+/**
+ * Modelo do Groq (OpenAI-compatível, free tier com limite de requisições/tokens por minuto). Um
+ * só, com VISÃO (lê a capa), então não há seletor de modelo/persistência como no Claude/Gemini;
+ * override por env `GROQ_MODEL` no servidor. ⚠️ Id vindo da documentação pública, ainda não
+ * testado contra a API — se voltar 400 (modelo desativado), ajuste `GROQ_MODEL`.
+ */
+export const GROQ_DEFAULT_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+
 /** Opção da caixa única de IA: provedor + modelo + rótulo com preço. */
 type AiModelOption = { provider: AiProvider; model: string; label: string };
 
@@ -86,6 +96,11 @@ export const AI_MODEL_OPTIONS: readonly AiModelOption[] = [
     model,
     label: GEMINI_MODEL_LABELS[model],
   })),
+  {
+    provider: "groq" as const,
+    model: GROQ_DEFAULT_MODEL,
+    label: "Llama 4 Scout · grátis (limites/min)",
+  },
 ];
 
 /** true quando o valor é um modelo do Gemini conhecido (validação de entrada client/server). */
