@@ -1663,4 +1663,10 @@ export const KNOWN_ARTISTS_SEED: string[] = [
   "Simply Red",
   "Stephanie Mills",
   "Thelma Houston",
+  "Jean-Luc Ponty",
+  "Wynton Marsalis",
+  "Billy Eckstine",
+  "Paquito D'Rivera",
+  "Kleiton & Kledir",
+  "Junior Reid",
 ];

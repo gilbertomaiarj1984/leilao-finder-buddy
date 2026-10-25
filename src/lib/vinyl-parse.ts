@@ -567,7 +567,7 @@ function extractStructuredArtist(title: string): string | null {
  * `null` quando nenhum desses moldes aparece (segue a heurística normal).
  */
 function extractProseArtist(rest: string): string | null {
-  const quoted = rest.match(/^["“][^"”]+["”]\s+d[aeo]s?\s+([^,;"“]+)/i);
+  const quoted = rest.match(/^["“'‘][^"”'’]+["”'’],?\s+d[aeo]s?\s+([^,;"“'‘]+)/i);
   if (quoted) return quoted[1]!.trim();
   const of = rest.match(/^([^,;"“]+?)\s+d[aeo]s?\s+([^,;"“]+?)\s*(?:[,;]|$)/i);
   if (of) {
@@ -651,7 +651,7 @@ export function extractArtist(title: string): string {
 
   // Título em PROSA ("Disco de vinil 33 RPM, álbum Experience de Gloria Gaynor, pela gravadora…",
   // "álbum Sammy Davis Jr.'s Greatest Hits, catálogo…"): o artista não abre a frase.
-  if (proseHeader) {
+  if (proseHeader || /^["“'‘]/.test(rest)) {
     const prose = extractProseArtist(rest);
     if (prose) rest = prose;
     else {
@@ -683,6 +683,13 @@ export function extractArtist(title: string): string {
   const parts = rest.split(/\s*\|\s*|\s[-–—:]\s|[-–—:](?=\s)|\s[-–—](?=\S)|\s*\/\/+\s*/);
   let candidate = (parts[0] ?? "").trim();
 
+  // "ARTISTA ÁLBUM" sem separador e com nome errado ("JEAN LUC PNTY CIVILIZED EVIL"): tenta o nome
+  // conhecido com UM erro de digitação no início.
+  if (parts.length === 1) {
+    const fuzzy = matchKnownArtistAtStartFuzzy(rest, getBundledKnownArtistIndex());
+    if (fuzzy) return canonicalizeCollapsedArtist(fuzzy);
+  }
+
   // Cut trailing sentences / album names / parentheses: "Artista. Produto original..."
   // NÃO corta em "/": bandas reais usam a barra no PRÓPRIO nome ("AC/DC") — cortar ali truncava
   // pra "AC" e o candidato morria no filtro de tamanho mínimo abaixo, ficando sempre sem artista.
@@ -698,10 +705,17 @@ export function extractArtist(title: string): string {
   // nome, tipo "AC/DC", nunca têm espaço ANTES da barra, então não caem aqui).
   candidate = candidate.replace(/\s+c\/\s+.*$/i, "").trim();
   // "EARTH WIND & FIRE EM ÓTIMO ESTADO": a ficha de estado não é parte do nome do artista.
+  const beforeEstado = candidate;
   candidate = candidate
     .replace(/\s+em\s+(?:[óo]timo|bom|excelente|perfeito|muito\s+bom|regular)\b.*$/i, "")
     .replace(/\s+(?:m[ií]dia|disco|capa)$/i, "") // "…STORMY MÍDIA EM ÓTIMO ESTADO"
     .trim();
+  // "ARTISTA ÁLBUM EM ÓTIMO ESTADO" sem separador e sem nome conhecido: artista e álbum vêm
+  // colados e não dá para separar — melhor sem artista (a IA/identificação resolve) do que um
+  // "artista" que é o título inteiro ("Otb Live At Mt Fuji").
+  if (parts.length === 1 && candidate !== beforeEstado && candidate.split(/\s+/).length >= 4) {
+    return "";
+  }
   // "BEBETO 1981" → "Bebeto": ano de lançamento colado no fim do candidato (comum em títulos
   // "ARTISTA ANO" sem outro separador antes do próximo campo) não é parte do nome do artista.
   candidate = candidate.replace(/\s+(19|20)\d{2}$/, "").trim();
@@ -1396,4 +1410,72 @@ let bundledKnownArtistIndex: KnownArtistIndex | null = null;
 function getBundledKnownArtistIndex(): KnownArtistIndex {
   if (!bundledKnownArtistIndex) bundledKnownArtistIndex = buildKnownArtistIndex(KNOWN_ARTISTS_SEED);
   return bundledKnownArtistIndex;
+}
+
+/** Distância de edição entre duas strings curtas, com teto (`max`+1 = "longe demais"). */
+function boundedEditDistance(a: string, b: string, max: number): number {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i += 1) {
+    const cur = [i];
+    let rowMin = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const v = Math.min(
+        prev[j]! + 1,
+        cur[j - 1]! + 1,
+        prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+      cur.push(v);
+      if (v < rowMin) rowMin = v;
+    }
+    if (rowMin > max) return max + 1;
+    prev = cur;
+  }
+  return prev[b.length]!;
+}
+
+// Nomes do índice agrupados por (1ª letra, nº de palavras) — a busca aproximada só compara dentro do balde.
+const fuzzyBuckets = new WeakMap<KnownArtistIndex, Map<string, string[]>>();
+function fuzzyBucketsOf(index: KnownArtistIndex): Map<string, string[]> {
+  let buckets = fuzzyBuckets.get(index);
+  if (!buckets) {
+    buckets = new Map();
+    for (const key of index.byNorm.keys()) {
+      const words = key.split(" ");
+      if (words.length < 2 || key.length < 8) continue; // nome curto/1 palavra: erro de digitação ambíguo
+      const bucket = `${key[0]}|${words.length}`;
+      const list = buckets.get(bucket);
+      if (list) list.push(key);
+      else buckets.set(bucket, [key]);
+    }
+    fuzzyBuckets.set(index, buckets);
+  }
+  return buckets;
+}
+
+/**
+ * Como `matchKnownArtistAtStart`, mas tolera UM erro de digitação (dois em nomes longos): "JEAN LUC
+ * PNTY …" → "Jean-Luc Ponty", "WINTON MARSALIS …" → "Wynton Marsalis". Só nomes de 2+ palavras e 8+
+ * letras (nome curto/único erra por pouco com outro nome real) e só quando o início do título não
+ * casa exato — chamado apenas no fallback de títulos "ARTISTA ÁLBUM" sem separador.
+ */
+function matchKnownArtistAtStartFuzzy(text: string, index: KnownArtistIndex): string {
+  const words = normalizeForMatch(text).split(" ").filter(Boolean);
+  const buckets = fuzzyBucketsOf(index);
+  for (let size = Math.min(index.maxWords, words.length, 5); size >= 2; size -= 1) {
+    const cand = words.slice(0, size).join(" ");
+    if (cand.length < 8) continue;
+    const limit = cand.length >= 14 ? 2 : 1;
+    let best = "";
+    let bestDist = limit + 1;
+    for (const key of buckets.get(`${cand[0]}|${size}`) ?? []) {
+      const d = boundedEditDistance(cand, key, limit);
+      if (d < bestDist) {
+        bestDist = d;
+        best = key;
+      }
+    }
+    if (best) return index.byNorm.get(best) ?? "";
+  }
+  return "";
 }

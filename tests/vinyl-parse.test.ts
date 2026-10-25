@@ -188,6 +188,26 @@ describe("extractArtist — títulos em prosa e cabeçalhos de formato", () => {
     ],
     ["VINIL GONZAGUINHA GERAL EM ÓTIMO ESTADO, CAPA COM DESGASTES DE USO E TEMPO", "Gonzaguinha"],
     ["LP IMPORTADO Pink Floyd - The Wall", "Pink Floyd"],
+    // Artista citado com papel / aspas simples; nome com erro de digitação; artista+álbum colados.
+    [
+      'Disco de vinil em formato LP duplo do artista Aqua Bassino, álbum "Rue de Paris". Conjunto',
+      "Aqua Bassino",
+    ],
+    [
+      "VINIL JEAN LUC PNTY CIVILIZED EVIL EM ÓTIMO ESTADO, CAPA COM DESGASTES DE USO E TEMPO",
+      "Jean-Luc Ponty",
+    ],
+    [
+      "VINIL LP WINTON MARSALIS BLUES ALLEN EM ÓTIMO ESTADO, CAPA COM DESGASTES DE USO",
+      "Wynton Marsalis",
+    ],
+    ["VINIL O MELHOR DE KLEITON & KLEDIR EM ÓTIMO ESTADO, CAPA COM DESGASTES", "Kleiton & Kledir"],
+    [
+      "LP ÓTIMO ESTADO álbum 'Boom Shack A Lack', de Junior Reid, produzido por Prince Jammy",
+      "Junior Reid",
+    ],
+    // Sem nome conhecido e sem separador: fica sem artista (nunca "artista = título inteiro").
+    ["VINIL OTB LIVE AT MT FUJI EM ÓTIMO ESTADO, CAPA COM DESGASTES DE USO E TEMPO", ""],
     // Nomes que COMEÇAM com o papel não perdem a palavra.
     ["LP Grupo Fundo de Quintal - Samba é no Fundo", "Grupo Fundo de Quintal"],
   ];

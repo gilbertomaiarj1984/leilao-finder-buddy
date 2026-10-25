@@ -222,7 +222,11 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   de caixa mista é parte do nome — "Banda Black Rio"), da frase em prosa (`extractProseArtist`: `"Y" de X`,
   `Y de X,`, possessivo `X's …`; só quando o cabeçalho de formato apareceu), de um nome do bundle em qualquer
   ponto, e por fim da heurística de separador. `isGenericArtist` cobre os rótulos soltos ("12 Polegadas",
-  "33 Rpm", "Dois LPs", "Em Formato…", "Importado…", "Autografado").
+  "33 Rpm", "Dois LPs", "Em Formato…", "Importado…", "Autografado"). **Sem separador** ("VINIL JEAN LUC PNTY
+  CIVILIZED EVIL EM ÓTIMO ESTADO"): nome do bundle no início, também com UM erro de digitação
+  (`matchKnownArtistAtStartFuzzy`: 2+ palavras e 8+ letras, 2 erros a partir de 14 letras → "Jean-Luc Ponty");
+  sem nome conhecido e com 4+ palavras antes da ficha de estado devolve "" (não classificados → IA), nunca
+  o título inteiro como "artista".
 - **Cabeçalho de casa ≠ artista (v0.181.1):** depois dos prefixos (`álbum`, `lp`, `1 disco.`…), `extractArtist` descarta o cabeçalho "IMPORTADO <país>!/." (`IMPORTED_HEADER`) e a palavra de formato inicial (`FORMAT_WORD_PREFIX`: duplo/triplo/quádruplo). Com qualquer um dos dois o título segue o molde de casa "ÁLBUM - ARTISTA (ano). Selo X" (oposto de "ARTISTA - ÁLBUM"): o artista é o trecho depois do último " - " antes de "(ano)"/". Selo" (`ALBUM_DASH_ARTIST_RE`, "Vol. N" final removido); sem o molde só vale um nome do bundle (`matchKnownArtist`); senão "" (não classificados → `fillMissingArtists` com `known_artists` / IA), nunca o álbum nem "Duplo"/"Importado …". Lotes já gravados com o grupo antigo são regravados na próxima varredura.
 - **Chamariz de casa ≠ lote (v0.129.1):** `isDiscBundle` descarta antes da detecção "ALERTA RARIDADE", "lote especial/extra (de fechamento/encerramento)" e tudo após "Classificação técnica" (ficha de estado); `extractArtist` remove esses prefixos e trata "|" como separador.
 - **"LP de X - Álbum" (v0.154.0):** o prefixo de tipo (`LP`/`Disco de Vinil`/…) também leva um "de/do/da" colado (`PREFIX_PATTERNS`); antes o artista saía "De Creedence Clearwater Revival" (Bruce Angeiras).
