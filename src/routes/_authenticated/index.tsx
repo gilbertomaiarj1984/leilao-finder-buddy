@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { Disc3, Loader2, LogOut, RefreshCw, SlidersHorizontal } from "lucide-react";
-import { Component, useEffect, type ReactNode } from "react";
+import { Component, useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import { formatUpdatedAt, useDashboardData } from "@/components/vinyl/dashboard/
 import { BidsTab } from "@/components/vinyl/dashboard/bids-tab";
 import { DashboardHeader } from "@/components/vinyl/dashboard/dashboard-header";
 import { DayTab } from "@/components/vinyl/dashboard/day-tab";
+import { HouseNav } from "@/components/vinyl/dashboard/house-nav";
 import { WatchedTab } from "@/components/vinyl/dashboard/watched-tab";
 
 export const Route = createFileRoute("/_authenticated/")({
@@ -143,6 +144,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; email: string }) {
   const d = useDashboardData();
   const mobile = useIsMobile();
+  const contentRef = useRef<HTMLDivElement>(null);
   const { menuExtraHost } = useMobileNavState();
   const {
     barsHidden,
@@ -210,6 +212,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           alwaysVisible
         />
       )}
+      {mobile ? null : <HouseNav rootRef={contentRef} />}
       <Tabs value={tab} onValueChange={selectTab}>
         {mobile ? (
           <MobileDashboardHeader d={d} onSelectTab={selectTab} />
@@ -217,7 +220,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           <DashboardHeader d={d} onSignOut={onSignOut} email={email} />
         )}
 
-        <div className="mx-auto max-w-6xl px-4 pt-3 pb-8">
+        <div ref={contentRef} className="mx-auto max-w-6xl px-4 pt-3 pb-8">
           <LiveAuctions />
 
           {lots.isError ? (

@@ -682,7 +682,11 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                       </div>
                     );
                     return (
-                      <section key={houseGroup.house} className="space-y-3">
+                      <section
+                        key={houseGroup.house}
+                        data-house-nav={houseGroup.house}
+                        className="scroll-mt-32 space-y-3"
+                      >
                         <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
                           <button
                             type="button"
