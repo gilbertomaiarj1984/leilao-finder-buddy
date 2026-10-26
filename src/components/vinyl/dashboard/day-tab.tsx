@@ -374,7 +374,11 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
               const houseSectionKey = `watched-day|${day}|${houseGroup.house}`;
               const isHouseOpen = !closedHouseSections.has(houseSectionKey);
               return (
-                <section key={houseGroup.house} className="space-y-3">
+                <section
+                  key={houseGroup.house}
+                  data-house-nav={houseGroup.house}
+                  className="scroll-mt-32 space-y-3"
+                >
                   <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
                     <button
                       type="button"
@@ -583,6 +587,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
               <section
                 key={group.house}
                 id={houseAnchor(group.house, index)}
+                data-house-nav={group.house}
                 className="scroll-mt-32 space-y-4"
               >
                 <div className="space-y-3 border-b border-border pb-2">

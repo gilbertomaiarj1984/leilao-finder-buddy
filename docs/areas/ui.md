@@ -1001,6 +1001,18 @@ Testes das partes puras: `tests/screen-speed.test.ts`.
 
 - **Tracklist no card (v0.106.0):** `TracklistHover` (`tracklist-hover.tsx`) no canto direito do `LotCard`, logo abaixo do ícone da Coleção; dados de `LotAi.tracklist` (ver `ia.md`). Compras e Coleção usam `LotTracklistHover` (v0.106.2): busca a tracklist em `lot_ai` pelo `lot_id` (Coleção: `lotId ?? originLotId`) — itens manuais ou de lotes já podados (cascade apaga `lot_ai`) ficam com o ícone apagado.
 
+## Painel flutuante de casas (v0.184.0)
+
+`HouseNav` (`dashboard/house-nav.tsx`, montado em `_authenticated/index.tsx`, fora do `Tabs`; não
+renderiza no mobile): `nav` fixo na margem esquerda do conteúdo (`max-w-6xl`), `hidden 2xl:flex` — só
+há margem para ele a partir de 1536px. Lê do DOM (`MutationObserver` no contêiner do conteúdo +
+scroll/resize, em `requestAnimationFrame`) as seções `[data-house-nav="<casa>"]`: grade do dia e
+vigiados do dia (`day-tab.tsx`), Vigiados (`watched-tab.tsx`, visão por casa) e `BidHouseSections`
+(Lances). Clicar faz `scrollIntoView` na seção (`scroll-mt-32` por causa do cabeçalho sticky); a casa
+com topo acima de 200px é a ativa (`aria-current`). Só aparece com 2+ casas. Casa repetida na tela
+ganha sufixo (`houseNavLabels`, `house-nav-utils.ts`, com teste). Nova seção de casa em outra tela →
+basta pôr `data-house-nav` e `scroll-mt-32` no `<section>`.
+
 ## Interface mobile (v0.108.0)
 
 > Protótipo aprovado (artefato "Garimpo Mobile Protótipo"). **Regra de ouro: o desktop não muda.**
