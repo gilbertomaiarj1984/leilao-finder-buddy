@@ -713,6 +713,26 @@ function albumInTitle(
   return all ? "scattered" : null;
 }
 
+/** Score do disco cujo nome aparece no lote com UMA palavra distintiva a menos (fica em "?"). */
+const OWNED_PARTIAL_ALBUM_SCORE = 0.65;
+
+/**
+ * O nome distintivo do disco (3+ palavras) está no título do lote menos UMA palavra: as outras
+ * (2+) aparecem em sequência e coladas ao nome do artista (≤ 3 palavras de distância).
+ */
+function almostInTitle(distinct: string[], id: LotIdentity, artistSpans: Span[]): boolean {
+  if (distinct.length < 3) return false;
+  const words = wordsOf(id);
+  return distinct.some((_, skip) => {
+    const rest = distinct.filter((__, k) => k !== skip);
+    return findPhrases(rest, words, albumTokenEq, albumFiller).some(
+      (sp) =>
+        artistSpans.some((a) => sp.start > a.end && sp.start - a.end <= 3) ||
+        artistSpans.some((a) => a.start > sp.end && a.start - sp.end <= 3),
+    );
+  });
+}
+
 /**
  * Score 0..1 de o disco `c` da coleção ser o mesmo do lote `id` (ver o comentário do bloco).
  * `denylist` são termos que o usuário já negou como "genéricos demais para distinguir disco"
@@ -756,7 +776,14 @@ export function ownedScore(
 
     // Sem álbum estruturado: o nome precisa estar no título, como frase.
     const where = albumInTitle(distinct, c, id, artist.spans);
-    if (!where) return 0;
+    if (!where) {
+      // Série escrita de outro jeito ("Historia da Musica Popular - Tom Jobim" × "MUSICA POPULAR
+      // BRASILEIRA TOM JOBIM"): com o artista CONFIRMADO, falta só 1 palavra distintiva e as demais
+      // (2+) vêm em sequência junto ao nome do artista → candidato incerto ("?", nunca confiante).
+      return artist.level === "confirmed" && almostInTitle(distinct, id, artist.spans)
+        ? finish(yearConflict ? 0 : OWNED_PARTIAL_ALBUM_SCORE)
+        : 0;
+    }
     const multi = distinct.length >= 2;
     let s: number;
     if (where === "segment") s = 0.9;

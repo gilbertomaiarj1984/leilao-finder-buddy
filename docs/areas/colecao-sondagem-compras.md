@@ -194,6 +194,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   antigo atravessava até o link "Histórico de lances" (tooltip) e virava o título de todos os
   lotes. Preço em `<b class="pb-1 …">` (classe composta), data = data do leilão, casa do
   `.ellipsis-overflow` (l=6 não traz `pesq-uf`). Testado com card real via `bun -e`.
+- **Série escrita de outro jeito (v0.185.0):** `ownedScore` (`wantlist-match.ts`) exige todas as palavras distintivas do álbum em sequência no título; "Historia da Musica Popular - Tom Jobim" × "MUSICA POPULAR BRASILEIRA TOM JOBIM" dava 0. Agora, com o artista CONFIRMADO (campo estruturado) e nome distintivo de 3+ palavras, faltar UMA delas ainda marca como candidato incerto (`OWNED_PARTIAL_ALBUM_SCORE` = 0,65, "?", nunca confiante) se as demais (2+) vêm em sequência a ≤ 3 palavras do nome do artista (`almostInTitle`); ano conflitante zera. Testes: `tests/wantlist-match.test.ts`.
 
 ## De olho — "ficar de olho" (`lookout_items`, v0.107.0)
 
