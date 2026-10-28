@@ -65,7 +65,12 @@ import {
   ownedAutoMap,
   ownedHitFromResolution,
 } from "@/lib/lot-insight-build";
-import { BIDS_ACCUM_STORAGE_KEY, saveAccum, WATCHED_ACCUM_STORAGE_KEY } from "@/lib/watched-accum";
+import {
+  BIDS_ACCUM_STORAGE_KEY,
+  saveAccum,
+  WATCHED_ACCUM_STORAGE_KEY,
+  withBidsAsWatched,
+} from "@/lib/watched-accum";
 import {
   bidIsCovered,
   bidIsWinning,
@@ -1446,18 +1451,6 @@ export function useDashboardData() {
   }, [lots.data]);
   const bidDayKey = (bid: { id: string; date: string }) =>
     dayKeyByLotId.get(bid.id) || watchedDateToKey(bid.date) || bid.date || "";
-  // "Dias Futuros": vigiados + lances de leilões DEPOIS do último dia da barra (hoje+14), que
-  // não têm botão de dia próprio (respeita a busca principal).
-  const lastBarDay = barDays[barDays.length - 1];
-  const futureCount =
-    (watched.data ?? []).filter(
-      (w) =>
-        isFutureDay(watchedDateToKey(w.date), lastBarDay) &&
-        watchedMatchesSearch(w, searchNorm, albumFor(w)),
-    ).length +
-    (bids.data ?? []).filter(
-      (b) => isFutureDay(bidDayKey(b), lastBarDay) && bidMatchesSearch(b, searchNorm, albumFor(b)),
-    ).length;
   // Horário do leilão por `${dia}|casa` — "Meus lances" não traz o horário (só a data do
   // lance), então casamos pelo dia+casa com a varredura geral e os vigiados, pra ordenar os
   // lances por horário do leilão igual às outras telas.
@@ -1471,6 +1464,32 @@ export function useDashboardData() {
     }
     return map;
   }, [lots.data, watched.data]);
+  // Lista das telas de Vigiados (aba, "Vigiados do dia", contadores): vigiados + lotes com lance que
+  // não estão na vigia (`withBidsAsWatched`). `watchedIds` e o botão Vigiar seguem só com a vigia real.
+  const watchedList = useMemo(
+    () =>
+      todayKey
+        ? withBidsAsWatched(watched.data ?? [], bids.data ?? [], todayKey, {
+            dayKeyOf: bidDayKey,
+            timeOf: (dayKey, house) => houseTimeByDayHouse.get(`${dayKey}|${house}`) ?? "",
+            artistOf: extractArtist,
+          })
+        : (watched.data ?? []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `bidDayKey` deriva de `dayKeyByLotId`
+    [watched.data, bids.data, todayKey, dayKeyByLotId, houseTimeByDayHouse],
+  );
+  // "Dias Futuros": vigiados + lances de leilões DEPOIS do último dia da barra (hoje+14), que
+  // não têm botão de dia próprio (respeita a busca principal).
+  const lastBarDay = barDays[barDays.length - 1];
+  const futureCount =
+    watchedList.filter(
+      (w) =>
+        isFutureDay(watchedDateToKey(w.date), lastBarDay) &&
+        watchedMatchesSearch(w, searchNorm, albumFor(w)),
+    ).length +
+    (bids.data ?? []).filter(
+      (b) => isFutureDay(bidDayKey(b), lastBarDay) && bidMatchesSearch(b, searchNorm, albumFor(b)),
+    ).length;
   // Meu lance por peça — para exibir "Meu lance" e corrigir o "Atual" (quando venço, o
   // valor atual É o meu lance) também nas abas de dia/vigiados, não só em "Meus lances".
   const myBidById = useMemo(() => {
@@ -1745,6 +1764,7 @@ export function useDashboardData() {
     pageLoading,
     matchesSearch,
     watched,
+    watchedList,
     searchNorm,
     albumFor,
     bids,

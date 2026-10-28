@@ -267,6 +267,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   grupos por artista (A→Z, "sem artista" por último), busca por artista (botão/Enter) e combo com
   nº de álbuns por artista. **Adquirido** = `status acquired` no item (leva todos os álbuns
   juntados) + remove a vigia real de todos os lotes dele (`acquireItem` em `olho.tsx`).
+- **"Invariant failed" em `/olho` (v0.184.1):** em produção o cliente das server functions do TanStack lança `Invariant failed` (sem detalhe) quando a resposta chega sem `content-type` — 5xx vazio do Caddy, timeout, conexão cortada. É erro de TRANSPORTE: o servidor pode ter gravado a ação. `transient-error.ts` (`isTransientTransportError`, `errorMessage`, `retryTransient`): as mutações idempotentes com patch otimista de `olho.tsx` (`updateMut`, `deleteMut`, `moveLotMut`, `dismissPendingMut`, `resolveMut`) repetem até 2× só nesse erro; se falhar, `rollback` desfaz o otimismo e chama `refresh()` (relê o servidor). Mesclar/separar/criar NÃO repetem (não idempotentes). Se continuar frequente, investigar a causa na borda (health check do Caddy `/api/health` derrubando o upstream sob carga do `computeLookout`, `mem_limit` do `app`).
 - **Palavras para agrupar (v0.118.0):** `lookout_items.terms` (jsonb, até 20 frases de 80 caracteres). Em
   `matchLookoutForLot`, `termScore`: lote cujo ARTISTA casa (`ownedArtistLevel`: confirmado → 0,92;
   só citado no título → 0,8) e cujo texto normalizado contém alguma frase inteira do usuário casa com o
