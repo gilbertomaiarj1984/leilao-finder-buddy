@@ -299,6 +299,13 @@ describe("extractArtist — títulos em prosa e cabeçalhos de formato", () => {
     ],
     ["Os Brasas Capa Ruim", "Os Brasas"],
     ["Álbum: Shut Up | Código: 066 | Artista(s): [`Kenny G (2)`] | Ano: 1990", "Kenny G"],
+    // Sem "|" antes de "Artista(s)" e sem colchetes: o nome do álbum não vira artista.
+    ["Álbum: DE PÉ NO CHÃO | Código: 1030280 Artista(s): BETH CARVALHO", "Beth Carvalho"],
+    ["Álbum: PERFOMANCE | Código: 066792845-1 Artista(s): BETO GUEDES", "Beto Guedes"],
+    [
+      "Álbum: Perfomance | Código: 066 Artista(s): Beto Guedes Ano: 1980 Estilo(s): MPB",
+      "Beto Guedes",
+    ],
     ["LP E COMPOSITOR BRITÂNICO GEORGE MICHAEL FAITH 1987", ""],
     ["LP CARLOS ALBERTO ANO DE LANÇAMENTO: 1967 FORMATO: LP (VINIL) CONDIÇÃO", "Carlos Alberto"],
     // Nomes que COMEÇAM com o papel não perdem a palavra.
