@@ -1454,16 +1454,28 @@ export function useDashboardData() {
   // Horário do leilão por `${dia}|casa` — "Meus lances" não traz o horário (só a data do
   // lance), então casamos pelo dia+casa com a varredura geral e os vigiados, pra ordenar os
   // lances por horário do leilão igual às outras telas.
+  // Casa com mais de um pregão no dia tem um horário por pregão: a chave `dia|casa|idLeilao` é
+  // a exata; `dia|casa` (qualquer um dos pregões) é só o plano B quando o lance não traz o pregão.
   const houseTimeByDayHouse = useMemo(() => {
     const map = new Map<string, string>();
     for (const lot of lots.data?.lots ?? [])
-      if (lot.dayKey && lot.house && lot.time) map.set(`${lot.dayKey}|${lot.house}`, lot.time);
+      if (lot.dayKey && lot.house && lot.time) {
+        map.set(`${lot.dayKey}|${lot.house}`, lot.time);
+        if (lot.idLeilao) map.set(`${lot.dayKey}|${lot.house}|${lot.idLeilao}`, lot.time);
+      }
     for (const w of watched.data ?? []) {
-      const key = `${watchedDateToKey(w.date)}|${w.house}`;
-      if (w.house && w.time && !map.has(key)) map.set(key, w.time);
+      const dayKey = watchedDateToKey(w.date);
+      if (!w.house || !w.time) continue;
+      if (!map.has(`${dayKey}|${w.house}`)) map.set(`${dayKey}|${w.house}`, w.time);
+      const exact = `${dayKey}|${w.house}|${w.idLeilao}`;
+      if (w.idLeilao && !map.has(exact)) map.set(exact, w.time);
     }
     return map;
   }, [lots.data, watched.data]);
+  const houseTimeFor = (dayKey: string, house: string, idLeilao: string) =>
+    houseTimeByDayHouse.get(`${dayKey}|${house}|${idLeilao}`) ??
+    houseTimeByDayHouse.get(`${dayKey}|${house}`) ??
+    "";
   // Lista das telas de Vigiados (aba, "Vigiados do dia", contadores): vigiados + lotes com lance que
   // não estão na vigia (`withBidsAsWatched`). `watchedIds` e o botão Vigiar seguem só com a vigia real.
   const watchedList = useMemo(
@@ -1471,7 +1483,7 @@ export function useDashboardData() {
       todayKey
         ? withBidsAsWatched(watched.data ?? [], bids.data ?? [], todayKey, {
             dayKeyOf: bidDayKey,
-            timeOf: (dayKey, house) => houseTimeByDayHouse.get(`${dayKey}|${house}`) ?? "",
+            timeOf: houseTimeFor,
             artistOf: extractArtist,
           })
         : (watched.data ?? []),
@@ -1728,7 +1740,7 @@ export function useDashboardData() {
       (bids.data ?? []).map((b) => ({
         ...b,
         houseUrl: houseUrlByName.get(b.house) ?? "#",
-        time: houseTimeByDayHouse.get(`${bidDayKey(b)}|${b.house}`) ?? "",
+        time: houseTimeFor(bidDayKey(b), b.house, b.idLeilao),
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- bidDayKey só lê dayKeyByLotId (já na lista)
     [bids.data, houseUrlByName, houseTimeByDayHouse, dayKeyByLotId],

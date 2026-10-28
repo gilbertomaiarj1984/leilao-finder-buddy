@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
+import { countUnsoldHouses } from "@/components/vinyl/use-today-unsold";
 import { bidMatchesSearch, dayLabel, watchedMatchesSearch } from "@/components/vinyl/grouping";
 import {
   BAR_PAGES,
@@ -73,7 +74,7 @@ export function DashboardHeader({
   // Janela de dias visíveis (5 por vez, página `dayPage`); as setas paginam de 5 em 5 por
   // 2 páginas de histórico, a de hoje e 2 de futuro (`day-bar.ts`).
   // Casas de hoje (pregão encerrado ou em andamento) que já têm lote sem lance → contador do ícone.
-  const unsoldHouses = todayUnsold.filter((h) => h.lots.length > 0).length;
+  const unsoldHouses = countUnsoldHouses(todayUnsold, true);
   const offset = dayPage * DAY_PAGE;
   const canPrev = dayPage > 0;
   const canNext = dayPage < BAR_PAGES - 1;

@@ -109,14 +109,14 @@ export function groupByHouse(lots: VinylLot[]): HouseGroup[] {
  * mesmo dia (ex.: Martini com 244 e 34 lotes), cada um com seu horário, status e presencial.
  * Ordem: horário e depois nº do pregão.
  */
-export function splitByAuction<T extends { idLeilao: string; time: string }>(
+export function splitByAuction<T extends { idLeilao: string; time?: string }>(
   lots: T[],
 ): { idLeilao: string; time: string; lots: T[] }[] {
   const byAuction = new Map<string, { idLeilao: string; time: string; lots: T[] }>();
   for (const lot of lots) {
     const entry = byAuction.get(lot.idLeilao) ?? {
       idLeilao: lot.idLeilao,
-      time: lot.time,
+      time: lot.time ?? "",
       lots: [],
     };
     entry.lots.push(lot);
