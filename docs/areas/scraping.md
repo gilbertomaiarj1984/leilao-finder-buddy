@@ -64,7 +64,7 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   - **1 requisição por LEILÃO** (paginada) — nunca por lote. Usado por: `fetchLoteMap` (nº do
     lote), `lot-sales.server.ts` (histórico de vendas/Vinil Analytics), `unsold-lots.server.ts`
     (v0.89.0 — lotes SEM lance, o inverso do filtro de vendas: mesma fonte, sob DEMANDA do
-    usuário pela visão "Sem lance" de hoje (v0.156.0; casa ao vivo = só lotes já passados), não pelo cron; cache em memória de 5 min evita bater o
+    usuário pela visão "Sem lance" de hoje (v0.156.0; casa ao vivo = só lotes já passados; "sem lance" = `isUnsoldCatalogLot`, não só `!sold`, v0.185.2), não pelo cron; cache em memória de 5 min evita bater o
     catálogo de novo ao abrir/fechar a lista na mesma sessão — ver `docs/areas/ui.md`).
 - **Peça individual** (`leiloesbr-lot-details.server.ts`, `fetchLotDetails`/`fetchOne`):
   `<domínio>/peca.asp?id=<idPeca>` (ou `?ID=`, mesma página) — HTML com um JSON `loadData`

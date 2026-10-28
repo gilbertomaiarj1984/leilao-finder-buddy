@@ -32,6 +32,10 @@ export type CatalogLot = {
   lote: string | null;
   sold: boolean; // vendido/arrematado (há valor de venda e não é "não vendido")
   soldPrice: string | null; // valor de venda em texto BR ("R$ 1.234,56")
+  // Marca do próprio site, INDEPENDENTE de haver valor de venda legível (`sold` exige o valor):
+  // `MOSTRABTN_CLASS` 'is-vendido'/'is-naovendido' no JSON, classe `lotevendido` no HTML antigo.
+  // Lote vendido com valor escondido/ainda vazio tem `sold=false` mas `mark="sold"`.
+  mark?: "sold" | "unsold";
   text: string; // texto do card (título/descrição curta) — usado para o grading
   // Campos ricos do endpoint JSON (opcionais — o fallback HTML não os traz). Vêm na MESMA
   // varredura por leilão: sinais de demanda, taxa do leiloeiro e valor inicial/contratado.
@@ -163,6 +167,10 @@ function parseCatalogData(html: string): Map<string, CatalogLot> {
       null;
 
     const { sold, soldPrice } = parseSoldMarkers(seg);
+    // Classe do botão de lance que o site troca ao bater o martelo (ver `parseSoldOldTemplate`
+    // em `leiloesbr-lot-details.server.ts`) — vale mesmo sem valor de venda legível no card.
+    const mark =
+      sold || /class\s*=\s*"[^"]*\blotevendido\b/i.test(seg) ? ("sold" as const) : undefined;
 
     // Descritivo do card, limpo de fragmentos de href/query (ex.: `&ctd=309&tot=&tipo=&artista="`)
     // e de sobras de atributo malformado, que aparecem em alguns catálogos.
@@ -172,7 +180,7 @@ function parseCatalogData(html: string): Map<string, CatalogLot> {
       .replace(/\s+/g, " ")
       .trim();
 
-    map.set(id, { lote, sold, soldPrice, text });
+    map.set(id, { lote, sold, soldPrice, mark, text });
   }
   return map;
 }
@@ -204,6 +212,52 @@ function extractPecas(parsed: unknown): Record<string, unknown>[] {
     return [];
   }
   return fromNode(parsed) ?? [];
+}
+
+/**
+ * Um objeto de `PECAS` do endpoint JSON → `CatalogLot`. Separada do laço de páginas para ser
+ * testada com os campos reais (`MOSTRABTN_CLASS`, `VALOR_VENDA`, `QTDLANCE`…).
+ */
+export function catalogLotFromPeca(p: Record<string, unknown>): CatalogLot {
+  const cls = p["MOSTRABTN_CLASS"];
+  const sold = cls === "is-vendido";
+  const valor = String(p["VALOR_VENDA"] ?? p["VALOR_VALUE"] ?? "").trim();
+  const soldPrice = sold && valor && valor !== "0" ? `R$ ${valor},00` : null;
+  const text = decodeEntities(
+    fixMojibake(String(p["DESCRICAO"] ?? p["MINI_DESCRICAO"] ?? "").trim()),
+  );
+  // Algumas casas (ex.: Catavento Discos) devolvem, para certos lotes multi-item, o campo
+  // `LOTE` preenchido com a descrição inteira em vez de um número curto — valida no mesmo
+  // formato aceito pelo parser HTML irmão (parseCatalogData) e descarta o resto.
+  const loteRaw = String(p["LOTE"] ?? "").trim();
+  const lote = /^[0-9]+[a-zA-Z]?$/.test(loteRaw) ? loteRaw : null;
+  return {
+    lote,
+    sold: sold && soldPrice !== null,
+    soldPrice,
+    mark: sold ? "sold" : cls === "is-naovendido" ? "unsold" : undefined,
+    text,
+    views: numOrNull(p["VISITAS"]),
+    bids: numOrNull(p["QTDLANCE"]),
+    feePct: numOrNull(p["TAXA_LEILOEIRO"]),
+    initialPrice: numOrNull(p["VALOR_CONTRATADO"] ?? p["VALOR_VALUE"]),
+    peca: decodeEntities(fixMojibake(String(p["PECA"] ?? "").trim())) || null,
+  };
+}
+
+/**
+ * O lote do catálogo é "sem lance" (não vendido)? Só `sold` NÃO basta: ele exige o valor de
+ * venda legível, e um lote vendido com valor escondido/ainda vazio (ex.: pregão ao vivo, RT
+ * Leilões e Artes) vinha como "sem lance". Ordem — vendido (valor OU marca do site) → não;
+ * com lances (`QTDLANCE` > 0) → não (por definição não é "sem lance", e pode ser só uma venda
+ * que o catálogo ainda não marcou); marca explícita de não vendido → sim; sem marca, só com
+ * `QTDLANCE` = 0 confirmado → sim; sem nenhum dos dois sinais (fallback HTML) → sim, como antes.
+ */
+export function isUnsoldCatalogLot(lot: CatalogLot): boolean {
+  if (lot.sold || lot.mark === "sold") return false;
+  if (lot.bids != null && lot.bids > 0) return false;
+  if (lot.mark === "unsold") return true;
+  return lot.bids == null || lot.bids === 0;
 }
 
 /**
@@ -254,28 +308,7 @@ async function fetchCatalogJson(
     for (const p of pecas as Record<string, unknown>[]) {
       const id = String(p["ID"] ?? "").trim();
       if (!id || map.has(id)) continue;
-      const sold = p["MOSTRABTN_CLASS"] === "is-vendido";
-      const valor = String(p["VALOR_VENDA"] ?? p["VALOR_VALUE"] ?? "").trim();
-      const soldPrice = sold && valor && valor !== "0" ? `R$ ${valor},00` : null;
-      const text = decodeEntities(
-        fixMojibake(String(p["DESCRICAO"] ?? p["MINI_DESCRICAO"] ?? "").trim()),
-      );
-      // Algumas casas (ex.: Catavento Discos) devolvem, para certos lotes multi-item, o campo
-      // `LOTE` preenchido com a descrição inteira em vez de um número curto — valida no mesmo
-      // formato aceito pelo parser HTML irmão (parseCatalogData) e descarta o resto.
-      const loteRaw = String(p["LOTE"] ?? "").trim();
-      const lote = /^[0-9]+[a-zA-Z]?$/.test(loteRaw) ? loteRaw : null;
-      map.set(id, {
-        lote,
-        sold: sold && soldPrice !== null,
-        soldPrice,
-        text,
-        views: numOrNull(p["VISITAS"]),
-        bids: numOrNull(p["QTDLANCE"]),
-        feePct: numOrNull(p["TAXA_LEILOEIRO"]),
-        initialPrice: numOrNull(p["VALOR_CONTRATADO"] ?? p["VALOR_VALUE"]),
-        peca: decodeEntities(fixMojibake(String(p["PECA"] ?? "").trim())) || null,
-      });
+      map.set(id, catalogLotFromPeca(p));
     }
     if (pecas.length < LIMIT) break; // última página
   }

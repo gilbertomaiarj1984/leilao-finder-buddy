@@ -783,6 +783,16 @@ como histórico). A linha da casa agora só tem `PresencialLink` (`presencial-li
   "Encerrado"), cards `UnsoldLotCard` (lote recém-achado ganha destaque verde por 3 s).
 - **Servidor:** `getUnsoldLots` ganha `currentLote` opcional (`unsold-lots.server.ts`; cache de 45 s
   quando informado, 5 min sem ele).
+- **Falso "sem lance" em lote vendido (v0.185.2):** o `sold` do catálogo só é verdadeiro com valor de
+  venda legível, então um lote vendido com valor vazio/escondido (pregão ao vivo, visto na RT Leilões e
+  Artes) caía na lista. `fetchCatalogData` agora também devolve `mark` (`sold`/`unsold`, do
+  `MOSTRABTN_CLASS` ou da classe `lotevendido` no HTML antigo) e `isUnsoldCatalogLot`
+  (`leiloesbr-catalog.server.ts`, testada em `tests/unsold-catalog.test.ts`) decide: vendido (valor OU
+  marca) → fora; `QTDLANCE` > 0 → fora; marca "não vendido" → dentro; sem marca → dentro só com
+  `QTDLANCE` = 0 (ou sem nenhum sinal, fallback HTML). Com `currentLote` (ao vivo), `dropSoldOnPage`
+  (`unsold-lots.server.ts`) ainda confere os candidatos na `peca.asp` de cada lote (`fetchLotDetails`,
+  até 60 por rodada; "vendido" fica memorizado, "sem venda" vale 2 min). Sem a RT acessível daqui, a
+  causa exata não foi reproduzida — se ainda aparecer lote vendido, olhar o JSON cru do catálogo dele.
 - **Removido:** override manual "marcar encerrado" (`manually-finished-auctions.ts`,
   `use-manually-finished.ts`, botões 🏁/"reabrir") — a lista não depende mais de sinal de fim, já
   vai aparecendo por casa. `trackedAuctionStatus` perdeu o sinal `manual`.
