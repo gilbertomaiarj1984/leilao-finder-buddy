@@ -6,7 +6,7 @@ import { getPresencialNow, getUnsoldLots } from "@/lib/leiloesbr.functions";
 import { isSeenLive, markSeenLive } from "@/lib/auction-seen-live";
 import { trackedAuctionStatus, type VinylLot } from "@/lib/vinyl-parse";
 
-import { groupByHouse, houseAuctionInfo } from "./grouping";
+import { groupByHouse, houseAuctionInfo, splitByAuction } from "./grouping";
 
 export type UnsoldLotItem = Awaited<ReturnType<typeof getUnsoldLots>>["lots"][number];
 
@@ -41,7 +41,13 @@ export function useTodayUnsold(lots: VinylLot[], dayKey: string | null): TodayUn
 
   const targets = dayKey
     ? groupByHouse(lots.filter((lot) => lot.dayKey === dayKey))
-        .map((group) => ({ group, info: houseAuctionInfo(dayKey, group.lots[0]) }))
+        // Um alvo por PREGÃO (casa com mais de um no dia: cada um tem status e presencial próprios).
+        .flatMap((group) =>
+          splitByAuction(group.lots).map((auction) => ({
+            group,
+            info: houseAuctionInfo(dayKey, auction.lots[0]),
+          })),
+        )
         .filter(
           (t): t is typeof t & { info: NonNullable<typeof t.info> } =>
             Boolean(t.info?.presencialUrl) &&

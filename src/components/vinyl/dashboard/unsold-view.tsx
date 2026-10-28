@@ -169,6 +169,11 @@ export function UnsoldView({
                 <span className="text-xl font-semibold tracking-tight">{h.house}</span>
               </button>
               <HouseUf house={h.house} uf={h.uf} className="text-sm" />
+              {houses.some((x) => x.house === h.house && x.idLeilao !== h.idLeilao) ? (
+                <span className="text-sm font-medium text-muted-foreground">
+                  Catálogo {h.idLeilao}
+                </span>
+              ) : null}
               <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold">
                 {h.total !== null
                   ? `${h.lots.length} de ${h.total} sem lance`
