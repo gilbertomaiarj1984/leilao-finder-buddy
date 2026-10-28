@@ -41,6 +41,9 @@ services:
       - dokploy-network
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Blocos de site avulsos (`import /etc/caddy/sites/*.caddy` no fim do Caddyfile); o
+      # diretório mora só no VPS, ao lado do compose.
+      - ./sites:/etc/caddy/sites:ro
       - collection_data:/data/collection:ro
       - caddy_data:/data
       - caddy_config:/config
