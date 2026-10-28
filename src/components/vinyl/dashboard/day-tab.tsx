@@ -64,6 +64,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     setUnsoldViewDay,
     todayUnsold,
     watched,
+    watchedList,
     searchNorm,
     albumFor,
     bidsViewDay,
@@ -161,7 +162,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
   const isUnsoldView = unsoldViewDay === day && index === TODAY_INDEX;
   const isWatchedView = watchedViewDay === day;
   // Vigiados do dia: a busca principal também filtra aqui.
-  const watchedForDay = (watched.data ?? []).filter(
+  const watchedForDay = watchedList.filter(
     (lot) =>
       watchedDateToKey(lot.date) === day &&
       watchedMatchesSearch(lot, searchNorm, albumFor(lot)) &&

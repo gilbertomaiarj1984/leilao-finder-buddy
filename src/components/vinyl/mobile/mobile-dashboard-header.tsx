@@ -46,7 +46,7 @@ export function MobileDashboardHeader({
     pageLoading,
     setDayPage,
     matchesSearch,
-    watched,
+    watchedList,
     bids,
     searchNorm,
     albumFor,
@@ -91,7 +91,7 @@ export function MobileDashboardHeader({
   }, [tab, loaded, kind, searching]);
 
   const commit = (value: string) => setSearch(value);
-  const watchedCount = (watched.data ?? []).filter((lot) =>
+  const watchedCount = watchedList.filter((lot) =>
     watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
   ).length;
   const bidsCount = (bids.data ?? []).filter((bid) =>

@@ -58,7 +58,7 @@ export function DashboardHeader({
     setTab,
     pageLoading,
     matchesSearch,
-    watched,
+    watchedList,
     searchNorm,
     albumFor,
     bids,
@@ -254,9 +254,8 @@ export function DashboardHeader({
               Vigiados
               <span className="ml-2 text-xs text-muted-foreground">
                 {
-                  (watched.data ?? []).filter((lot) =>
-                    watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
-                  ).length
+                  watchedList.filter((lot) => watchedMatchesSearch(lot, searchNorm, albumFor(lot)))
+                    .length
                 }
               </span>
             </TabsTrigger>

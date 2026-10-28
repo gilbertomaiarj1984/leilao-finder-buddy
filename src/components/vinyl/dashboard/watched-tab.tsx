@@ -78,6 +78,7 @@ function daysRangeLabel(dayKeys: string[]): string {
 export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; futureOnly?: boolean }) {
   const {
     watched,
+    watchedList,
     searchNorm,
     albumFor,
     days,
@@ -247,14 +248,14 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
         <p className="text-sm text-destructive">
           Não foi possível ler os vigiados: {(watched.error as Error).message}
         </p>
-      ) : (watched.data ?? []).length === 0 ? (
+      ) : watchedList.length === 0 ? (
         <p className="text-sm text-muted-foreground">Você ainda não está vigiando nenhum lote.</p>
       ) : (
         (() => {
           // A busca principal filtra os vigiados; o resultado é agrupado por casa e, dentro
           // dela, por catálogo (idLeilao) — um catálogo multi-dia aparece em todos os dias que
           // atravessa quando o organizador por dia está filtrando.
-          const filtered = (watched.data ?? []).filter(
+          const filtered = watchedList.filter(
             (lot) =>
               (!futureOnly || isFuture(watchedDateToKey(lot.date))) &&
               watchedMatchesSearch(lot, searchNorm, albumFor(lot)) &&

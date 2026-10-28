@@ -9,6 +9,8 @@
 // rota apagar o acumulado da outra ao navegar entre elas — foi exatamente essa divergência
 // (fix original só em `index.tsx`) que fazia os vigiados "sumirem depois de um tempo" mesmo
 // com o acumulador certo já existindo ali.
+import type { MyBid } from "./leiloesbr-bids.server";
+import type { WatchedLot } from "./leiloesbr-watch.server";
 import { auctionStarted, recentDayKeys, upcomingDayKeys } from "./vinyl-parse";
 
 // Para lances (`MyBid`), `date` é o dia em que o lance foi DADO (normalmente hoje ou um pouco
@@ -125,4 +127,51 @@ export function mergeWatchedAccum<T extends { id: string; date: string; time?: s
   }
   saveAccum(storageKey, acc);
   return [...acc.values()];
+}
+
+/**
+ * Lista das telas de Vigiados: os vigiados da conta + os lotes com MEU LANCE que não estão na
+ * vigia (dar lance não vigia o lote no LeilõesBR, e o lote sumia dessas telas). Casa por `id`
+ * (`idPeca` só é único dentro da casa); o vigiado real vence. `dayKeyOf` dá o dia do LEILÃO do
+ * lance (não o do lance) e, como os vigiados, só entram lotes de hoje em diante. Não mexe nos
+ * acumuladores — o lote continua "não vigiado" (botão Vigiar) e só aparece na lista.
+ */
+export function withBidsAsWatched(
+  watched: WatchedLot[],
+  bids: MyBid[],
+  todayKey: string,
+  opts: {
+    dayKeyOf: (bid: MyBid) => string;
+    timeOf: (dayKey: string, house: string) => string;
+    artistOf: (title: string) => string;
+  },
+): WatchedLot[] {
+  const have = new Set(watched.map((w) => w.id));
+  const extra: WatchedLot[] = [];
+  for (const b of bids) {
+    if (!b.id || have.has(b.id)) continue;
+    const dayKey = opts.dayKeyOf(b);
+    const [yyyy, mm, dd] = dayKey.split("-");
+    if (!yyyy || !mm || !dd || dayKey < todayKey) continue;
+    have.add(b.id);
+    extra.push({
+      id: b.id,
+      idPeca: b.idPeca,
+      idLeilao: b.idLeilao,
+      base: b.base,
+      lote: b.lote,
+      title: b.title,
+      url: b.url,
+      image: b.image,
+      price: "",
+      date: `${dd}/${mm}/${yyyy}`,
+      time: opts.timeOf(dayKey, b.house),
+      house: b.house,
+      houseUrl: "",
+      uf: b.uf,
+      artist: opts.artistOf(b.title),
+      watched: true,
+    });
+  }
+  return extra.length ? [...watched, ...extra] : watched;
 }
