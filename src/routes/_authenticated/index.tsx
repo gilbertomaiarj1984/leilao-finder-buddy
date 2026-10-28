@@ -176,7 +176,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     refreshingAll,
     refreshPct,
     refreshPhase,
-    watched,
+    watchedList,
     bids,
   } = d;
 
@@ -186,7 +186,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
   };
 
   // Celular: a barra inferior (montada no layout) troca de aba por aqui e mostra os contadores.
-  const watchedCount = (watched.data ?? []).length;
+  const watchedCount = watchedList.length;
   const bidsCount = (bids.data ?? []).length;
   useEffect(() => {
     if (!mobile) return;
