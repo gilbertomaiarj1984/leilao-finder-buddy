@@ -59,6 +59,12 @@ import { filterByLookoutDay, lookoutDayOptions } from "@/lib/lookout-day-filter"
 import type { LookoutOverview, LookoutUpcoming } from "@/lib/lookout-matches.server";
 import { localDayKey, usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
 import {
+  errorMessage,
+  isTransientTransportError,
+  retryTransient,
+  transientRetryDelay,
+} from "@/lib/transient-error";
+import {
   queryKeys,
   useAnalyticsAliasesQuery,
   useCollectionQuery,
@@ -148,7 +154,7 @@ function OlhoPage() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.interests });
       toast.success("Interesses salvos");
     },
-    onError: (e: Error) => toast.error(e.message || "Não foi possível salvar"),
+    onError: (e: Error) => toast.error(errorMessage(e, "Não foi possível salvar")),
   });
 
   // Duas etapas (v0.155.0): a versão leve (sem valor ao vivo nem histórico — a mesma do contador
@@ -215,10 +221,18 @@ function OlhoPage() {
     await queryClient.cancelQueries({ queryKey: queryKeys.lookoutOverview });
     return queryClient.getQueriesData<LookoutOverview>({ queryKey: queryKeys.lookoutOverview });
   };
-  const rollback = (prev?: [readonly unknown[], LookoutOverview | undefined][]) => {
+  // Erro de transporte (resposta vazia do proxy): a ação pode ter sido gravada mesmo assim, então
+  // além de desfazer o otimismo relê o servidor — a tela termina no estado real, não num palpite.
+  const rollback = (
+    prev?: [readonly unknown[], LookoutOverview | undefined][],
+    error?: unknown,
+  ) => {
     for (const [key, data] of prev ?? []) queryClient.setQueryData(key, data);
+    if (isTransientTransportError(error)) refresh();
   };
   const updateMut = useMutation({
+    retry: retryTransient,
+    retryDelay: transientRetryDelay,
     mutationFn: async (vars: { id: string; patch: LookoutPatch }) =>
       await runUpdate({ data: { id: vars.id, ...vars.patch } }),
     onMutate: async (vars) => {
@@ -231,11 +245,13 @@ function OlhoPage() {
     },
     onSuccess: refresh,
     onError: (error: unknown, _vars, ctx) => {
-      rollback(ctx?.prev);
-      toast.error((error as Error)?.message || "Não foi possível salvar");
+      rollback(ctx?.prev, error);
+      toast.error(errorMessage(error, "Não foi possível salvar"));
     },
   });
   const deleteMut = useMutation({
+    retry: retryTransient,
+    retryDelay: transientRetryDelay,
     mutationFn: async (id: string) => await runDelete({ data: { id } }),
     onMutate: async (id) => {
       const prev = await optimistic();
@@ -252,8 +268,8 @@ function OlhoPage() {
       refresh();
     },
     onError: (error: unknown, _id, ctx) => {
-      rollback(ctx?.prev);
-      toast.error((error as Error)?.message || "Não foi possível remover");
+      rollback(ctx?.prev, error);
+      toast.error(errorMessage(error, "Não foi possível remover"));
     },
   });
   // Identificação por IA (texto + imagem) de UM item: preenche artista/álbum/ano e recalcula os
@@ -282,7 +298,7 @@ function OlhoPage() {
       refresh();
     },
     onError: (error: unknown) =>
-      toast.error((error as Error)?.message || "Não foi possível identificar pela IA"),
+      toast.error(errorMessage(error, "Não foi possível identificar pela IA")),
     onSettled: () => setIdentifyingId(null),
   });
   const mergeMut = useMutation({
@@ -292,8 +308,7 @@ function OlhoPage() {
       toast.success("Discos juntados — agora o De olho reconhece os dois nomes");
       refresh();
     },
-    onError: (error: unknown) =>
-      toast.error((error as Error)?.message || "Não foi possível juntar"),
+    onError: (error: unknown) => toast.error(errorMessage(error, "Não foi possível juntar")),
   });
   // Juntar artistas (arrastar o título de um grupo sobre outro): `to` null desfaz a junção.
   const artistMut = useMutation({
@@ -304,11 +319,13 @@ function OlhoPage() {
       refresh();
     },
     onError: (error: unknown) =>
-      toast.error((error as Error)?.message || "Não foi possível juntar os artistas"),
+      toast.error(errorMessage(error, "Não foi possível juntar os artistas")),
   });
   const autoScroll = useDragAutoScroll();
   const [artistDropKey, setArtistDropKey] = useState<string | null>(null);
   const moveLotMut = useMutation({
+    retry: retryTransient,
+    retryDelay: transientRetryDelay,
     mutationFn: async (vars: { lotId: string; itemId: string }) => await runMoveLot({ data: vars }),
     onMutate: async (vars) => {
       const prev = await optimistic();
@@ -320,8 +337,8 @@ function OlhoPage() {
       refresh();
     },
     onError: (error: unknown, _vars, ctx) => {
-      rollback(ctx?.prev);
-      toast.error((error as Error)?.message || "Não foi possível mover o lote");
+      rollback(ctx?.prev, error);
+      toast.error(errorMessage(error, "Não foi possível mover o lote"));
     },
   });
   // Linhas de ORIGEM (lote marcado / origem de álbum juntado): "não é este disco" e "criar disco novo".
@@ -332,8 +349,7 @@ function OlhoPage() {
       toast.success("Lote tirado deste disco");
       refresh();
     },
-    onError: (error: unknown) =>
-      toast.error((error as Error)?.message || "Não foi possível tirar o lote"),
+    onError: (error: unknown) => toast.error(errorMessage(error, "Não foi possível tirar o lote")),
   });
   const splitOriginMut = useMutation({
     mutationFn: async (vars: { itemId: string; lotId: string }) =>
@@ -343,7 +359,7 @@ function OlhoPage() {
       refresh();
     },
     onError: (error: unknown) =>
-      toast.error((error as Error)?.message || "Não foi possível criar o disco novo"),
+      toast.error(errorMessage(error, "Não foi possível criar o disco novo")),
   });
   const unmergeMut = useMutation({
     mutationFn: async (vars: { itemId: string; lotId: string }) => await runUnmerge({ data: vars }),
@@ -351,10 +367,11 @@ function OlhoPage() {
       toast.success("Álbum separado");
       refresh();
     },
-    onError: (error: unknown) =>
-      toast.error((error as Error)?.message || "Não foi possível separar"),
+    onError: (error: unknown) => toast.error(errorMessage(error, "Não foi possível separar")),
   });
   const dismissPendingMut = useMutation({
+    retry: retryTransient,
+    retryDelay: transientRetryDelay,
     mutationFn: async (lotIds: string[]) =>
       await runLinksBatch({ data: { lotIds, value: false as const } }),
     onMutate: async (lotIds) => {
@@ -367,11 +384,13 @@ function OlhoPage() {
       refresh();
     },
     onError: (error: unknown, _ids, ctx) => {
-      rollback(ctx?.prev);
-      toast.error((error as Error)?.message || "Não foi possível descartar");
+      rollback(ctx?.prev, error);
+      toast.error(errorMessage(error, "Não foi possível descartar"));
     },
   });
   const resolveMut = useMutation({
+    retry: retryTransient,
+    retryDelay: transientRetryDelay,
     mutationFn: async (vars: { lotId: string; value: string | false }) =>
       await runLink({ data: vars }),
     onMutate: async (vars) => {
@@ -381,8 +400,8 @@ function OlhoPage() {
     },
     onSuccess: refresh,
     onError: (error: unknown, _vars, ctx) => {
-      rollback(ctx?.prev);
-      toast.error((error as Error)?.message || "Não foi possível salvar");
+      rollback(ctx?.prev, error);
+      toast.error(errorMessage(error, "Não foi possível salvar"));
     },
   });
 
@@ -419,8 +438,7 @@ function OlhoPage() {
       setCreateFrom(null);
       refresh();
     },
-    onError: (error: unknown) =>
-      toast.error((error as Error)?.message || "Não foi possível criar o álbum"),
+    onError: (error: unknown) => toast.error(errorMessage(error, "Não foi possível criar o álbum")),
   });
 
   // Vigia REAL: a lista vem da conta do LeilõesBR (`listWatched`), exposta pelo mesmo hook/cache/
@@ -479,7 +497,7 @@ function OlhoPage() {
       const nowWatched = await setWatch(m, !watchedIds.has(m.idPeca));
       toast.success(nowWatched ? "Lote vigiado no LeilõesBR" : "Vigia removida no LeilõesBR");
     } catch (error) {
-      toast.error((error as Error)?.message || "Não foi possível alterar a vigia");
+      toast.error(errorMessage(error, "Não foi possível alterar a vigia"));
     } finally {
       setBusyWatch(null);
     }

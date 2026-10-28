@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { detectModernReissue, type LotEdition } from "@/lib/album-edition";
 import { setLotEditionFn } from "@/lib/lookout.functions";
 import { queryKeys, useLotEditionsQuery } from "@/lib/queries";
+import { errorMessage } from "@/lib/transient-error";
 import { cn } from "@/lib/utils";
 
 const OPTIONS: { value: LotEdition; label: string; hint: string }[] = [
@@ -60,7 +61,7 @@ export function LotEditionButton({
     },
     onError: (e: Error, _edition, ctx) => {
       if (ctx) qc.setQueryData(queryKeys.lotEditions, ctx.prev);
-      toast.error(e.message || "Não foi possível salvar a edição");
+      toast.error(errorMessage(e, "Não foi possível salvar a edição"));
     },
     onSettled: () => {
       // O casamento do De olho depende da edição: refaz o resumo calculado no servidor.
