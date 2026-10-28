@@ -6,6 +6,7 @@ import {
   ANALYTICS_COMPILATION_LABEL,
   canonicalizeCollapsedArtist,
   extractArtist,
+  extractStructuredArtist,
   isCompilation,
   isDiscBundle,
   isGenericArtist,
@@ -261,9 +262,10 @@ export function makeSalePlacer(aliases?: AnalyticsAliases): (row: SaleRow) => Sa
     // balaio de artista (a chave de agrupamento só une as formas COM separador). Casamento
     // exato contra o bundle de nomes conhecidos, então não arrisca fundir artistas diferentes.
     const rawArtist = canonicalizeCollapsedArtist(
-      storedArtist && (isVariousArtists(storedArtist) || !isGenericArtist(storedArtist))
-        ? storedArtist
-        : extractArtist(row.title) || storedArtist,
+      extractStructuredArtist(row.title) ||
+        (storedArtist && (isVariousArtists(storedArtist) || !isGenericArtist(storedArtist))
+          ? storedArtist
+          : extractArtist(row.title) || storedArtist),
     );
     const isComp =
       !saleOv &&
