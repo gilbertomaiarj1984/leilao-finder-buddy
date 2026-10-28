@@ -142,7 +142,7 @@ export function withBidsAsWatched(
   todayKey: string,
   opts: {
     dayKeyOf: (bid: MyBid) => string;
-    timeOf: (dayKey: string, house: string) => string;
+    timeOf: (dayKey: string, house: string, idLeilao: string) => string;
     artistOf: (title: string) => string;
   },
 ): WatchedLot[] {
@@ -165,7 +165,7 @@ export function withBidsAsWatched(
       image: b.image,
       price: "",
       date: `${dd}/${mm}/${yyyy}`,
-      time: opts.timeOf(dayKey, b.house),
+      time: opts.timeOf(dayKey, b.house, b.idLeilao),
       house: b.house,
       houseUrl: "",
       uf: b.uf,

@@ -40,4 +40,13 @@ describe("withBidsAsWatched", () => {
     const r = withBidsAsWatched([], [bid("1-3"), bid("1-4")], "2026-10-28", opts);
     expect(r).toEqual([]);
   });
+  test("o horário do lance é pedido pelo pregão (casa com mais de um no dia)", () => {
+    const times: Record<string, string> = { "1": "14h", "2": "19h" };
+    const r = withBidsAsWatched([], [bid("2-5", { house: "Casa A" })], "2026-10-28", {
+      ...opts,
+      dayKeyOf: () => "2026-10-30",
+      timeOf: (_dayKey, _house, idLeilao) => times[idLeilao] ?? "",
+    });
+    expect(r[0]!.time).toBe("19h");
+  });
 });

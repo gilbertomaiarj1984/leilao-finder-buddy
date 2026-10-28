@@ -42,6 +42,7 @@ import {
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
 import { PresencialLink } from "@/components/vinyl/presencial-link";
+import { countUnsoldHouses } from "@/components/vinyl/use-today-unsold";
 import { DAY_PAGE, TODAY_INDEX } from "@/lib/day-bar";
 import { auctionDayPassed, UNCLASSIFIED_LABEL } from "@/lib/vinyl-parse";
 
@@ -385,7 +386,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                 </>
               ) : isUnsoldView ? (
                 <span className="text-xs text-muted-foreground">
-                  {todayUnsold.length} casa(s) com pregão encerrado ou em andamento
+                  {countUnsoldHouses(todayUnsold)} casa(s) com pregão encerrado ou em andamento
                 </span>
               ) : isWatchedView ? (
                 <span className="text-xs text-muted-foreground">
