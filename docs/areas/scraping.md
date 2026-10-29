@@ -116,6 +116,20 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   sem `tp`, varreria o acervo inteiro à toa).
 - A varredura geral (`chunk`) segue só em "Discos de Vinil"; Música entra pelo `galleryscan`.
 
+## Categoria "Colecionismo" (v0.185.4)
+
+- Casas como o **Acervo do Garimpeiro** (galeria `ga=1185`, domínio `acervodogarimpeiro.com.br`; leilão 66561 com
+  496+ LPs medido em 2026-10-29) cadastram os discos em **"Colecionismo"** (`tp=|436F6C6563696F6E69736D6F|`), fora das
+  listas de galerias de "Discos de Vinil" e "Música" — por isso nenhuma varredura os via (sem `tp=`, `ga=1185` devolve os
+  lotes; com Vinil/Música/Outros, 0). O catálogo da própria casa responde 403 ao IP do ambiente: diagnosticar sempre pela listagem da LeilõesBR.
+- Colecionismo é geral (158 casas, 98 fora das listas de vinil): em vez de varrer galeria por galeria, o `galleryscan`
+  acrescenta ao fim da fila duas **galerias virtuais** (`busca:vinil`, `busca:disco`; `COLLECTIBLES_QUERIES`) que fazem
+  busca textual (`pesquisa=`) dentro da categoria e aceitam só `isVinylTitle` (estrito). ~6 páginas, ~33s. Cursor e
+  orçamento de tempo iguais aos das casas; vale para o cron e para o "Atualizar tudo". Uma casa de Colecionismo cujos
+  títulos não citem vinil/disco continua de fora (aí o caminho é a passada por galeria).
+- Dia na listagem: o leilão 66561 aparece só no dia 30/10 (a listagem traz uma data por leilão), embora a casa diga
+  "hoje e amanhã" (pendência aberta: `docs/pendencias.md`, "Leilão que dura mais de um dia só aparece em um dia").
+
 ## Regra: nunca bloquear casa (v0.112.1)
 
 - **Nenhuma casa é bloqueada ou tratada à parte** — vale para todas. Casas generalistas podem ter
@@ -222,7 +236,7 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   lote/kit (`isCompactsBundle`) continua conjunto (sem Discogs/IA de álbum único), mas na tela vai para "Novelas,
   coletâneas e não classificados" (`extractArtist` e `effectiveArtist` devolvem ""). Calibrado com 3150 títulos reais
   (script de auditoria: buscar `busca_andamento.asp` em UTF-8 e comparar `isDiscBundle` antes/depois).
-- **Markdown, " / " e atributos (v0.182.0):** `markdownHead` usa só o 1º trecho de títulos `**LP X**descrição…`/`# LP X…`; ` / `
+- **Markdown, " / " e atributos (v0.182.0):** `markdownHead` usa só o 1º trecho de títulos `**LP X**descrição…`/`# LP X…`; `/`
   separa campos ("LP ARTISTA / ÁLBUM / …"); `TRAILING_ATTRIBUTES` tira "Importado Japão/Raro/Reedição/Lacrado/Capa
   Ruim/Disco Lp Sem Teste" do fim do nome; `(2)` do Discogs sai do artista da ficha; frase que abre com conector
   ("E Compositor…", "De Jimmy Dorsey…") não é artista. O papel ("da cantora X") só vale na frase de abertura.
