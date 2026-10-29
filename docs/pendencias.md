@@ -3,6 +3,11 @@
 > Só o que ainda está em aberto. Ao resolver um item, mova-o para
 > `docs/arquivo/pendencias-resolvidas.md` (e registre a versão no `CHANGELOG.md`).
 
+**Leilão que dura mais de um dia só aparece em um dia (v0.185.4)** — o Acervo do Garimpeiro (leilão 66561) é
+anunciado como "hoje e amanhã", mas a listagem da LeilõesBR traz uma única data por leilão (30/10), então os
+lotes só aparecem nesse dia. Falta descobrir se o início/fim real vem do catálogo da casa (responde 403 ao IP do
+ambiente) ou de outro campo da listagem e, se vier, repetir/estender o leilão nos dias intermediários.
+
 **Interface mobile — o que ficou fora da v1 (v0.108.0)** — referência: protótipo aprovado
 (artefato "Garimpo Mobile Protótipo") e `docs/areas/ui.md`, seção "Interface mobile".
 

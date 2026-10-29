@@ -23,6 +23,14 @@ export const VINYL_CATEGORY = "|446973636F732064652056696E696C|";
 // categoria "Disco de Vinil": os LPs ficam soltos ali, misturados com CD/DVD/K7 (v0.152.0).
 const MUSIC_CATEGORY = "|4DFA73696361|";
 
+// Categoria "Colecionismo" (hex latin1). O Acervo do Garimpeiro (leilão 66561, 116+ LPs) cadastra os
+// discos AQUI — não está nas galerias de "Discos de Vinil" nem de "Música", então nenhuma varredura
+// o via (v0.185.4). A categoria é geral (158 casas, 98 fora das duas listas de vinil), então não
+// varremos galeria por galeria: busca textual dentro dela (`COLLECTIBLES_QUERIES`) + `isVinylTitle`.
+const COLLECTIBLES_CATEGORY = "|436F6C6563696F6E69736D6F|";
+const COLLECTIBLES_QUERIES = ["vinil", "disco"] as const;
+const SEARCH_GALLERY_PREFIX = "busca:";
+
 const PER_PAGE = 126;
 
 export const WINDOW_DAYS = 5; // quantos dias de leilões trazer (hoje + próximos)
@@ -380,23 +388,100 @@ type GalleryScanStats = {
   emptyPages: number[];
 };
 
+type ListingPass = {
+  tp: string | null;
+  pesquisa?: string;
+  ga?: string;
+  accept: (title: string) => boolean;
+};
+
+/** Acumulador de uma varredura de listagem (uma ou mais passadas). */
+type ScanAcc = {
+  byId: Map<string, VinylLot>;
+  failedPages: string[];
+  emptyPages: number[];
+  pages: number;
+  cards: number;
+  scanned: number;
+  truncated: boolean;
+};
+
+function newScanAcc(): ScanAcc {
+  return {
+    byId: new Map(),
+    failedPages: [],
+    emptyPages: [],
+    pages: 0,
+    cards: 0,
+    scanned: 0,
+    truncated: false,
+  };
+}
+
+function accStats(acc: ScanAcc): Omit<GalleryScanStats, "code" | "name"> {
+  return {
+    pages: acc.pages,
+    scanned: acc.scanned,
+    truncated: acc.truncated,
+    cards: acc.cards,
+    kept: acc.byId.size,
+    failedPages: acc.failedPages,
+    emptyPages: acc.emptyPages,
+  };
+}
+
+/**
+ * Uma passada sobre a listagem (`busca_andamento.asp`): lê da ÚLTIMA página pra trás (a listagem
+ * vem do dia mais distante pro mais próximo), guarda os cards da janela que `pass.accept` aceita
+ * e para depois de 2 páginas SEGUIDAS inteiras além da janela. `deadline` corta de vez.
+ */
+async function scanListingPass(
+  acc: ScanAcc,
+  pass: ListingPass,
+  range: { start: string; end: string },
+  deadline: number,
+): Promise<void> {
+  const pesquisa = pass.pesquisa ?? "";
+  const firstHtml = await fetchPageSearch(1, pesquisa, pass.tp, pass.ga);
+  const total = lastPage(firstHtml);
+  acc.pages = Math.max(acc.pages, total);
+  let beyondStreak = 0;
+  for (let page = total, done = 0; page >= 1 && done < MAX_PAGES; page -= 1, done += 1) {
+    if (page < total && Date.now() > deadline) {
+      acc.truncated = true;
+      break;
+    }
+    acc.scanned += 1;
+    let html: string;
+    try {
+      html = page === 1 ? firstHtml : await fetchPageSearch(page, pesquisa, pass.tp, pass.ga);
+    } catch (error) {
+      acc.failedPages.push(`${page}: ${(error as Error)?.message ?? "falha"}`);
+      continue;
+    }
+    const lots = parseCards(html);
+    if (!lots.length) acc.emptyPages.push(page);
+    acc.cards += lots.length;
+    beyondStreak = lots.length && lots.every((l) => l.dayKey > range.end) ? beyondStreak + 1 : 0;
+    if (beyondStreak >= 2) break;
+    for (const lot of lots) {
+      if (lot.dayKey < range.start || lot.dayKey > range.end) continue;
+      if (!pass.accept(lot.title)) continue;
+      acc.byId.set(lot.id, lot);
+    }
+  }
+}
+
+function scanWindow(): { start: string; end: string } {
+  const days = upcomingDayKeys(WINDOW_DAYS);
+  return { start: days[0]!, end: days[days.length - 1]! };
+}
+
 async function listGalleryAuctions(
   galleryCode: string,
   deadline = Number.POSITIVE_INFINITY,
   scope: { core: boolean; music: boolean } = { core: true, music: false },
 ): Promise<{ lots: VinylLot[]; stats: Omit<GalleryScanStats, "code" | "name"> }> {
-  const days = upcomingDayKeys(WINDOW_DAYS);
-  const windowStart = days[0]!;
-  const windowEnd = days[days.length - 1]!;
-
-  const byId = new Map<string, VinylLot>();
-  const failedPages: string[] = [];
-  const emptyPages: number[] = [];
-  let pages = 0;
-  let cards = 0;
-  let scanned = 0;
-  let truncated = false;
-
   // Duas passadas por galeria (v0.128.1):
   //  1. COM `tp=` da categoria "Disco de Vinil" travado — é o que o filtro do site mostra, então
   //     todo lote já é vinil e só descartamos CD/DVD/K7 (`looksNonVinyl`, permissivo). Cobre casas
@@ -408,55 +493,44 @@ async function listGalleryAuctions(
   //     LPs em "Música" junto com CD/DVD/K7 (Ana Mello). Poucas páginas (só música da casa), por
   //     isso roda antes da passada 2, que varre a galeria inteira.
   // Sem `tp=` uma galeria generalista pode ter dezenas de páginas e, com o intervalo obrigatório
-  // entre requisições (`listingFetch`), cada uma custa ~3-4s. A listagem vem do dia mais distante
-  // (página 1) pro mais próximo (última), e varremos da última pra trás: depois de 2 páginas
-  // SEGUIDAS inteiras além da janela, o resto não interessa. `deadline` corta de vez se o
+  // entre requisições (`listingFetch`), cada uma custa ~3-4s. `deadline` corta de vez se o
   // orçamento do bloco (`scanGalleries`) estourar — a passada 1 (a que importa) roda primeiro.
-  const passes: { tp: string | null; accept: (title: string) => boolean }[] = [
-    { tp: VINYL_CATEGORY, accept: (title) => !looksNonVinyl(title) },
-    { tp: MUSIC_CATEGORY, accept: isVinylTitle },
-    { tp: null, accept: isVinylTitle },
+  const passes: ListingPass[] = [
+    { tp: VINYL_CATEGORY, ga: galleryCode, accept: (title) => !looksNonVinyl(title) },
+    { tp: MUSIC_CATEGORY, ga: galleryCode, accept: isVinylTitle },
+    { tp: null, ga: galleryCode, accept: isVinylTitle },
   ];
   // `scope.music`: só a casa que aparece na lista de "Música" roda a passada de Música (as demais,
   // ex.: Abreu, gastariam orçamento de tempo à toa e cortariam a passada 2). `scope.core`: só a casa
   // que aparece na lista de "Discos de Vinil" roda as outras passadas — quem só está em Música tem
   // os LPs lá, e a passada 2 varreria o acervo inteiro à toa.
   const active = passes.filter((p) => (p.tp === MUSIC_CATEGORY ? scope.music : scope.core));
+  const acc = newScanAcc();
+  const range = scanWindow();
   for (const pass of active) {
-    if (truncated) break;
-    const firstHtml = await fetchPageSearch(1, "", pass.tp, galleryCode);
-    const total = lastPage(firstHtml);
-    pages = Math.max(pages, total);
-    let beyondStreak = 0;
-    for (let page = total, done = 0; page >= 1 && done < MAX_PAGES; page -= 1, done += 1) {
-      if (page < total && Date.now() > deadline) {
-        truncated = true;
-        break;
-      }
-      scanned += 1;
-      let html: string;
-      try {
-        html = page === 1 ? firstHtml : await fetchPageSearch(page, "", pass.tp, galleryCode);
-      } catch (error) {
-        failedPages.push(`${page}: ${(error as Error)?.message ?? "falha"}`);
-        continue;
-      }
-      const lots = parseCards(html);
-      if (!lots.length) emptyPages.push(page);
-      cards += lots.length;
-      beyondStreak = lots.length && lots.every((l) => l.dayKey > windowEnd) ? beyondStreak + 1 : 0;
-      if (beyondStreak >= 2) break;
-      for (const lot of lots) {
-        if (lot.dayKey < windowStart || lot.dayKey > windowEnd) continue;
-        if (!pass.accept(lot.title)) continue;
-        byId.set(lot.id, lot);
-      }
-    }
+    if (acc.truncated) break;
+    await scanListingPass(acc, pass, range, deadline);
   }
-  return {
-    lots: [...byId.values()],
-    stats: { pages, scanned, truncated, cards, kept: byId.size, failedPages, emptyPages },
-  };
+  return { lots: [...acc.byId.values()], stats: accStats(acc) };
+}
+
+/**
+ * "Galeria virtual" de busca textual na categoria Colecionismo (v0.185.4): casas que cadastram os
+ * LPs ali (Acervo do Garimpeiro) não aparecem em nenhuma lista de galerias de vinil. Filtro
+ * estrito por título (`isVinylTitle`), pois a categoria é geral.
+ */
+async function listCollectiblesSearch(
+  query: string,
+  deadline: number,
+): Promise<{ lots: VinylLot[]; stats: Omit<GalleryScanStats, "code" | "name"> }> {
+  const acc = newScanAcc();
+  await scanListingPass(
+    acc,
+    { tp: COLLECTIBLES_CATEGORY, pesquisa: query, accept: isVinylTitle },
+    scanWindow(),
+    deadline,
+  );
+  return { lots: [...acc.byId.values()], stats: accStats(acc) };
 }
 
 /**
@@ -483,7 +557,16 @@ export async function scanGalleries(
   const vinylGalleries = (await listGalleries(tp)).galleries;
   const withMusic = tp === VINYL_CATEGORY;
   const musicGalleries = withMusic ? (await listGalleries(MUSIC_CATEGORY)).galleries : [];
-  const galleries = mergeGalleries(vinylGalleries, musicGalleries);
+  // Buscas textuais em Colecionismo entram como "galerias virtuais" no fim da fila (v0.185.4): o
+  // cursor e o orçamento de tempo valem pra elas como pra qualquer casa. Só na varredura padrão.
+  const collectibles: GalleryEntry[] = withMusic
+    ? COLLECTIBLES_QUERIES.map((q) => ({
+        code: `${SEARCH_GALLERY_PREFIX}${q}`,
+        name: `Colecionismo (busca: ${q})`,
+        count: null,
+      }))
+    : [];
+  const galleries = mergeGalleries(vinylGalleries, musicGalleries, collectibles);
   const vinylCodes = new Set(vinylGalleries.map((g) => g.code));
   const musicCodes = new Set(musicGalleries.map((g) => g.code));
   const total = galleries.length;
@@ -506,10 +589,15 @@ export async function scanGalleries(
     if (processed > 0 && Date.now() - started > CHUNK_BUDGET_MS * 0.6) break;
     processed += 1;
     try {
-      const { lots, stats: s } = await listGalleryAuctions(gallery.code, hardDeadline, {
-        core: !withMusic || vinylCodes.has(gallery.code),
-        music: musicCodes.has(gallery.code),
-      });
+      const { lots, stats: s } = gallery.code.startsWith(SEARCH_GALLERY_PREFIX)
+        ? await listCollectiblesSearch(
+            gallery.code.slice(SEARCH_GALLERY_PREFIX.length),
+            hardDeadline,
+          )
+        : await listGalleryAuctions(gallery.code, hardDeadline, {
+            core: !withMusic || vinylCodes.has(gallery.code),
+            music: musicCodes.has(gallery.code),
+          });
       stats.push({ code: gallery.code, name: gallery.name, ...s });
       for (const lot of lots) {
         byId.set(lot.id, lot);
