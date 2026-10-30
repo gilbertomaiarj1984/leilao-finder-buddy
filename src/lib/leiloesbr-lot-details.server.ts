@@ -28,7 +28,7 @@ import { auctionHouseDomain } from "./vinyl-parse";
  * nunca para a listagem inteira.
  */
 
-type LotDetails = { currentValue?: string; nextBid?: string; sold?: string };
+type LotDetails = { currentValue?: string; nextBid?: string; sold?: string; bids?: number };
 
 /** Monta a URL do `peca.asp` no domínio da casa a partir da URL do lote + idPeca. */
 function pecaUrl(lotUrl: string, idPeca: string): string | null {
@@ -121,6 +121,18 @@ function parseSold(html: string): string | undefined {
   return parseSoldOldTemplate(html);
 }
 
+/**
+ * Nº de lances do lote, para casas cujo catálogo não traz `QTDLANCE` (RT Leilões e Artes): a
+ * página do lote mostra "Histórico de lances: <a>10 lance(s)</a>". Sem o rótulo (nenhum lance
+ * ainda) devolve `undefined`. Também aceita o campo `QTDLANCE` do JSON `loadData`, quando existe.
+ */
+export function parseBidCount(html: string): number | undefined {
+  const m =
+    html.match(/Hist[óo]rico\s+de\s+lances[\s\S]{0,400}?(\d+)\s*lance\(s\)/i)?.[1] ??
+    html.match(/"QTDLANCE"\s*:\s*"?(\d+)/)?.[1];
+  return m === undefined ? undefined : Number(m);
+}
+
 async function fetchOne(target: {
   id: string;
   idPeca: string;
@@ -141,7 +153,11 @@ async function fetchOne(target: {
     if (nextBid) details.nextBid = nextBid;
     const sold = parseSold(html);
     if (sold) details.sold = sold;
-    return details.currentValue || details.nextBid || details.sold ? [target.id, details] : null;
+    const bids = parseBidCount(html);
+    if (bids !== undefined) details.bids = bids;
+    return details.currentValue || details.nextBid || details.sold || bids !== undefined
+      ? [target.id, details]
+      : null;
   } catch {
     return null;
   }

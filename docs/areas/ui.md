@@ -793,6 +793,7 @@ como histórico). A linha da casa agora só tem `PresencialLink` (`presencial-li
   (`unsold-lots.server.ts`) ainda confere os candidatos na `peca.asp` de cada lote (`fetchLotDetails`,
   até 60 por rodada; "vendido" fica memorizado, "sem venda" vale 2 min). Sem a RT acessível daqui, a
   causa exata não foi reproduzida — se ainda aparecer lote vendido, olhar o JSON cru do catálogo dele.
+- **Catálogo sem `QTDLANCE` (v0.186.1, RT Leilões e Artes):** a RT não manda a contagem de lances no catálogo (só a página do lote mostra "Histórico de lances: N lance(s)"), então `isUnsoldCatalogLot` via tudo como sem lance. `dropSoldOrBidOnPage` (`unsold-lots.server.ts`) confere na `peca.asp` (`parseBidCount`, `leiloesbr-lot-details.server.ts`) os candidatos sem `QTDLANCE` — fora do ao vivo (até 300) e no ao vivo (até 60, todos os candidatos) — e descarta venda OU lance. Casas que trazem `QTDLANCE` não geram requisições extras.
 - **Removido:** override manual "marcar encerrado" (`manually-finished-auctions.ts`,
   `use-manually-finished.ts`, botões 🏁/"reabrir") — a lista não depende mais de sinal de fim, já
   vai aparecendo por casa. `trackedAuctionStatus` perdeu o sinal `manual`.
