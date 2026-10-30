@@ -138,3 +138,8 @@ agenda.143-95-214-240.sslip.io {
 		health_timeout 5s
 	}
 }
+
+# Sites avulsos de outros projetos do VPS: cada `*.caddy` em `./sites` (diretório só do VPS,
+# fora do repo, montado em /etc/caddy/sites — ver `docker-compose.yml`) vira um bloco de site
+# aqui, sem precisar editar este arquivo. Glob sem nenhum arquivo é aceito pelo Caddy (no-op).
+import /etc/caddy/sites/*.caddy
