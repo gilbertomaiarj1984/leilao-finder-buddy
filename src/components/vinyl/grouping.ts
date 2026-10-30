@@ -52,6 +52,11 @@ function loteNum(value: string): number {
   return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
 }
 
+/** Ordena por nº do lote crescente (lote vazio/não numérico no fim); não altera o array de entrada. */
+export function sortByLote<T extends { lote: string | null }>(items: readonly T[]): T[] {
+  return [...items].sort((a, b) => loteNum(a.lote ?? "") - loteNum(b.lote ?? ""));
+}
+
 /**
  * Minutos desde meia-noite a partir de um horário tipo "19:30h"/"9h"/"9:30". Sem horário
  * (ou ilegível) vai para o FIM (+Infinity), igual ao `loteNum` — usado para ordenar casas

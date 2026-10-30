@@ -8,6 +8,7 @@ import {
   groupWatchedByHouseCatalog,
   houseStatKind,
   matchesStatFilter,
+  sortByLote,
   splitByAuction,
 } from "../src/components/vinyl/grouping";
 
@@ -200,5 +201,18 @@ describe("splitByAuction", () => {
     const groups = splitByAuction([mk("1", "10h", "a"), mk("1", "10h", "b")]);
     expect(groups).toHaveLength(1);
     expect(groups[0]!.lots).toHaveLength(2);
+  });
+});
+
+describe("sortByLote", () => {
+  test("ordena pelo nº do lote (numérico) e deixa vazio/nulo no fim", () => {
+    const items = [{ lote: "10" }, { lote: null }, { lote: "2" }, { lote: "" }, { lote: "1" }];
+    expect(sortByLote(items).map((i) => i.lote)).toEqual(["1", "2", "10", null, ""]);
+  });
+
+  test("não altera o array de entrada", () => {
+    const items = [{ lote: "3" }, { lote: "1" }];
+    sortByLote(items);
+    expect(items.map((i) => i.lote)).toEqual(["3", "1"]);
   });
 });

@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Library,
+  ListFilter,
   LogOut,
   PackageOpen,
   ShoppingBag,
@@ -70,6 +71,9 @@ export function DashboardHeader({
     setWatchedViewDay,
     setBidsViewDay,
     unsoldViewDay,
+    noBidFilter,
+    setNoBidFilter,
+    tab,
   } = d;
   // Janela de dias visíveis (5 por vez, página `dayPage`); as setas paginam de 5 em 5 por
   // 2 páginas de histórico, a de hoje e 2 de futuro (`day-bar.ts`).
@@ -241,6 +245,27 @@ export function DashboardHeader({
                       {unsoldHouses}
                     </button>
                   ) : null}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const on = noBidFilter && tab === `day-${index}`;
+                      setWatchedViewDay(null);
+                      setBidsViewDay(null);
+                      setUnsoldViewDay(null);
+                      setNoBidFilter(!on);
+                      setTab(`day-${index}`);
+                    }}
+                    aria-pressed={noBidFilter && tab === `day-${index}`}
+                    title="Filtrar a listagem: só lotes sem lance"
+                    aria-label={`Filtrar ${dayLabel(day, index - TODAY_INDEX)}: só lotes sem lance`}
+                    className={`inline-flex shrink-0 items-center rounded-md px-2 py-1 outline outline-1 transition-colors ${
+                      noBidFilter && tab === `day-${index}`
+                        ? "bg-emerald-500 text-white outline-emerald-500"
+                        : "bg-card text-emerald-500 outline-emerald-500/30 hover:bg-emerald-500 hover:text-white"
+                    }`}
+                  >
+                    <ListFilter className="h-4 w-4" />
+                  </button>
                 </Fragment>
               );
             })}

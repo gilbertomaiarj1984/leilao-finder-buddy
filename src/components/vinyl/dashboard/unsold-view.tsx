@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { sortByLote } from "@/components/vinyl/grouping";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { lotOpenUrl, normalizeForMatch } from "@/lib/vinyl-parse";
 
@@ -44,6 +45,9 @@ function UnsoldLotCard({ lot, fresh }: { lot: UnsoldLotItem; fresh: boolean }) {
           <p className="truncate text-xs font-medium text-foreground">{lot.artist}</p>
         ) : null}
         <p className="line-clamp-2 text-xs leading-snug text-muted-foreground">{lot.title}</p>
+        {lot.price ? (
+          <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{lot.price}</p>
+        ) : null}
       </div>
     </a>
   );
@@ -181,7 +185,7 @@ export function UnsoldView({
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {lots.map((lot) => (
+              {sortByLote(lots).map((lot) => (
                 <UnsoldLotCard key={lot.idPeca} lot={lot} fresh={fresh.has(lot.idPeca)} />
               ))}
             </div>

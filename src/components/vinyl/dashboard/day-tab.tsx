@@ -42,6 +42,7 @@ import {
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
 import { PresencialLink } from "@/components/vinyl/presencial-link";
+import { useDayNoBid } from "@/components/vinyl/use-day-no-bid";
 import { countUnsoldHouses } from "@/components/vinyl/use-today-unsold";
 import { DAY_PAGE, TODAY_INDEX } from "@/lib/day-bar";
 import { auctionDayPassed, UNCLASSIFIED_LABEL } from "@/lib/vinyl-parse";
@@ -124,6 +125,12 @@ function AuctionSection<T extends { idLeilao: string; time: string; url: string;
 }
 
 export function DayTab({ d, day, index }: { d: DashboardData; day: string; index: number }) {
+  // Filtro "Sem lance" (ícone verde): só consulta os catálogos do dia aberto com o filtro ligado.
+  const noBid = useDayNoBid(
+    d.lots.data?.lots ?? [],
+    day,
+    d.noBidFilter && d.tab === `day-${index}`,
+  );
   // Aba de dia inativa: o Radix não renderiza o conteúdo (nem os portais lá dentro) de uma
   // `TabsContent` fora da aba ativa, então pula todo o filtro/agrupamento dos lotes dela —
   // antes os 5 dias eram recalculados a cada render da tela.
@@ -232,9 +239,11 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     ? dayLots.filter((lot) => (lot.artist || UNCLASSIFIED_LABEL) === artistFilter)
     : dayLots;
   // Filtro pelos badges (vigia / ganhando / coberto) — ver `statFilter` em use-dashboard-data.
-  const visibleLots = byArtist.filter((lot) =>
-    matchesStatFilter(lot.idPeca, watchedIds, bidStatusById, statFilter),
-  );
+  const noBidActive = d.noBidFilter;
+  const visibleLots = byArtist
+    .filter((lot) => matchesStatFilter(lot.idPeca, watchedIds, bidStatusById, statFilter))
+    // Sem lance: enquanto os catálogos carregam (`ids` nulo) a lista fica vazia, com aviso.
+    .filter((lot) => !noBidActive || Boolean(noBid.ids?.has(lot.idPeca)));
   const groups = groupByHouse(visibleLots);
   const isUnsoldView = unsoldViewDay === day && index === TODAY_INDEX;
   const isWatchedView = watchedViewDay === day;
@@ -380,9 +389,27 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                       Limpar filtro de status
                     </Button>
                   ) : null}
+                  {noBidActive ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-emerald-500 text-emerald-500"
+                      onClick={() => d.setNoBidFilter(false)}
+                      title="Remover o filtro e voltar à listagem completa"
+                    >
+                      Sem lance ✕
+                    </Button>
+                  ) : null}
                   <span className="text-xs text-muted-foreground">
-                    {visibleLots.length} lote(s) em {groups.length} casa(s)
+                    {noBidActive && noBid.loading
+                      ? "Buscando lotes sem lance nos catálogos…"
+                      : `${visibleLots.length} lote(s) em ${groups.length} casa(s)`}
                   </span>
+                  {noBidActive && noBid.skipped > 0 ? (
+                    <span className="text-xs text-amber-500">
+                      {noBid.skipped} lote(s) de casas sem catálogo consultável ficaram de fora
+                    </span>
+                  ) : null}
                 </>
               ) : isUnsoldView ? (
                 <span className="text-xs text-muted-foreground">
@@ -595,15 +622,19 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
       ) : groups.length === 0 ? (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            {searchNorm
-              ? "Nenhum lote corresponde à busca neste dia."
-              : statFilter.size > 0
-                ? "Nenhum lote com este filtro de status neste dia."
-                : artistFilter
-                  ? "Nenhum lote deste artista neste dia."
-                  : rawDay.length === 0
-                    ? "Nenhum disco de vinil na varredura para este dia. Leilões que já estão ao vivo somem da listagem pública — tente “Atualizar tudo”."
-                    : `Todos os ${finishedCount} leilão(ões) deste dia já começaram há mais de 3h.`}
+            {noBidActive && noBid.loading
+              ? "Buscando lotes sem lance nos catálogos…"
+              : searchNorm
+                ? "Nenhum lote corresponde à busca neste dia."
+                : noBidActive
+                  ? "Nenhum lote sem lance neste dia (todos já receberam lance)."
+                  : statFilter.size > 0
+                    ? "Nenhum lote com este filtro de status neste dia."
+                    : artistFilter
+                      ? "Nenhum lote deste artista neste dia."
+                      : rawDay.length === 0
+                        ? "Nenhum disco de vinil na varredura para este dia. Leilões que já estão ao vivo somem da listagem pública — tente “Atualizar tudo”."
+                        : `Todos os ${finishedCount} leilão(ões) deste dia já começaram há mais de 3h.`}
           </p>
           {!artistFilter && rawDay.length > 0 && !showFinished ? (
             <Button variant="outline" size="sm" onClick={() => toggleShowFinished(day)}>
