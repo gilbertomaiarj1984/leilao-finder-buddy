@@ -187,7 +187,8 @@ sobrescreve o `Caddyfile` dali. Já apagou blocos de outros projetos (backups `C
   só o bloco dele em `sites/`, e `deploy.yml`/`remote-deploy.sh` pararem de copiar/recarregar o Caddyfile
   global (passam a recarregar o proxy). Rever o `AGENTS.md` (regras de validar e recarregar o Caddyfile).
 - Antes: ver o que o `restaurar-painel.sh` faz (ele não pode reinserir o bloco `precos` no Caddyfile) e
-  quem mais escreve no Caddyfile; tirar `sites/` da pasta do garimpo via `CADDY_SITES_DIR` já ajuda.
+  quem mais escreve no Caddyfile; tirar `sites/` da pasta do garimpo via `CADDY_SITES_DIR` já ajuda — mas
+  o `restaurar-painel.sh` (repo do rastreador) assume `<pasta do Caddyfile>/sites` e precisa aprender o novo caminho.
 
 ## Revisão geral (21/10/2026) — o que o PR de infra deixou de fora
 

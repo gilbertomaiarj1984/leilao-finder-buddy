@@ -43,7 +43,8 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Blocos de site avulsos (`import /etc/caddy/sites/*.caddy` no fim do Caddyfile); o
       # diretório mora só no VPS. Por padrão fica ao lado do compose (`./sites`); para tirá-lo da
-      # pasta do garimpo, defina `CADDY_SITES_DIR` (caminho absoluto) no `.env` do VPS.
+      # pasta do garimpo, defina `CADDY_SITES_DIR` (caminho absoluto) no `.env` do VPS (e ajuste o
+      # `restaurar-painel.sh` do rastreador, que hoje procura em <pasta do Caddyfile>/sites).
       - ${CADDY_SITES_DIR:-./sites}:/etc/caddy/sites:ro
       - collection_data:/data/collection:ro
       - caddy_data:/data
