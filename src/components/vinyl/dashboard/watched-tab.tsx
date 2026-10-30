@@ -26,6 +26,7 @@ import {
   catalogHasDay,
   computeHouseStats,
   dayLabel,
+  shortDayLabel,
   groupWatchedByArtist,
   groupWatchedByHouseCatalog,
   matchesStatFilter,
@@ -47,7 +48,7 @@ import type { DashboardData } from "./use-dashboard-data";
 import { ConfirmMoveDialog, WatchedLotDialog, WatchedArtistDialog } from "./watched-artist-dialog";
 
 const chipClass = (active: boolean) =>
-  `inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+  `inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium transition-colors ${
     active
       ? "border-primary bg-primary text-primary-foreground"
       : "border-border text-muted-foreground hover:border-primary hover:text-primary"
@@ -59,7 +60,7 @@ const AUTO_REFRESH_MS = 60_000;
 const ACCOUNT_REFRESH_EVERY = 3;
 
 const smallButtonClass =
-  "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary";
+  "inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary";
 
 /** "01/10" ou "01/10 a 03/10" (catálogo multi-dia) a partir dos dayKeys yyyy-mm-dd. */
 function daysRangeLabel(dayKeys: string[]): string {
@@ -421,114 +422,125 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
 
           return (
             <div className="space-y-6">
-              <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Visão">
-                <span className="text-xs text-muted-foreground">Visão</span>
-                <button
-                  type="button"
-                  aria-pressed={view === "casa"}
-                  onClick={() => setView("casa")}
-                  className={chipClass(view === "casa")}
-                >
-                  Por casa
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={view === "artista"}
-                  onClick={() => setView("artista")}
-                  className={chipClass(view === "artista")}
-                >
-                  Por artista
-                </button>
-                <button
-                  type="button"
-                  onClick={() => refreshWatchedAndBids()}
-                  disabled={refreshingWatchedAndBids}
-                  title="Atualizar vigiados e lances agora (atualiza sozinho a cada minuto nesta tela)"
-                  aria-label="Atualizar vigiados e lances"
-                  className={`${chipClass(false)} disabled:opacity-60`}
-                >
-                  {refreshingWatchedAndBids ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4" />
-                  )}
-                  Atualizar
-                </button>
-              </div>
-              <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Dia">
-                <button
-                  type="button"
-                  aria-pressed={activeDay === "all"}
-                  onClick={() => setSelectedDay("all")}
-                  className={chipClass(activeDay === "all")}
-                >
-                  Todos
-                  <span className="text-xs tabular-nums opacity-80">{lotCount("all")}</span>
-                </button>
-                {dayKeys.map((dayKey) => {
-                  const idx = days.indexOf(dayKey);
-                  return (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+                  <div
+                    className="flex flex-wrap items-center gap-1.5"
+                    role="group"
+                    aria-label="Visão"
+                  >
+                    <span className="text-xs text-muted-foreground">Visão</span>
                     <button
-                      key={dayKey}
                       type="button"
-                      aria-pressed={activeDay === dayKey}
-                      onClick={() => setSelectedDay(dayKey)}
-                      className={chipClass(activeDay === dayKey)}
+                      aria-pressed={view === "casa"}
+                      onClick={() => setView("casa")}
+                      className={chipClass(view === "casa")}
                     >
-                      {dayLabel(dayKey, idx >= 0 ? idx : 99)}
-                      <span className="text-xs tabular-nums opacity-80">{lotCount(dayKey)}</span>
+                      Por casa
                     </button>
-                  );
-                })}
-                {hasFutureDays ? (
+                    <button
+                      type="button"
+                      aria-pressed={view === "artista"}
+                      onClick={() => setView("artista")}
+                      className={chipClass(view === "artista")}
+                    >
+                      Por artista
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => refreshWatchedAndBids()}
+                      disabled={refreshingWatchedAndBids}
+                      title="Atualizar vigiados e lances agora (atualiza sozinho a cada minuto nesta tela)"
+                      aria-label="Atualizar vigiados e lances"
+                      className={`${chipClass(false)} disabled:opacity-60`}
+                    >
+                      {refreshingWatchedAndBids ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      )}
+                      Atualizar
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-[11px] text-muted-foreground">
+                      {view === "artista"
+                        ? `${artistGroups.length} artista(s)`
+                        : `${visible.length} casa(s) · ${catalogCount} catálogo(s)`}{" "}
+                      · {lotCount(activeDay)} lote(s) vigiado(s)
+                    </p>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => analyzeScope({ day: "", watched: true })}
+                        disabled={analyzing !== null}
+                        className={smallButtonClass}
+                      >
+                        {analyzing === "watched" ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-3.5 w-3.5" />
+                        )}
+                        Analisar vigiados
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openAllHouseSections(sectionKeys)}
+                        className={smallButtonClass}
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                        Abrir todas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => closeAllHouseSections(sectionKeys)}
+                        className={smallButtonClass}
+                      >
+                        <ChevronUp className="h-3.5 w-3.5" />
+                        Fechar todas
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Dia">
                   <button
                     type="button"
-                    aria-pressed={activeDay === FUTURE_TAB}
-                    onClick={() => setSelectedDay(FUTURE_TAB)}
-                    className={chipClass(activeDay === FUTURE_TAB)}
+                    aria-pressed={activeDay === "all"}
+                    onClick={() => setSelectedDay("all")}
+                    className={chipClass(activeDay === "all")}
                   >
-                    {FUTURE_LABEL}
-                    <span className="text-xs tabular-nums opacity-80">{lotCount(FUTURE_TAB)}</span>
+                    Todos
+                    <span className="text-xs tabular-nums opacity-80">{lotCount("all")}</span>
                   </button>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-muted-foreground">
-                  {view === "artista"
-                    ? `${artistGroups.length} artista(s)`
-                    : `${visible.length} casa(s) · ${catalogCount} catálogo(s)`}{" "}
-                  · {lotCount(activeDay)} lote(s) vigiado(s)
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => analyzeScope({ day: "", watched: true })}
-                    disabled={analyzing !== null}
-                    className={smallButtonClass}
-                  >
-                    {analyzing === "watched" ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Sparkles className="h-3.5 w-3.5" />
-                    )}
-                    Analisar vigiados
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openAllHouseSections(sectionKeys)}
-                    className={smallButtonClass}
-                  >
-                    <ChevronDown className="h-3.5 w-3.5" />
-                    Abrir todas
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => closeAllHouseSections(sectionKeys)}
-                    className={smallButtonClass}
-                  >
-                    <ChevronUp className="h-3.5 w-3.5" />
-                    Fechar todas
-                  </button>
+                  {dayKeys.map((dayKey) => {
+                    const idx = days.indexOf(dayKey);
+                    return (
+                      <button
+                        key={dayKey}
+                        type="button"
+                        aria-pressed={activeDay === dayKey}
+                        title={dayLabel(dayKey, idx >= 0 ? idx : 99)}
+                        onClick={() => setSelectedDay(dayKey)}
+                        className={chipClass(activeDay === dayKey)}
+                      >
+                        {shortDayLabel(dayKey, idx >= 0 ? idx : 99)}
+                        <span className="text-xs tabular-nums opacity-80">{lotCount(dayKey)}</span>
+                      </button>
+                    );
+                  })}
+                  {hasFutureDays ? (
+                    <button
+                      type="button"
+                      aria-pressed={activeDay === FUTURE_TAB}
+                      onClick={() => setSelectedDay(FUTURE_TAB)}
+                      className={chipClass(activeDay === FUTURE_TAB)}
+                    >
+                      {FUTURE_LABEL}
+                      <span className="text-xs tabular-nums opacity-80">
+                        {lotCount(FUTURE_TAB)}
+                      </span>
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
