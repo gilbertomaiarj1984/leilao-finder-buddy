@@ -73,7 +73,7 @@ versão obrigatório em todo PR, atualizar a documentação (página da área + 
   `purchases`, `lot-exclusion`, `leiloesbr-watch`, `auth`).
 - **Endpoint de cron fora das server functions**: `/api/cron` é tratado direto em
   `src/server.ts` (sem CSRF), protegido por `CRON_TOKEN` (header, comparação em tempo
-  constante). Disparado 3×/dia por `.github/workflows/refresh.yml`, com vários `step`s
+  constante). Disparado 4×/dia (6 em 6h) por `.github/workflows/refresh.yml`, com vários `step`s
   (`chunk`, `enrich`, `aiident`, `aieval`, `market`, `condition`, `sales`, `reident`, ...) —
   orquestração em `src/lib/cron.server.ts`.
 - **Scraping**: a listagem geral é varrida sem login (`publicFetch`) em blocos/chunks (nunca
