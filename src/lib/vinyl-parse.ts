@@ -581,8 +581,10 @@ const COMPILATION_SERIES_QUALIFIERS = new Set(["ouro", "prata", "bronze", "plati
 // Artista(s): [`Bezerra Da Silva`] | Ano: 1983 | Estilo(s): Samba". O artista mora no campo
 // "Artista(s)"/"Artista"/"Intérprete", NÃO no início — sem isso a heurística de candidato abaixo
 // pegava o 1º campo e o NOME DO ÁLBUM virava artista ("Produto do Morro | Código").
+// O rótulo pode vir sem "|" antes ("… | Código: 1030280 Artista(s): BETH CARVALHO", sem colchetes e
+// sem "|" depois): aceita espaço como fronteira e para o valor no próximo rótulo ("Ano:", "Estilo(s):").
 const STRUCTURED_ARTIST_FIELD_RE =
-  /(?:^|[|:])\s*(?:artista|artistas|artista\s*\(s\)|int[eé]rpretes?|int[eé]rprete\s*\(s\))\s*:\s*([^|]*)/i;
+  /(?:^|[|:\s])(?:artista|artistas|artista\s*\(s\)|int[eé]rpretes?|int[eé]rprete\s*\(s\))\s*:\s*((?:(?!\s+[\p{L}]+(?:\s*\(s\))?\s*:)[^|])*)/iu;
 
 /**
  * Artista do campo rotulado de um título-ficha ("... | Artista(s): [`X`] | ..."). Devolve o
@@ -590,7 +592,7 @@ const STRUCTURED_ARTIST_FIELD_RE =
  * title case; `null` quando o título não traz o campo (segue a heurística normal); "" quando
  * o campo existe mas está vazio.
  */
-function extractStructuredArtist(title: string): string | null {
+export function extractStructuredArtist(title: string): string | null {
   const m = title.match(STRUCTURED_ARTIST_FIELD_RE);
   if (!m) return null;
   const raw = m[1]!

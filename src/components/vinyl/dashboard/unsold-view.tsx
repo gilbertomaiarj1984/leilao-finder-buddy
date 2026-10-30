@@ -1,11 +1,12 @@
 import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, PackageOpen } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { lotOpenUrl, normalizeForMatch } from "@/lib/vinyl-parse";
 
-import type { TodayUnsoldHouse, UnsoldLotItem } from "../use-today-unsold";
+import { countUnsoldHouses, type TodayUnsoldHouse, type UnsoldLotItem } from "../use-today-unsold";
 
 /** Card compacto de um lote sem lance — mesmo espírito visual do `LotCard` (imagem + badge do
  * nº do lote + título), sem os controles de vigiar/lance. `fresh` destaca o lote recém-achado. */
@@ -108,6 +109,19 @@ export function UnsoldView({
         : h.lots,
     }))
     .filter(({ lots, h }) => !q || lots.length > 0 || !h.lots.length);
+  // Uma entrada por PREGÃO (`useTodayUnsold`); aqui agrupadas por casa, na ordem em que vieram.
+  const byHouse = new Map<string, typeof visible>();
+  for (const row of visible) {
+    const list = byHouse.get(row.h.house) ?? [];
+    list.push(row);
+    byHouse.set(row.h.house, list);
+  }
+  const toggle = (key: string) =>
+    setClosed((cur) => {
+      const next = new Set(cur);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
   const totalUnsold = houses.reduce((n, h) => n + h.lots.length, 0);
   const totalKnown = houses.reduce((n, h) => n + (h.total ?? 0), 0);
 
@@ -125,7 +139,7 @@ export function UnsoldView({
           <PackageOpen className="h-5 w-5 text-primary" /> Lotes sem lance · {dayLabel}
         </h2>
         <span className="text-xs text-muted-foreground">
-          {houses.length} casa(s) · {totalUnsold} lote(s) sem lance
+          {countUnsoldHouses(houses)} casa(s) · {totalUnsold} lote(s) sem lance
           {totalKnown ? ` de ${totalKnown}` : ""}
         </span>
       </div>
@@ -143,80 +157,133 @@ export function UnsoldView({
             : "Nenhum lote sem lance encontrado ainda. Eles aparecem aqui conforme os pregões avançam."}
         </p>
       ) : null}
-      {visible.map(({ h, lots }) => {
-        const open = !closed.has(h.idLeilao);
-        const live = h.status === "live";
+      {[...byHouse.entries()].map(([house, rows]) => {
+        const first = rows[0]!.h;
+        const multi = rows.length > 1;
+        const houseKey = multi ? `house|${house}` : first.idLeilao;
+        const houseOpen = !closed.has(houseKey);
+        const houseUnsold = rows.reduce((n, r) => n + r.h.lots.length, 0);
+        // Casa com mais de um pregão no dia: cabeçalho da casa + um bloco "Catálogo N" por pregão
+        // (mesmo desenho da listagem do dia e da aba Vigiados).
+        const renderBody = ({ h, lots }: (typeof rows)[number]) => {
+          const live = h.status === "live";
+          return h.loading && !h.lots.length ? (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {Array.from({ length: 5 }, (_, i) => (
+                <Skeleton key={i} className="h-40 w-full" />
+              ))}
+            </div>
+          ) : lots.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {live
+                ? "Nenhum lote sem lance até agora. Eles aparecem aqui conforme forem achados."
+                : "Todos os lotes desta casa tiveram lance."}
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {lots.map((lot) => (
+                <UnsoldLotCard key={lot.idPeca} lot={lot} fresh={fresh.has(lot.idPeca)} />
+              ))}
+            </div>
+          );
+        };
+        const countLabel = (h: TodayUnsoldHouse) =>
+          h.total !== null
+            ? `${h.lots.length} de ${h.total} sem lance`
+            : `${h.lots.length} sem lance`;
+        const statusLabel = (h: TodayUnsoldHouse) => {
+          const live = h.status === "live";
+          return (
+            <span
+              className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                live ? "text-primary" : "text-muted-foreground"
+              }`}
+            >
+              {live ? (
+                <span className="relative flex h-1.5 w-1.5" aria-hidden>
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/70" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+                </span>
+              ) : null}
+              {live ? "Ao vivo · buscando…" : "Encerrado"}
+            </span>
+          );
+        };
         return (
-          <section key={h.idLeilao} className="space-y-3">
+          <section key={houseKey} className="space-y-3">
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border pb-2">
               <button
                 type="button"
-                aria-expanded={open}
-                onClick={() =>
-                  setClosed((cur) => {
-                    const next = new Set(cur);
-                    if (!next.delete(h.idLeilao)) next.add(h.idLeilao);
-                    return next;
-                  })
-                }
+                aria-expanded={houseOpen}
+                onClick={() => toggle(houseKey)}
                 className="flex items-center gap-2 text-left"
               >
-                {open ? (
+                {houseOpen ? (
                   <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
                 ) : (
                   <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
                 )}
-                <span className="text-xl font-semibold tracking-tight">{h.house}</span>
+                <span className="text-xl font-semibold tracking-tight">{house}</span>
               </button>
-              <HouseUf house={h.house} uf={h.uf} className="text-sm" />
+              <HouseUf house={house} uf={first.uf} className="text-sm" />
+              {multi ? <Badge variant="outline">{rows.length} catálogos</Badge> : null}
               <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold">
-                {h.total !== null
-                  ? `${h.lots.length} de ${h.total} sem lance`
-                  : `${h.lots.length} sem lance`}
+                {multi ? `${houseUnsold} sem lance` : countLabel(first)}
               </span>
-              <span
-                className={`inline-flex items-center gap-1.5 text-xs font-medium ${
-                  live ? "text-primary" : "text-muted-foreground"
-                }`}
-              >
-                {live ? (
-                  <span className="relative flex h-1.5 w-1.5" aria-hidden>
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/70" />
-                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
-                  </span>
-                ) : null}
-                {live ? "Ao vivo · buscando…" : "Encerrado"}
-              </span>
+              {multi ? null : statusLabel(first)}
               <a
                 className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                href={h.catalogUrl ?? h.houseUrl}
+                href={multi ? first.houseUrl : (first.catalogUrl ?? first.houseUrl)}
                 target="_blank"
                 rel="noreferrer"
               >
                 site da casa <ExternalLink className="h-3 w-3" />
               </a>
             </div>
-            {open ? (
-              h.loading && !h.lots.length ? (
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                  {Array.from({ length: 5 }, (_, i) => (
-                    <Skeleton key={i} className="h-40 w-full" />
-                  ))}
-                </div>
-              ) : lots.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  {live
-                    ? "Nenhum lote sem lance até agora. Eles aparecem aqui conforme forem achados."
-                    : "Todos os lotes desta casa tiveram lance."}
-                </p>
-              ) : (
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                  {lots.map((lot) => (
-                    <UnsoldLotCard key={lot.idPeca} lot={lot} fresh={fresh.has(lot.idPeca)} />
-                  ))}
-                </div>
-              )
-            ) : null}
+            {!houseOpen ? null : multi ? (
+              <div className="space-y-6 border-l-2 border-border pl-3 sm:pl-5">
+                {rows.map((row) => {
+                  const catKey = `cat|${row.h.idLeilao}`;
+                  const catOpen = !closed.has(catKey);
+                  return (
+                    <div key={row.h.idLeilao} className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          aria-expanded={catOpen}
+                          onClick={() => toggle(catKey)}
+                          className="flex items-center gap-2 text-left"
+                        >
+                          {catOpen ? (
+                            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          )}
+                          <span className="text-base font-semibold text-foreground">
+                            Catálogo {row.h.idLeilao}
+                          </span>
+                        </button>
+                        <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold">
+                          {countLabel(row.h)}
+                        </span>
+                        {statusLabel(row.h)}
+                        <a
+                          className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                          href={row.h.catalogUrl ?? row.h.houseUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          ver catálogo <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                      {catOpen ? renderBody(row) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              renderBody(rows[0]!)
+            )}
           </section>
         );
       })}

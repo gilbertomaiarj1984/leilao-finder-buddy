@@ -3,6 +3,11 @@
 > Só o que ainda está em aberto. Ao resolver um item, mova-o para
 > `docs/arquivo/pendencias-resolvidas.md` (e registre a versão no `CHANGELOG.md`).
 
+**Leilão que dura mais de um dia só aparece em um dia (v0.185.4)** — o Acervo do Garimpeiro (leilão 66561) é
+anunciado como "hoje e amanhã", mas a listagem da LeilõesBR traz uma única data por leilão (30/10), então os
+lotes só aparecem nesse dia. Falta descobrir se o início/fim real vem do catálogo da casa (responde 403 ao IP do
+ambiente) ou de outro campo da listagem e, se vier, repetir/estender o leilão nos dias intermediários.
+
 **Interface mobile — o que ficou fora da v1 (v0.108.0)** — referência: protótipo aprovado
 (artefato "Garimpo Mobile Protótipo") e `docs/areas/ui.md`, seção "Interface mobile".
 
@@ -164,6 +169,26 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
 > de mercado no lugar da gravada pela IA, blocos «em breve» no painel. Lista completa de pendências e dos testes
 > manuais: `docs/checklist-ia.md`.
 
+## Caddy em stack própria (levantado em 30/10/2026)
+
+O Caddy do VPS atende vários projetos (garimpo, AgendaBoa, pdf-unite, o rastreador de preços, Dokploy),
+mas a configuração dele mora na pasta do garimpo (`/home/deploy/garimpo`) e todo deploy do garimpo
+sobrescreve o `Caddyfile` dali. Já apagou blocos de outros projetos (backups `Caddyfile.bak-*` e o script
+`restaurar-painel.sh` do rastreador existem por causa disso). O `import /etc/caddy/sites/*.caddy`
+(v0.185.5) é o paliativo; o desenho final é um proxy separado:
+
+- Pasta própria (ex.: `/home/deploy/proxy`) com `docker-compose.yml`, `Caddyfile` e `sites/`; cada projeto
+  só deposita o seu `.caddy`. O garimpo deixa de ser dono da configuração dos outros.
+- **Migração (janela combinada, breve indisponibilidade):** parar o `garimpo-caddy-1`, subir o novo nas
+  portas 80/443, levar os volumes `caddy_data` (certificados — evita estourar o limite do Let's Encrypt) e
+  `caddy_config`, e ligar o novo Caddy às redes `proxy`, `dokploy-network` e à rede do garimpo (o `app:3000`
+  hoje só é alcançável por ela; alternativa: pôr o `app` também na `proxy`).
+- Ajustes no repo: tirar o serviço `caddy` do `docker-compose.yml` do garimpo, o `Caddyfile` do garimpo virar
+  só o bloco dele em `sites/`, e `deploy.yml`/`remote-deploy.sh` pararem de copiar/recarregar o Caddyfile
+  global (passam a recarregar o proxy). Rever o `AGENTS.md` (regras de validar e recarregar o Caddyfile).
+- Antes: ver o que o `restaurar-painel.sh` faz (ele não pode reinserir o bloco `precos` no Caddyfile) e
+  quem mais escreve no Caddyfile; tirar `sites/` da pasta do garimpo via `CADDY_SITES_DIR` já ajuda.
+
 ## Revisão geral (21/10/2026) — o que o PR de infra deixou de fora
 
 - **Temperatura da Claude (IA8)**: não fixada; testar se o Haiku 5.5 aceita com `thinking` desligado.
@@ -221,3 +246,9 @@ Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score
   (`SELECT id, match_info FROM lot_market WHERE match_info->>'format' <> 'lp' OR match_info->>'via' = 'any'`).
 - **Frete do Discogs real (resta da unificação, v0.167.0)**: a regra de frete/comissão é única em todo o app; o
   frete do lado do Discogs ainda é a estimativa fixa do painel (R$ 25/35), não a mediana real dos anúncios BR.
+
+## Martini Leilões — pregão que não começou e "Vendido" não detectado (relato de 28/10/2026)
+
+- **"Ao vivo agora" sem o pregão ter começado:** `trackedAuctionStatus` (`vinyl-parse.ts`) marca como ao vivo todo pregão cujo horário passou e cujo presencial não respondeu (decisão da v0.112.2, sem janela de horas). A Martini roda os pregões em sequência (um com 244 lotes e outro com 34 no mesmo dia), então o segundo fica "Ao vivo agora" mesmo esperando na fila. Ideia: distinguir "presencial respondeu que não há pregão" (`np`) de falha de rede (hoje os dois viram `null` em `parsePregaoResponse`) e mostrar "Aguardando início".
+- **Aviso de pregão começando só olha o horário listado** (`watch-alerts.ts`): com horário errado dispara na hora errada ou não dispara. Ideia: o step `watchalert` consultar o presencial dos pregões vigiados de hoje e avisar quando o pregão realmente começa (dedupe próprio em `app_state`).
+- **Vigiados da Martini sem "Vendido":** o detector (`leiloesbr-lot-details.server.ts`) só aceita `"MOSTRABTN_CLASS":"is-vendido"` ou a classe `lotevendido`. Falta ver o `peca.asp` real de um lote vendido da Martini — o site responde 403 ao IP do ambiente de desenvolvimento; precisa do HTML salvo ou de um passo de diagnóstico no cron (`lotdebug`) rodado em produção.

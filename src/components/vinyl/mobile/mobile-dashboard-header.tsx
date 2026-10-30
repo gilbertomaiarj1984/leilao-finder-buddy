@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { bidMatchesSearch, watchedMatchesSearch } from "@/components/vinyl/grouping";
+import { countUnsoldHouses } from "@/components/vinyl/use-today-unsold";
 import { DAY_PAGE, FUTURE_TAB, TODAY_INDEX, TODAY_PAGE } from "@/lib/day-bar";
 import { auctionDayPassed } from "@/lib/vinyl-parse";
 import { cn } from "@/lib/utils";
@@ -69,7 +70,7 @@ export function MobileDashboardHeader({
     futureCount,
   } = d;
   // Casas de hoje com lote sem lance achado (pregão encerrado ou em andamento).
-  const unsoldCount = todayUnsold.filter((h) => h.lots.length > 0).length;
+  const unsoldCount = countUnsoldHouses(todayUnsold, true);
   const [searching, setSearching] = useState(false);
   const [draft, setDraft] = useState(search);
   const [actionsOpen, setActionsOpen] = useState(false);

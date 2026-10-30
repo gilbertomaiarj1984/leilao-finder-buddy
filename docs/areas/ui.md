@@ -260,6 +260,7 @@ preço atual)` (só com `eval_price` gravado) e botão **"Reavaliar defasadas"**
   desde o início do 1º dia; "encerrado" só 3h depois do último horário do último dia. O título
   do catálogo é só "Catálogo <idLeilao>" (o nome do leilão não é capturado). Filtro de dia é
   estado local (volta a "Todos" ao trocar de aba). `watchedDayOpen` (abertura por dia) foi removido.
+- **Casa com mais de um pregão no dia (v0.185.1):** a listagem principal do dia e "Vigiados do dia" usavam o 1º lote da casa (`houseAuctionInfo(day, lots[0])`) para horário/status/presencial/lote em pregão, e a Martini (dois pregões no mesmo dia) mostrava os dados de um só. `splitByAuction` (`grouping.ts`, testado) separa os lotes da casa por `idLeilao` (ordem: horário, depois nº); com 2+ pregões o cabeçalho ganha o selo "N catálogos" (sem status próprio) e cada pregão é um `AuctionSection` (`day-tab.tsx`: "Catálogo N", nº de lotes, data, `HouseStatBadges`, `AuctionStatusInline` com o lote em pregão, `PresencialLink`, "ver catálogo"; recolhível, chave `day|house|idLeilao` em `closedHouseSections`) — o mesmo desenho da aba Vigiados. A decisão "tem mais de um pregão" usa os lotes SEM filtro (a estrutura não muda ao filtrar por artista/preço). `useTodayUnsold` agora tem um alvo por pregão e a visão "Sem lance" rotula "Catálogo N" quando a casa aparece mais de uma vez. **v0.185.3 — mesma divisão nos outros lugares:** "Lotes sem lance" (`unsold-view.tsx`) agrupa as entradas de `useTodayUnsold` (uma por pregão) por casa — 2+ pregões = selo "N catálogos" + bloco recolhível "Catálogo N" (chaves `house|casa` / `cat|idLeilao`); `countUnsoldHouses` conta casas distintas nos contadores. `BidHouseSections` ("Lances do dia" e aba Lances) divide a casa por `idLeilao` do lance (o bloco reusa `isHouseOpen`/`onToggleHouse` com a chave composta `casa|idLeilao`, que os chamadores interpolam na chave de recolher) e cada bloco tem o próprio "ver catálogo". O horário de lance/vigiado herdado da varredura (`houseTimeFor`, `use-dashboard-data.tsx`) usa a chave `dia|casa|idLeilao` e cai em `dia|casa`. Já eram por pregão: "Acontecendo agora"/`/ao-vivo` (uma linha por `idLeilao` de `seen_auctions`), a faixa "Pregões envolvidos" da visão por artista e o andamento da Análise (uma consulta por pregão). Pendente: o status "Ao vivo agora" ainda é assumido quando o horário passou e o presencial não respondeu (`trackedAuctionStatus`), e o "Vendido" de vigiados da Martini não é detectado (formato do `peca.asp` não verificado; o site bloqueia o IP do ambiente de desenvolvimento).
 - **"Dias Futuros" (v0.154.0):** último botão de todo seletor de dias, com `FUTURE_TAB`/`FUTURE_LABEL`/
   `isFutureDay` (`day-bar.ts`). Corte = último dia do seletor (barra da home: hoje+14; `/analise`: último
   dia da janela). **Home:** aba `future` (desktop `TabsTrigger` e chip "Dias Futuros" no mobile), conteúdo =
@@ -782,6 +783,16 @@ como histórico). A linha da casa agora só tem `PresencialLink` (`presencial-li
   "Encerrado"), cards `UnsoldLotCard` (lote recém-achado ganha destaque verde por 3 s).
 - **Servidor:** `getUnsoldLots` ganha `currentLote` opcional (`unsold-lots.server.ts`; cache de 45 s
   quando informado, 5 min sem ele).
+- **Falso "sem lance" em lote vendido (v0.185.2):** o `sold` do catálogo só é verdadeiro com valor de
+  venda legível, então um lote vendido com valor vazio/escondido (pregão ao vivo, visto na RT Leilões e
+  Artes) caía na lista. `fetchCatalogData` agora também devolve `mark` (`sold`/`unsold`, do
+  `MOSTRABTN_CLASS` ou da classe `lotevendido` no HTML antigo) e `isUnsoldCatalogLot`
+  (`leiloesbr-catalog.server.ts`, testada em `tests/unsold-catalog.test.ts`) decide: vendido (valor OU
+  marca) → fora; `QTDLANCE` > 0 → fora; marca "não vendido" → dentro; sem marca → dentro só com
+  `QTDLANCE` = 0 (ou sem nenhum sinal, fallback HTML). Com `currentLote` (ao vivo), `dropSoldOnPage`
+  (`unsold-lots.server.ts`) ainda confere os candidatos na `peca.asp` de cada lote (`fetchLotDetails`,
+  até 60 por rodada; "vendido" fica memorizado, "sem venda" vale 2 min). Sem a RT acessível daqui, a
+  causa exata não foi reproduzida — se ainda aparecer lote vendido, olhar o JSON cru do catálogo dele.
 - **Removido:** override manual "marcar encerrado" (`manually-finished-auctions.ts`,
   `use-manually-finished.ts`, botões 🏁/"reabrir") — a lista não depende mais de sinal de fim, já
   vai aparecendo por casa. `trackedAuctionStatus` perdeu o sinal `manual`.

@@ -64,7 +64,7 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   - **1 requisição por LEILÃO** (paginada) — nunca por lote. Usado por: `fetchLoteMap` (nº do
     lote), `lot-sales.server.ts` (histórico de vendas/Vinil Analytics), `unsold-lots.server.ts`
     (v0.89.0 — lotes SEM lance, o inverso do filtro de vendas: mesma fonte, sob DEMANDA do
-    usuário pela visão "Sem lance" de hoje (v0.156.0; casa ao vivo = só lotes já passados), não pelo cron; cache em memória de 5 min evita bater o
+    usuário pela visão "Sem lance" de hoje (v0.156.0; casa ao vivo = só lotes já passados; "sem lance" = `isUnsoldCatalogLot`, não só `!sold`, v0.185.2), não pelo cron; cache em memória de 5 min evita bater o
     catálogo de novo ao abrir/fechar a lista na mesma sessão — ver `docs/areas/ui.md`).
 - **Peça individual** (`leiloesbr-lot-details.server.ts`, `fetchLotDetails`/`fetchOne`):
   `<domínio>/peca.asp?id=<idPeca>` (ou `?ID=`, mesma página) — HTML com um JSON `loadData`
@@ -115,6 +115,20 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   cortando a passada 2). Casa que só está na lista de Música roda **só** essa passada (a passada 2,
   sem `tp`, varreria o acervo inteiro à toa).
 - A varredura geral (`chunk`) segue só em "Discos de Vinil"; Música entra pelo `galleryscan`.
+
+## Categoria "Colecionismo" (v0.185.4)
+
+- Casas como o **Acervo do Garimpeiro** (galeria `ga=1185`, domínio `acervodogarimpeiro.com.br`; leilão 66561 com
+  496+ LPs medido em 2026-10-29) cadastram os discos em **"Colecionismo"** (`tp=|436F6C6563696F6E69736D6F|`), fora das
+  listas de galerias de "Discos de Vinil" e "Música" — por isso nenhuma varredura os via (sem `tp=`, `ga=1185` devolve os
+  lotes; com Vinil/Música/Outros, 0). O catálogo da própria casa responde 403 ao IP do ambiente: diagnosticar sempre pela listagem da LeilõesBR.
+- Colecionismo é geral (158 casas, 98 fora das listas de vinil): em vez de varrer galeria por galeria, o `galleryscan`
+  acrescenta ao fim da fila duas **galerias virtuais** (`busca:vinil`, `busca:disco`; `COLLECTIBLES_QUERIES`) que fazem
+  busca textual (`pesquisa=`) dentro da categoria e aceitam só `isVinylTitle` (estrito). ~6 páginas, ~33s. Cursor e
+  orçamento de tempo iguais aos das casas; vale para o cron e para o "Atualizar tudo". Uma casa de Colecionismo cujos
+  títulos não citem vinil/disco continua de fora (aí o caminho é a passada por galeria).
+- Dia na listagem: o leilão 66561 aparece só no dia 30/10 (a listagem traz uma data por leilão), embora a casa diga
+  "hoje e amanhã" (pendência aberta: `docs/pendencias.md`, "Leilão que dura mais de um dia só aparece em um dia").
 
 ## Regra: nunca bloquear casa (v0.112.1)
 
@@ -222,7 +236,7 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   lote/kit (`isCompactsBundle`) continua conjunto (sem Discogs/IA de álbum único), mas na tela vai para "Novelas,
   coletâneas e não classificados" (`extractArtist` e `effectiveArtist` devolvem ""). Calibrado com 3150 títulos reais
   (script de auditoria: buscar `busca_andamento.asp` em UTF-8 e comparar `isDiscBundle` antes/depois).
-- **Markdown, " / " e atributos (v0.182.0):** `markdownHead` usa só o 1º trecho de títulos `**LP X**descrição…`/`# LP X…`; ` / `
+- **Markdown, " / " e atributos (v0.182.0):** `markdownHead` usa só o 1º trecho de títulos `**LP X**descrição…`/`# LP X…`; `/`
   separa campos ("LP ARTISTA / ÁLBUM / …"); `TRAILING_ATTRIBUTES` tira "Importado Japão/Raro/Reedição/Lacrado/Capa
   Ruim/Disco Lp Sem Teste" do fim do nome; `(2)` do Discogs sai do artista da ficha; frase que abre com conector
   ("E Compositor…", "De Jimmy Dorsey…") não é artista. O papel ("da cantora X") só vale na frase de abertura.
@@ -240,5 +254,6 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   sem nome conhecido e com 4+ palavras antes da ficha de estado devolve "" (não classificados → IA), nunca
   o título inteiro como "artista".
 - **Cabeçalho de casa ≠ artista (v0.181.1):** depois dos prefixos (`álbum`, `lp`, `1 disco.`…), `extractArtist` descarta o cabeçalho "IMPORTADO <país>!/." (`IMPORTED_HEADER`) e a palavra de formato inicial (`FORMAT_WORD_PREFIX`: duplo/triplo/quádruplo). Com qualquer um dos dois o título segue o molde de casa "ÁLBUM - ARTISTA (ano). Selo X" (oposto de "ARTISTA - ÁLBUM"): o artista é o trecho depois do último " - " antes de "(ano)"/". Selo" (`ALBUM_DASH_ARTIST_RE`, "Vol. N" final removido); sem o molde só vale um nome do bundle (`matchKnownArtist`); senão "" (não classificados → `fillMissingArtists` com `known_artists` / IA), nunca o álbum nem "Duplo"/"Importado …". Lotes já gravados com o grupo antigo são regravados na próxima varredura.
+- **Título-ficha com "Artista(s):" sem `|` (v0.185.0):** "Álbum: DE PÉ NO CHÃO | Código: 1030280 Artista(s): BETH CARVALHO" (sem `|` antes do rótulo, sem colchetes) fazia o NOME DO ÁLBUM virar artista. `STRUCTURED_ARTIST_FIELD_RE` aceita espaço como fronteira do rótulo e para o valor no próximo rótulo ("Ano:", "Estilo(s):"). `extractStructuredArtist` (exportada) vale também na LEITURA (`rowToLot` e Analytics) mesmo sobre um artista já gravado não-genérico, corrigindo lotes antigos sem re-varrer.
 - **Chamariz de casa ≠ lote (v0.129.1):** `isDiscBundle` descarta antes da detecção "ALERTA RARIDADE", "lote especial/extra (de fechamento/encerramento)" e tudo após "Classificação técnica" (ficha de estado); `extractArtist` remove esses prefixos e trata "|" como separador.
 - **"LP de X - Álbum" (v0.154.0):** o prefixo de tipo (`LP`/`Disco de Vinil`/…) também leva um "de/do/da" colado (`PREFIX_PATTERNS`); antes o artista saía "De Creedence Clearwater Revival" (Bruce Angeiras).

@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Sparkles,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { Badge } from "@/components/ui/badge";
@@ -34,17 +35,93 @@ import {
   houseAuctionInfo,
   matchesStatFilter,
   matchesPriceRange,
+  splitByAuction,
   watchedDateToKey,
   watchedMatchesSearch,
   type HouseGroup,
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
 import { PresencialLink } from "@/components/vinyl/presencial-link";
+import { countUnsoldHouses } from "@/components/vinyl/use-today-unsold";
 import { DAY_PAGE, TODAY_INDEX } from "@/lib/day-bar";
 import { auctionDayPassed, UNCLASSIFIED_LABEL } from "@/lib/vinyl-parse";
 
 import { UnsoldView } from "./unsold-view";
 import type { DashboardData } from "./use-dashboard-data";
+
+/**
+ * Pregão de uma casa que tem MAIS DE UM no dia (ex.: Martini com 244 e 34 lotes): sub-cabeçalho
+ * recolhível "Catálogo N" com data, contadores, horário/status/lote em pregão e links próprios —
+ * o mesmo desenho da aba Vigiados. Sem isso a linha da casa mostrava o status do 1º pregão só.
+ */
+function AuctionSection<T extends { idLeilao: string; time: string; url: string; idPeca: string }>({
+  d,
+  day,
+  houseUrl,
+  sectionKey,
+  auction,
+  children,
+}: {
+  d: DashboardData;
+  day: string;
+  houseUrl: string;
+  sectionKey: string;
+  auction: { idLeilao: string; lots: T[] };
+  children: ReactNode;
+}) {
+  const { closedHouseSections, toggleHouseSection, watchedIds, bidStatusById } = d;
+  const { statFilter, toggleStatFilter } = d;
+  const isOpen = !closedHouseSections.has(sectionKey);
+  const info = houseAuctionInfo(day, auction.lots[0]);
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => toggleHouseSection(sectionKey)}
+          aria-expanded={isOpen}
+          className="flex items-center gap-2 text-left"
+        >
+          {isOpen ? (
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          )}
+          <span className="text-base font-semibold text-foreground">
+            Catálogo {auction.idLeilao}
+          </span>
+        </button>
+        <Badge variant="secondary">{auction.lots.length} lote(s)</Badge>
+        <span className="text-xs text-muted-foreground">{`${day.slice(8, 10)}/${day.slice(5, 7)}`}</span>
+        <HouseStatBadges
+          stats={computeHouseStats(auction.lots, watchedIds, bidStatusById)}
+          active={statFilter}
+          onToggle={toggleStatFilter}
+        />
+        <AuctionStatusInline info={info} />
+        <div className="ml-auto flex flex-wrap items-center gap-3">
+          {info?.presencialUrl ? (
+            <PresencialLink
+              presencialUrl={info.presencialUrl}
+              idLeilao={info.idLeilao}
+              dayKey={info.dayKey}
+              status={info.status}
+            />
+          ) : null}
+          <a
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            href={info?.catalogUrl ?? houseUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            ver catálogo <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+      </div>
+      {isOpen ? children : null}
+    </div>
+  );
+}
 
 export function DayTab({ d, day, index }: { d: DashboardData; day: string; index: number }) {
   // Aba de dia inativa: o Radix não renderiza o conteúdo (nem os portais lá dentro) de uma
@@ -309,7 +386,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                 </>
               ) : isUnsoldView ? (
                 <span className="text-xs text-muted-foreground">
-                  {todayUnsold.length} casa(s) com pregão encerrado ou em andamento
+                  {countUnsoldHouses(todayUnsold)} casa(s) com pregão encerrado ou em andamento
                 </span>
               ) : isWatchedView ? (
                 <span className="text-xs text-muted-foreground">
@@ -371,9 +448,45 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
               </button>
             ) : null}
             {watchedByHouse.map((houseGroup) => {
-              const auctionInfo = houseAuctionInfo(day, houseGroup.lots[0]);
+              // Casa com mais de um pregão no dia: sub-cabeçalho por pregão (`AuctionSection`).
+              const auctions = splitByAuction(houseGroup.lots);
+              const multi = auctions.length > 1;
+              const auctionInfo = multi ? null : houseAuctionInfo(day, houseGroup.lots[0]);
               const houseSectionKey = `watched-day|${day}|${houseGroup.house}`;
               const isHouseOpen = !closedHouseSections.has(houseSectionKey);
+              const renderWatchedCard = (lot: (typeof houseGroup.lots)[number]) => (
+                <LotCard
+                  key={lot.id}
+                  lot={{
+                    ...lot,
+                    price: currentPriceFor(lot.id, lot.price),
+                    dayKey: watchedDateToKey(lot.date) || lot.date,
+                    watched: true,
+                    myBid: myBidById.get(lot.idPeca),
+                    nextBid: nextBidById.get(lot.id),
+                  }}
+                  busy={pending === lot.idPeca}
+                  ai={aiFor(lot)}
+                  market={marketFor(lot)}
+                  album={albumFor(lot)}
+                  condition={conditionFor(lot)}
+                  demand={demandFor(lot)}
+                  owned={ownedFor(lot)}
+                  {...lookoutProps(lot)}
+                  onOpenOwned={() => setOwnedPanelLot(lot)}
+                  onEditTags={editTags(lot.id)}
+                  bidStatus={bidStatusById.get(lot.idPeca)}
+                  sold={soldById.get(lot.id)}
+                  onToggle={() =>
+                    toggle.mutate({
+                      idPeca: lot.idPeca,
+                      idLeilao: lot.idLeilao,
+                      base: lot.base,
+                      watch: false,
+                    })
+                  }
+                />
+              );
               return (
                 <section
                   key={houseGroup.house}
@@ -399,6 +512,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     <HouseUf house={houseGroup.house} />
                     <HouseLight house={houseGroup.house} />
                     <Badge variant="secondary">{houseGroup.lots.length} lote(s)</Badge>
+                    {multi ? <Badge variant="outline">{auctions.length} catálogos</Badge> : null}
                     <HouseStatBadges
                       stats={computeHouseStats(houseGroup.lots, watchedIds, bidStatusById)}
                       active={statFilter}
@@ -424,43 +538,28 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                       </a>
                     </div>
                   </div>
-                  {isHouseOpen ? (
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      {houseGroup.lots.map((lot) => (
-                        <LotCard
-                          key={lot.id}
-                          lot={{
-                            ...lot,
-                            price: currentPriceFor(lot.id, lot.price),
-                            dayKey: watchedDateToKey(lot.date) || lot.date,
-                            watched: true,
-                            myBid: myBidById.get(lot.idPeca),
-                            nextBid: nextBidById.get(lot.id),
-                          }}
-                          busy={pending === lot.idPeca}
-                          ai={aiFor(lot)}
-                          market={marketFor(lot)}
-                          album={albumFor(lot)}
-                          condition={conditionFor(lot)}
-                          demand={demandFor(lot)}
-                          owned={ownedFor(lot)}
-                          {...lookoutProps(lot)}
-                          onOpenOwned={() => setOwnedPanelLot(lot)}
-                          onEditTags={editTags(lot.id)}
-                          bidStatus={bidStatusById.get(lot.idPeca)}
-                          sold={soldById.get(lot.id)}
-                          onToggle={() =>
-                            toggle.mutate({
-                              idPeca: lot.idPeca,
-                              idLeilao: lot.idLeilao,
-                              base: lot.base,
-                              watch: false,
-                            })
-                          }
-                        />
+                  {!isHouseOpen ? null : multi ? (
+                    <div className="space-y-6 border-l-2 border-border pl-3 sm:pl-5">
+                      {auctions.map((auction) => (
+                        <AuctionSection
+                          key={auction.idLeilao}
+                          d={d}
+                          day={day}
+                          houseUrl={houseGroup.houseUrl}
+                          sectionKey={`${houseSectionKey}|${auction.idLeilao}`}
+                          auction={auction}
+                        >
+                          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            {auction.lots.map(renderWatchedCard)}
+                          </div>
+                        </AuctionSection>
                       ))}
                     </div>
-                  ) : null}
+                  ) : (
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {houseGroup.lots.map(renderWatchedCard)}
+                    </div>
+                  )}
                 </section>
               );
             })}
@@ -581,8 +680,68 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
               );
             if (perPrice)
               houseLots = houseLots.filter((lot) => matchesPriceRange(lot.price, perPrice));
-            const artistGroups = groupByArtist(houseLots);
-            const auctionInfo = houseAuctionInfo(day, group.lots[0]);
+            const renderArtistGroups = (lots: typeof houseLots) =>
+              groupByArtist(lots).map((artistGroup) => (
+                <div key={artistGroup.artist} className="space-y-3">
+                  <h3
+                    className={
+                      artistGroup.artist === UNCLASSIFIED_LABEL
+                        ? "text-sm font-medium uppercase tracking-wider text-muted-foreground"
+                        : "text-sm font-semibold uppercase tracking-wider text-primary"
+                    }
+                  >
+                    {artistGroup.artist}
+                    <span className="ml-2 font-normal normal-case tracking-normal text-muted-foreground">
+                      {artistGroup.lots.length}
+                    </span>
+                  </h3>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {artistGroup.lots.map((lot) => (
+                      <LotCard
+                        key={lot.id}
+                        lot={{
+                          ...lot,
+                          price: currentPriceFor(lot.id, lot.price),
+                          lote: lot.lote || loteById.get(lot.idPeca) || "",
+                          myBid: myBidById.get(lot.idPeca),
+                          nextBid: nextBidById.get(lot.id),
+                        }}
+                        busy={pending === lot.idPeca}
+                        ai={aiFor(lot)}
+                        market={marketFor(lot)}
+                        album={albumFor(lot)}
+                        condition={conditionFor(lot)}
+                        demand={demandFor(lot)}
+                        owned={ownedFor(lot)}
+                        {...lookoutProps(lot)}
+                        onOpenOwned={() => setOwnedPanelLot(lot)}
+                        onEditTags={editTags(lot.id)}
+                        bidStatus={bidStatusById.get(lot.idPeca)}
+                        sold={soldById.get(lot.id)}
+                        possibleTrash={possibleTrashFor(lot)}
+                        onExclude={() => setExcludeTarget({ id: lot.id, title: lot.title })}
+                        onDismissTrash={() => {
+                          const signal = possibleTrashFor(lot);
+                          if (signal) dismissTrashMutation.mutate(signal.matchedTerms);
+                        }}
+                        onToggle={() =>
+                          toggle.mutate({
+                            idPeca: lot.idPeca,
+                            idLeilao: lot.idLeilao,
+                            base: lot.base,
+                            watch: !lot.watched,
+                          })
+                        }
+                      />
+                    ))}
+                  </div>
+                </div>
+              ));
+
+            // Casa com mais de um pregão no dia: sub-cabeçalho por pregão (`AuctionSection`),
+            // decidido pelos lotes SEM filtro para a estrutura não mudar ao filtrar.
+            const multi = splitByAuction(group.lots).length > 1;
+            const auctionInfo = multi ? null : houseAuctionInfo(day, group.lots[0]);
 
             return (
               <section
@@ -648,6 +807,9 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     <HouseUf house={group.house} uf={group.lots[0]?.uf} />
                     <HouseLight house={group.house} />
                     <Badge variant="secondary">{houseLots.length} lotes</Badge>
+                    {multi ? (
+                      <Badge variant="outline">{splitByAuction(group.lots).length} catálogos</Badge>
+                    ) : null}
                     <HouseStatBadges
                       stats={computeHouseStats(houseLots, watchedIds, bidStatusById)}
                       active={statFilter}
@@ -696,67 +858,27 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
 
                 {isOpen ? (
                   <>
-                    {artistGroups.length === 0 ? (
+                    {houseLots.length === 0 ? (
                       <p className="text-sm text-muted-foreground">
                         Nenhum lote com esses filtros nesta casa.
                       </p>
-                    ) : (
-                      artistGroups.map((artistGroup) => (
-                        <div key={artistGroup.artist} className="space-y-3">
-                          <h3
-                            className={
-                              artistGroup.artist === UNCLASSIFIED_LABEL
-                                ? "text-sm font-medium uppercase tracking-wider text-muted-foreground"
-                                : "text-sm font-semibold uppercase tracking-wider text-primary"
-                            }
+                    ) : multi ? (
+                      <div className="space-y-6 border-l-2 border-border pl-3 sm:pl-5">
+                        {splitByAuction(houseLots).map((auction) => (
+                          <AuctionSection
+                            key={auction.idLeilao}
+                            d={d}
+                            day={day}
+                            houseUrl={group.houseUrl}
+                            sectionKey={`${day}|${group.house}|${auction.idLeilao}`}
+                            auction={auction}
                           >
-                            {artistGroup.artist}
-                            <span className="ml-2 font-normal normal-case tracking-normal text-muted-foreground">
-                              {artistGroup.lots.length}
-                            </span>
-                          </h3>
-                          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                            {artistGroup.lots.map((lot) => (
-                              <LotCard
-                                key={lot.id}
-                                lot={{
-                                  ...lot,
-                                  price: currentPriceFor(lot.id, lot.price),
-                                  lote: lot.lote || loteById.get(lot.idPeca) || "",
-                                  myBid: myBidById.get(lot.idPeca),
-                                  nextBid: nextBidById.get(lot.id),
-                                }}
-                                busy={pending === lot.idPeca}
-                                ai={aiFor(lot)}
-                                market={marketFor(lot)}
-                                album={albumFor(lot)}
-                                condition={conditionFor(lot)}
-                                demand={demandFor(lot)}
-                                owned={ownedFor(lot)}
-                                {...lookoutProps(lot)}
-                                onOpenOwned={() => setOwnedPanelLot(lot)}
-                                onEditTags={editTags(lot.id)}
-                                bidStatus={bidStatusById.get(lot.idPeca)}
-                                sold={soldById.get(lot.id)}
-                                possibleTrash={possibleTrashFor(lot)}
-                                onExclude={() => setExcludeTarget({ id: lot.id, title: lot.title })}
-                                onDismissTrash={() => {
-                                  const signal = possibleTrashFor(lot);
-                                  if (signal) dismissTrashMutation.mutate(signal.matchedTerms);
-                                }}
-                                onToggle={() =>
-                                  toggle.mutate({
-                                    idPeca: lot.idPeca,
-                                    idLeilao: lot.idLeilao,
-                                    base: lot.base,
-                                    watch: !lot.watched,
-                                  })
-                                }
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      ))
+                            <div className="space-y-6">{renderArtistGroups(auction.lots)}</div>
+                          </AuctionSection>
+                        ))}
+                      </div>
+                    ) : (
+                      renderArtistGroups(houseLots)
                     )}
                     <div className="pt-2">
                       <button

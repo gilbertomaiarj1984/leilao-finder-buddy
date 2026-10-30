@@ -8,6 +8,7 @@ import {
   groupWatchedByHouseCatalog,
   houseStatKind,
   matchesStatFilter,
+  splitByAuction,
 } from "../src/components/vinyl/grouping";
 
 const lot = (house: string, idLeilao: string, date: string, time: string, lote: string) => ({
@@ -175,5 +176,29 @@ describe("matchesStatFilter", () => {
     expect(matchesStatFilter("2", watched, bids, f)).toBe(true);
     expect(matchesStatFilter("3", watched, bids, f)).toBe(true);
     expect(matchesStatFilter("9", watched, bids, f)).toBe(false);
+  });
+});
+
+describe("splitByAuction", () => {
+  const mk = (idLeilao: string, time: string, lote: string) => ({ idLeilao, time, lote });
+
+  test("casa com dois pregões no dia vira dois grupos, por horário e depois nº do pregão", () => {
+    const groups = splitByAuction([
+      mk("64971", "19h", "6"),
+      mk("65490", "19:00", "1"),
+      mk("64971", "19h", "64"),
+      mk("60000", "14h", "2"),
+    ]);
+    expect(groups.map((g) => g.idLeilao)).toEqual(["60000", "64971", "65490"]);
+    expect(groups.find((g) => g.idLeilao === "64971")!.lots.map((l) => l.lote)).toEqual([
+      "6",
+      "64",
+    ]);
+  });
+
+  test("um pregão só devolve um grupo com todos os lotes", () => {
+    const groups = splitByAuction([mk("1", "10h", "a"), mk("1", "10h", "b")]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.lots).toHaveLength(2);
   });
 });
