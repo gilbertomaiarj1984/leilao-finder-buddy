@@ -8,6 +8,7 @@ import {
   groupWatchedByHouseCatalog,
   houseStatKind,
   matchesStatFilter,
+  shortDayLabel,
   sortByLote,
   splitByAuction,
 } from "../src/components/vinyl/grouping";
@@ -214,5 +215,14 @@ describe("sortByLote", () => {
     const items = [{ lote: "3" }, { lote: "1" }];
     sortByLote(items);
     expect(items.map((i) => i.lote)).toEqual(["3", "1"]);
+  });
+});
+
+describe("shortDayLabel", () => {
+  test("hoje mantém a palavra; os demais dias são só dd/mm", () => {
+    expect(shortDayLabel("2026-10-30", 0)).toBe("Hoje 30/10");
+    expect(shortDayLabel("2026-10-31", 1)).toBe("31/10");
+    expect(shortDayLabel("2026-11-01", 2)).toBe("01/11");
+    expect(shortDayLabel("2026-10-29", -1)).toBe("29/10");
   });
 });

@@ -21,7 +21,7 @@ export function LotSearchBox({
   // A busca confirmada pode ser restaurada do armazenamento local após a montagem.
   useEffect(() => setDraft(committed), [committed]);
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       <Input
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
@@ -31,17 +31,18 @@ export function LotSearchBox({
             onSearch(draft);
           }
         }}
-        placeholder="Buscar por título, artista, casa ou nº do lote… (Enter para pesquisar)"
-        className="h-8 w-[220px] text-xs sm:w-64"
+        placeholder="Buscar título, artista, casa ou nº do lote…"
+        className="h-7 w-[200px] text-xs sm:w-56"
       />
-      <Button size="sm" onClick={() => onSearch(draft)}>
-        <SearchIcon className="mr-2 h-4 w-4" />
+      <Button size="sm" className="h-7 px-2 text-xs" onClick={() => onSearch(draft)}>
+        <SearchIcon className="mr-1 h-3.5 w-3.5" />
         Pesquisar
       </Button>
       {committed || draft ? (
         <Button
           variant="ghost"
           size="sm"
+          className="h-7 px-2 text-xs"
           onClick={() => {
             setDraft("");
             onClear();

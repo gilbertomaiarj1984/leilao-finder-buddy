@@ -809,6 +809,7 @@ como histórico). A linha da casa agora só tem `PresencialLink` (`presencial-li
 dia, "all"]`, cache de 5 min. Só consulta com o filtro ligado no dia aberto. "Sem lance" = a regra
   de `isUnsoldCatalogLot` (sem venda e `QTDLANCE` = 0), valendo para dia passado, hoje e futuro; pregão
   sem link de catálogo consultável fica de fora (aviso "N lote(s) … ficaram de fora").
+- **Barra do topo compacta (v0.186.0, desktop):** `dashboard-header.tsx` junta botões de navegação, busca (`LotSearchBox`) e conta (e-mail, Sair, `PushToggle`) em uma linha; os dias usam `shortDayLabel` (`grouping.ts`, só `dd/mm`, "Hoje" com a palavra; `dayLabel` completo segue em títulos/aria); a barra de ferramentas do dia (`day-tab.tsx`) tem um único botão de atualizar vigiados + lances (`refreshWatchedAndBids`) e o aviso "Buscando lotes sem lance…" é um `toast` (id `no-bid-loading`). Sem rolagem lateral nova no desktop; o mobile não mudou.
 - **Visão laranja (hoje):** o card (`UnsoldLotCard`) agora mostra o valor (`price` da tabela `lots`,
   devolvido por `getUnsoldLots`) e os lotes saem ordenados por nº do lote (`sortByLote`, `grouping.ts`).
 

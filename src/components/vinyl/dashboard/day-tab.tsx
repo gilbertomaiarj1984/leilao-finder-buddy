@@ -10,7 +10,8 @@ import {
   RefreshCw,
   Sparkles,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { toast } from "sonner";
 import { createPortal } from "react-dom";
 
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +29,7 @@ import {
   computeBidStats,
   computeHouseStats,
   dayLabel,
+  shortDayLabel,
   groupByArtist,
   groupByHouse,
   groupWatchedByHouse,
@@ -131,6 +133,18 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     day,
     d.noBidFilter && d.tab === `day-${index}`,
   );
+  // Aviso (balão no canto) enquanto os catálogos são consultados, no lugar de texto na barra.
+  const noBidLoading = noBid.loading;
+  useEffect(() => {
+    if (!noBidLoading) return;
+    toast.info("Buscando lotes sem lance nos catálogos…", {
+      id: "no-bid-loading",
+      duration: 60000,
+    });
+    return () => {
+      toast.dismiss("no-bid-loading");
+    };
+  }, [noBidLoading]);
   // Aba de dia inativa: o Radix não renderiza o conteúdo (nem os portais lá dentro) de uma
   // `TabsContent` fora da aba ativa, então pula todo o filtro/agrupamento dos lotes dela —
   // antes os 5 dias eram recalculados a cada render da tela.
@@ -159,10 +173,8 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     refreshingDay,
     setBidsViewDay,
     setWatchedViewDay,
-    refreshWatched,
-    refreshingWatched,
-    refreshBids,
-    refreshingBids,
+    refreshWatchedAndBids,
+    refreshingWatchedAndBids,
     analyzeScope,
     analyzing,
     setArtistFilter,
@@ -268,10 +280,10 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     <TabsContent value={`day-${index}`} className="space-y-6">
       {dayBarHost &&
         createPortal(
-          <div className="space-y-3 border-t border-border px-4 py-2 sm:py-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-sm font-semibold text-foreground">
-                {dayLabel(day, index - TODAY_INDEX)}
+          <div className="space-y-1 border-t border-border px-4 py-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-foreground">
+                {shortDayLabel(day, index - TODAY_INDEX)}
               </span>
               {index >= TODAY_INDEX && index < TODAY_INDEX + DAY_PAGE ? (
                 <button
@@ -280,7 +292,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                   disabled={refreshingDay === day}
                   title="Forçar atualização deste dia"
                   aria-label={`Forçar atualização de ${dayLabel(day, index - TODAY_INDEX)}`}
-                  className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                  className="inline-flex items-center justify-center rounded-md border border-border p-1 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
                 >
                   {refreshingDay === day ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -301,8 +313,8 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                 aria-pressed={isWatchedView}
                 className={
                   isWatchedView
-                    ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
-                    : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
+                    ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2 py-1 text-xs font-medium text-primary"
+                    : "inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
                 }
               >
                 <Eye className="h-3.5 w-3.5" />
@@ -310,20 +322,6 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                 {watchedForDay.length ? (
                   <span className="ml-0.5 text-muted-foreground">{watchedForDay.length}</span>
                 ) : null}
-              </button>
-              <button
-                type="button"
-                onClick={refreshWatched}
-                disabled={refreshingWatched}
-                title="Forçar atualização dos vigiados (inclui status Vendido)"
-                aria-label="Forçar atualização dos vigiados"
-                className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
-              >
-                {refreshingWatched ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
               </button>
               <button
                 type="button"
@@ -337,8 +335,8 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                 aria-pressed={isBidsView}
                 className={
                   isBidsView
-                    ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary"
-                    : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
+                    ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2 py-1 text-xs font-medium text-primary"
+                    : "inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
                 }
               >
                 <Gavel className="h-3.5 w-3.5" />
@@ -349,13 +347,13 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
               </button>
               <button
                 type="button"
-                onClick={refreshBids}
-                disabled={refreshingBids}
-                title="Forçar atualização dos lances (inclui status Vendido)"
-                aria-label="Forçar atualização dos lances"
-                className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                onClick={() => refreshWatchedAndBids()}
+                disabled={refreshingWatchedAndBids}
+                title="Forçar atualização dos vigiados e dos lances (inclui status Vendido)"
+                aria-label="Forçar atualização dos vigiados e dos lances"
+                className="inline-flex items-center justify-center rounded-md border border-border p-1 text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
               >
-                {refreshingBids ? (
+                {refreshingWatchedAndBids ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
                   <RefreshCw className="h-3.5 w-3.5" />
@@ -367,7 +365,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                 disabled={analyzing !== null}
                 title="Analisar com IA os lotes ainda não avaliados deste dia (sob demanda)"
                 aria-label={`Analisar com IA ${dayLabel(day, index - TODAY_INDEX)}`}
-                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
               >
                 {analyzing === day ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -402,7 +400,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                   ) : null}
                   <span className="text-xs text-muted-foreground">
                     {noBidActive && noBid.loading
-                      ? "Buscando lotes sem lance nos catálogos…"
+                      ? ""
                       : `${visibleLots.length} lote(s) em ${groups.length} casa(s)`}
                   </span>
                   {noBidActive && noBid.skipped > 0 ? (
@@ -621,9 +619,16 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
         )
       ) : groups.length === 0 ? (
         <div className="space-y-3">
+          {noBidActive && noBid.loading ? (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {Array.from({ length: 5 }, (_, i) => (
+                <Skeleton key={i} className="h-40 w-full" />
+              ))}
+            </div>
+          ) : null}
           <p className="text-sm text-muted-foreground">
             {noBidActive && noBid.loading
-              ? "Buscando lotes sem lance nos catálogos…"
+              ? ""
               : searchNorm
                 ? "Nenhum lote corresponde à busca neste dia."
                 : noBidActive

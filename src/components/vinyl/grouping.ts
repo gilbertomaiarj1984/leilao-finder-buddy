@@ -33,6 +33,13 @@ export function dayLabel(dayKey: string, index: number): string {
   return `${prefix} ${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
 }
 
+/** Rótulo curto do dia para a barra: só dd/mm (sem dia da semana); "Hoje" mantém a palavra. */
+export function shortDayLabel(dayKey: string, index: number): string {
+  const [, m, d] = dayKey.split("-").map(Number);
+  const date = `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
+  return index === 0 ? `Hoje ${date}` : date;
+}
+
 export type ArtistGroup = { artist: string; lots: VinylLot[] };
 export type HouseGroup = {
   house: string;
