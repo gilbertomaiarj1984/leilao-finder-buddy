@@ -4,36 +4,72 @@ import { extractArtist } from "./vinyl-parse";
 
 type WatchTarget = { idPeca: string; idLeilao: string; base: string };
 
-/** Toggles the watch flag on the LeilõesBR account. Returns the resulting state. */
-export async function toggleWatchOnSite(target: WatchTarget, desired: boolean): Promise<boolean> {
+type ToggleDeps = {
+  /** Um único POST ao toggle do site; devolve o estado depois dele (true = vigiado). */
+  post: (target: WatchTarget) => Promise<boolean>;
+  /** Lê o estado REAL na conta (sem cache). */
+  isWatched: (target: WatchTarget) => Promise<boolean>;
+};
+
+/**
+ * Leva a vigia ao estado `desired`. O endpoint do site é um toggle: repetir um POST às cegas (a
+ * resposta se perdeu, mas o servidor já aplicou) desfaz a ação. Por isso:
+ * - resposta clara ("+"/"-") → o estado é conhecido, sem leitura extra;
+ * - falha ambígua (timeout, 5xx, resposta ilegível) → NÃO repete: pergunta à conta o estado real;
+ * - só alterna de novo quando o estado atual é conhecido e diferente do desejado.
+ * No máximo 2 POSTs.
+ */
+export async function toggleWatchWith(
+  deps: ToggleDeps,
+  target: WatchTarget,
+  desired: boolean,
+): Promise<boolean> {
+  let state: boolean;
+  try {
+    state = await deps.post(target);
+  } catch (error) {
+    console.warn("[watch] resposta ambígua do toggle; conferindo o estado na conta", error);
+    state = await deps.isWatched(target);
+  }
+  if (state !== desired) {
+    state = await deps.post(target);
+    if (state !== desired) {
+      throw new Error("Não foi possível sincronizar a vigia com o LeilõesBR.");
+    }
+  }
+  return state;
+}
+
+async function postToggle(target: WatchTarget): Promise<boolean> {
   const body = new URLSearchParams({
     idpeca: target.idPeca,
     idcliente: loginEmail(),
     idleilao: target.idLeilao,
     base: target.base || "0",
   }).toString();
-
-  const run = async () => {
-    const text = (
-      await authFetch(`${BASE_URL}/portal/assets/modulos/vigia-favorita/vigiar_peca.asp`, {
-        method: "POST",
-        body,
-        referer: `${BASE_URL}/busca_andamento.asp`,
-      })
-    ).trim();
-    // The endpoint is a toggle: "+" means now watched, "-" means removed.
-    if (text !== "+" && text !== "-") {
-      throw new Error("O LeilõesBR não confirmou a vigia deste lote.");
-    }
-    return text === "+";
-  };
-
-  let state = await run();
-  if (state !== desired) state = await run();
-  if (state !== desired) {
-    throw new Error("Não foi possível sincronizar a vigia com o LeilõesBR.");
+  const text = (
+    await authFetch(`${BASE_URL}/portal/assets/modulos/vigia-favorita/vigiar_peca.asp`, {
+      method: "POST",
+      body,
+      referer: `${BASE_URL}/busca_andamento.asp`,
+    })
+  ).trim();
+  // The endpoint is a toggle: "+" means now watched, "-" means removed.
+  if (text !== "+" && text !== "-") {
+    throw new Error("O LeilõesBR não confirmou a vigia deste lote.");
   }
-  return state;
+  return text === "+";
+}
+
+async function isWatchedOnSite(target: WatchTarget): Promise<boolean> {
+  invalidateWatchedCache();
+  const list = await listWatchedFromSite({ maxAgeMs: 0 });
+  return list.some((lot) => lot.idPeca === target.idPeca);
+}
+
+/** Toggles the watch flag on the LeilõesBR account. Returns the resulting state. */
+export function toggleWatchOnSite(target: WatchTarget, desired: boolean): Promise<boolean> {
+  return toggleWatchWith({ post: postToggle, isWatched: isWatchedOnSite }, target, desired);
 }
 
 export type WatchedLot = {

@@ -1,4 +1,11 @@
 import { db } from "@/lib/db-client.server";
+import {
+  mutateAppState,
+  parseObject,
+  parseStringList,
+  parseStringMap,
+  unionStrings,
+} from "@/lib/app-state-mutate.server";
 
 // Definido localmente (mesma forma do `OwnedFeedback` de `wantlist-match`) para o módulo do
 // SERVIDOR não depender de um módulo client-safe — evita surpresas de bundling no servidor.
@@ -75,6 +82,15 @@ export async function setVerifiedHouses(keys: string[]): Promise<{ savedAt: stri
 /** Tempo que um "desvigiado" fica registrado — cobre a vida máxima de um item no acumulador do cliente. */
 const WATCH_REMOVED_TTL_MS = 4 * 24 * 60 * 60 * 1000;
 
+/** Normaliza o registro de desvigiados e descarta o que passou do TTL. */
+function parseWatchRemoved(raw: unknown): Record<string, string> {
+  const cutoff = Date.now() - WATCH_REMOVED_TTL_MS;
+  const out: Record<string, string> = {};
+  for (const [id, at] of Object.entries(parseObject(raw)))
+    if (typeof at === "string" && Date.parse(at) > cutoff) out[id] = at;
+  return out;
+}
+
 async function readWatchRemoved(): Promise<Record<string, string>> {
   const { data, error } = await db
     .from("app_state")
@@ -82,13 +98,7 @@ async function readWatchRemoved(): Promise<Record<string, string>> {
     .eq("key", WATCH_REMOVED_KEY)
     .maybeSingle();
   if (error) throw error;
-  const value = data?.value;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const cutoff = Date.now() - WATCH_REMOVED_TTL_MS;
-  const out: Record<string, string> = {};
-  for (const [id, at] of Object.entries(value as Record<string, unknown>))
-    if (typeof at === "string" && Date.parse(at) > cutoff) out[id] = at;
-  return out;
+  return parseWatchRemoved(data?.value);
 }
 
 /**
@@ -109,16 +119,11 @@ export async function getWatchRemoved(): Promise<string[]> {
 /** Registra (`watched=false`) ou limpa (`watched=true`, revigiou) o desvigiado de um lote. */
 export async function setWatchRemoved(id: string, watched: boolean): Promise<void> {
   try {
-    const current = await readWatchRemoved();
-    if (watched) delete current[id];
-    else current[id] = new Date().toISOString();
-    const { error } = await db
-      .from("app_state")
-      .upsert(
-        { key: WATCH_REMOVED_KEY, value: current, updated_at: new Date().toISOString() },
-        { onConflict: "key" },
-      );
-    if (error) throw error;
+    await mutateAppState(WATCH_REMOVED_KEY, parseWatchRemoved, (current) => {
+      if (watched) delete current[id];
+      else current[id] = new Date().toISOString();
+      return current;
+    });
   } catch (error) {
     // Best-effort: a vigia em si já foi sincronizada com o LeilõesBR.
     console.error("[app-state] não foi possível gravar o desvigiado", error);
@@ -129,18 +134,13 @@ export async function setWatchRemoved(id: string, watched: boolean): Promise<voi
 type LotEditionMap = Record<string, "modern" | "period" | "original">;
 const LOT_EDITION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-async function readLotEditions(): Promise<Record<string, { e: string; at: string }>> {
-  const { data, error } = await db
-    .from("app_state")
-    .select("value")
-    .eq("key", LOT_EDITION_KEY)
-    .maybeSingle();
-  if (error) throw error;
-  const value = data?.value;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+type LotEditionEntry = { e: "modern" | "period" | "original"; at: string };
+
+/** Normaliza as edições manuais e descarta as que passaram do TTL. */
+function parseLotEditions(raw: unknown): Record<string, LotEditionEntry> {
   const cutoff = Date.now() - LOT_EDITION_TTL_MS;
-  const out: Record<string, { e: string; at: string }> = {};
-  for (const [id, v] of Object.entries(value as Record<string, unknown>)) {
+  const out: Record<string, LotEditionEntry> = {};
+  for (const [id, v] of Object.entries(parseObject(raw))) {
     const e = (v as { e?: unknown } | null)?.e;
     const at = (v as { at?: unknown } | null)?.at;
     if (
@@ -152,6 +152,16 @@ async function readLotEditions(): Promise<Record<string, { e: string; at: string
     }
   }
   return out;
+}
+
+async function readLotEditions(): Promise<Record<string, LotEditionEntry>> {
+  const { data, error } = await db
+    .from("app_state")
+    .select("value")
+    .eq("key", LOT_EDITION_KEY)
+    .maybeSingle();
+  if (error) throw error;
+  return parseLotEditions(data?.value);
 }
 
 /** Edições marcadas à mão por lote (vale para todos os dispositivos). Falha → vazio. */
@@ -172,16 +182,17 @@ export async function setLotEdition(
   lotId: string,
   edition: "modern" | "period" | "original" | null,
 ): Promise<void> {
-  const current = await readLotEditions();
-  if (edition) current[lotId] = { e: edition, at: new Date().toISOString() };
-  else delete current[lotId];
-  const { error } = await db
-    .from("app_state")
-    .upsert(
-      { key: LOT_EDITION_KEY, value: current, updated_at: new Date().toISOString() },
-      { onConflict: "key" },
+  try {
+    await mutateAppState(LOT_EDITION_KEY, parseLotEditions, (current) => {
+      if (edition) current[lotId] = { e: edition, at: new Date().toISOString() };
+      else delete current[lotId];
+      return current;
+    });
+  } catch (error) {
+    throw new Error(
+      `Não foi possível gravar a edição do lote: ${error instanceof Error ? error.message : String(error)}`,
     );
-  if (error) throw new Error(`Não foi possível gravar a edição do lote: ${error.message}`);
+  }
 }
 
 /**
@@ -212,27 +223,24 @@ export async function getTrashKeywordDenylist(): Promise<string[]> {
   }
 }
 
-/** Acrescenta termos à negação (read-modify-write, union — nunca remove). */
+/** Acrescenta termos à negação (união atômica — nunca remove). */
 export async function addTrashKeywordDenylist(terms: string[]): Promise<{ savedAt: string }> {
   const clean = terms.filter((t): t is string => typeof t === "string" && t.length > 0);
   if (!clean.length) return { savedAt: new Date().toISOString() };
-  const current = await getTrashKeywordDenylist();
-  const unique = [...new Set([...current, ...clean])];
-  const savedAt = new Date().toISOString();
-  const { error } = await db
-    .from("app_state")
-    .upsert(
-      { key: TRASH_KEYWORD_DENYLIST_KEY, value: unique, updated_at: savedAt },
-      { onConflict: "key" },
+  try {
+    await mutateAppState(TRASH_KEYWORD_DENYLIST_KEY, parseStringList, (cur) =>
+      unionStrings(cur, clean),
     );
-  if (error) {
+  } catch (error) {
     console.error(
       "[app-state] não foi possível gravar os termos negados de 'possível lixo'",
       error,
     );
-    throw new Error(`Não foi possível gravar: ${error.message}`);
+    throw new Error(
+      `Não foi possível gravar: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
-  return { savedAt };
+  return { savedAt: new Date().toISOString() };
 }
 
 /**
@@ -263,24 +271,21 @@ export async function getCollectionKeywordDenylist(): Promise<string[]> {
   }
 }
 
-/** Acrescenta termos à negação (read-modify-write, union — nunca remove). */
+/** Acrescenta termos à negação (união atômica — nunca remove). */
 export async function addCollectionKeywordDenylist(terms: string[]): Promise<{ savedAt: string }> {
   const clean = terms.filter((t): t is string => typeof t === "string" && t.length > 0);
   if (!clean.length) return { savedAt: new Date().toISOString() };
-  const current = await getCollectionKeywordDenylist();
-  const unique = [...new Set([...current, ...clean])];
-  const savedAt = new Date().toISOString();
-  const { error } = await db
-    .from("app_state")
-    .upsert(
-      { key: COLLECTION_KEYWORD_DENYLIST_KEY, value: unique, updated_at: savedAt },
-      { onConflict: "key" },
+  try {
+    await mutateAppState(COLLECTION_KEYWORD_DENYLIST_KEY, parseStringList, (cur) =>
+      unionStrings(cur, clean),
     );
-  if (error) {
+  } catch (error) {
     console.error("[app-state] não foi possível gravar os termos genéricos da Coleção", error);
-    throw new Error(`Não foi possível gravar: ${error.message}`);
+    throw new Error(
+      `Não foi possível gravar: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
-  return { savedAt };
+  return { savedAt: new Date().toISOString() };
 }
 
 /**
@@ -331,6 +336,14 @@ export async function setUserInterests(items: string[]): Promise<{ savedAt: stri
  */
 type CollectionLinks = Record<string, string | false>;
 
+function parseCollectionLinks(raw: unknown): CollectionLinks {
+  const out: CollectionLinks = {};
+  for (const [k, v] of Object.entries(parseObject(raw))) {
+    if (v === false || typeof v === "string") out[k] = v;
+  }
+  return out;
+}
+
 export async function getCollectionLinks(): Promise<CollectionLinks> {
   try {
     const { data, error } = await db
@@ -339,52 +352,54 @@ export async function getCollectionLinks(): Promise<CollectionLinks> {
       .eq("key", COLLECTION_LINKS_KEY)
       .maybeSingle();
     if (error) throw error;
-    const value = data?.value;
-    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-    const out: CollectionLinks = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (v === false || typeof v === "string") out[k] = v;
-    }
-    return out;
+    return parseCollectionLinks(data?.value);
   } catch (error) {
     console.error("[app-state] não foi possível ler os vínculos da coleção (usando vazio)", error);
     return {};
   }
 }
 
-async function saveCollectionLinks(links: CollectionLinks): Promise<{ savedAt: string }> {
-  const savedAt = new Date().toISOString();
-  const { error } = await db
-    .from("app_state")
-    .upsert(
-      { key: COLLECTION_LINKS_KEY, value: links, updated_at: savedAt },
-      { onConflict: "key" },
-    );
-  if (error) {
-    console.error("[app-state] não foi possível gravar os vínculos da coleção", error);
-    throw new Error(`Não foi possível gravar os vínculos da coleção: ${error.message}`);
-  }
-  return { savedAt };
-}
-
 /**
- * Aplica UMA mudança no mapa de vínculos (read-modify-write): `null` apaga a chave
+ * Aplica UMA mudança no mapa de vínculos (atômico): `null` apaga a chave
  * (volta ao automático); string/false gravam o vínculo/rejeição.
  */
 export async function setCollectionLink(
   lotId: string,
   value: string | false | null,
 ): Promise<{ savedAt: string }> {
-  const links = await getCollectionLinks();
-  if (value === null) delete links[lotId];
-  else links[lotId] = value;
-  return saveCollectionLinks(links);
+  try {
+    await mutateAppState(COLLECTION_LINKS_KEY, parseCollectionLinks, (links) => {
+      if (value === null) delete links[lotId];
+      else links[lotId] = value;
+      return links;
+    });
+  } catch (error) {
+    console.error("[app-state] não foi possível gravar os vínculos da coleção", error);
+    throw new Error(
+      `Não foi possível gravar os vínculos da coleção: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  return { savedAt: new Date().toISOString() };
 }
 
 /**
  * Aprendizado por assinatura: cada decisão (confirmar/negar) guarda como o disco
  * apareceu no lote, para SUGERIR (nunca marcar sozinho) em outros lotes parecidos.
  */
+function parseCollectionFeedback(raw: unknown): OwnedFeedback[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as unknown[]).filter(
+    (e): e is OwnedFeedback =>
+      !!e &&
+      typeof e === "object" &&
+      typeof (e as OwnedFeedback).lotId === "string" &&
+      typeof (e as OwnedFeedback).itemId === "string" &&
+      ((e as OwnedFeedback).verdict === "pos" || (e as OwnedFeedback).verdict === "neg") &&
+      Array.isArray((e as OwnedFeedback).artist) &&
+      Array.isArray((e as OwnedFeedback).album),
+  );
+}
+
 export async function getCollectionFeedback(): Promise<OwnedFeedback[]> {
   try {
     const { data, error } = await db
@@ -393,52 +408,37 @@ export async function getCollectionFeedback(): Promise<OwnedFeedback[]> {
       .eq("key", COLLECTION_FEEDBACK_KEY)
       .maybeSingle();
     if (error) throw error;
-    const value = data?.value;
-    if (!Array.isArray(value)) return [];
-    return (value as unknown[]).filter(
-      (e): e is OwnedFeedback =>
-        !!e &&
-        typeof e === "object" &&
-        typeof (e as OwnedFeedback).lotId === "string" &&
-        typeof (e as OwnedFeedback).itemId === "string" &&
-        ((e as OwnedFeedback).verdict === "pos" || (e as OwnedFeedback).verdict === "neg") &&
-        Array.isArray((e as OwnedFeedback).artist) &&
-        Array.isArray((e as OwnedFeedback).album),
-    );
+    return parseCollectionFeedback(data?.value);
   } catch (error) {
     console.error("[app-state] não foi possível ler o feedback da coleção (usando vazio)", error);
     return [];
   }
 }
 
-async function saveCollectionFeedback(entries: OwnedFeedback[]): Promise<void> {
-  const savedAt = new Date().toISOString();
-  const { error } = await db
-    .from("app_state")
-    .upsert(
-      { key: COLLECTION_FEEDBACK_KEY, value: entries, updated_at: savedAt },
-      { onConflict: "key" },
-    );
-  if (error) {
+async function mutateCollectionFeedback(
+  change: (entries: OwnedFeedback[]) => OwnedFeedback[],
+): Promise<void> {
+  try {
+    await mutateAppState(COLLECTION_FEEDBACK_KEY, parseCollectionFeedback, change);
+  } catch (error) {
     console.error("[app-state] não foi possível gravar o feedback da coleção", error);
-    throw new Error(`Não foi possível gravar o feedback da coleção: ${error.message}`);
+    throw new Error(
+      `Não foi possível gravar o feedback da coleção: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
-/** Acrescenta uma entrada de aprendizado, deduplicando por `lotId`+`verdict`. */
+/** Acrescenta uma entrada de aprendizado, deduplicando por `lotId`+`verdict` (atômico). */
 export async function addCollectionFeedback(entry: OwnedFeedback): Promise<void> {
-  const entries = (await getCollectionFeedback()).filter(
-    (e) => !(e.lotId === entry.lotId && e.verdict === entry.verdict),
-  );
-  entries.push(entry);
-  await saveCollectionFeedback(entries);
+  await mutateCollectionFeedback((entries) => [
+    ...entries.filter((e) => !(e.lotId === entry.lotId && e.verdict === entry.verdict)),
+    entry,
+  ]);
 }
 
 /** Remove todo o aprendizado originado de um lote (usado no "reativar automático"). */
 export async function removeCollectionFeedbackByLot(lotId: string): Promise<void> {
-  const entries = await getCollectionFeedback();
-  const kept = entries.filter((e) => e.lotId !== lotId);
-  if (kept.length !== entries.length) await saveCollectionFeedback(kept);
+  await mutateCollectionFeedback((entries) => entries.filter((e) => e.lotId !== lotId));
 }
 
 /**
@@ -473,21 +473,17 @@ export async function clearSalesCaptured(): Promise<void> {
   if (error) console.error("[app-state] não foi possível limpar o checkpoint de vendas", error);
 }
 
-/** Acrescenta `idLeilao`s ao conjunto de leilões já capturados (read-modify-write). */
+/** Acrescenta `idLeilao`s ao conjunto de leilões já capturados (união atômica). */
 export async function markSalesCaptured(idLeiloes: string[]): Promise<void> {
   const clean = idLeiloes.filter((s) => typeof s === "string" && s);
   if (!clean.length) return;
-  const current = await getSalesCaptured();
-  for (const id of clean) current.add(id);
-  const { error } = await db
-    .from("app_state")
-    .upsert(
-      { key: SALES_CAPTURED_KEY, value: [...current], updated_at: new Date().toISOString() },
-      { onConflict: "key" },
-    );
-  if (error) {
+  try {
+    await mutateAppState(SALES_CAPTURED_KEY, parseStringList, (cur) => unionStrings(cur, clean));
+  } catch (error) {
     console.error("[app-state] não foi possível gravar os leilões capturados", error);
-    throw new Error(`Não foi possível gravar os leilões capturados: ${error.message}`);
+    throw new Error(
+      `Não foi possível gravar os leilões capturados: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -517,19 +513,23 @@ type AnalyticsAliases = {
   excludedArtists: Record<string, string>;
 };
 
-function toStringMap(value: unknown): Record<string, string> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof v === "string" && v.trim()) out[k] = v;
-  }
-  return out;
-}
-
 async function readStringMap(key: string): Promise<Record<string, string>> {
   const { data, error } = await db.from("app_state").select("value").eq("key", key).maybeSingle();
   if (error) throw error;
-  return toStringMap(data?.value);
+  return parseStringMap(data?.value);
+}
+
+function parseSaleOverrides(raw: unknown): Record<string, SaleOverride> {
+  const out: Record<string, SaleOverride> = {};
+  for (const [k, v] of Object.entries(parseObject(raw))) {
+    if (!v || typeof v !== "object" || Array.isArray(v)) continue;
+    const o = v as Record<string, unknown>;
+    const entry: SaleOverride = {};
+    if (typeof o["artist"] === "string" && o["artist"].trim()) entry.artist = o["artist"];
+    if (typeof o["album"] === "string" && o["album"].trim()) entry.album = o["album"];
+    if (entry.artist || entry.album) out[k] = entry;
+  }
+  return out;
 }
 
 /** Lê o mapa de correções POR VENDA (`Record<lotId, {artist?, album?}>`). */
@@ -540,18 +540,7 @@ async function readSaleOverrides(): Promise<Record<string, SaleOverride>> {
     .eq("key", ANALYTICS_SALE_OVERRIDES_KEY)
     .maybeSingle();
   if (error) throw error;
-  const value = data?.value;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const out: Record<string, SaleOverride> = {};
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    if (!v || typeof v !== "object" || Array.isArray(v)) continue;
-    const o = v as Record<string, unknown>;
-    const entry: SaleOverride = {};
-    if (typeof o["artist"] === "string" && o["artist"].trim()) entry.artist = o["artist"];
-    if (typeof o["album"] === "string" && o["album"].trim()) entry.album = o["album"];
-    if (entry.artist || entry.album) out[k] = entry;
-  }
-  return out;
+  return parseSaleOverrides(data?.value);
 }
 
 /** Lê os apelidos de artista/álbum, correções por venda e exclusões do Analytics. Best-effort. */
@@ -575,8 +564,36 @@ export async function getAnalyticsAliases(): Promise<AnalyticsAliases> {
 }
 
 /**
+ * Aplica `change` a um mapa do Analytics de forma atômica (linha travada na transação; erro de
+ * leitura aborta sem gravar) e invalida o índice de vendas passadas da IA.
+ */
+async function mutateAnalyticsMap<T>(
+  key: string,
+  parse: (raw: unknown) => T,
+  change: (map: T) => T,
+  errorMessage: string,
+): Promise<{ savedAt: string }> {
+  try {
+    await mutateAppState(key, parse, change);
+  } catch (error) {
+    console.error(`[app-state] não foi possível gravar ${key}`, error);
+    throw new Error(`${errorMessage}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  await dropPastSalesIndex();
+  return { savedAt: new Date().toISOString() };
+}
+
+/** O Analytics mudou (apelido, correção, exclusão): a comparação de vendas da IA precisa reler. */
+async function dropPastSalesIndex(): Promise<void> {
+  const { invalidatePastSalesIndex } = await import("./past-sales.server");
+  invalidatePastSalesIndex();
+}
+
+const ALIAS_ERROR = "Não foi possível gravar os apelidos";
+
+/**
  * Exclui/reinclui UMA venda do Analytics (`lotId`). `label` é um rótulo amigável só para a UI de
- * "Ocultos"; `excluded=false` remove a exclusão (reinclui). Read-modify-write.
+ * "Ocultos"; `excluded=false` remove a exclusão (reinclui). Atômico.
  */
 export async function setAnalyticsExcludedSale(
   lotId: string,
@@ -585,17 +602,21 @@ export async function setAnalyticsExcludedSale(
 ): Promise<{ savedAt: string }> {
   const id = typeof lotId === "string" ? lotId.trim() : "";
   if (!id) return { savedAt: new Date().toISOString() };
-  const map = await readStringMap(ANALYTICS_EXCLUDED_SALES_KEY).catch(
-    (): Record<string, string> => ({}),
+  return mutateAnalyticsMap(
+    ANALYTICS_EXCLUDED_SALES_KEY,
+    parseStringMap,
+    (map) => {
+      if (excluded) map[id] = label.trim() || id;
+      else delete map[id];
+      return map;
+    },
+    ALIAS_ERROR,
   );
-  if (excluded) map[id] = label.trim() || id;
-  else delete map[id];
-  return saveStringMap(ANALYTICS_EXCLUDED_SALES_KEY, map);
 }
 
 /**
  * Exclui/reinclui um ARTISTA inteiro do Analytics. `keys` são as chaves do grupo (a `key` final e
- * as `sourceKeys`); `label` é o nome exibido. `excluded=false` reinclui. Read-modify-write.
+ * as `sourceKeys`); `label` é o nome exibido. `excluded=false` reinclui. Atômico.
  */
 export async function setAnalyticsExcludedArtist(
   keys: string[],
@@ -604,19 +625,23 @@ export async function setAnalyticsExcludedArtist(
 ): Promise<{ savedAt: string }> {
   const list = [...new Set(keys.filter((k) => typeof k === "string" && k))];
   if (!list.length) return { savedAt: new Date().toISOString() };
-  const map = await readStringMap(ANALYTICS_EXCLUDED_ARTISTS_KEY).catch(
-    (): Record<string, string> => ({}),
+  return mutateAnalyticsMap(
+    ANALYTICS_EXCLUDED_ARTISTS_KEY,
+    parseStringMap,
+    (map) => {
+      for (const k of list) {
+        if (excluded) map[k] = label.trim() || k;
+        else delete map[k];
+      }
+      return map;
+    },
+    ALIAS_ERROR,
   );
-  for (const k of list) {
-    if (excluded) map[k] = label.trim() || k;
-    else delete map[k];
-  }
-  return saveStringMap(ANALYTICS_EXCLUDED_ARTISTS_KEY, map);
 }
 
 /**
  * Define/limpa a correção de UMA venda (`lotId`): grava `{artist?, album?}` ou remove a chave
- * quando `value` é null (volta ao automático). Read-modify-write.
+ * quando `value` é null (volta ao automático).
  */
 export async function setAnalyticsSaleOverride(
   lotId: string,
@@ -626,8 +651,8 @@ export async function setAnalyticsSaleOverride(
 }
 
 /**
- * Mesma correção por venda, para VÁRIOS lotes numa única leitura-e-gravação (mover um álbum
- * inteiro de artista). Fazer N chamadas paralelas perderia escritas: o mapa é um único JSON.
+ * Mesma correção por venda, para VÁRIOS lotes numa única mutação atômica (mover um álbum
+ * inteiro de artista).
  */
 export async function setAnalyticsSaleOverrides(
   lotIds: string[],
@@ -637,54 +662,26 @@ export async function setAnalyticsSaleOverrides(
     ...new Set(lotIds.map((x) => (typeof x === "string" ? x.trim() : "")).filter(Boolean)),
   ];
   if (!ids.length) return { savedAt: new Date().toISOString() };
-  const map = await readSaleOverrides().catch((): Record<string, SaleOverride> => ({}));
   const entry: SaleOverride = {};
   if (value?.artist && value.artist.trim()) entry.artist = value.artist.trim();
   if (value?.album && value.album.trim()) entry.album = value.album.trim();
-  for (const id of ids) {
-    if (!entry.artist && !entry.album) delete map[id];
-    else map[id] = { ...entry };
-  }
-  const savedAt = new Date().toISOString();
-  const { error } = await db.from("app_state").upsert(
-    { key: ANALYTICS_SALE_OVERRIDES_KEY, value: map, updated_at: savedAt },
-    {
-      onConflict: "key",
+  return mutateAnalyticsMap(
+    ANALYTICS_SALE_OVERRIDES_KEY,
+    parseSaleOverrides,
+    (map) => {
+      for (const id of ids) {
+        if (!entry.artist && !entry.album) delete map[id];
+        else map[id] = { ...entry };
+      }
+      return map;
     },
+    "Não foi possível gravar a correção da venda",
   );
-  if (error) {
-    console.error("[app-state] não foi possível gravar a correção da venda", error);
-    throw new Error(`Não foi possível gravar a correção da venda: ${error.message}`);
-  }
-  await dropPastSalesIndex();
-  return { savedAt };
-}
-
-/** O Analytics mudou (apelido, correção, exclusão): a comparação de vendas da IA precisa reler. */
-async function dropPastSalesIndex(): Promise<void> {
-  const { invalidatePastSalesIndex } = await import("./past-sales.server");
-  invalidatePastSalesIndex();
-}
-
-async function saveStringMap(
-  key: string,
-  map: Record<string, string>,
-): Promise<{ savedAt: string }> {
-  const savedAt = new Date().toISOString();
-  const { error } = await db
-    .from("app_state")
-    .upsert({ key, value: map, updated_at: savedAt }, { onConflict: "key" });
-  if (error) {
-    console.error(`[app-state] não foi possível gravar ${key}`, error);
-    throw new Error(`Não foi possível gravar os apelidos: ${error.message}`);
-  }
-  await dropPastSalesIndex();
-  return { savedAt };
 }
 
 /**
  * Grava um apelido de ARTISTA (renomear/fundir): cada chave em `sourceKeys` passa a apontar para
- * `name`. Chaves normalizadas ausentes/vazias e a `name` vazia são ignoradas (read-modify-write).
+ * `name`. Chaves normalizadas ausentes/vazias e a `name` vazia são ignoradas. Atômico.
  */
 export async function setAnalyticsArtistAlias(
   sourceKeys: string[],
@@ -693,16 +690,20 @@ export async function setAnalyticsArtistAlias(
   const clean = name.trim();
   const keys = sourceKeys.filter((k) => typeof k === "string" && k);
   if (!clean || !keys.length) return { savedAt: new Date().toISOString() };
-  const map = await readStringMap(ANALYTICS_ARTIST_ALIASES_KEY).catch(
-    (): Record<string, string> => ({}),
+  return mutateAnalyticsMap(
+    ANALYTICS_ARTIST_ALIASES_KEY,
+    parseStringMap,
+    (map) => {
+      for (const k of keys) map[k] = clean;
+      return map;
+    },
+    ALIAS_ERROR,
   );
-  for (const k of keys) map[k] = clean;
-  return saveStringMap(ANALYTICS_ARTIST_ALIASES_KEY, map);
 }
 
 /**
  * Grava um apelido de ÁLBUM (renomear/fundir) no escopo do artista: cada chave em `keys`
- * (`"${artistKey}|${albumKey}"`) passa a apontar para `name`. Read-modify-write.
+ * (`"${artistKey}|${albumKey}"`) passa a apontar para `name`. Atômico.
  */
 export async function setAnalyticsAlbumAlias(
   keys: string[],
@@ -711,11 +712,15 @@ export async function setAnalyticsAlbumAlias(
   const clean = name.trim();
   const list = keys.filter((k) => typeof k === "string" && k);
   if (!clean || !list.length) return { savedAt: new Date().toISOString() };
-  const map = await readStringMap(ANALYTICS_ALBUM_ALIASES_KEY).catch(
-    (): Record<string, string> => ({}),
+  return mutateAnalyticsMap(
+    ANALYTICS_ALBUM_ALIASES_KEY,
+    parseStringMap,
+    (map) => {
+      for (const k of list) map[k] = clean;
+      return map;
+    },
+    ALIAS_ERROR,
   );
-  for (const k of list) map[k] = clean;
-  return saveStringMap(ANALYTICS_ALBUM_ALIASES_KEY, map);
 }
 
 /** Remove um apelido (desfazer): `kind` escolhe o mapa; `key` é a chave a apagar. */
@@ -724,10 +729,15 @@ export async function clearAnalyticsAlias(
   key: string,
 ): Promise<{ savedAt: string }> {
   const mapKey = kind === "artist" ? ANALYTICS_ARTIST_ALIASES_KEY : ANALYTICS_ALBUM_ALIASES_KEY;
-  const map = await readStringMap(mapKey).catch((): Record<string, string> => ({}));
-  if (!(key in map)) return { savedAt: new Date().toISOString() };
-  delete map[key];
-  return saveStringMap(mapKey, map);
+  return mutateAnalyticsMap(
+    mapKey,
+    parseStringMap,
+    (map) => {
+      delete map[key];
+      return map;
+    },
+    ALIAS_ERROR,
+  );
 }
 
 /**

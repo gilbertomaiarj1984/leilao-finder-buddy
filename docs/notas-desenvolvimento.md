@@ -80,7 +80,9 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
     `{updated, total, nextOffset, done}`.
 - Camadas: `memCache` (módulo, garante a lista sem banco) + tabela **`lots`** (durável, upsert
   por `id`, **merge** — nunca apaga o que não veio) + `app_state` (chaves globais: casas
-  verificadas, interesses, modo de IA, batches pendentes, vínculos/aprendizado da Coleção).
+  verificadas, interesses, modo de IA, batches pendentes, vínculos/aprendizado da Coleção). **Escrita em chave que guarda um JSON inteiro (lista/mapa) sempre via
+  `mutateAppState`** (`app-state-mutate.server.ts`, transação com `FOR UPDATE`) — nunca ler com
+  leitor tolerante, alterar e regravar (perde dado em erro de leitura e em escrita concorrente).
 - `id` do lote = `"${idLeilao}-${idPeca}"`. Janela = **5 dias** (`WINDOW_DAYS`).
 - **Última atualização:** `getVinylLots` retorna `updatedAt` = maior `updated_at` de `lots` na
   janela (trigger `update_lots_updated_at` toca a coluna no upsert); exibido sob "Atualizar

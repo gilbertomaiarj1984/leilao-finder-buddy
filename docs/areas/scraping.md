@@ -17,7 +17,10 @@
   - **Meus lances**: `conta_site.asp?l=4` → `listMyBidsFromSite` (mesmos `.oc-item`; **meu
     lance** em `.product-price b.pb-1`; **status** na classe/ícone `lstatus`:
     `Coberto`/`Vencendo`/`Vencedor`/`Coberto e Vendido`/`Não vendido`).
-  - **Toggle vigia**: `POST vigiar_peca.asp` (`idpeca/idcliente/idleilao/base`, resposta `+`/`-`).
+  - **Toggle vigia**: `POST vigiar_peca.asp` (`idpeca/idcliente/idleilao/base`, resposta `+`/`-`). É um
+    **toggle**: POST nunca é repetido às cegas (`fetchAttempts`: 1 tentativa; GET segue com 3). Em falha
+    ambígua `toggleWatchWith` (`leiloesbr-watch.server.ts`) lê o estado real da conta e só alterna de
+    novo se for diferente do desejado (máx. 2 POSTs).
 - **⚠️ Limite de taxa da listagem (v0.85.2):** a partir da 3ª requisição seguida a
   `busca_andamento.asp` responde **HTTP 200 com corpo VAZIO** (0 bytes) — não lança erro. Toda
   busca da listagem (`fetchPage`/`fetchPageSearch`) passa por `listingFetch`

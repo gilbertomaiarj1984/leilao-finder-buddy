@@ -140,6 +140,8 @@ type AuthFetchInit = {
   method?: "GET" | "POST";
   body?: string;
   referer?: string;
+  /** Tentativas totais; padrão 3 para GET e 1 para POST (ver `fetchAttempts`). */
+  attempts?: number;
 };
 
 const REQUEST_TIMEOUT_MS = 20000;
@@ -184,9 +186,20 @@ async function fetchOnce(url: string, init: AuthFetchInit, cookie?: string): Pro
 
 // O site devolve 500/502 de forma intermitente sob carga: tentamos algumas vezes.
 // Um 4xx (ex.: 404/403) é definitivo — re-tentar só adiciona latência, então falha logo.
+/**
+ * Tentativas totais de uma requisição. POST NÃO é repetido por padrão: o site responde às ações
+ * da conta (ex.: `vigiar_peca.asp`) como "toggle", e repetir um POST cuja resposta se perdeu mas que
+ * o servidor já aplicou desfaz a ação. Quem precisa de repetição confirma o estado antes de repetir.
+ */
+export function fetchAttempts(init: Pick<AuthFetchInit, "method" | "attempts">): number {
+  if (init.attempts && init.attempts > 0) return init.attempts;
+  return init.method === "POST" ? 1 : 3;
+}
+
 async function fetchWithRetry(url: string, init: AuthFetchInit, cookie?: string): Promise<string> {
   let lastError: unknown;
-  for (let i = 0; i < 3; i++) {
+  const attempts = fetchAttempts(init);
+  for (let i = 0; i < attempts; i++) {
     try {
       return await fetchOnce(url, init, cookie);
     } catch (error) {
@@ -194,7 +207,7 @@ async function fetchWithRetry(url: string, init: AuthFetchInit, cookie?: string)
       if (error instanceof LeiloesBrHttpError && error.status >= 400 && error.status < 500) {
         break;
       }
-      await new Promise((resolve) => setTimeout(resolve, 600 * (i + 1)));
+      if (i < attempts - 1) await new Promise((resolve) => setTimeout(resolve, 600 * (i + 1)));
     }
   }
   throw lastError instanceof Error ? lastError : new Error("Falha ao acessar o LeilõesBR.");
