@@ -1,0 +1,7 @@
+# Sites do VPS verificados depois de cada deploy (docker/deploy/smoke-sites.sh).
+# Formato: <url> <códigos HTTP aceitos, separados por vírgula>. Linhas com # e em branco são ignoradas.
+# O app do garimpo entra sozinho pelo secret APP_URL (/api/health). Cada site abaixo é de outro projeto:
+# um 401 é a resposta CERTA do painel de preços (Basic Auth), não um erro.
+https://agenda.143-95-214-240.sslip.io/login 200
+https://pdf.143-95-214-240.sslip.io/ 200
+https://precos.143-95-214-240.sslip.io/api/itens 401

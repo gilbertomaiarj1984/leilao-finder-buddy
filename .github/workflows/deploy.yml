@@ -110,7 +110,10 @@ jobs:
           else
             ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts
           fi
-          ssh -p "$port" "$VPS_USER@$VPS_HOST" "mkdir -p '$VPS_DEPLOY_PATH/supabase-init'"
+          # Caddyfile.prev = rede de segurança do remote-deploy.sh: se o Caddyfile novo (ou algum sites/*.caddy)
+          # não validar, o deploy aborta e devolve este arquivo, em vez de deixar um Caddyfile quebrado no disco.
+          ssh -p "$port" "$VPS_USER@$VPS_HOST" "mkdir -p '$VPS_DEPLOY_PATH/supabase-init' && \
+            if [ -f '$VPS_DEPLOY_PATH/Caddyfile' ]; then cp -p '$VPS_DEPLOY_PATH/Caddyfile' '$VPS_DEPLOY_PATH/Caddyfile.prev'; fi"
           scp -P "$port" docker-compose.yml Caddyfile docker/deploy/remote-deploy.sh "$VPS_USER@$VPS_HOST:$VPS_DEPLOY_PATH/"
           # Só roda de fato num volume de dados novo (postgres:17-alpine, initdb.d) — não
           # afeta um banco já existente. Nome com prefixo numérico: initdb.d roda em ordem
@@ -144,3 +147,12 @@ jobs:
           # testado localmente por tools/local-tests/remote-deploy.sh.
           ssh -p "$port" "$VPS_USER@$VPS_HOST" "cd '$VPS_DEPLOY_PATH' && \
             APP_IMAGE='$APP_IMAGE' BACKUP_IMAGE='$BACKUP_IMAGE' bash ./remote-deploy.sh"
+
+      - name: Verificar acesso aos sites (não bloqueia o deploy)
+        # Olha de fora (curl) se o app e os outros sites servidos pelo mesmo Caddy (docker/deploy/smoke-sites.txt)
+        # respondem como esperado. `continue-on-error`: um site de OUTRO projeto fora do ar não deve marcar o
+        # deploy do garimpo como falho, mas o aviso fica visível no log e na anotação do run.
+        continue-on-error: true
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+        run: bash docker/deploy/smoke-sites.sh

@@ -171,24 +171,39 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
 
 ## Caddy em stack própria (levantado em 30/10/2026)
 
-O Caddy do VPS atende vários projetos (garimpo, AgendaBoa, pdf-unite, o rastreador de preços, Dokploy),
-mas a configuração dele mora na pasta do garimpo (`/home/deploy/garimpo`) e todo deploy do garimpo
-sobrescreve o `Caddyfile` dali. Já apagou blocos de outros projetos (backups `Caddyfile.bak-*` e o script
-`restaurar-painel.sh` do rastreador existem por causa disso). O `import /etc/caddy/sites/*.caddy`
-(v0.185.5) é o paliativo; o desenho final é um proxy separado:
+O Caddy do VPS atende vários projetos (garimpo, AgendaBoa, pdf-unite, o painel de preços, Dokploy), mas a
+configuração dele mora na pasta do garimpo (`/home/deploy/garimpo`) e todo deploy do garimpo mexe nela. Já apagou
+blocos de outros projetos (backups `Caddyfile.bak-*` e o `restaurar-painel.sh` do rastreador existem por causa
+disso). Paliativos já no ar: `import /etc/caddy/sites/*.caddy` (v0.185.5) e a validação do `Caddyfile` + `sites/`
+antes de qualquer deploy mexer em serviço (v0.185.6). O que continua acoplado: o Caddy sobe/recria junto com o
+`docker compose up -d` do garimpo (um compose quebrado do garimpo, p. ex. variável `${…:?}` faltando no `.env`,
+impede o `up` do Caddy também) e o `app:3000`/`portainer:9000` só resolvem pela rede `garimpo_default`.
 
-- Pasta própria (ex.: `/home/deploy/proxy`) com `docker-compose.yml`, `Caddyfile` e `sites/`; cada projeto
-  só deposita o seu `.caddy`. O garimpo deixa de ser dono da configuração dos outros.
-- **Migração (janela combinada, breve indisponibilidade):** parar o `garimpo-caddy-1`, subir o novo nas
-  portas 80/443, levar os volumes `caddy_data` (certificados — evita estourar o limite do Let's Encrypt) e
-  `caddy_config`, e ligar o novo Caddy às redes `proxy`, `dokploy-network` e à rede do garimpo (o `app:3000`
-  hoje só é alcançável por ela; alternativa: pôr o `app` também na `proxy`).
-- Ajustes no repo: tirar o serviço `caddy` do `docker-compose.yml` do garimpo, o `Caddyfile` do garimpo virar
-  só o bloco dele em `sites/`, e `deploy.yml`/`remote-deploy.sh` pararem de copiar/recarregar o Caddyfile
-  global (passam a recarregar o proxy). Rever o `AGENTS.md` (regras de validar e recarregar o Caddyfile).
-- Antes: ver o que o `restaurar-painel.sh` faz (ele não pode reinserir o bloco `precos` no Caddyfile) e
-  quem mais escreve no Caddyfile; tirar `sites/` da pasta do garimpo via `CADDY_SITES_DIR` já ajuda — mas
-  o `restaurar-painel.sh` (repo do rastreador) assume `<pasta do Caddyfile>/sites` e precisa aprender o novo caminho.
+**Desenho final:** pasta própria (`/home/deploy/proxy`) com `docker-compose.yml`, `Caddyfile`, `.env` e `sites/`;
+cada projeto só deposita o seu `.caddy`. **Não foi feito de propósito sem acompanhamento:** é o único passo que,
+se errar, derruba TODOS os sites de uma vez (portas 80/443), não dá para testar fora do VPS e mexe nos projetos
+dos outros — fazer numa janela combinada, com o roteiro abaixo.
+
+**Roteiro (a validar na janela; cada passo tem volta):**
+1. Preparar sem derrubar nada: criar `/home/deploy/proxy`, copiar `Caddyfile`, `sites/` e as variáveis do Caddy
+   (`APP_DOMAIN`, `PORTAINER_DOMAIN`, `PREVIEW_DOMAIN`, `PREVIEW_BASIC_AUTH_HASH`, `PORTAINER_ALLOWED_IPS`) para um
+   `.env` próprio. No compose novo: serviço `caddy` igual ao atual, volumes **externos** `garimpo_caddy_data`,
+   `garimpo_caddy_config` e `garimpo_collection_data` (`external: true`, mesmos nomes — os certificados e as fotos
+   não se movem) e as redes externas `proxy`, `dokploy-network` e `garimpo_default`.
+2. Validar sem subir: `docker compose -f /home/deploy/proxy/docker-compose.yml config` e
+   `docker compose … run --rm --no-deps -T -e XDG_DATA_HOME=/tmp/v -e XDG_CONFIG_HOME=/tmp/c caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`.
+3. Troca (alguns segundos fora do ar): `cd /home/deploy/garimpo && docker compose stop caddy`, depois
+   `cd /home/deploy/proxy && docker compose up -d`. Conferir com `bash docker/deploy/smoke-sites.sh` (repo do
+   garimpo) e `docker exec <caddy novo> ls /etc/caddy/sites`.
+4. **Volta, se qualquer site falhar:** `cd /home/deploy/proxy && docker compose down` e
+   `cd /home/deploy/garimpo && docker compose up -d caddy` (os volumes são os mesmos; nada se perde).
+5. Só depois de uma semana estável: no repo, tirar o serviço `caddy` do `docker-compose.yml` do garimpo (e
+   `caddy_data`/`caddy_config` dos volumes, sem apagá-los no VPS), deixar no `Caddyfile` do proxy só os blocos
+   fixos e mover os blocos de `agenda`/`pdf` para `sites/*.caddy` (cada projeto no seu), e fazer
+   `deploy.yml`/`remote-deploy.sh` pararem de copiar/validar/recarregar o Caddyfile global (passam a validar o
+   `sites/` do proxy e a recarregar o `caddy` do proxy). Rever as regras de Caddyfile no `AGENTS.md`.
+6. Ajustar o `restaurar-painel.sh` (repo do rastreador) para o novo `sites/`: hoje ele assume
+   `<pasta do Caddyfile>/sites`; com `CADDYFILE=/home/deploy/proxy/Caddyfile` já funciona.
 
 ## Revisão geral (21/10/2026) — o que o PR de infra deixou de fora
 
