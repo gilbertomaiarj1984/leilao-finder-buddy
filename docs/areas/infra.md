@@ -3,31 +3,12 @@
 > Parte das notas de desenvolvimento — índice em `docs/notas-desenvolvimento.md`.
 > Atualize esta página ao mudar a mecânica desta área.
 
-## Infra (migração Lovable → Supabase próprio + Vercel, 2026-08)
+## Infra anterior (Vercel + Supabase) — arquivada
 
-- **Deploy Vercel** (não mais Cloudflare). Nitro é plugin Vite (`import { nitro } from
-'nitro/vite'`), **auto-detecta a Vercel** por `process.env.VERCEL`; build gera
-  `.vercel/output` (Build Output API v3). `vercel.json`: `bun run build` / `bun install` /
-  `framework: null`. `bunfig.toml` → npm público; `bun.lock` regenerado.
-- **Auth Supabase nativo** (Google, **PKCE**). Fluxo em `src/routes/auth.tsx`:
-  `signInWithOAuth({redirectTo: origin + '/auth'})` → `/auth?code=…` →
-  `exchangeCodeForSession(code)`. Client com `flowType:'pkce'`, `detectSessionInUrl:false`.
-  Acesso restrito ao e-mail `LEILOESBR_EMAIL` (`src/lib/access.server.ts`).
-- **Supabase**: projeto `rjqzzxhgcelixlgnfcic`. RLS mantém tudo só para `service_role` (o front
-  não lê o banco direto; server functions usam `supabaseAdmin`).
-- **Produção**: `https://leilao-finder-buddy.vercel.app` (branch `main`). Previews de PR usam
-  URL com hash que **muda a cada deploy** (o rodapé mostra a `APP_VERSION` no ar).
-- **Auth URLs (Supabase → Authentication → URL Configuration):** Site URL de produção; Redirect
-  URLs incluem `…vercel.app/**`, o padrão de preview `…-gilbertomaiarj1984s-projects.vercel.app/**`
-  e `http://localhost:3000/**`. Google OAuth: redirect URI
-  `https://rjqzzxhgcelixlgnfcic.supabase.co/auth/v1/callback`.
-- **Env vars** (`.env.example`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`,
-  `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `LEILOESBR_EMAIL`,
-  `LEILOESBR_SENHA`, `CRON_TOKEN`, `ANTHROPIC_API_KEY`, `DISCOGS_TOKEN`. Na Vercel devem estar
-  em **Production**; mudar env exige **Redeploy**. `.env` é gitignored. A `publishable`
-  (`sb_publishable_`) é pública por design; senha do banco e `service_role` foram rotacionadas
-  após a migração. Dados migrados via `pg_restore --data-only` (usuários do `auth` **não**
-  migrados — login refeito com Google).
+O app já foi servido pela Vercel com Supabase (banco + Auth). Esse histórico (deploy, Auth URLs, env
+vars, projeto Supabase) está em `docs/arquivo/infra-vercel-supabase-historico.md` e **não vale mais**.
+Hoje: VPS único (Docker Compose + Caddy), Postgres próprio, Google OAuth direto — ver a seção
+seguinte, `CLAUDE.md` e `docs/arquivo/economia-fase-2-vps-unico.md`.
 
 ## Infra — economia / saída dos free tiers (migração para VPS concluída, Fase 6 feita)
 

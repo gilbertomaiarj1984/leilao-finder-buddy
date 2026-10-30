@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS public.lots (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS lots_day_key_idx ON public.lots (day_key);
+CREATE INDEX IF NOT EXISTS lots_id_leilao_idx ON public.lots (id_leilao);
 
 DROP TRIGGER IF EXISTS update_lots_updated_at ON public.lots;
 CREATE TRIGGER update_lots_updated_at BEFORE UPDATE ON public.lots

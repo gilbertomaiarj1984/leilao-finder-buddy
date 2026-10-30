@@ -3,6 +3,39 @@
 > Só o que ainda está em aberto. Ao resolver um item, mova-o para
 > `docs/arquivo/pendencias-resolvidas.md` (e registre a versão no `CHANGELOG.md`).
 
+**Review de código (30/10/2026) — itens que ficaram em aberto** — relatório completo na thread do
+projeto; os itens 1 e 2 (app_state atômico, vigia sem retry) saíram na v0.185.7 e a limpeza na v0.185.8.
+Nenhum é urgente; ordem por risco:
+
+- **Pool do Postgres vs. trava de step (`db.server.ts` `max: 5`, `cron-lock.server.ts`)**: cada step
+  travado (`aieval`, `aiident`, `reident`, `sales`, `market`, `condition`, `tracklist`, `fame`) segura
+  1 conexão durante TODA a execução. Com ~5 steps sobrepostos (cron + "Atualizar tudo" + retry) o pool
+  esgota e o app inteiro (inclusive `/api/health`) para de responder. Hoje os steps rodam em sequência,
+  então é raro. Correção: subir `max` (~12–15) e/ou travar com `pg_try_advisory_lock` numa conexão
+  dedicada/curta; ligar `idle_in_transaction_session_timeout`. Confirmar disparando 5 steps em paralelo.
+- **Sessão sem revogação e `assertAllowed` espalhado (`auth.server.ts`, `auth-middleware.ts`)**: cookie
+  de 30 dias que "Sair" só apaga no navegador; a checagem do e-mail dono é chamada à mão em cada
+  handler. Sem brecha hoje (só o dono ganha cookie); vira risco se um handler novo esquecer a chamada
+  ou o app ganhar um 2º usuário. Correção: mover `assertAllowed` para dentro de `requireAuth`, logout
+  só por POST, opcional versão de sessão em `app_state` ("sair de todos") e TTL menor com renovação.
+- **Resumo diário duplicável (`daily-digest.server.ts`, step `dailydigest` fora de `LOCKED_STEPS`)**:
+  checar "já enviei hoje?" e gravar são operações separadas; duas chamadas simultâneas (retry do curl,
+  disparo manual junto do agendado) enviam 2 e-mails. Correção: reservar o dia de forma atômica
+  (`INSERT … ON CONFLICT … WHERE`) no início, ou pôr o step em `LOCKED_STEPS`.
+- **Guard-rails do `db-query.server.ts`**: `update`/`delete` sem filtro afetam a tabela inteira sem
+  erro; `selectCols`/`returningCols` entram crus no SQL (seguro só enquanto os chamadores passam
+  constantes); `.or()` quebra com vírgula/ponto no valor; upsert com chave repetida no lote derruba o
+  lote todo e colunas ausentes em algumas linhas viram `NULL`; limite de 65 535 parâmetros (conferir
+  tamanho dos lotes de `lot_sales`). Correção: exigir filtro (ou `.all()` explícito), validar colunas,
+  deduplicar por chave, fatiar por `65000 / colunas`; testes em `tests/db-query.test.ts`.
+- **Hardening menor**: link público do Analytics vale hoje+ontem (~48 h), token na URL (Referer/log)
+  — `Referrer-Policy: no-referrer` e `noindex` na rota; `isSafeImageUrl`/`isPublicHost` não resolvem DNS
+  nem cobrem 100.64/10; `decodeURIComponent` de `/collection/*` lança em `%` malformado.
+- **Performance**: `readLots` e `getAllLotSales` leem a janela/tabela inteira e mandam tudo numa
+  resposta; paginar por dia e selecionar só as colunas usadas quando crescer.
+- **Testes que faltam**: sessão/OAuth (`auth.server.ts`), `safeResolve`, `tokensMatch`, janela do token
+  público, `withStepLock`, merge de cookies do login. Exportar as funções puras e cobrir.
+
 **Leilão que dura mais de um dia só aparece em um dia (v0.185.4)** — o Acervo do Garimpeiro (leilão 66561) é
 anunciado como "hoje e amanhã", mas a listagem da LeilõesBR traz uma única data por leilão (30/10), então os
 lotes só aparecem nesse dia. Falta descobrir se o início/fim real vem do catálogo da casa (responde 403 ao IP do
@@ -185,6 +218,7 @@ se errar, derruba TODOS os sites de uma vez (portas 80/443), não dá para testa
 dos outros — fazer numa janela combinada, com o roteiro abaixo.
 
 **Roteiro (a validar na janela; cada passo tem volta):**
+
 1. Preparar sem derrubar nada: criar `/home/deploy/proxy`, copiar `Caddyfile`, `sites/` e as variáveis do Caddy
    (`APP_DOMAIN`, `PORTAINER_DOMAIN`, `PREVIEW_DOMAIN`, `PREVIEW_BASIC_AUTH_HASH`, `PORTAINER_ALLOWED_IPS`) para um
    `.env` próprio. No compose novo: serviço `caddy` igual ao atual, volumes **externos** `garimpo_caddy_data`,

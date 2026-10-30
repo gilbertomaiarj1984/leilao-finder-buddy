@@ -19,7 +19,9 @@ export async function handleHealth(request: Request): Promise<Response | null> {
     await getSql()`select 1`;
     return json({ ok: true });
   } catch (error) {
-    return json({ ok: false, error: (error as Error)?.message ?? "falha desconhecida" }, 503);
+    // Sem expor a mensagem (pode conter host/usuário do banco): o endpoint é público.
+    console.error("[health] banco indisponível", error);
+    return json({ ok: false }, 503);
   }
 }
 
