@@ -28,6 +28,8 @@ type UnsoldLot = {
   artist: string;
   image: string | null;
   url: string;
+  /** Valor do lote na listagem (sem lance = lance inicial); "" quando desconhecido. */
+  price: string;
 };
 
 type UnsoldLotsResult = {
@@ -108,7 +110,7 @@ export async function getUnsoldLotsForAuction(
       fetchCatalogData(domain, idLeilao),
       db
         .from("lots")
-        .select("id_peca, title, artist, image")
+        .select("id_peca, title, artist, image, price")
         .eq("id_leilao", idLeilao)
         .eq("day_key", dayKey)
         .then((r) =>
@@ -119,6 +121,7 @@ export async function getUnsoldLotsForAuction(
                 title: string;
                 artist: string;
                 image: string | null;
+                price: string;
               }[]),
         ),
     ]);
@@ -139,6 +142,7 @@ export async function getUnsoldLotsForAuction(
         title: known.title,
         artist: known.artist,
         image: known.image,
+        price: known.price ?? "",
         url: `${domain}/peca.asp?ID=${idPeca}`,
       });
     }

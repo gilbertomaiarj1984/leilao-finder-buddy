@@ -64,6 +64,8 @@ export function MobileDashboardHeader({
     setWatchedViewDay,
     unsoldViewDay,
     setUnsoldViewDay,
+    noBidFilter,
+    setNoBidFilter,
     todayUnsold,
     todayKey,
     setBidsViewDay,
@@ -289,11 +291,16 @@ export function MobileDashboardHeader({
           {[
             {
               label: "Todos os lotes",
-              on: watchedViewDay !== day && bidsViewDay !== day && unsoldViewDay !== day,
+              on:
+                watchedViewDay !== day &&
+                bidsViewDay !== day &&
+                unsoldViewDay !== day &&
+                !noBidFilter,
               click: () => {
                 setWatchedViewDay(null);
                 setBidsViewDay(null);
                 setUnsoldViewDay(null);
+                setNoBidFilter(false);
               },
             },
             {
@@ -312,6 +319,16 @@ export function MobileDashboardHeader({
                 setWatchedViewDay(null);
                 setUnsoldViewDay(null);
                 setBidsViewDay(bidsViewDay === day ? null : day);
+              },
+            },
+            {
+              label: "Só sem lance",
+              on: noBidFilter,
+              click: () => {
+                setWatchedViewDay(null);
+                setBidsViewDay(null);
+                setUnsoldViewDay(null);
+                setNoBidFilter(!noBidFilter);
               },
             },
             ...(day === todayKey && unsoldCount > 0
