@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.187.4** — **Aviso de filtro ativo na aba Vigiados**: o filtro dos contadores (verde/vermelho/amarelo, salvo no navegador) escondia lotes sem sinal — ex.: o amarelo "só vigia" some com o lote vigiado que já tem lance. Agora um aviso no topo mostra quantos lotes estão escondidos, com "Limpar filtro" (`watched-tab.tsx`).
 - **0.187.3** — **Casamento do De olho sem falso positivo de nome curto**: nomes de artista de até 5 letras só casam EXATOS (sem tolerância de 1 letra: "Nara" casava com PARA/NADA/CARA) e disco homônimo (nome = artista) exige artista CONFIRMADO no lote, não só citado no título + ano. Teste novo em `tests/wantlist-match.test.ts`.
 - **0.187.2** — **Controles na sacola**: cada lote da sacola ganhou ✕ (tirar da sacola, grava em `app_state.lookout_bag_dismissed`), arrastar sobre um álbum de olho (mesmo `moveLookoutLot` do "Por vir"), ⇄ seletor para mover a um álbum existente e + para criar um álbum de olho a partir do lote.
 - **0.187.1** — **Sacola sem lixo e com card formatado**: a sacola (`lotInArtistBag`) agora só aceita artista CONFIRMADO ou citado no título com o nome EXATO (sem a tolerância de 1 letra: "Nara" casava com PARA/NADA e trazia ~1100 lotes errados); cada lote usa o mesmo formato do "Por vir" (foto, valor, Discogs, veredicto, Vigiar, abrir) e a lista mostra 30 por vez.
