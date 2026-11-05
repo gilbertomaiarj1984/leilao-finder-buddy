@@ -12,6 +12,7 @@ import {
   getAllLookout,
   getLookoutArtistGroups,
   getLookoutBagArtists,
+  getLookoutBagDismissed,
   getLookoutLinks,
   getLookoutNotified,
   getLookoutSeen,
@@ -214,11 +215,13 @@ async function applyLivePrices(upcoming: LookoutUpcoming[]): Promise<void> {
  * auxiliar (aliases, mercado…) degrada o casamento, não derruba.
  */
 export async function computeLookout(withHistory = true, live = true): Promise<LookoutOverview> {
-  const [items, artistGroups, bagArtists] = await Promise.all([
+  const [items, artistGroups, bagArtists, bagDismissedList] = await Promise.all([
     getAllLookout(),
     getLookoutArtistGroups(),
     getLookoutBagArtists(),
+    getLookoutBagDismissed(),
   ]);
+  const bagDismissed = new Set(bagDismissedList);
   const empty = {
     items,
     upcoming: [],
@@ -360,7 +363,7 @@ export async function computeLookout(withHistory = true, live = true): Promise<L
     // Sacola: o lote entra na sacola de cada artista ligado cujo nome aparece nele, tenha ou não
     // casado com um álbum (se casou, a linha aponta para o álbum e leva `inAlbum`).
     for (const [key, cands] of bagCands) {
-      if (!lotInArtistBag(cands, identity)) continue;
+      if (bagDismissed.has(lot.id) || !lotInArtistBag(cands, identity)) continue;
       bag.push(
         row(hit?.itemId ?? cands[0]!.item.id, {
           score: hit?.score ?? 0,
