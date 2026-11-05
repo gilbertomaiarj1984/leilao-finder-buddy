@@ -612,6 +612,7 @@ export async function deleteLookoutItem(id: string): Promise<{ ok: true }> {
 const LINKS_KEY = "lookout_links";
 const ARTIST_GROUPS_KEY = "lookout_artist_groups";
 const BAG_KEY = "lookout_bag_artists";
+const BAG_DISMISSED_KEY = "lookout_bag_dismissed";
 const SEEN_KEY = "lookout_seen";
 const NOTIFIED_KEY = "lookout_notified";
 /** Teto de entradas das listas de dedupe (as mais recentes ficam) — o registro não cresce sem fim. */
@@ -748,4 +749,23 @@ export async function setLookoutBagArtist(artist: string, on: boolean): Promise<
   if (!key) return;
   const rest = (await getLookoutBagArtists()).filter((k) => k !== key);
   await writeValue(BAG_KEY, on ? [...rest, key] : rest);
+}
+
+/** Lotes tirados da sacola pelo usuário (✕); a sacola não os mostra. Best-effort: []. */
+export async function getLookoutBagDismissed(): Promise<string[]> {
+  try {
+    return asStringList(await readValue(BAG_DISMISSED_KEY));
+  } catch (error) {
+    console.error(
+      "[lookout] não foi possível ler os lotes tirados da sacola (usando vazio)",
+      error,
+    );
+    return [];
+  }
+}
+
+/** Tira um lote da sacola (não mexe no álbum de olho em que ele também casa). */
+export async function dismissLookoutBagLot(lotId: string): Promise<void> {
+  const next = [...new Set([...(await getLookoutBagDismissed()), lotId])].slice(-MAX_IDS);
+  await writeValue(BAG_DISMISSED_KEY, next);
 }

@@ -305,6 +305,5 @@ Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score
 
 ## Sacola por artista no De olho (v0.187.0) — o que ficou de fora
 
-- **✕ por lote na sacola:** não dá para tirar um lote da sacola (o ✕ de `lookout_links` é "não é este álbum" e não pode ser reaproveitado, senão sumiria da sacola ao descartar do álbum). Precisa de lista própria (ex.: `lookout_bag_dismissed`).
 - **Nota «também na sacola» dentro do álbum:** só a sacola mostra o selo; `LookoutSummaryRow` não recebe a informação.
 - **«Novo» e aviso para lote só da sacola:** não contam em `newCount` nem notificam; avaliar uma chave `lotId|bag:<artista>` em `lookout_seen`.

@@ -43,6 +43,7 @@ import {
   setLookoutLink,
   setLookoutArtistGroup,
   setLookoutBagArtist,
+  dismissLookoutBagLot,
   toggleLookout,
   setLookoutLinksBatch,
   unmergeLookout,
@@ -147,6 +148,7 @@ function OlhoPage() {
   const runSplitOrigin = useServerFn(splitLookoutOrigin);
   const runArtistGroup = useServerFn(setLookoutArtistGroup);
   const runBagArtist = useServerFn(setLookoutBagArtist);
+  const runDismissBagLot = useServerFn(dismissLookoutBagLot);
   const runToggleLookout = useServerFn(toggleLookout);
   const runSaveInterests = useServerFn(setUserInterests);
 
@@ -337,6 +339,25 @@ function OlhoPage() {
     },
     onError: (error: unknown) =>
       toast.error(errorMessage(error, "Não foi possível mudar a sacola")),
+  });
+  // ✕ na sacola: some da lista na hora; o servidor guarda e o refresh confirma.
+  const dismissBagMut = useMutation({
+    retry: retryTransient,
+    retryDelay: transientRetryDelay,
+    mutationFn: async (lotId: string) => await runDismissBagLot({ data: { lotId } }),
+    onMutate: async (lotId) => {
+      const prev = await optimistic();
+      patchOverview((o) => ({ ...o, bag: o.bag.filter((m) => m.lotId !== lotId) }));
+      return { prev };
+    },
+    onSuccess: () => {
+      toast.success("Lote tirado da sacola");
+      refresh();
+    },
+    onError: (error: unknown, _vars, ctx) => {
+      rollback(ctx?.prev, error);
+      toast.error(errorMessage(error, "Não foi possível tirar o lote da sacola"));
+    },
   });
   const autoScroll = useDragAutoScroll();
   const [artistDropKey, setArtistDropKey] = useState<string | null>(null);
@@ -1106,8 +1127,24 @@ function OlhoPage() {
                               watchedIds={watchedIds}
                               watchLoading={watched.isLoading}
                               busyWatch={busyWatch}
+                              moveOptions={[
+                                ...group.items,
+                                ...active.filter((o) => !group.items.some((g) => g.id === o.id)),
+                              ]}
                               onWatch={(m) => void watchLot(m)}
                               onOpenLot={(m) => setOpenLotId(m.lotId)}
+                              onDismiss={(m) => dismissBagMut.mutate(m.lotId)}
+                              onMoveTo={(m, itemId) =>
+                                moveLotMut.mutate({ lotId: m.lotId, itemId })
+                              }
+                              onCreate={(m) =>
+                                setCreateFrom({
+                                  m,
+                                  artist: group.artist,
+                                  album: m.album ?? "",
+                                  year: "",
+                                })
+                              }
                             />
                             <h3 className="pt-1 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
                               Álbuns de olho

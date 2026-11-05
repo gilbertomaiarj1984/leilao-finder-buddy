@@ -1,11 +1,15 @@
-import { Binoculars, ExternalLink, Eye, ShoppingBag } from "lucide-react";
+import { ArrowRightLeft, Binoculars, ExternalLink, Eye, Plus, ShoppingBag, X } from "lucide-react";
 import { useState } from "react";
 
 import { dealLabel, dealTone } from "@/components/vinyl/ai-score-utils";
 import { Button } from "@/components/ui/button";
+import { useDragAutoScroll } from "@/components/vinyl/use-drag-autoscroll";
 import { lookoutLabel, type LookoutItem } from "@/lib/lookout-match";
 import type { LookoutUpcoming } from "@/lib/lookout-matches.server";
 import { lotOpenUrl } from "@/lib/vinyl-parse";
+
+/** Lote "por vir" arrastado (o mesmo tipo das linhas do cartão do disco: soltar num disco move o lote). */
+const LOT_DRAG_TYPE = "application/x-lookout-lot";
 
 /** Quantos lotes aparecem antes de "Mostrar todos" (a sacola de um artista pode ser longa). */
 const BAG_PAGE = 30;
@@ -33,8 +37,12 @@ export function LookoutBag({
   watchedIds,
   watchLoading,
   busyWatch,
+  moveOptions,
   onWatch,
   onOpenLot,
+  onDismiss,
+  onMoveTo,
+  onCreate,
 }: {
   artist: string;
   lots: readonly LookoutUpcoming[];
@@ -42,9 +50,17 @@ export function LookoutBag({
   watchedIds: ReadonlySet<string>;
   watchLoading: boolean;
   busyWatch: string | null;
+  /** Álbuns de olho para onde o lote pode ir (os do artista primeiro). */
+  moveOptions: readonly LookoutItem[];
   onWatch: (lot: LookoutUpcoming) => void;
   onOpenLot: (lot: LookoutUpcoming) => void;
+  /** ✕: tira o lote da sacola (não mexe no álbum em que ele também casa). */
+  onDismiss: (lot: LookoutUpcoming) => void;
+  onMoveTo: (lot: LookoutUpcoming, itemId: string) => void;
+  onCreate: (lot: LookoutUpcoming) => void;
 }) {
+  const autoScroll = useDragAutoScroll();
+  const [movingLotId, setMovingLotId] = useState<string | null>(null);
   const [all, setAll] = useState(false);
   const itemById = new Map(items.map((i) => [i.id, i]));
   const shown = all ? lots : lots.slice(0, BAG_PAGE);
@@ -70,12 +86,19 @@ export function LookoutBag({
             return (
               <li
                 key={m.lotId}
+                draggable
+                onDragStart={(e) => {
+                  autoScroll.start();
+                  e.dataTransfer.setData(LOT_DRAG_TYPE, m.lotId);
+                  e.dataTransfer.setData("text/plain", m.title);
+                  e.dataTransfer.effectAllowed = "move";
+                }}
                 onClick={(e) => {
                   if ((e.target as HTMLElement).closest("button, a")) return;
                   onOpenLot(m);
                 }}
                 className="flex cursor-pointer flex-wrap items-center gap-3 rounded border border-border bg-background p-2 hover:bg-accent/30"
-                title="Clique para abrir o cartão completo do lote"
+                title="Clique para abrir o cartão completo do lote — ou arraste-o sobre um álbum de olho"
               >
                 {m.image ? (
                   <img
@@ -119,6 +142,35 @@ export function LookoutBag({
                 <div className="flex items-center gap-1">
                   <Button
                     size="sm"
+                    variant="ghost"
+                    onClick={() => onDismiss(m)}
+                    aria-label="Tirar da sacola"
+                    title="Tirar da sacola (não é deste artista ou não interessa)"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                  {moveOptions.length > 0 ? (
+                    <Button
+                      size="sm"
+                      variant={movingLotId === m.lotId ? "secondary" : "ghost"}
+                      onClick={() => setMovingLotId((cur) => (cur === m.lotId ? null : m.lotId))}
+                      aria-label="Mover para um álbum de olho"
+                      title="Mover este lote para um álbum de olho que já existe"
+                    >
+                      <ArrowRightLeft className="h-4 w-4" />
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onCreate(m)}
+                    aria-label="Criar álbum de olho a partir deste lote"
+                    title="Criar um álbum de olho a partir deste lote"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
                     variant={watching ? "default" : "outline"}
                     onClick={() => onWatch(m)}
                     disabled={watchLoading || busyWatch === m.lotId}
@@ -137,6 +189,26 @@ export function LookoutBag({
                     </a>
                   </Button>
                 </div>
+                {movingLotId === m.lotId ? (
+                  <select
+                    value=""
+                    autoFocus
+                    onChange={(e) => {
+                      if (!e.target.value) return;
+                      setMovingLotId(null);
+                      onMoveTo(m, e.target.value);
+                    }}
+                    aria-label="Mover este lote para o álbum…"
+                    className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                  >
+                    <option value="">Mover este lote para o álbum de olho…</option>
+                    {moveOptions.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {lookoutLabel(o) || o.title}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
               </li>
             );
           })}
