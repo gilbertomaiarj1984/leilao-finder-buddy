@@ -515,4 +515,11 @@ describe("sacola do artista", () => {
     expect(lookoutArtistKey("  Caetano  VELOSO ")).toBe("caetano veloso");
     expect(lookoutArtistKey("Mutantes")).toBe(lookoutArtistKey("mutantes"));
   });
+  test("nome curto não casa por 1 letra de diferença (Nara × PARA/NADA)", () => {
+    const nara = lookoutCandidates([item({ artist: "Nara", album: "Nara", year: 1967 })]);
+    expect(lotInArtistBag(nara, ident("LP disco para todo mundo, nada de mais 1967", ""))).toBe(
+      false,
+    );
+    expect(lotInArtistBag(nara, ident("LP Nara 1967 Philips", ""))).toBe(true);
+  });
 });

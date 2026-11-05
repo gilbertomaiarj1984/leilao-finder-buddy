@@ -259,11 +259,19 @@ export function resolveLookoutArtist(name: string, groups?: LookoutArtistGroups)
 }
 
 /**
- * Sacola do artista (v0.187.0): o lote é "do artista" quando QUALQUER candidato dele (álbuns de
- * olho e juntados) tem o artista confirmado ou citado no título do lote — independe do álbum.
+ * Sacola do artista (v0.187.0): o lote é "do artista" quando o artista está CONFIRMADO (IA/Discogs
+ * dizem que é dele) ou citado no título com o nome EXATO, palavra por palavra — sem a tolerância
+ * de 1 letra do casamento de álbuns, que deixava "Nara" casar com "PARA"/"NADA" e enchia a
+ * sacola de lixo. Independe do álbum.
  */
 export function lotInArtistBag(cands: readonly LookoutCandidate[], id: LotIdentity): boolean {
-  return cands.some((c) => ownedArtistLevel(c.cand, id) !== "none");
+  return cands.some((c) => {
+    const level = ownedArtistLevel(c.cand, id);
+    if (level === "confirmed") return true;
+    if (level === "none") return false;
+    const name = c.cand.artistTokens.join(" ");
+    return name !== "" && ` ${id.text} `.includes(` ${name} `);
+  });
 }
 
 /** Rótulo curto do item ("Artista — Álbum (Ano)"). */

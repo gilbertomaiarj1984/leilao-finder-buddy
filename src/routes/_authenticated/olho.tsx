@@ -1104,6 +1104,9 @@ function OlhoPage() {
                               lots={bagByKey.get(lookoutArtistKey(group.artist)) ?? []}
                               items={items}
                               watchedIds={watchedIds}
+                              watchLoading={watched.isLoading}
+                              busyWatch={busyWatch}
+                              onWatch={(m) => void watchLot(m)}
                               onOpenLot={(m) => setOpenLotId(m.lotId)}
                             />
                             <h3 className="pt-1 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
