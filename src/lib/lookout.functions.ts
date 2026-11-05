@@ -268,6 +268,21 @@ export const setLookoutBagArtist = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
+/** Tira um lote da sacola do artista (✕); o álbum de olho em que ele também casa não muda. */
+export const dismissLookoutBagLot = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { lotId?: string } | undefined) => {
+    if (!input?.lotId || typeof input.lotId !== "string") throw new Error("lotId obrigatório");
+    return { lotId: input.lotId };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { dismissLookoutBagLot: save } = await import("./lookout.server");
+    await save(data.lotId);
+    return { ok: true as const };
+  });
+
 /** Desfaz a junção de um álbum (ele volta a ser um disco próprio). */
 export const unmergeLookout = createServerFn({ method: "POST" })
   .middleware([requireAuth])
