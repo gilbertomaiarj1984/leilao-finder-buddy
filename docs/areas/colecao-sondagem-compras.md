@@ -506,3 +506,8 @@ continuam sendo "o disco". Núcleo puro/client-safe em `src/lib/album-edition.ts
   ano) e a regra "mesmo master = mesmo disco" fundia Caetano Veloso 1968 com o de 1986; o passo `masters` zera uma vez os
   masters antigos (`app_state.masters_version`). O master do LOTE não rejeita casamento (só a edição e o ano do lote). O Discogs só entra
   como evidência: sem master vale a marca/o ano.
+
+## Casamento: nome curto e homônimo (v0.187.2)
+
+- `artistTokenEq` só tolera 1 letra de erro em palavras de artista com 6+ letras (`ARTIST_FUZZY_MIN_LEN`); "Nara", "Elis", "Rita" casam só exatos (antes casavam PARA/NADA/CARA, gerando "? 70%" em lotes de outros artistas).
+- Disco homônimo (`selfTitled`, ex. "Nara — Nara") só pontua com artista CONFIRMADO no lote; artista só citado no título + ano coincidente não basta.
