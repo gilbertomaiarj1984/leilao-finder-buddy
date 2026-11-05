@@ -46,3 +46,36 @@ describe("ownedScore — série com o nome escrito de outro jeito (falta 1 palav
     expect(score("Álbum BRASILIS TOM JOBIM | Código: | Artista(s): TOM JOBIM", two)).toBe(0);
   });
 });
+
+describe("ownedScore — artista de nome curto não casa palavra comum (Nara × PARA)", () => {
+  const nara = ownedCandidate({ id: "n", artist: "Nara", album: "Nara", year: 1967 });
+  const lot = (title: string, artists?: string[]) =>
+    lotIdentity({
+      title,
+      artist: artists?.[0] ?? "Lote",
+      album: null,
+      marketTitle: null,
+      marketYear: null,
+    });
+
+  test("PARA/NADA/CARA no texto + ano 1967 não casam", () => {
+    for (const w of ["PARA", "NADA", "CARA", "SARA", "VARA"]) {
+      expect(ownedScore(nara, lot(`**LP FRANK SINATRA 1967**DISCO ${w} COLECIONADOR`))).toBe(0);
+    }
+  });
+
+  test("homônimo com a artista citada no título (sem artista confirmado) não casa só pelo ano", () => {
+    expect(ownedScore(nara, lot("LP Nara 1967 capa simples"))).toBe(0);
+  });
+
+  test("artista confirmado segue casando", () => {
+    const id = lotIdentity({
+      title: "LP Nara 1967",
+      artist: "Nara",
+      album: "Nara - Nara",
+      marketTitle: null,
+      marketYear: null,
+    });
+    expect(ownedScore(nara, id)).toBeGreaterThanOrEqual(OWNED_CONFIDENT_MIN);
+  });
+});

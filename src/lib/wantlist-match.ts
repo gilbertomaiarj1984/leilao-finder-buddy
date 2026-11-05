@@ -402,12 +402,18 @@ function albumTokensOf(name: string | null | undefined): string[] {
   return significantTokens(name ?? "").filter((t) => !YEAR_TOKEN_RE.test(t));
 }
 
-/** Mesma palavra de nome de artista: igual, ou 1 letra de diferença a partir de 4 letras. */
+/** Tamanho mínimo (letras) de uma palavra de artista para tolerar 1 letra de erro. */
+const ARTIST_FUZZY_MIN_LEN = 6;
+
+/** Mesma palavra de nome de artista: igual, ou 1 letra de diferença a partir de 6 letras. */
 function artistTokenEq(a: string, b: string): boolean {
   if (a === b) return true;
-  if (a.length < 4 || b.length < 4 || Math.abs(a.length - b.length) > 1) return false;
+  // Nomes curtos (até 5 letras: "Nara", "Elis", "Rita") só casam EXATOS: com 1 letra de
+  // tolerância viram "para", "nada", "cara"… e casam qualquer descrição de lote.
+  if (a.length < ARTIST_FUZZY_MIN_LEN || b.length < ARTIST_FUZZY_MIN_LEN) return false;
+  if (Math.abs(a.length - b.length) > 1) return false;
   if (DIGITS_RE.test(a) || DIGITS_RE.test(b)) return false;
-  return a.length >= 4 && b.length >= 4 && withinOneEdit(a, b);
+  return withinOneEdit(a, b);
 }
 
 /**
@@ -809,6 +815,9 @@ export function ownedScore(
   // 2c) Disco HOMÔNIMO ("Djavan - Djavan"): o nome do disco não diz nada além do artista.
   // Exige o artista confirmado + álbum estruturado também homônimo; só com o ano exato → "?".
   if (c.selfTitled) {
+    // Nome do disco = nome do artista: só o artista CONFIRMADO (estruturado no lote) sustenta o
+    // casamento; citação solta no título + ano coincidente é falso positivo ("Nara" × qualquer 1967).
+    if (artist.level !== "confirmed") return 0;
     const albums = id.albums ?? [];
     if (albums.length) {
       const self = albums.some((lot) => {
