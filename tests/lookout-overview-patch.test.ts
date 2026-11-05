@@ -12,6 +12,8 @@ const base = (): LookoutOverview => ({
   upcoming: [up("a", "x", true), up("b", "x")],
   history: [sale("a", "x"), sale("c", "x")],
   newCount: 1,
+  bagArtists: [],
+  bag: [],
   artistGroups: {},
 });
 

@@ -5,7 +5,9 @@ import { analyticsHistoryForItems } from "@/lib/lookout-analytics";
 import { parseLookoutBulk } from "@/lib/lookout-bulk";
 import {
   buildLotIdentity,
+  lookoutArtistKey,
   lookoutCandidates,
+  lotInArtistBag,
   lookoutOwnedInCollection,
   matchLookoutForLot,
   notifyKey,
@@ -494,5 +496,23 @@ describe("edição (original × reedição moderna) e master do Discogs", () => 
     const input = { artist: "Chico Buarque", album: "Construção", year: 1971, lotId: "9-11" };
     expect(similarLookoutItems([item()], input)).toHaveLength(0);
     expect(similarLookoutItems([item()], { ...input, edition: "modern" })).toHaveLength(1);
+  });
+});
+
+describe("sacola do artista", () => {
+  const cands = lookoutCandidates([item()]);
+  test("lote do artista entra na sacola mesmo de outro álbum", () => {
+    expect(lotInArtistBag(cands, ident("LP Chico Buarque Calabar 1973", "Chico Buarque"))).toBe(
+      true,
+    );
+  });
+  test("lote de outro artista não entra", () => {
+    expect(lotInArtistBag(cands, ident("LP Caetano Veloso Transa 1972", "Caetano Veloso"))).toBe(
+      false,
+    );
+  });
+  test("chave do artista ignora acento e caixa", () => {
+    expect(lookoutArtistKey("  Caetano  VELOSO ")).toBe("caetano veloso");
+    expect(lookoutArtistKey("Mutantes")).toBe(lookoutArtistKey("mutantes"));
   });
 });

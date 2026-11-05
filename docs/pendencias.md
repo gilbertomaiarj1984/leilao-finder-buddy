@@ -302,3 +302,9 @@ Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score
 - **"Ao vivo agora" sem o pregão ter começado:** `trackedAuctionStatus` (`vinyl-parse.ts`) marca como ao vivo todo pregão cujo horário passou e cujo presencial não respondeu (decisão da v0.112.2, sem janela de horas). A Martini roda os pregões em sequência (um com 244 lotes e outro com 34 no mesmo dia), então o segundo fica "Ao vivo agora" mesmo esperando na fila. Ideia: distinguir "presencial respondeu que não há pregão" (`np`) de falha de rede (hoje os dois viram `null` em `parsePregaoResponse`) e mostrar "Aguardando início".
 - **Aviso de pregão começando só olha o horário listado** (`watch-alerts.ts`): com horário errado dispara na hora errada ou não dispara. Ideia: o step `watchalert` consultar o presencial dos pregões vigiados de hoje e avisar quando o pregão realmente começa (dedupe próprio em `app_state`).
 - **Vigiados da Martini sem "Vendido":** o detector (`leiloesbr-lot-details.server.ts`) só aceita `"MOSTRABTN_CLASS":"is-vendido"` ou a classe `lotevendido`. Falta ver o `peca.asp` real de um lote vendido da Martini — o site responde 403 ao IP do ambiente de desenvolvimento; precisa do HTML salvo ou de um passo de diagnóstico no cron (`lotdebug`) rodado em produção.
+
+## Sacola por artista no De olho (v0.187.0) — o que ficou de fora
+
+- **✕ por lote na sacola:** não dá para tirar um lote da sacola (o ✕ de `lookout_links` é "não é este álbum" e não pode ser reaproveitado, senão sumiria da sacola ao descartar do álbum). Precisa de lista própria (ex.: `lookout_bag_dismissed`).
+- **Nota «também na sacola» dentro do álbum:** só a sacola mostra o selo; `LookoutSummaryRow` não recebe a informação.
+- **«Novo» e aviso para lote só da sacola:** não contam em `newCount` nem notificam; avaliar uma chave `lotId|bag:<artista>` em `lookout_seen`.
