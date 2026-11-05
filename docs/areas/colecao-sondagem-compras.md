@@ -286,6 +286,7 @@ onlyUnidentified})` → `reidentifyCollection`. Gasta IA **só nos discos ainda 
   `LookoutItemCard` num `Dialog`) e **Expandido** (cartões inline), persistido em `olho-view`. Clicar num
   lote "por vir" abre `LookoutLotDialog`: o `LotCard` da home alimentado pelas mesmas queries
   (`lot_ai`/`lot_ident`/`lot_market`/`lot-condition`), binóculos marcado e teto do item.
+- **Sacola por artista (v0.187.0):** botão «Sacola» no cabeçalho do grupo de artista em `/olho` (`setLookoutBagArtist`). Chaves normalizadas (`lookoutArtistKey` do nome JÁ resolvido pelas junções) em `app_state.lookout_bag_artists`. `computeLookout` devolve `bagArtists` e `bag`: todo lote por vir cujo artista casa (`lotInArtistBag` = `ownedArtistLevel` ≠ none em qualquer candidato do artista, álbuns juntados incluídos), com ou sem álbum de olho; se também casou com um álbum, a linha leva `inAlbum` e `itemId` do álbum (selo «também em álbum: X», componente `lookout-bag.tsx`). O lote aparece nos dois lugares. A sacola NÃO entra em `newCount`/«novo» nem no aviso externo (o álbum continua avisando). Filtro por dia vale para a sacola; o diálogo do lote funciona igual. Pendências: ✕ por lote na sacola e nota «também na sacola» dentro do álbum (ver `docs/pendencias.md`).
 - **Juntar artistas (v0.120.0):** arrastar o título de um grupo de artista sobre outro grava em
   `app_state.lookout_artist_groups` (`chave normalizada → {to, label}`, `setLookoutArtistGroup`); a página
   resolve o nome final com `resolveLookoutArtist` (segue cadeias, guarda contra ciclo) e o grupo leva o nome

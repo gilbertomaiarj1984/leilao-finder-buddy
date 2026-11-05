@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Rows3,
   Search,
+  ShoppingBag,
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -25,6 +26,7 @@ import { InterestsDialog } from "@/components/vinyl/interests-dialog";
 import { LookoutOwnedDialog } from "@/components/vinyl/lookout-owned-dialog";
 import { LookoutBulkDialog } from "@/components/vinyl/lookout-bulk-dialog";
 import { LookoutItemCard, type LookoutPatch } from "@/components/vinyl/lookout-item-card";
+import { LookoutBag } from "@/components/vinyl/lookout-bag";
 import { LookoutLotDialog } from "@/components/vinyl/lookout-lot-dialog";
 import { applyLookoutLinks } from "@/lib/lookout-overview-patch";
 import { LookoutSummaryRow } from "@/components/vinyl/lookout-summary-row";
@@ -40,6 +42,7 @@ import {
   splitLookoutOrigin,
   setLookoutLink,
   setLookoutArtistGroup,
+  setLookoutBagArtist,
   toggleLookout,
   setLookoutLinksBatch,
   unmergeLookout,
@@ -48,6 +51,7 @@ import {
 import { setUserInterests } from "@/lib/ai.functions";
 import { formatFailoverTrail } from "@/lib/ai-provider";
 import {
+  lookoutArtistKey,
   lookoutLabel,
   lookoutOwnedInCollection,
   notifyKey,
@@ -142,6 +146,7 @@ function OlhoPage() {
   const runDismissOrigin = useServerFn(dismissLookoutOrigin);
   const runSplitOrigin = useServerFn(splitLookoutOrigin);
   const runArtistGroup = useServerFn(setLookoutArtistGroup);
+  const runBagArtist = useServerFn(setLookoutBagArtist);
   const runToggleLookout = useServerFn(toggleLookout);
   const runSaveInterests = useServerFn(setUserInterests);
 
@@ -320,6 +325,18 @@ function OlhoPage() {
     },
     onError: (error: unknown) =>
       toast.error(errorMessage(error, "Não foi possível juntar os artistas")),
+  });
+  // Sacola do artista: liga/desliga (idempotente) e relê o servidor, que recalcula os lotes.
+  const bagMut = useMutation({
+    retry: retryTransient,
+    retryDelay: transientRetryDelay,
+    mutationFn: async (vars: { artist: string; on: boolean }) => await runBagArtist({ data: vars }),
+    onSuccess: (_r, vars) => {
+      toast.success(vars.on ? `Sacola de ${vars.artist} ligada` : "Sacola desligada");
+      refresh();
+    },
+    onError: (error: unknown) =>
+      toast.error(errorMessage(error, "Não foi possível mudar a sacola")),
   });
   const autoScroll = useDragAutoScroll();
   const [artistDropKey, setArtistDropKey] = useState<string | null>(null);
@@ -545,6 +562,20 @@ function OlhoPage() {
     }
     return map;
   }, [upcomingList]);
+  // Sacola por artista (chave normalizada), já filtrada pelo dia escolhido.
+  const bagOn = useMemo(() => new Set(overview?.bagArtists ?? []), [overview]);
+  const bagByKey = useMemo(() => {
+    const map = new Map<string, LookoutUpcoming[]>();
+    for (const m of filterByLookoutDay(overview?.bag ?? [], dayPick)) {
+      const list = map.get(m.bagKey ?? "") ?? [];
+      list.push(m);
+      map.set(m.bagKey ?? "", list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => (a.dayKey + a.time).localeCompare(b.dayKey + b.time));
+    }
+    return map;
+  }, [overview, dayPick]);
   const historyByItem = useMemo(() => {
     const map = new Map<string, NonNullable<typeof overview>["history"]>();
     for (const h of overview?.history ?? []) {
@@ -621,7 +652,10 @@ function OlhoPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   // Lote "por vir" aberto no cartão completo (o mesmo da home), por cima do cartão do disco.
   const [openLotId, setOpenLotId] = useState<string | null>(null);
-  const openLot = (overview?.upcoming ?? []).find((m) => m.lotId === openLotId) ?? null;
+  const openLot =
+    (overview?.upcoming ?? []).find((m) => m.lotId === openLotId) ??
+    (overview?.bag ?? []).find((m) => m.lotId === openLotId) ??
+    null;
   const openItem = items.find((i) => i.id === openId) ?? null;
   const totalUpcoming = upcomingList.length;
   const newCount = upcomingList.filter((m) => m.isNew).length;
@@ -632,14 +666,16 @@ function OlhoPage() {
     const withU: ArtistGroup[] = [];
     const without: ArtistGroup[] = [];
     for (const g of filteredGroups) {
+      const bagLots = bagByKey.get(lookoutArtistKey(g.artist))?.length ?? 0;
       const sorted = [...g.items]
         .filter((it) => !dayPick || hasUpcoming(it))
         .sort((a, b) => Number(hasUpcoming(b)) - Number(hasUpcoming(a)));
-      if (!sorted.length) continue;
-      (sorted.some(hasUpcoming) ? withU : without).push({ ...g, items: sorted });
+      // Com sacola ligada o artista fica visível mesmo se só a sacola tiver lote no dia.
+      if (!sorted.length && !(dayPick && bagLots)) continue;
+      (sorted.some(hasUpcoming) || bagLots ? withU : without).push({ ...g, items: sorted });
     }
     return { withUpcoming: withU, withoutUpcoming: without };
-  }, [filteredGroups, upcomingByItem, dayPick]);
+  }, [filteredGroups, upcomingByItem, bagByKey, dayPick]);
   const visibleGroups = useMemo(
     () => [...withUpcoming, ...withoutUpcoming],
     [withUpcoming, withoutUpcoming],
@@ -1004,12 +1040,30 @@ function OlhoPage() {
                           ) : null}
                           <button
                             type="button"
+                            aria-pressed={bagOn.has(lookoutArtistKey(group.artist))}
+                            disabled={group.key === "~" || bagMut.isPending}
+                            onClick={() =>
+                              bagMut.mutate({
+                                artist: group.artist,
+                                on: !bagOn.has(lookoutArtistKey(group.artist)),
+                              })
+                            }
+                            title="Sacola: lista TUDO que aparecer deste artista, antes dos álbuns"
+                            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-normal disabled:opacity-50 ${
+                              bagOn.has(lookoutArtistKey(group.artist))
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-border text-muted-foreground hover:bg-accent/30"
+                            } ${groupNewCount(group.items, upcomingByItem) > 0 ? "" : "ml-auto"}`}
+                          >
+                            <ShoppingBag className="h-3 w-3" />
+                            Sacola
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
                             aria-label="Voltar ao topo"
                             title="Voltar ao topo"
-                            className={`rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground ${
-                              groupNewCount(group.items, upcomingByItem) > 0 ? "" : "ml-auto"
-                            }`}
+                            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                           >
                             <ArrowUpToLine className="h-4 w-4" />
                           </button>
@@ -1043,6 +1097,20 @@ function OlhoPage() {
                         ) : null}
                       </div>
                       <div className="ml-11 space-y-1.5">
+                        {bagOn.has(lookoutArtistKey(group.artist)) ? (
+                          <>
+                            <LookoutBag
+                              artist={group.artist}
+                              lots={bagByKey.get(lookoutArtistKey(group.artist)) ?? []}
+                              items={items}
+                              watchedIds={watchedIds}
+                              onOpenLot={(m) => setOpenLotId(m.lotId)}
+                            />
+                            <h3 className="pt-1 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                              Álbuns de olho
+                            </h3>
+                          </>
+                        ) : null}
                         {group.items.map((item) => {
                           const itemUpcoming = upcomingByItem.get(item.id) ?? [];
                           // Visão expandida: álbum sem lote por vir fica numa linha mínima (artista — álbum).

@@ -11,6 +11,7 @@ import {
   addLookoutNotified,
   getAllLookout,
   getLookoutArtistGroups,
+  getLookoutBagArtists,
   getLookoutLinks,
   getLookoutNotified,
   getLookoutSeen,
@@ -24,8 +25,11 @@ import { fetchLotDetails } from "@/lib/leiloesbr-lot-details.server";
 import { analyticsHistoryForItems } from "@/lib/lookout-analytics";
 import {
   buildLotIdentity,
+  lookoutArtistKey,
   lookoutCandidates,
+  lotInArtistBag,
   matchLookoutForLot,
+  resolveLookoutArtist,
   notifyKey,
   pickNotifiable,
   LOOKOUT_CONFIDENT_MIN,
@@ -78,6 +82,10 @@ export type LookoutUpcoming = {
   yearPending?: boolean;
   /** É o lote que o usuário marcou (origem do disco): aparece em "por vir", sem aviso nem "novo". */
   isOrigin?: boolean;
+  /** Só nas linhas da sacola: o lote TAMBÉM casa com o álbum de olho `itemId` (selo nos dois lugares). */
+  inAlbum?: boolean;
+  /** Só nas linhas da sacola: chave normalizada do artista dono da sacola. */
+  bagKey?: string;
 };
 
 /**
@@ -118,6 +126,10 @@ export type LookoutOverview = {
   newCount: number;
   /** Artistas juntados na página (só exibição). */
   artistGroups: LookoutArtistGroups;
+  /** Artistas com sacola ligada (chaves normalizadas do nome resolvido). */
+  bagArtists: string[];
+  /** Sacola (v0.187.0): lotes por vir dos artistas em `bagArtists`, com ou sem álbum de olho. */
+  bag: LookoutUpcoming[];
 };
 
 function asItems(rows: LookoutRow[]): LookoutItem[] {
@@ -202,10 +214,21 @@ async function applyLivePrices(upcoming: LookoutUpcoming[]): Promise<void> {
  * auxiliar (aliases, mercado…) degrada o casamento, não derruba.
  */
 export async function computeLookout(withHistory = true, live = true): Promise<LookoutOverview> {
-  const [items, artistGroups] = await Promise.all([getAllLookout(), getLookoutArtistGroups()]);
-  if (!items.some((i) => i.status === "active")) {
-    return { items, upcoming: [], history: [], newCount: 0, artistGroups };
-  }
+  const [items, artistGroups, bagArtists] = await Promise.all([
+    getAllLookout(),
+    getLookoutArtistGroups(),
+    getLookoutBagArtists(),
+  ]);
+  const empty = {
+    items,
+    upcoming: [],
+    history: [],
+    newCount: 0,
+    artistGroups,
+    bagArtists,
+    bag: [],
+  };
+  if (!items.some((i) => i.status === "active")) return empty;
 
   const [fullAliases, links, seen, aiRows, identRows, marketRows, condRows, panel, lotEditions] =
     await Promise.all([
@@ -223,7 +246,7 @@ export async function computeLookout(withHistory = true, live = true): Promise<L
   const aliases: Record<string, string> = fullAliases.artists ?? {};
   // Os candidatos dependem dos apelidos de artista (grafias fundidas no Analytics).
   const aliased = lookoutCandidates(asItems(items), aliases);
-  if (!aliased.length) return { items, upcoming: [], history: [], newCount: 0, artistGroups };
+  if (!aliased.length) return empty;
 
   const albumById = new Map<string, string>();
   for (const r of identRows) if (r.album) albumById.set(r.id, r.album);
@@ -270,7 +293,17 @@ export async function computeLookout(withHistory = true, live = true): Promise<L
     return anchored ? marketDeal(lot.price, anchored) : "indefinido";
   };
 
+  // Sacola: candidatos agrupados pelo artista JÁ RESOLVIDO (nome final da página).
+  const bagSet = new Set(bagArtists);
+  const bagCands = new Map<string, typeof aliased>();
+  for (const c of aliased) {
+    const key = lookoutArtistKey(resolveLookoutArtist(c.item.artist.trim(), artistGroups));
+    if (!bagSet.has(key)) continue;
+    bagCands.set(key, [...(bagCands.get(key) ?? []), c]);
+  }
+
   const upcoming: LookoutUpcoming[] = [];
+  const bag: LookoutUpcoming[] = [];
   for (const lot of lots) {
     const market = marketById.get(lot.id);
     const identity = buildLotIdentity({
@@ -287,13 +320,12 @@ export async function computeLookout(withHistory = true, live = true): Promise<L
     const hit = matchLookoutForLot(aliased, lot.id, identity, links, {
       includeOrigin: true,
     });
-    if (!hit) continue;
-    upcoming.push({
+    const row = (itemId: string, over: Partial<LookoutUpcoming>): LookoutUpcoming => ({
       lotId: lot.id,
-      itemId: hit.itemId,
-      score: hit.score,
-      confirmed: hit.confirmed,
-      isNew: !hit.isOrigin && !seenSet.has(notifyKey({ lotId: lot.id, itemId: hit.itemId })),
+      itemId,
+      score: 0,
+      confirmed: false,
+      isNew: false,
       idPeca: lot.idPeca,
       idLeilao: lot.idLeilao,
       base: lot.base,
@@ -312,14 +344,37 @@ export async function computeLookout(withHistory = true, live = true): Promise<L
       marketLowBr: market?.priceLowBr ?? null,
       marketHighBr: market?.priceHighBr ?? null,
       marketVerdict: verdictFor(lot, market),
-      yearPending: hit.yearPending || undefined,
-      isOrigin: hit.isOrigin || undefined,
+      ...over,
     });
+    if (hit) {
+      upcoming.push(
+        row(hit.itemId, {
+          score: hit.score,
+          confirmed: hit.confirmed,
+          isNew: !hit.isOrigin && !seenSet.has(notifyKey({ lotId: lot.id, itemId: hit.itemId })),
+          yearPending: hit.yearPending || undefined,
+          isOrigin: hit.isOrigin || undefined,
+        }),
+      );
+    }
+    // Sacola: o lote entra na sacola de cada artista ligado cujo nome aparece nele, tenha ou não
+    // casado com um álbum (se casou, a linha aponta para o álbum e leva `inAlbum`).
+    for (const [key, cands] of bagCands) {
+      if (!lotInArtistBag(cands, identity)) continue;
+      bag.push(
+        row(hit?.itemId ?? cands[0]!.item.id, {
+          score: hit?.score ?? 0,
+          confirmed: hit?.confirmed ?? false,
+          inAlbum: hit ? true : undefined,
+          bagKey: key,
+        }),
+      );
+    }
   }
   upcoming.sort(
     (a, b) => (a.dayKey + a.time).localeCompare(b.dayKey + b.time) || b.score - a.score,
   );
-  if (live) await applyLivePrices(upcoming);
+  if (live) await applyLivePrices([...upcoming, ...bag]);
 
   const history: LookoutPastSale[] = [];
   if (withHistory) {
@@ -402,6 +457,8 @@ export async function computeLookout(withHistory = true, live = true): Promise<L
     history,
     newCount: upcoming.filter((m) => m.isNew).length,
     artistGroups,
+    bagArtists,
+    bag,
   };
 }
 

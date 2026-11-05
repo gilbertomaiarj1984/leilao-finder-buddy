@@ -238,7 +238,7 @@ export function similarLookoutItems(
 export type LookoutArtistGroups = Record<string, { to: string; label: string }>;
 
 /** Chave do artista (sem acento/pontuação/caixa) — a mesma do servidor (`lookout.server.ts`). */
-function lookoutArtistKey(name: string): string {
+export function lookoutArtistKey(name: string): string {
   return name
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -256,6 +256,14 @@ export function resolveLookoutArtist(name: string, groups?: LookoutArtistGroups)
     current = next.to;
   }
   return current;
+}
+
+/**
+ * Sacola do artista (v0.187.0): o lote é "do artista" quando QUALQUER candidato dele (álbuns de
+ * olho e juntados) tem o artista confirmado ou citado no título do lote — independe do álbum.
+ */
+export function lotInArtistBag(cands: readonly LookoutCandidate[], id: LotIdentity): boolean {
+  return cands.some((c) => ownedArtistLevel(c.cand, id) !== "none");
 }
 
 /** Rótulo curto do item ("Artista — Álbum (Ano)"). */

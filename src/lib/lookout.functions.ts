@@ -253,6 +253,21 @@ export const setLookoutArtistGroup = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
+/** Liga/desliga a sacola de um artista na página (tudo que aparecer dele, antes dos álbuns). */
+export const setLookoutBagArtist = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { artist?: string; on?: boolean } | undefined) => {
+    if (!input?.artist || typeof input.artist !== "string") throw new Error("artist obrigatório");
+    return { artist: input.artist, on: input.on === true };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { setLookoutBagArtist: save } = await import("./lookout.server");
+    await save(data.artist, data.on);
+    return { ok: true as const };
+  });
+
 /** Desfaz a junção de um álbum (ele volta a ser um disco próprio). */
 export const unmergeLookout = createServerFn({ method: "POST" })
   .middleware([requireAuth])
