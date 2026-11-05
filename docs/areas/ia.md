@@ -161,7 +161,7 @@ cfg)` respeita `blocks` e `hiddenFields`), **Correlação de condições** (`rul
   do **Discogs** (`GET /releases/{id}` → `fetchDiscogsTracklist` em `discogs.server.ts`, que acha o
   release com o mesmo `findRelease` do `fetchMarket` ou usa o `release_id` já casado em
   `lot_market`; `parseDiscogsTracklist` em `tracklist.ts`: ignora `heading`, expande `index`/
-  `sub_tracks`, lado pela `position` "A1"→A). A IA **só classifica a fama** (`alta`/`media`/`baixa`
+  `sub_tracks`, lado pela `position` "A1"→A). A IA **só classifica a fama** — régua = fama da música para o público geral, não posição/lado (v0.187.4) — (`alta`/`media`/`baixa`
   → verde/amarelo/vermelho) e **não precisa rodar junto**: duas etapas independentes em
   `tracklist-step.server.ts` — `step=tracklist` (Discogs, sem IA; exige `DISCOGS_TOKEN`; lotes com
   `day_key >=` hoje, `lot_ai.album` e `tracklist` NULL; `[]` = Discogs não achou, nunca cai para
