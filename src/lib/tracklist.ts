@@ -3,8 +3,8 @@
  * (`parseDiscogsTracklist`); a IA só classifica a fama de cada faixa (`buildFamePrompt` /
  * `applyFame`). Módulo puro/client-safe: tipo, normalização, parsing e agrupamento por lado.
  *
- * `fame` = quão conhecida é a faixa (ou `null` enquanto a IA não classificou): "alta" (verde, maiores sucessos), "media" (amarelo,
- * conhecidas) e "baixa" (vermelho, pouco conhecidas e/ou lado B).
+ * `fame` = quão conhecida é a faixa (ou `null` enquanto a IA não classificou): "alta" (verde, muito famosas/maiores sucessos), "media"
+ * (amarelo, conhecidas) e "baixa" (vermelho, pouco conhecidas).
  */
 import { extractJsonObject } from "./json-extract";
 
@@ -133,15 +133,26 @@ export function parseDiscogsTracklist(value: unknown): RawTrack[] | null {
   return out.length ? out.slice(0, MAX_TRACKS) : null;
 }
 
-/** Prompt (só texto) que pede a fama de cada faixa JÁ conhecida do álbum. */
+/**
+ * Prompt (só texto) que pede a fama de cada faixa JÁ conhecida do álbum. A régua é a fama da
+ * música para o PÚBLICO em geral (rádio, trilha, streaming), NÃO a posição no disco nem o lado:
+ * antes o prompt falava em "maiores sucessos do álbum"/"lado B" e a IA rebaixava clássicos que
+ * estavam num disco com vários hits (ex.: "Quem Te Viu, Quem Te Vê" saía amarela).
+ */
 export function buildFamePrompt(album: string, tracks: RawTrack[]): string {
   return (
     `Álbum de vinil: ${JSON.stringify(album)}.\n` +
     `Faixas (na ordem do disco): ${JSON.stringify(tracks.map((t) => t.title))}.\n` +
-    'Devolva um objeto JSON {"fame":[...]} com EXATAMENTE uma entrada por faixa, na mesma ' +
-    'ordem, cada uma "alta" (maiores sucessos do álbum), "media" (conhecidas) ou "baixa" ' +
-    "(pouco conhecidas e/ou de lado B). Não adicione, remova nem renomeie faixas. Se não " +
-    'conhecer o álbum, use "baixa" em todas. Responda só com o JSON.'
+    "Classifique cada faixa pela fama da MÚSICA em si para o público em geral (rádio, " +
+    "streaming, regravações, trilhas, shows), e não pela posição no disco ou pelo lado. " +
+    'Use "alta" para músicas muito famosas, as que a maioria dos fãs do artista (ou do público ' +
+    'em geral) reconhece de imediato, clássicos e grandes sucessos — pode haver várias "alta" ' +
+    'no mesmo álbum; "media" para músicas conhecidas, mas não entre as mais populares do ' +
+    'artista; "baixa" só para faixas realmente obscuras, de nicho ou que pouca gente conhece. ' +
+    'Na dúvida entre dois níveis, escolha o MAIS ALTO. Devolva um objeto JSON {"fame":[...]} ' +
+    "com EXATAMENTE uma entrada por faixa, na mesma ordem. Não adicione, remova nem renomeie " +
+    "faixas. Se não conhecer o álbum, julgue só pelo título e pelo artista, sem marcar tudo " +
+    '"baixa". Responda só com o JSON.'
   );
 }
 
