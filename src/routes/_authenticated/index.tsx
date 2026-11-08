@@ -152,6 +152,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
     tab,
     setTab,
     setArtistFilter,
+    setNavFooterHost,
     lots,
     barDays,
     setOwnedPanelLot,
@@ -212,7 +213,7 @@ function VinylDashboard({ onSignOut, email }: { onSignOut: () => Promise<void>; 
           alwaysVisible
         />
       )}
-      {mobile ? null : <HouseNav rootRef={contentRef} />}
+      {mobile ? null : <HouseNav rootRef={contentRef} footerHostRef={setNavFooterHost} />}
       <Tabs value={tab} onValueChange={selectTab}>
         {mobile ? (
           <MobileDashboardHeader d={d} onSelectTab={selectTab} />

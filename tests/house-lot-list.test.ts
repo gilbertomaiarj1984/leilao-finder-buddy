@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  formatDayList,
   formatHouseList,
   formatListEntry,
   priceLabel,
@@ -64,5 +65,24 @@ describe("house-lot-list", () => {
       artist: "Gal",
       album: "LP Gal Costa",
     });
+  });
+  test("export do dia separa por casa e ignora casa vazia", () => {
+    const text = formatDayList("Hoje 08/11", [
+      { house: "Casa A", entries: [base] },
+      {
+        house: "Casa B",
+        entries: [
+          { ...base, lote: "7" },
+          { ...base, lote: "2" },
+        ],
+      },
+      { house: "Casa C", entries: [] },
+    ]);
+    const lines = text.split("\n");
+    expect(lines[0]).toBe("Hoje 08/11 — 3 lote(s) em 2 casa(s)");
+    expect(lines[1]).toBe("");
+    expect(lines[2]).toBe("Casa A — 1 lote(s)");
+    expect(lines).toContain("Casa B — 2 lote(s)");
+    expect(text).not.toContain("Casa C");
   });
 });
