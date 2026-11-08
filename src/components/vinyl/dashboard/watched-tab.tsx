@@ -34,6 +34,7 @@ import {
   watchedMatchesSearch,
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
+import { HouseLotListButton } from "@/components/vinyl/house-lot-list";
 import { PresencialLink } from "@/components/vinyl/presencial-link";
 import { useDragAutoScroll } from "@/components/vinyl/use-drag-autoscroll";
 import {
@@ -650,6 +651,7 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                                       </span>
                                       <AuctionStatusInline info={info} />
                                       <div className="ml-auto flex flex-wrap items-center gap-3">
+                                        <HouseLotListButton d={d} house={h.house} lots={c.lots} />
                                         {info?.presencialUrl ? (
                                           <PresencialLink
                                             presencialUrl={info.presencialUrl}
@@ -739,6 +741,11 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                               ) : null}
                               <AuctionStatusInline info={singleInfo} />
                               <div className="ml-auto flex flex-wrap items-center gap-3">
+                                <HouseLotListButton
+                                  d={d}
+                                  house={houseGroup.house}
+                                  lots={houseLots}
+                                />
                                 {singleInfo?.presencialUrl ? (
                                   <PresencialLink
                                     presencialUrl={singleInfo.presencialUrl}
@@ -812,6 +819,11 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                                     />
                                     <AuctionStatusInline info={info} />
                                     <div className="ml-auto flex flex-wrap items-center gap-3">
+                                      <HouseLotListButton
+                                        d={d}
+                                        house={`${houseGroup.house} · catálogo ${catalog.idLeilao}`}
+                                        lots={catalog.lots}
+                                      />
                                       {info?.presencialUrl ? (
                                         <PresencialLink
                                           presencialUrl={info.presencialUrl}

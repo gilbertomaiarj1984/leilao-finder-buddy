@@ -43,6 +43,7 @@ import {
   type HouseGroup,
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
+import { HouseLotListButton } from "@/components/vinyl/house-lot-list";
 import { PresencialLink } from "@/components/vinyl/presencial-link";
 import { useDayNoBid } from "@/components/vinyl/use-day-no-bid";
 import { countUnsoldHouses } from "@/components/vinyl/use-today-unsold";
@@ -57,9 +58,20 @@ import type { DashboardData } from "./use-dashboard-data";
  * recolhível "Catálogo N" com data, contadores, horário/status/lote em pregão e links próprios —
  * o mesmo desenho da aba Vigiados. Sem isso a linha da casa mostrava o status do 1º pregão só.
  */
-function AuctionSection<T extends { idLeilao: string; time: string; url: string; idPeca: string }>({
+function AuctionSection<
+  T extends {
+    id: string;
+    idLeilao: string;
+    time: string;
+    url: string;
+    idPeca: string;
+    title: string;
+  },
+>({
   d,
   day,
+  house,
+  noBidIds,
   houseUrl,
   sectionKey,
   auction,
@@ -67,6 +79,8 @@ function AuctionSection<T extends { idLeilao: string; time: string; url: string;
 }: {
   d: DashboardData;
   day: string;
+  house: string;
+  noBidIds?: ReadonlySet<string> | null;
   houseUrl: string;
   sectionKey: string;
   auction: { idLeilao: string; lots: T[] };
@@ -103,6 +117,12 @@ function AuctionSection<T extends { idLeilao: string; time: string; url: string;
         />
         <AuctionStatusInline info={info} />
         <div className="ml-auto flex flex-wrap items-center gap-3">
+          <HouseLotListButton
+            d={d}
+            house={`${house} · catálogo ${auction.idLeilao}`}
+            lots={auction.lots}
+            noBidIds={noBidIds}
+          />
           {info?.presencialUrl ? (
             <PresencialLink
               presencialUrl={info.presencialUrl}
@@ -545,6 +565,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     />
                     <AuctionStatusInline info={auctionInfo} />
                     <div className="ml-auto flex flex-wrap items-center gap-3">
+                      <HouseLotListButton d={d} house={houseGroup.house} lots={houseGroup.lots} />
                       {auctionInfo?.presencialUrl ? (
                         <PresencialLink
                           presencialUrl={auctionInfo.presencialUrl}
@@ -570,6 +591,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                           key={auction.idLeilao}
                           d={d}
                           day={day}
+                          house={houseGroup.house}
                           houseUrl={houseGroup.houseUrl}
                           sectionKey={`${houseSectionKey}|${auction.idLeilao}`}
                           auction={auction}
@@ -853,6 +875,12 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     />
                     <AuctionStatusInline info={auctionInfo} />
                     <div className="ml-auto flex flex-wrap items-center gap-3">
+                      <HouseLotListButton
+                        d={d}
+                        house={group.house}
+                        lots={houseLots}
+                        noBidIds={noBidActive ? noBid.ids : null}
+                      />
                       {auctionInfo?.presencialUrl ? (
                         <PresencialLink
                           presencialUrl={auctionInfo.presencialUrl}
@@ -905,6 +933,8 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                             key={auction.idLeilao}
                             d={d}
                             day={day}
+                            house={group.house}
+                            noBidIds={noBidActive ? noBid.ids : null}
                             houseUrl={group.houseUrl}
                             sectionKey={`${day}|${group.house}|${auction.idLeilao}`}
                             auction={auction}
