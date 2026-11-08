@@ -49,6 +49,7 @@
     o `hidden` vem do clique no botão, não de um listener de scroll; o `sm:grid-rows-[1fr]`
     sempre vence no desktop, então o recolhimento só tem efeito visual abaixo do breakpoint
     `sm` mesmo que o estado fique marcado como escondido.
+- **Lista copiável por casa (v0.188.0):** `HouseLotListButton` (`components/vinyl/house-lot-list.tsx`) fica ao lado de "pregão presencial" na linha da casa (dia principal, visão Vigiados do dia, aba Vigiados; também por catálogo quando a casa tem vários). Recebe os lotes JÁ filtrados da tela e monta o texto sob demanda (`lib/house-lot-list.ts`, puro): `Lote | Artista — Álbum | próximo lance X (ou "1º lance X (SEM LANCE)") | Estado | trecho`. "Sem lance" = `noBid.ids` (filtro verde ligado) ou `demand.bids === 0`; trecho = `ai.reason`, senão `condition.raw`, senão o título. Não existe na visão "Lances" (sem link de pregão ali).
 - **`index.tsx` (site principal):** cards por **dia → casa → artista**. `LotCard` mostra nota
   da IA no canto **direito** (`ScoreCorner`), nº do lote no canto **esquerdo**, e o `album` da
   IA ("Artista — Álbum (Ano)", `formatAiAlbum`) **acima** do título. Álbum resolvido por lote =
