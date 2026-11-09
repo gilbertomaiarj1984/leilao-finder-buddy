@@ -25,6 +25,8 @@
 
 ## Coleção do usuário (`collection_items`)
 
+**Exportar (v0.190.0):** botão "Exportar" no topo da tela abre o `ListDialog` (o mesmo da lista de leilões, `house-lot-list.tsx`) com `formatCollectionList` (`lib/collection-export.ts`): uma linha por disco, "Artista — Álbum (ano)" + "Disco/Capa" só se houver estado; ordem artista/álbum; respeita filtro de artista e busca.
+
 - **Catálogo dos vinis que o usuário possui**, agrupado por artista. Página
   `_authenticated/colecao.tsx` (menu **Coleção** no header do `index.tsx`), duas visões
   (`Tabs`): **Títulos** (padrão desde a v0.114.0; lista simplificada — `CollectionTitleRow`: hover/toque

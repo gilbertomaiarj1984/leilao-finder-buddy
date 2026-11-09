@@ -1,7 +1,15 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, ClipboardPaste, Disc3, Library, Plus, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  ClipboardList,
+  ClipboardPaste,
+  Disc3,
+  Library,
+  Plus,
+  Sparkles,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { usePersistedScroll, usePersistedState } from "@/lib/persisted-state";
 import { toast } from "sonner";
@@ -15,11 +23,13 @@ import { CollectionCard } from "@/components/vinyl/collection-card";
 import { CollectionTitleRow } from "@/components/vinyl/collection-title-row";
 import { readFileAsDataUrl } from "@/components/vinyl/collection-utils";
 import { ArtistFilter } from "@/components/vinyl/filters";
+import { ListDialog } from "@/components/vinyl/house-lot-list";
 import { HideableBar } from "@/components/vinyl/hideable-bar";
 import { MobileTopToggle } from "@/components/vinyl/mobile-top-toggle";
 import { AiModelSelect } from "@/components/vinyl/ai-provider-controls";
 import { AI_PROVIDER_SHORT, formatFailoverTrail, type AiProvider } from "@/lib/ai-provider";
 import type { CollectionItem } from "@/lib/collection.server";
+import { formatCollectionList } from "@/lib/collection-export";
 import {
   addCollectionItem,
   deleteCollectionItem,
@@ -139,6 +149,7 @@ function ColecaoPage() {
   const [search, setSearch] = usePersistedState("colecao-search", "");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [coverItem, setCoverItem] = useState<CollectionItem | null>(null);
   const [identifying, setIdentifying] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
@@ -500,6 +511,18 @@ function ColecaoPage() {
                   Adicionar em massa
                 </Button>
                 {items.length > 0 ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setExportOpen(true)}
+                    disabled={filtered.length === 0}
+                    title="Lista dos discos (artista e álbum) para copiar — respeita o filtro e a busca"
+                  >
+                    <ClipboardList className="mr-2 h-4 w-4" />
+                    Exportar
+                  </Button>
+                ) : null}
+                {items.length > 0 ? (
                   <Popover open={identifyMenuOpen} onOpenChange={setIdentifyMenuOpen}>
                     <PopoverTrigger asChild>
                       <Button
@@ -689,6 +712,15 @@ function ColecaoPage() {
         }}
       />
 
+      {exportOpen ? (
+        <ListDialog
+          title="Exportar coleção"
+          description={`${filtered.length} disco(s)${filtered.length < items.length ? " (conforme o filtro/busca da tela)" : ""} — artista e nome do álbum.`}
+          text={formatCollectionList(filtered)}
+          copyLabel="Copiar coleção"
+          onClose={() => setExportOpen(false)}
+        />
+      ) : null}
       <BulkImportDialog
         open={bulkOpen}
         importing={bulkMut.isPending}

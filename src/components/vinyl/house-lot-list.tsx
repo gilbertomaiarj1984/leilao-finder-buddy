@@ -203,16 +203,18 @@ function HouseLotListDialog({
   );
 }
 
-function ListDialog({
+export function ListDialog({
   title,
   description,
   text,
   onClose,
+  copyLabel = "Copiar lista",
 }: {
   title: string;
   description: string;
   text: string;
   onClose: () => void;
+  copyLabel?: string;
 }) {
   const copy = async () => {
     try {
@@ -242,7 +244,7 @@ function ListDialog({
             Fechar
           </Button>
           <Button size="sm" onClick={copy}>
-            <Copy className="mr-1.5 h-3.5 w-3.5" /> Copiar lista
+            <Copy className="mr-1.5 h-3.5 w-3.5" /> {copyLabel}
           </Button>
         </div>
       </DialogContent>
