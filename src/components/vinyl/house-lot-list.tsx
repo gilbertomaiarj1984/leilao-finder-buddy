@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import type { Condition } from "@/lib/grading";
 import {
+  formatDayList,
   formatHouseList,
   shortNote,
   splitArtistAlbum,
@@ -81,20 +82,13 @@ export function HouseLotListButton({
   );
 }
 
-function HouseLotListDialog({
-  d,
-  house,
-  lots,
-  noBidIds,
-  onClose,
-}: {
-  d: DashboardData;
-  house: string;
-  lots: readonly ListLot[];
-  noBidIds?: ReadonlySet<string> | null;
-  onClose: () => void;
-}) {
-  const entries: HouseListEntry[] = lots.map((lot) => {
+/** Entradas do texto a partir dos lotes na tela (IA, estado e preço já resolvidos pelo dashboard). */
+function buildEntries(
+  d: DashboardData,
+  lots: readonly ListLot[],
+  noBidIds?: ReadonlySet<string> | null,
+): HouseListEntry[] {
+  return lots.map((lot) => {
     const ai = d.aiFor(lot);
     const condition = d.conditionFor(lot);
     const { artist, album } = splitArtistAlbum(d.albumFor(lot), lot.artist ?? "", lot.title);
@@ -110,8 +104,116 @@ function HouseLotListDialog({
       note: shortNote(ai?.reason || condition?.raw || lot.title),
     };
   });
-  const text = formatHouseList(house, entries);
+}
 
+type DayExportSection = { house: string; lots: readonly ListLot[] };
+
+/**
+ * Botão "Exportar dia" (fim do painel flutuante de casas, só desktop): mesma janela da lista por
+ * casa, mas com os lotes de TODAS as casas do dia que estão na tela (filtros já aplicados),
+ * separados por casa. As entradas só são montadas quando a janela abre.
+ */
+export function DayLotListButton({
+  d,
+  title,
+  sections,
+  noBidIds,
+}: {
+  d: DashboardData;
+  title: string;
+  sections: readonly DayExportSection[];
+  noBidIds?: ReadonlySet<string> | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const total = sections.reduce((n, s) => n + s.lots.length, 0);
+  if (total === 0) return null;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-medium text-primary hover:bg-accent"
+        title="Lista de todos os lotes de todas as casas do dia (com o filtro atual) para copiar"
+      >
+        <ClipboardList className="h-3.5 w-3.5" /> Exportar dia
+        <span className="ml-auto tabular-nums text-muted-foreground">{total}</span>
+      </button>
+      {open ? (
+        <DayLotListDialog
+          d={d}
+          title={title}
+          sections={sections}
+          noBidIds={noBidIds}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function DayLotListDialog({
+  d,
+  title,
+  sections,
+  noBidIds,
+  onClose,
+}: {
+  d: DashboardData;
+  title: string;
+  sections: readonly DayExportSection[];
+  noBidIds?: ReadonlySet<string> | null;
+  onClose: () => void;
+}) {
+  const built = sections.map((s) => ({
+    house: s.house,
+    entries: buildEntries(d, s.lots, noBidIds),
+  }));
+  const total = built.reduce((n, s) => n + s.entries.length, 0);
+  return (
+    <ListDialog
+      title={`Exportar dia — ${title}`}
+      description={`${total} lote(s) em ${built.length} casa(s), conforme o filtro que está na tela.`}
+      text={formatDayList(title, built)}
+      onClose={onClose}
+    />
+  );
+}
+
+function HouseLotListDialog({
+  d,
+  house,
+  lots,
+  noBidIds,
+  onClose,
+}: {
+  d: DashboardData;
+  house: string;
+  lots: readonly ListLot[];
+  noBidIds?: ReadonlySet<string> | null;
+  onClose: () => void;
+}) {
+  const entries = buildEntries(d, lots, noBidIds);
+  return (
+    <ListDialog
+      title={`Lista — ${house}`}
+      description={`${entries.length} lote(s), conforme o filtro que está na tela.`}
+      text={formatHouseList(house, entries)}
+      onClose={onClose}
+    />
+  );
+}
+
+function ListDialog({
+  title,
+  description,
+  text,
+  onClose,
+}: {
+  title: string;
+  description: string;
+  text: string;
+  onClose: () => void;
+}) {
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);
@@ -125,10 +227,8 @@ function HouseLotListDialog({
     <Dialog open onOpenChange={(o) => (o ? null : onClose())}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="text-base">Lista — {house}</DialogTitle>
-          <DialogDescription>
-            {entries.length} lote(s), conforme o filtro que está na tela.
-          </DialogDescription>
+          <DialogTitle className="text-base">{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <textarea
           readOnly

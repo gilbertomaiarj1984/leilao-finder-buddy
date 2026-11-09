@@ -76,3 +76,16 @@ export function formatHouseList(house: string, entries: readonly HouseListEntry[
   );
   return [`${house} — ${entries.length} lote(s)`, ...sorted.map(formatListEntry)].join("\n");
 }
+
+/** Export geral do dia: uma seção por casa (cada uma no formato da lista por casa), separadas por linha em branco. */
+export function formatDayList(
+  title: string,
+  sections: readonly { house: string; entries: readonly HouseListEntry[] }[],
+): string {
+  const used = sections.filter((s) => s.entries.length > 0);
+  const total = used.reduce((n, s) => n + s.entries.length, 0);
+  return [
+    `${title} — ${total} lote(s) em ${used.length} casa(s)`,
+    ...used.map((s) => `\n${formatHouseList(s.house, s.entries)}`),
+  ].join("\n");
+}

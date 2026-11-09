@@ -43,7 +43,7 @@ import {
   type HouseGroup,
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
-import { HouseLotListButton } from "@/components/vinyl/house-lot-list";
+import { DayLotListButton, HouseLotListButton } from "@/components/vinyl/house-lot-list";
 import { PresencialLink } from "@/components/vinyl/presencial-link";
 import { useDayNoBid } from "@/components/vinyl/use-day-no-bid";
 import { countUnsoldHouses } from "@/components/vinyl/use-today-unsold";
@@ -189,6 +189,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     bidsWithHouseUrl,
     bidDayKey,
     dayBarHost,
+    navFooterHost,
     refreshDay,
     refreshingDay,
     setBidsViewDay,
@@ -277,6 +278,17 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     // Sem lance: enquanto os catálogos carregam (`ids` nulo) a lista fica vazia, com aviso.
     .filter((lot) => !noBidActive || Boolean(noBid.ids?.has(lot.idPeca)));
   const groups = groupByHouse(visibleLots);
+  // Filtros por casa (artista / faixa de valor) — usados na grade e no "Exportar dia".
+  const filterHouseLots = (group: HouseGroup) => {
+    const houseKey = `${day}|${group.house}`;
+    const perArtist = globalActive ? "" : (houseArtist[houseKey] ?? "");
+    const perPrice = housePrice[houseKey] ?? "";
+    let houseLots = group.lots;
+    if (perArtist)
+      houseLots = houseLots.filter((lot) => (lot.artist || UNCLASSIFIED_LABEL) === perArtist);
+    if (perPrice) houseLots = houseLots.filter((lot) => matchesPriceRange(lot.price, perPrice));
+    return houseLots;
+  };
   const isUnsoldView = unsoldViewDay === day && index === TODAY_INDEX;
   const isWatchedView = watchedViewDay === day;
   // Vigiados do dia: a busca principal também filtra aqui.
@@ -298,6 +310,17 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
 
   return (
     <TabsContent value={`day-${index}`} className="space-y-6">
+      {navFooterHost && !isUnsoldView && !isWatchedView && !isBidsView
+        ? createPortal(
+            <DayLotListButton
+              d={d}
+              title={shortDayLabel(day, index - TODAY_INDEX)}
+              sections={groups.map((g) => ({ house: g.house, lots: filterHouseLots(g) }))}
+              noBidIds={noBidActive ? noBid.ids : null}
+            />,
+            navFooterHost,
+          )
+        : null}
       {dayBarHost &&
         createPortal(
           <div className="space-y-1 border-t border-border px-4 py-1.5">
@@ -731,13 +754,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
             const isVerified = verifiedHouses.has(houseKey);
             const perArtist = globalActive ? "" : (houseArtist[houseKey] ?? "");
             const perPrice = housePrice[houseKey] ?? "";
-            let houseLots = group.lots;
-            if (perArtist)
-              houseLots = houseLots.filter(
-                (lot) => (lot.artist || UNCLASSIFIED_LABEL) === perArtist,
-              );
-            if (perPrice)
-              houseLots = houseLots.filter((lot) => matchesPriceRange(lot.price, perPrice));
+            const houseLots = filterHouseLots(group);
             const renderArtistGroups = (lots: typeof houseLots) =>
               groupByArtist(lots).map((artistGroup) => (
                 <div key={artistGroup.artist} className="space-y-3">

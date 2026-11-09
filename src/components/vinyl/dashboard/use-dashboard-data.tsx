@@ -250,6 +250,8 @@ export function useDashboardData() {
   // Alvo (via portal) para a barra de controles do dia (Vigiados/Lances/Analisar/casas),
   // renderizada dentro do header — acima da lista de dias — em vez de sticky abaixo dele.
   const [dayBarHost, setDayBarHost] = useState<HTMLDivElement | null>(null);
+  // Alvo (via portal) no fim do painel flutuante de casas (desktop): botão "Exportar dia".
+  const [navFooterHost, setNavFooterHost] = useState<HTMLDivElement | null>(null);
   // Alvo (via portal) para o botão "Incluir/Ocultar finalizados", renderizado ao final da
   // faixa de dias (depois de "Lances"), em vez de junto com a barra de controles do dia.
   const [finishedToggleHost, setFinishedToggleHost] = useState<HTMLDivElement | null>(null);
@@ -1768,6 +1770,8 @@ export function useDashboardData() {
     setSearch,
     lots,
     setDayBarHost,
+    navFooterHost,
+    setNavFooterHost,
     tabsBarRef,
     days,
     barDays,

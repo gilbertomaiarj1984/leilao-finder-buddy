@@ -50,6 +50,7 @@
     sempre vence no desktop, então o recolhimento só tem efeito visual abaixo do breakpoint
     `sm` mesmo que o estado fique marcado como escondido.
 - **Lista copiável por casa (v0.188.0):** `HouseLotListButton` (`components/vinyl/house-lot-list.tsx`) fica ao lado de "pregão presencial" na linha da casa (dia principal, visão Vigiados do dia, aba Vigiados; também por catálogo quando a casa tem vários). Recebe os lotes JÁ filtrados da tela e monta o texto sob demanda (`lib/house-lot-list.ts`, puro): `Lote | Artista — Álbum | próximo lance X (ou "1º lance X (SEM LANCE)") | Estado | trecho`. "Sem lance" = `noBid.ids` (filtro verde ligado) ou `demand.bids === 0`; trecho = `ai.reason`, senão `condition.raw`, senão o título. Não existe na visão "Lances" (sem link de pregão ali).
+- **Exportar dia (v0.189.0):** `DayLotListButton` fica no rodapé do painel flutuante de casas (`HouseNav`, só desktop ≥2xl; o `DayTab` ativo entra por portal em `navFooterHost`). Junta os lotes de todas as casas do dia com os mesmos filtros da grade (inclui artista/valor por casa via `filterHouseLots` e "sem lance"), uma seção por casa (`formatDayList`). Não aparece nas visões Vigiados/Lances/Não vendidos nem no celular.
 - **`index.tsx` (site principal):** cards por **dia → casa → artista**. `LotCard` mostra nota
   da IA no canto **direito** (`ScoreCorner`), nº do lote no canto **esquerdo**, e o `album` da
   IA ("Artista — Álbum (Ano)", `formatAiAlbum`) **acima** do título. Álbum resolvido por lote =
