@@ -279,8 +279,13 @@ preço atual)` (só com `eval_price` gravado) e botão **"Reavaliar defasadas"**
 
 ## Agendamentos de lance (`/agendamentos`, v0.191.0)
 
-Tela própria (botão "Agendamentos" no cabeçalho; item no menu do celular) para criar, listar,
-editar e cancelar lances agendados. Código: `bid-schedule.ts` (regras puras, testadas em
+**Criação pelo martelo** (`components/vinyl/lot-bid-schedule-button.tsx`): ícone de martelo ao lado do
+olho (que passou a ser só ícone) nos cards do desktop, do celular e na Análise; abre um modal com o lote
+alvo já preenchido (gatilho padrão = lote anterior, teto obrigatório, valor atual esperado opcional) e
+mostra/cancela o agendamento já existente do lote. Sem número do lote ou sem pregão presencial, o
+martelo fica desabilitado. A tela `/agendamentos` (botão no cabeçalho; item no menu do celular) é a
+LISTA de acompanhamento: agrupada por dia → casa (semáforo `HouseLight`), com editar/cancelar, modo
+simulação/real e "Rodar agora". Código: `bid-schedule.ts` (regras puras, testadas em
 `tests/bid-schedule.test.ts`), `bid-schedule.server.ts` (estado + acompanhamento + envio),
 `bid-schedule.functions.ts` (server functions), `routes/_authenticated/agendamentos.tsx`.
 

@@ -8,6 +8,7 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
+import { LotBidScheduleButton } from "@/components/vinyl/lot-bid-schedule-button";
 import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { useEffect, useRef, useState, type ComponentProps } from "react";
@@ -521,19 +522,20 @@ function LotCardDesktop({
             <Button
               size="sm"
               variant={lot.watched ? "default" : "outline"}
-              className="flex-1"
+              title={lot.watched ? "Vigiando — clique para parar" : "Vigiar este lote"}
               onClick={onToggle}
               disabled={busy}
             >
               {busy ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : lot.watched ? (
-                <EyeOff className="mr-2 h-4 w-4" />
+                <EyeOff className="h-4 w-4" />
               ) : (
-                <Eye className="mr-2 h-4 w-4" />
+                <Eye className="h-4 w-4" />
               )}
-              {lot.watched ? "Vigiando" : "Vigiar"}
+              <span className="sr-only">{lot.watched ? "Parar de vigiar" : "Vigiar"}</span>
             </Button>
+            <LotBidScheduleButton lot={lot} className="h-9 w-9" />
             {onToggleLookout ? (
               <Button
                 size="sm"

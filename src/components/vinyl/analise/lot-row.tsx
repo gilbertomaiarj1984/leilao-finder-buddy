@@ -9,6 +9,7 @@ import {
   Target,
   Trash2,
 } from "lucide-react";
+import { LotBidScheduleButton } from "@/components/vinyl/lot-bid-schedule-button";
 import { memo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -468,8 +469,9 @@ function AnaliseLotRowImpl({
           ) : (
             <Eye className="h-4 w-4" />
           )}
-          {watched ? "Desvigiar" : "Vigiar"}
+          <span className="sr-only">{watched ? "Desvigiar" : "Vigiar"}</span>
         </Button>
+        <LotBidScheduleButton lot={lot} />
       </footer>
     </article>
   );

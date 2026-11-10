@@ -2,15 +2,23 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { ArrowLeft, Gavel, Play } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { HouseLight } from "@/components/vinyl/house-light";
+import { dayLabel } from "@/components/vinyl/grouping";
 import { isEditable, type BidSchedule, type BidScheduleStatus } from "@/lib/bid-schedule";
 import {
   cancelBidSchedule,
-  createBidSchedule,
   getBidSchedules,
   runBidSchedulerNow,
   setBidScheduleLive,
@@ -18,6 +26,7 @@ import {
 } from "@/lib/bid-schedule.functions";
 
 const QUERY_KEY = ["bid-schedules"] as const;
+const NO_DAY = "sem-data";
 
 const STATUS_LABEL: Record<BidScheduleStatus, string> = {
   waiting: "Aguardando",
@@ -43,31 +52,61 @@ const STATUS_TONE: Record<BidScheduleStatus, string> = {
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-type Form = {
-  auction: string; // `${idLeilao}`
-  triggerLote: string;
-  targetLote: string;
-  expectedValue: string;
-  maxValue: string;
+const todayKey = () => {
+  const d = new Date(Date.now() - 3 * 60 * 60 * 1000); // Brasília
+  return d.toISOString().slice(0, 10);
 };
-const EMPTY: Form = {
-  auction: "",
-  triggerLote: "",
-  targetLote: "",
-  expectedValue: "",
-  maxValue: "",
-};
+
+/** "Hoje 10/11", "Amanhã 11/11" ou "ter 12/11" — mesmo rótulo das outras telas. */
+function dayTitle(dayKey: string): string {
+  if (dayKey === NO_DAY) return "Sem data";
+  const today = todayKey();
+  const diff = Math.round((Date.parse(dayKey) - Date.parse(today)) / 86_400_000);
+  return dayLabel(dayKey, diff === 0 ? 0 : diff === 1 ? 1 : 2);
+}
+
+type Group = { dayKey: string; houses: { house: string; items: BidSchedule[] }[] };
+
+/** Dia (hoje e futuro primeiro, depois os passados) → casa → agendamentos por lote alvo. */
+function groupSchedules(list: BidSchedule[]): Group[] {
+  const today = todayKey();
+  const byDay = new Map<string, Map<string, BidSchedule[]>>();
+  for (const s of list) {
+    const day = s.dayKey || NO_DAY;
+    const houses = byDay.get(day) ?? new Map<string, BidSchedule[]>();
+    const items = houses.get(s.house) ?? [];
+    items.push(s);
+    houses.set(s.house, items);
+    byDay.set(day, houses);
+  }
+  const days = [...byDay.keys()].sort((a, b) => {
+    if (a === NO_DAY) return 1;
+    if (b === NO_DAY) return -1;
+    const fa = a >= today;
+    const fb = b >= today;
+    if (fa !== fb) return fa ? -1 : 1;
+    return fa ? a.localeCompare(b) : b.localeCompare(a);
+  });
+  return days.map((dayKey) => ({
+    dayKey,
+    houses: [...byDay.get(dayKey)!]
+      .map(([house, items]) => ({
+        house,
+        items: [...items].sort((x, y) => x.targetLote - y.targetLote),
+      }))
+      .sort((x, y) => x.house.localeCompare(y.house, "pt-BR")),
+  }));
+}
 
 function AgendamentosPage() {
   const qc = useQueryClient();
   const fetchAll = useServerFn(getBidSchedules);
-  const create = useServerFn(createBidSchedule);
   const update = useServerFn(updateBidSchedule);
   const cancel = useServerFn(cancelBidSchedule);
   const setLive = useServerFn(setBidScheduleLive);
   const runNow = useServerFn(runBidSchedulerNow);
-  const [form, setForm] = useState<Form>(EMPTY);
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<BidSchedule | null>(null);
+  const [form, setForm] = useState({ trigger: "", expected: "", max: "" });
 
   const query = useQuery({
     queryKey: QUERY_KEY,
@@ -79,22 +118,23 @@ function AgendamentosPage() {
 
   const save = useMutation({
     mutationFn: async () => {
-      const auction = query.data?.auctions.find((a) => a.idLeilao === form.auction);
-      const common = {
-        idLeilao: form.auction,
-        house: auction?.house ?? "",
-        presencialUrl: auction?.presencialUrl ?? "",
-        triggerLote: form.triggerLote,
-        targetLote: form.targetLote,
-        expectedValue: form.expectedValue,
-        maxValue: form.maxValue,
-      };
-      if (editing) await update({ data: { id: editing, ...common } });
-      else await create({ data: common });
+      if (!editing) return;
+      await update({
+        data: {
+          id: editing.id,
+          idLeilao: editing.idLeilao,
+          house: editing.house,
+          presencialUrl: editing.presencialUrl,
+          dayKey: editing.dayKey,
+          triggerLote: form.trigger,
+          targetLote: String(editing.targetLote),
+          expectedValue: form.expected,
+          maxValue: form.max,
+        },
+      });
     },
     onSuccess: () => {
-      toast.success(editing ? "Agendamento atualizado." : "Lance agendado.");
-      setForm(EMPTY);
+      toast.success("Agendamento atualizado.");
       setEditing(null);
       void refresh();
     },
@@ -119,22 +159,17 @@ function AgendamentosPage() {
     onError: fail,
   });
 
-  const edit = (s: BidSchedule) => {
-    setEditing(s.id);
-    setForm({
-      auction: s.idLeilao,
-      triggerLote: String(s.triggerLote),
-      targetLote: String(s.targetLote),
-      expectedValue: s.expectedValue === null ? "" : String(s.expectedValue),
-      maxValue: String(s.maxValue),
-    });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
+  const groups = useMemo(() => groupSchedules(query.data?.schedules ?? []), [query.data]);
   const live = query.data?.live === true;
-  const auctions = query.data?.auctions ?? [];
-  const set = (k: keyof Form) => (e: { target: { value: string } }) =>
-    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const openEdit = (s: BidSchedule) => {
+    setEditing(s);
+    setForm({
+      trigger: String(s.triggerLote),
+      expected: s.expectedValue === null ? "" : String(s.expectedValue),
+      max: String(s.maxValue),
+    });
+  };
 
   const confirmLive = () => {
     if (live) return toggleLive.mutate(false);
@@ -145,12 +180,6 @@ function AgendamentosPage() {
     ) {
       toggleLive.mutate(true);
     }
-  };
-
-  const submit = () => {
-    if (!live) return save.mutate();
-    const msg = `Confirmar? Quando o pregão chegar ao lote ${form.triggerLote}, o app dará UM lance de verdade no lote ${form.targetLote} (até ${form.maxValue}).`;
-    if (window.confirm(msg)) save.mutate();
   };
 
   return (
@@ -175,113 +204,121 @@ function AgendamentosPage() {
           <span>
             Modo: <b>{live ? "ENVIO REAL" : "SIMULAÇÃO (não envia nada ao site)"}</b>
           </span>
-          <Button size="sm" variant={live ? "destructive" : "outline"} onClick={confirmLive}>
-            {live ? "Voltar para simulação" : "Ligar envio real"}
-          </Button>
-        </div>
-        {!query.data?.autoRunner ? (
-          <p className="mt-2 text-xs text-muted-foreground">
-            O acompanhamento automático está desligado neste servidor (preview). Use “Rodar agora”
-            para conferir os agendamentos manualmente.
-          </p>
-        ) : null}
-      </div>
-
-      <div className="space-y-3 rounded-lg border p-3">
-        <div className="font-medium">{editing ? "Editar agendamento" : "Novo agendamento"}</div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="text-xs text-muted-foreground sm:col-span-2">
-            Leilão / casa
-            <select
-              className="mt-1 w-full rounded-md border bg-background p-2 text-sm text-foreground"
-              value={form.auction}
-              onChange={set("auction")}
-              disabled={editing !== null}
-            >
-              <option value="">Escolha…</option>
-              {auctions.map((a) => (
-                <option key={a.idLeilao} value={a.idLeilao}>
-                  {a.house} — {a.dayKey} {a.time} ({a.lotCount} lotes)
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-xs text-muted-foreground">
-            Quando o pregão chegar no lote (gatilho)
-            <Input inputMode="numeric" value={form.triggerLote} onChange={set("triggerLote")} />
-          </label>
-          <label className="text-xs text-muted-foreground">
-            Dar 1 lance no lote (alvo)
-            <Input inputMode="numeric" value={form.targetLote} onChange={set("targetLote")} />
-          </label>
-          <label className="text-xs text-muted-foreground">
-            Só se o valor atual do alvo for (opcional)
-            <Input inputMode="decimal" value={form.expectedValue} onChange={set("expectedValue")} />
-          </label>
-          <label className="text-xs text-muted-foreground">
-            Teto: o próximo lance não pode passar de
-            <Input inputMode="decimal" value={form.maxValue} onChange={set("maxValue")} />
-          </label>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          O lance é sempre o próximo valor do lote (nunca outro) e só um é dado.
-        </p>
-        <div className="flex gap-2">
-          <Button onClick={submit} disabled={save.isPending}>
-            {editing ? "Salvar" : "Agendar lance"}
-          </Button>
-          {editing ? (
+          <div className="flex gap-2">
             <Button
+              size="sm"
               variant="outline"
-              onClick={() => {
-                setEditing(null);
-                setForm(EMPTY);
-              }}
+              onClick={() => run.mutate()}
+              disabled={run.isPending}
             >
-              Cancelar edição
+              <Play className="mr-1 h-3.5 w-3.5" />
+              Rodar agora
             </Button>
-          ) : null}
+            <Button size="sm" variant={live ? "destructive" : "outline"} onClick={confirmLive}>
+              {live ? "Voltar para simulação" : "Ligar envio real"}
+            </Button>
+          </div>
         </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Para agendar, use o martelo <Gavel className="inline h-3 w-3" /> no lote (ao lado do
+          olho).
+          {!query.data?.autoRunner
+            ? " O acompanhamento automático está desligado neste servidor (preview): use “Rodar agora” para conferir manualmente."
+            : ""}
+        </p>
       </div>
 
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-muted-foreground">Agendamentos</h2>
-        <Button size="sm" variant="outline" onClick={() => run.mutate()} disabled={run.isPending}>
-          <Play className="mr-1 h-3.5 w-3.5" />
-          Rodar agora
-        </Button>
-      </div>
-      {query.data && query.data.schedules.length === 0 ? (
+      {query.data && groups.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nenhum agendamento ainda.</p>
       ) : null}
-      {query.data?.schedules.map((s) => (
-        <div key={s.id} className="space-y-1 rounded-lg border p-3">
-          <div className="flex items-center justify-between">
-            <span className={`text-sm font-medium ${STATUS_TONE[s.status]}`}>
-              {STATUS_LABEL[s.status]}
-            </span>
-            <span className="text-xs text-muted-foreground">{s.house}</span>
-          </div>
-          <div>
-            Ao chegar no lote <b>{s.triggerLote}</b> → 1 lance no lote <b>{s.targetLote}</b>
-          </div>
-          <div className="text-xs text-muted-foreground">
-            Próximo lance, teto {brl(s.maxValue)}
-            {s.expectedValue !== null ? ` · só se o valor atual for ${brl(s.expectedValue)}` : ""}
-          </div>
-          {s.message ? <div className="text-xs">{s.message}</div> : null}
-          {isEditable(s) ? (
-            <div className="flex gap-2 pt-1">
-              <Button size="sm" variant="outline" onClick={() => edit(s)}>
-                Editar
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => doCancel.mutate(s.id)}>
-                Cancelar
-              </Button>
+
+      {groups.map((g) => (
+        <section key={g.dayKey} className="space-y-2">
+          <h2 className="text-sm font-semibold">{dayTitle(g.dayKey)}</h2>
+          {g.houses.map((h) => (
+            <div key={h.house} className="space-y-2 rounded-lg border p-3">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <HouseLight house={h.house} />
+                {h.house || "Casa não informada"}
+              </div>
+              {h.items.map((s) => (
+                <div key={s.id} className="space-y-1 rounded-md border bg-muted/30 p-2">
+                  <div className="flex items-center justify-between">
+                    <span className={`text-sm font-medium ${STATUS_TONE[s.status]}`}>
+                      {STATUS_LABEL[s.status]}
+                    </span>
+                    <span className="text-xs text-muted-foreground">Lote {s.targetLote}</span>
+                  </div>
+                  <div className="text-sm">
+                    Ao chegar no lote <b>{s.triggerLote}</b> → 1 lance no lote <b>{s.targetLote}</b>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Próximo lance, teto {brl(s.maxValue)}
+                    {s.expectedValue !== null
+                      ? ` · só se o valor atual for ${brl(s.expectedValue)}`
+                      : ""}
+                  </div>
+                  {s.message ? <div className="text-xs">{s.message}</div> : null}
+                  {isEditable(s) ? (
+                    <div className="flex gap-2 pt-1">
+                      <Button size="sm" variant="outline" onClick={() => openEdit(s)}>
+                        Editar
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => doCancel.mutate(s.id)}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
             </div>
-          ) : null}
-        </div>
+          ))}
+        </section>
       ))}
+
+      {editing ? (
+        <Dialog open onOpenChange={(o) => (o ? undefined : setEditing(null))}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Editar agendamento — lote {editing.targetLote}</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-xs text-muted-foreground">
+                Quando o pregão chegar no lote
+                <Input
+                  inputMode="numeric"
+                  value={form.trigger}
+                  onChange={(e) => setForm((f) => ({ ...f, trigger: e.target.value }))}
+                />
+              </label>
+              <label className="text-xs text-muted-foreground">
+                Teto (R$)
+                <Input
+                  inputMode="decimal"
+                  value={form.max}
+                  onChange={(e) => setForm((f) => ({ ...f, max: e.target.value }))}
+                />
+              </label>
+              <label className="text-xs text-muted-foreground sm:col-span-2">
+                Só se o valor atual for (R$, opcional)
+                <Input
+                  inputMode="decimal"
+                  value={form.expected}
+                  onChange={(e) => setForm((f) => ({ ...f, expected: e.target.value }))}
+                />
+              </label>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditing(null)}>
+                Fechar
+              </Button>
+              <Button onClick={() => save.mutate()} disabled={save.isPending}>
+                Salvar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   );
 }

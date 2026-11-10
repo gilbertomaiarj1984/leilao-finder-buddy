@@ -11,6 +11,7 @@ type FormInput = {
   idLeilao?: unknown;
   house?: unknown;
   presencialUrl?: unknown;
+  dayKey?: unknown;
   triggerLote?: unknown;
   targetLote?: unknown;
   expectedValue?: unknown;

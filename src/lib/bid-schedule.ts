@@ -20,6 +20,8 @@ export type BidSchedule = {
   house: string;
   /** URL do pregão (`/presencial/presencial.asp?Num=…`). */
   presencialUrl: string;
+  /** Dia do leilão (yyyy-mm-dd), para agrupar a lista; "" quando desconhecido. */
+  dayKey: string;
   /** Lote que, ao entrar em pregão, dispara o lance. */
   triggerLote: number;
   /** Lote que recebe o lance. */
@@ -39,6 +41,7 @@ export type BidScheduleInput = {
   idLeilao: string;
   house: string;
   presencialUrl: string;
+  dayKey: string;
   triggerLote: number;
   targetLote: number;
   expectedValue: number | null;
@@ -121,6 +124,7 @@ export function validateScheduleInput(
       idLeilao,
       house: String(raw.house ?? "").trim(),
       presencialUrl,
+      dayKey: /^\d{4}-\d{2}-\d{2}$/.test(String(raw.dayKey ?? "")) ? String(raw.dayKey) : "",
       triggerLote,
       targetLote,
       expectedValue,
@@ -152,6 +156,7 @@ export function parseSchedules(raw: unknown): BidSchedule[] {
       idLeilao: o["idLeilao"],
       house: typeof o["house"] === "string" ? o["house"] : "",
       presencialUrl: o["presencialUrl"],
+      dayKey: typeof o["dayKey"] === "string" ? o["dayKey"] : "",
       triggerLote: o["triggerLote"],
       targetLote: o["targetLote"],
       expectedValue: typeof o["expectedValue"] === "number" ? o["expectedValue"] : null,

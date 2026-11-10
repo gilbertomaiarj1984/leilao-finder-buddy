@@ -13,6 +13,7 @@ const base = {
   idLeilao: "66081",
   house: "Escafandro",
   presencialUrl: "https://x.com.br/presencial/presencial.asp?Num=66081",
+  dayKey: "2026-11-10",
   triggerLote: 118,
   targetLote: 120,
   expectedValue: null,

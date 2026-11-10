@@ -103,7 +103,7 @@ export async function updateSchedule(
       if (s.id !== id) return s;
       if (!isEditable(s)) throw new Error("Este agendamento já foi disparado ou encerrado.");
       found = true;
-      return { ...s, ...v.value, updatedAt: nowIso() };
+      return { ...s, ...v.value, dayKey: v.value.dayKey || s.dayKey, updatedAt: nowIso() };
     }),
   );
   if (!found) throw new Error("Agendamento não encontrado.");
