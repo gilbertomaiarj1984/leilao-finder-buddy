@@ -37,6 +37,7 @@ const MENU_TILES: { to: string; label: string; icon: LucideIcon }[] = [
   { to: "/colecao", label: "Coleção", icon: Library },
   { to: "/compras", label: "Compras", icon: ShoppingBag },
   { to: "/vinil-analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/agendamentos", label: "Agendamentos", icon: Gavel },
 ];
 
 function readSavedHomeNav(): SavedHomeNav | null {

@@ -131,11 +131,6 @@ async function getSessionCookieFor(origin: string, force = false): Promise<strin
   return await pending;
 }
 
-/** Compat.: sessão logada do domínio principal (leiloesbr.com.br). */
-async function getSessionCookie(force = false): Promise<string> {
-  return await getSessionCookieFor(BASE_URL, force);
-}
-
 type AuthFetchInit = {
   method?: "GET" | "POST";
   body?: string;
@@ -300,9 +295,22 @@ export async function authFetch(
   init: AuthFetchInit = {},
   isLoggedOut?: (html: string) => boolean,
 ): Promise<string> {
-  let html = await fetchWithRetry(url, init, await getSessionCookie());
+  return authFetchFor(BASE_URL, url, init, isLoggedOut);
+}
+
+/**
+ * Igual a `authFetch`, mas com a sessão logada de OUTRA origem (domínio de uma casa parceira:
+ * cada casa tem o seu próprio cookie). Usado pelo envio de lance agendado.
+ */
+export async function authFetchFor(
+  origin: string,
+  url: string,
+  init: AuthFetchInit = {},
+  isLoggedOut?: (html: string) => boolean,
+): Promise<string> {
+  let html = await fetchWithRetry(url, init, await getSessionCookieFor(origin));
   if (isLoggedOut?.(html)) {
-    html = await fetchWithRetry(url, init, await getSessionCookie(true));
+    html = await fetchWithRetry(url, init, await getSessionCookieFor(origin, true));
   }
   return html;
 }

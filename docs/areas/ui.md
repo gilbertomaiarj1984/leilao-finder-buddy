@@ -277,6 +277,39 @@ preço atual)` (só com `eval_price` gravado) e botão **"Reavaliar defasadas"**
   arquivos `.ts`/`.tsx` separados por causa do react-refresh (o especificador resolve `.ts`
   antes de `.tsx` — nomes não podem colidir).
 
+## Agendamentos de lance (`/agendamentos`, v0.191.0)
+
+Tela própria (botão "Agendamentos" no cabeçalho; item no menu do celular) para criar, listar,
+editar e cancelar lances agendados. Código: `bid-schedule.ts` (regras puras, testadas em
+`tests/bid-schedule.test.ts`), `bid-schedule.server.ts` (estado + acompanhamento + envio),
+`bid-schedule.functions.ts` (server functions), `routes/_authenticated/agendamentos.tsx`.
+
+- **Regra:** leilão + lote gatilho X + lote alvo Y + valor atual esperado Z (opcional) + teto W
+  (obrigatório). Dispara quando o lote em pregão (`fetchPresencialNow`) é ≥ X e ≤ Y (se o pregão
+  pular o X o disparo não se perde; passou de Y = `expired`). O lance é SEMPRE o próximo valor
+  (`NOVO_VALOR`) e só sai se valor atual = Z (quando informado) e próximo ≤ W; já ganhando
+  (`VENCENDO`, página lida logada) = não envia.
+- **Estado:** `app_state.bid_schedules` via `mutateAppState`. Status: `waiting` → `firing`
+  (reserva atômica na transação com `FOR UPDATE`, nunca volta) → `fired`/`simulated`/`skipped`/
+  `failed`; `expired`/`cancelled`. Só `waiting` edita/cancela. Modo em `app_state.bid_schedule_live`
+  (padrão false = SIMULAÇÃO: registra "teria enviado R$ X"). A tela liga o envio real com confirmação.
+- **Envio (modelo novo das casas, ex.: Escafandro):** antes, `verifica_temcartela.asp?leilao=` deve
+  devolver `1` (termos aceitos; o app não aceita termos). Depois GET
+  `<casa>/modulos/lance/asp/fazerlance.asp` com `ValorMinimo`=`valor`=próximo lance, `ID`=idPeca,
+  `IdLeilao`, `qtdlances`=`QTDLANCE`, `lanceautomatico=0`, `lanceclicado=1`, `vendaposflag=0`
+  (campos do formulário `frmLancesDireto`). Resposta JSON: `NUM_ERRO` 0 ou 4 = aceito. UMA tentativa
+  (`attempts: 1`); resposta incerta = `failed` ("confira no site"). Sessão por casa: `authFetchFor`.
+- **Template ANTIGO (ex.: RT Leilões):** sem JSON `loadData`/`Lance.*`; formulário `frmLances` com
+  POST em `peca.asp?ID=…` (campos `IdLeilao`, `IdPeca`, `ValorMinimo`, `lanceclicado`, `vold`,
+  `valor`). `parseLivePeca` detecta o template (`new`/`old`/`null`); valor atual vem de
+  `<span class="is-valor">`, próximo lance de `ValorMinimo`. O formato da resposta é desconhecido,
+  então o sucesso é CONFIRMADO relendo a página (valor atual = lance). ⚠️ Envio real do template
+  antigo ainda não exercitado (`lanceclicado` é repetido como veio da página). Página que não é de
+  nenhum dos dois modelos = não envia e marca `failed`.
+- **Acompanhamento automático:** `ensureBidSchedulerStarted` (chamado em `server.ts`) só liga com
+  `BID_SCHEDULER=1` no `.env` do VPS (ciclo de 15 s; o preview compartilha o banco e NÃO deve
+  disparar). "Rodar agora" na tela executa um ciclo manual (útil no preview, em simulação).
+
 ## Cores, badges e busca
 
 - **Verde** = tenho lance e estou ganhando/arrematei (`bidIsWinning(status)` casa

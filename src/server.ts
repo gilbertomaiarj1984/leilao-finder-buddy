@@ -49,6 +49,11 @@ export default {
     try {
       // Health check pro Caddy (reverse_proxy health_uri) — confirma DATABASE_URL/CRON_TOKEN
       // presentes e o Postgres respondendo antes de qualquer outra rota. Barato, sem segredo.
+      // Acompanhamento dos lances agendados (só liga com BID_SCHEDULER=1; idempotente).
+      void import("./lib/bid-schedule.server")
+        .then((m) => m.ensureBidSchedulerStarted())
+        .catch((error) => console.error("[bid-schedule] não iniciou", error));
+
       const { handleHealth } = await import("./lib/health.server");
       const healthResponse = await handleHealth(request);
       if (healthResponse) return healthResponse;
