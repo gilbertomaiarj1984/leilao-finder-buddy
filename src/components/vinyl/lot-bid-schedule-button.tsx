@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Gavel } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import {
   cancelBidSchedule,
   createBidSchedule,
   getBidSchedules,
+  updateBidSchedule,
 } from "@/lib/bid-schedule.functions";
 import { parseAuctionRef, presencialUrlFromLot, type VinylLot } from "@/lib/vinyl-parse";
 import { cn } from "@/lib/utils";
@@ -102,6 +103,7 @@ function BidScheduleDialog({
   const fetchAll = useServerFn(getBidSchedules);
   const create = useServerFn(createBidSchedule);
   const cancel = useServerFn(cancelBidSchedule);
+  const update = useServerFn(updateBidSchedule);
   const [trigger, setTrigger] = useState(String(Math.max(1, target - 1)));
   const [expected, setExpected] = useState("");
   const [max, setMax] = useState("");
@@ -113,22 +115,41 @@ function BidScheduleDialog({
     (s) => s.idLeilao === idLeilao && s.targetLote === target && s.status === "waiting",
   );
 
+  // Já existe agendamento aguardando para este lote: o modal passa a EDITÁ-LO.
+  const current = existing[0];
+  const loaded = useRef<string | null>(null);
+  useEffect(() => {
+    if (!current || loaded.current === current.id) return;
+    loaded.current = current.id;
+    setTrigger(String(current.triggerLote));
+    setExpected(current.expectedValue === null ? "" : String(current.expectedValue));
+    setMax(String(current.maxValue));
+  }, [current]);
+
   const save = useMutation({
-    mutationFn: () =>
-      create({
-        data: {
-          idLeilao,
-          house: lot.house,
-          presencialUrl,
-          dayKey: lot.dayKey ?? "",
-          triggerLote: trigger,
-          targetLote: String(target),
-          expectedValue: expected,
-          maxValue: max,
-        },
-      }),
+    mutationFn: () => {
+      const data = {
+        idLeilao,
+        house: lot.house,
+        presencialUrl,
+        dayKey: lot.dayKey ?? "",
+        triggerLote: trigger,
+        targetLote: String(target),
+        expectedValue: expected,
+        maxValue: max,
+      };
+      return current
+        ? update({ data: { id: current.id, ...data } }).then(() => undefined)
+        : create({ data }).then(() => undefined);
+    },
     onSuccess: () => {
-      toast.success(live ? "Lance agendado." : "Lance agendado (modo simulação).");
+      toast.success(
+        current
+          ? "Agendamento atualizado."
+          : live
+            ? "Lance agendado."
+            : "Lance agendado (modo simulação).",
+      );
       void refresh();
       onClose();
     },
@@ -143,6 +164,7 @@ function BidScheduleDialog({
   const submit = () => {
     if (
       live &&
+      !current &&
       !window.confirm(
         `Confirmar? Quando o pregão chegar ao lote ${trigger}, o app dará UM lance de verdade no lote ${target} (até R$ ${max}).`,
       )
@@ -165,20 +187,18 @@ function BidScheduleDialog({
           Modo: <b>{live ? "ENVIO REAL" : "SIMULAÇÃO (não envia nada ao site)"}</b>. O lance é
           sempre o próximo valor do lote, e só um.
         </p>
-        {existing.map((s) => (
-          <div
-            key={s.id}
-            className="flex items-center justify-between rounded-md border p-2 text-xs"
-          >
-            <span>
-              Já agendado: ao chegar no lote {s.triggerLote}, teto R${" "}
-              {s.maxValue.toLocaleString("pt-BR")}
-            </span>
-            <Button size="sm" variant="outline" onClick={() => remove.mutate(s.id)}>
-              Cancelar
+        {current ? (
+          <div className="flex items-center justify-between rounded-md border p-2 text-xs">
+            <span>Já agendado: edite abaixo ou cancele.</span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => remove.mutate(current.id, { onSuccess: onClose })}
+            >
+              Cancelar agendamento
             </Button>
           </div>
-        ))}
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-xs text-muted-foreground">
             Quando o pregão chegar no lote
@@ -206,7 +226,7 @@ function BidScheduleDialog({
             Fechar
           </Button>
           <Button onClick={submit} disabled={save.isPending}>
-            Agendar lance
+            {current ? "Salvar alterações" : "Agendar lance"}
           </Button>
         </DialogFooter>
       </DialogContent>
