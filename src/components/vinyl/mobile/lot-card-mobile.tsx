@@ -1,4 +1,5 @@
 import { ArrowRightLeft, Binoculars, Disc3, Eye, EyeOff, Loader2 } from "lucide-react";
+import { LotBidScheduleButton } from "@/components/vinyl/lot-bid-schedule-button";
 import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { useEffect, useRef, useState } from "react";
@@ -273,6 +274,7 @@ export function LotCardMobile(props: LotCardProps) {
               <EyeOff className="h-5 w-5" />
             )}
           </button>
+          <LotBidScheduleButton lot={lot} className="h-10 w-10 rounded-xl" />
         </div>
       </article>
       {open ? (

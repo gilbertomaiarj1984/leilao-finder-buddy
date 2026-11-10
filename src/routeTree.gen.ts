@@ -13,6 +13,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as VinilAnalyticsPublicoRouteImport } from './routes/vinil-analytics-publico'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
+import { Route as AuthenticatedAgendamentosRouteImport } from './routes/_authenticated/agendamentos'
 import { Route as AuthenticatedAnaliseRouteImport } from './routes/_authenticated/analise'
 import { Route as AuthenticatedColecaoRouteImport } from './routes/_authenticated/colecao'
 import { Route as AuthenticatedComprasRouteImport } from './routes/_authenticated/compras'
@@ -39,6 +40,12 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAgendamentosRoute =
+  AuthenticatedAgendamentosRouteImport.update({
+    id: '/agendamentos',
+    path: '/agendamentos',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAnaliseRoute = AuthenticatedAnaliseRouteImport.update({
   id: '/analise',
   path: '/analise',
@@ -75,6 +82,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/auth': typeof AuthRoute
   '/vinil-analytics-publico': typeof VinilAnalyticsPublicoRoute
+  '/agendamentos': typeof AuthenticatedAgendamentosRoute
   '/analise': typeof AuthenticatedAnaliseRoute
   '/colecao': typeof AuthenticatedColecaoRoute
   '/compras': typeof AuthenticatedComprasRoute
@@ -85,6 +93,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/vinil-analytics-publico': typeof VinilAnalyticsPublicoRoute
+  '/agendamentos': typeof AuthenticatedAgendamentosRoute
   '/analise': typeof AuthenticatedAnaliseRoute
   '/colecao': typeof AuthenticatedColecaoRoute
   '/compras': typeof AuthenticatedComprasRoute
@@ -98,6 +107,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/vinil-analytics-publico': typeof VinilAnalyticsPublicoRoute
+  '/_authenticated/agendamentos': typeof AuthenticatedAgendamentosRoute
   '/_authenticated/analise': typeof AuthenticatedAnaliseRoute
   '/_authenticated/colecao': typeof AuthenticatedColecaoRoute
   '/_authenticated/compras': typeof AuthenticatedComprasRoute
@@ -112,6 +122,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/vinil-analytics-publico'
+    | '/agendamentos'
     | '/analise'
     | '/colecao'
     | '/compras'
@@ -122,6 +133,7 @@ export interface FileRouteTypes {
   to:
     | '/auth'
     | '/vinil-analytics-publico'
+    | '/agendamentos'
     | '/analise'
     | '/colecao'
     | '/compras'
@@ -134,6 +146,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/vinil-analytics-publico'
+    | '/_authenticated/agendamentos'
     | '/_authenticated/analise'
     | '/_authenticated/colecao'
     | '/_authenticated/compras'
@@ -177,6 +190,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/agendamentos': {
+      id: '/_authenticated/agendamentos'
+      path: '/agendamentos'
+      fullPath: '/agendamentos'
+      preLoaderRoute: typeof AuthenticatedAgendamentosRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/analise': {
@@ -225,6 +245,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAgendamentosRoute: typeof AuthenticatedAgendamentosRoute
   AuthenticatedAnaliseRoute: typeof AuthenticatedAnaliseRoute
   AuthenticatedColecaoRoute: typeof AuthenticatedColecaoRoute
   AuthenticatedComprasRoute: typeof AuthenticatedComprasRoute
@@ -235,6 +256,7 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAgendamentosRoute: AuthenticatedAgendamentosRoute,
   AuthenticatedAnaliseRoute: AuthenticatedAnaliseRoute,
   AuthenticatedColecaoRoute: AuthenticatedColecaoRoute,
   AuthenticatedComprasRoute: AuthenticatedComprasRoute,

@@ -202,6 +202,13 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
 > de mercado no lugar da gravada pela IA, blocos «em breve» no painel. Lista completa de pendências e dos testes
 > manuais: `docs/checklist-ia.md`.
 
+## Lance agendado — o que ficou de fora (v0.191.0)
+
+- Template antigo das casas (RT Leilões): envio implementado mas nunca exercitado; a confirmação relê a página. Validar o campo `lanceclicado` e a resposta com um lance real.
+- O envio real nunca foi exercitado contra o site: testar primeiro num lote barato, com o modo simulação ligado antes.
+- Ciclo de 15 s: num pregão muito rápido o lote alvo pode passar antes do disparo (vira `expired`).
+- Ativar em produção exige `BID_SCHEDULER=1` no `.env` do VPS e recriar o `app`.
+
 ## Caddy em stack própria (levantado em 30/10/2026)
 
 O Caddy do VPS atende vários projetos (garimpo, AgendaBoa, pdf-unite, o painel de preços, Dokploy), mas a
