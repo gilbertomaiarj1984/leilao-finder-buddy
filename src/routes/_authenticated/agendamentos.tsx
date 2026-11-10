@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { HouseLight } from "@/components/vinyl/house-light";
+import { LiveLotNow } from "@/components/vinyl/live-lot-now";
 import { dayLabel } from "@/components/vinyl/grouping";
 import { isEditable, type BidSchedule, type BidScheduleStatus } from "@/lib/bid-schedule";
 import {
@@ -249,6 +250,11 @@ function AgendamentosPage() {
                     </span>
                     <span className="text-xs text-muted-foreground">Lote {s.targetLote}</span>
                   </div>
+                  {s.status === "waiting" ? (
+                    <div className="flex min-h-5 items-center">
+                      <LiveLotNow url={s.presencialUrl} />
+                    </div>
+                  ) : null}
                   <div className="text-sm">
                     Ao chegar no lote <b>{s.triggerLote}</b> → 1 lance no lote <b>{s.targetLote}</b>
                   </div>

@@ -51,6 +51,20 @@ export function LotBidScheduleButton({ lot, className }: Props) {
   const target = parseLoteNumber(lot.lote);
   const presencialUrl = idLeilao ? presencialUrlFromLot({ idLeilao, url: lot.url }) : null;
   const supported = target !== null && presencialUrl !== null;
+  // Mesma chave da lista/modal: uma só consulta compartilhada por todos os martelos da tela.
+  const fetchAll = useServerFn(getBidSchedules);
+  const { data } = useQuery({
+    queryKey: QUERY_KEY,
+    queryFn: () => fetchAll(),
+    enabled: supported,
+    staleTime: 30_000,
+  });
+  // Aceso (como o olho de "vigiando") quando o lote tem agendamento aguardando.
+  const scheduled = Boolean(
+    data?.schedules.some(
+      (s) => s.idLeilao === idLeilao && s.targetLote === target && s.status === "waiting",
+    ),
+  );
   return (
     <>
       <button
@@ -61,13 +75,19 @@ export function LotBidScheduleButton({ lot, className }: Props) {
           setOpen(true);
         }}
         aria-label="Agendar lance neste lote"
+        aria-pressed={scheduled}
         title={
-          supported
-            ? "Agendar um lance único neste lote"
-            : "Sem pregão presencial ou número do lote: não dá para agendar"
+          !supported
+            ? "Sem pregão presencial ou número do lote: não dá para agendar"
+            : scheduled
+              ? "Lance agendado — clique para editar ou cancelar"
+              : "Agendar um lance único neste lote"
         }
         className={cn(
-          "inline-flex h-8 w-8 items-center justify-center rounded-md border border-input text-muted-foreground shadow-sm hover:border-primary disabled:opacity-40",
+          "inline-flex h-8 w-8 items-center justify-center rounded-md border shadow-sm hover:border-primary disabled:opacity-40",
+          scheduled
+            ? "border-yellow-500 bg-yellow-500/15 text-yellow-600 dark:text-yellow-400"
+            : "border-input text-muted-foreground",
           className,
         )}
       >
