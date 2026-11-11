@@ -9,4 +9,4 @@
 //
 // O rodapé (`src/components/Footer.tsx`) lê esta constante e a exibe em todas
 // as telas, para acompanhar em produção qual versão está no ar.
-export const APP_VERSION = "0.191.3";
+export const APP_VERSION = "0.192.0";

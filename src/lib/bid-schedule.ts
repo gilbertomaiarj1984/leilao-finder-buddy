@@ -35,6 +35,8 @@ export type BidSchedule = {
   updatedAt: string;
   /** Explicação do último passo (motivo do "não disparou", valor enviado…). */
   message: string;
+  /** Guardado pelo botão "Limpar" (sai da lista principal e vai para as sacolas). */
+  archived: boolean;
 };
 
 export type BidScheduleInput = {
@@ -50,6 +52,24 @@ export type BidScheduleInput = {
 
 /** Só edita/cancela enquanto nada foi reservado ou enviado. */
 export const isEditable = (s: Pick<BidSchedule, "status">) => s.status === "waiting";
+
+/** Status que o botão "Limpar" tira da lista: expirado, não disparou e falha. */
+export const ARCHIVABLE_STATUSES = ["expired", "skipped", "failed"] as const;
+export type ArchivableStatus = (typeof ARCHIVABLE_STATUSES)[number];
+
+export const isArchivable = (s: Pick<BidSchedule, "status" | "archived">): boolean =>
+  !s.archived && (ARCHIVABLE_STATUSES as readonly string[]).includes(s.status);
+
+/** Marca como guardados os agendamentos encerrados sem lance (devolve a lista nova e quantos). */
+export function archiveFinished(list: BidSchedule[]): { list: BidSchedule[]; count: number } {
+  let count = 0;
+  const out = list.map((s) => {
+    if (!isArchivable(s)) return s;
+    count++;
+    return { ...s, archived: true };
+  });
+  return { list: out, count };
+}
 
 const STATUSES: readonly BidScheduleStatus[] = [
   "waiting",
@@ -165,6 +185,7 @@ export function parseSchedules(raw: unknown): BidSchedule[] {
       createdAt: typeof o["createdAt"] === "string" ? o["createdAt"] : "",
       updatedAt: typeof o["updatedAt"] === "string" ? o["updatedAt"] : "",
       message: typeof o["message"] === "string" ? o["message"] : "",
+      archived: o["archived"] === true,
     });
   }
   return out;

@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 
 import { mutateAppState } from "./app-state-mutate.server";
 import {
+  archiveFinished,
   decideBid,
   decideTrigger,
   formatBidValue,
@@ -87,6 +88,7 @@ export async function createSchedule(raw: Partial<Record<keyof BidScheduleInput,
     createdAt: at,
     updatedAt: at,
     message: "Aguardando o pregão chegar ao lote gatilho.",
+    archived: false,
   };
   await mutateSchedules((list) => [...list, item]);
   return item;
@@ -121,6 +123,17 @@ export async function cancelSchedule(id: string) {
     }),
   );
   if (!found) throw new Error("Agendamento não encontrado.");
+}
+
+/** "Limpar": guarda expirados, não disparou e falhas nas sacolas (não apaga nada). */
+export async function archiveFinishedSchedules(): Promise<number> {
+  let count = 0;
+  await mutateSchedules((list) => {
+    const r = archiveFinished(list);
+    count = r.count;
+    return r.list;
+  });
+  return count;
 }
 
 function finish(id: string, status: BidScheduleStatus, message: string) {
