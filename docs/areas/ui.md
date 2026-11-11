@@ -314,6 +314,7 @@ simulação/real e "Rodar agora". Código: `bid-schedule.ts` (regras puras, test
   nenhum dos dois modelos = não envia e marca `failed`.
 - **Lista (v0.191.2):** cancelados escondidos por padrão (`ui-state:agendamentos-cancelados`); clicar no agendamento abre `ScheduledLotDialog` (o `LotCard` completo; lote do banco por leilão + nº via `getScheduledLot`; dados do card em `useLotCardData`, compartilhado com `LookoutLotDialog`); a linha da casa tem o link "pregão presencial".
 - **Login antecipado (v0.191.2):** com o pregão em andamento (`fetchPresencialNow` devolve lote) e o gatilho ainda por vir, `warmLogin` chama `ensureSessionFor(origem da casa)` (sessão em cache por casa, mesmo login automático do vigia/lance com `LEILOESBR_EMAIL`/`LEILOESBR_SENHA`) e grava na mensagem do agendamento se o login deu certo ou o erro; só grava quando muda.
+- **Limpar e sacolas (v0.192.0):** o botão "Limpar (n)" marca `archived: true` em `expired`/`skipped`/`failed` (`archiveFinished`, puro); a lista principal esconde os guardados e eles aparecem em "Sacolas" (um `<details>` por tipo, com casa e dia em cada item). Nada é apagado; cancelados continuam no botão próprio.
 - **Login em casa do modelo antigo (v0.191.3):** `performLogin` tenta o login da plataforma; se der 404 (Trem das 7), faz `POST /ajax/le_login_cliente.asp` com `campoeml`/`campopwd` e aceita resposta `0|id|nome` (outro número na frente = recusado). Sessão = `ASPSESSIONID` semeado por GET em `/default.asp`.
 
 #### Login e lance nas casas: descobertas (v0.191.3)

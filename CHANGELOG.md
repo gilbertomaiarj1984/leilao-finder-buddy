@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.192.0** — **Agendamentos: botão "Limpar"** (ao lado de "Mostrar cancelados"): guarda expirados, não dispararam e falhas em "sacolas" separadas (Expirados / Não dispararam / Falhas, recolhíveis, no fim da tela) em vez de apagar; campo novo `archived` no agendamento
 - **0.191.3** — **Login em casas do modelo antigo** (Trem das 7): se o login padrão da plataforma devolve 404, o app tenta `POST /ajax/le_login_cliente.asp` (`campoeml`/`campopwd`; resposta `0|id|nome` = sucesso). Descoberto no teste de agendamento
 - **0.191.2** — **Agendamentos**: o login na casa é feito assim que o pregão começa com agendamento aguardando (a lista mostra se deu certo); cancelados escondidos por padrão (botão "Mostrar cancelados"), clicar no agendamento abre o card completo do lote e a linha da casa ganha o link "pregão presencial"; **o lance agendado mostra o motivo do erro**: quando o disparo falha por exceção, o agendamento passa a dizer em que etapa parou (ler a página da peça, termos, envio) e a mensagem do erro, em vez de só "Erro ao preparar o lance"
 - **0.191.1** — **Martelo aceso e pregão na lista**: o martelo do lote fica amarelo (como o olho de "vigiando") quando o lote tem agendamento aguardando; na tela Agendamentos, o "Aguardando" mostra o lote em pregão agora e "peça x de y · %" (mesmo selo `LiveLotNow` da casa)

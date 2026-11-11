@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Gavel, Play, Radio } from "lucide-react";
+import { ArrowLeft, Eraser, Gavel, Play, Radio } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -19,9 +19,16 @@ import { LiveLotNow } from "@/components/vinyl/live-lot-now";
 import { ScheduledLotDialog } from "@/components/vinyl/scheduled-lot-dialog";
 import { usePersistedState } from "@/lib/persisted-state";
 import { dayLabel } from "@/components/vinyl/grouping";
-import { isEditable, type BidSchedule, type BidScheduleStatus } from "@/lib/bid-schedule";
+import {
+  isArchivable,
+  isEditable,
+  type ArchivableStatus,
+  type BidSchedule,
+  type BidScheduleStatus,
+} from "@/lib/bid-schedule";
 import {
   cancelBidSchedule,
+  clearBidSchedules,
   getBidSchedules,
   runBidSchedulerNow,
   setBidScheduleLive,
@@ -52,6 +59,13 @@ const STATUS_TONE: Record<BidScheduleStatus, string> = {
   expired: "text-muted-foreground",
   cancelled: "text-muted-foreground",
 };
+
+/** Sacolas do "Limpar": o que foi guardado fica aqui, por tipo, para consultar depois. */
+const BAGS: { status: ArchivableStatus; title: string }[] = [
+  { status: "expired", title: "Expirados" },
+  { status: "skipped", title: "Não dispararam" },
+  { status: "failed", title: "Falhas" },
+];
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -106,6 +120,7 @@ function AgendamentosPage() {
   const fetchAll = useServerFn(getBidSchedules);
   const update = useServerFn(updateBidSchedule);
   const cancel = useServerFn(cancelBidSchedule);
+  const clear = useServerFn(clearBidSchedules);
   const setLive = useServerFn(setBidScheduleLive);
   const runNow = useServerFn(runBidSchedulerNow);
   const [editing, setEditing] = useState<BidSchedule | null>(null);
@@ -154,6 +169,14 @@ function AgendamentosPage() {
     onSuccess: () => void refresh(),
     onError: fail,
   });
+  const doClear = useMutation({
+    mutationFn: () => clear(),
+    onSuccess: (r) => {
+      toast.success(`${r.count} agendamento(s) guardado(s) nas sacolas.`);
+      void refresh();
+    },
+    onError: fail,
+  });
   const toggleLive = useMutation({
     mutationFn: (live: boolean) => setLive({ data: { live } }),
     onSuccess: () => void refresh(),
@@ -170,12 +193,68 @@ function AgendamentosPage() {
 
   const all = query.data?.schedules ?? [];
   const cancelledCount = all.filter((s) => s.status === "cancelled").length;
+  const clearableCount = all.filter(isArchivable).length;
+  const archived = all.filter((s) => s.archived);
   const groups = useMemo(
-    () => groupSchedules(showCancelled ? all : all.filter((s) => s.status !== "cancelled")),
+    () =>
+      groupSchedules(all.filter((s) => !s.archived && (showCancelled || s.status !== "cancelled"))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [query.data, showCancelled],
   );
   const live = query.data?.live === true;
+
+  const renderItem = (s: BidSchedule, showHouse = false) => (
+    <div
+      key={s.id}
+      className="cursor-pointer space-y-1 rounded-md border bg-muted/30 p-2 hover:border-primary"
+      role="button"
+      tabIndex={0}
+      title="Abrir o card do lote"
+      onClick={() => setOpenLot(s)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          setOpenLot(s);
+        }
+      }}
+    >
+      {showHouse ? (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <HouseLight house={s.house} />
+          {s.house || "Casa não informada"} · {dayTitle(s.dayKey || NO_DAY)}
+        </div>
+      ) : null}
+      <div className="flex items-center justify-between">
+        <span className={`text-sm font-medium ${STATUS_TONE[s.status]}`}>
+          {STATUS_LABEL[s.status]}
+        </span>
+        <span className="text-xs text-muted-foreground">Lote {s.targetLote}</span>
+      </div>
+      {s.status === "waiting" ? (
+        <div className="flex min-h-5 items-center">
+          <LiveLotNow url={s.presencialUrl} />
+        </div>
+      ) : null}
+      <div className="text-sm">
+        Ao chegar no lote <b>{s.triggerLote}</b> → 1 lance no lote <b>{s.targetLote}</b>
+      </div>
+      <div className="text-xs text-muted-foreground">
+        Próximo lance, teto {brl(s.maxValue)}
+        {s.expectedValue !== null ? ` · só se o valor atual for ${brl(s.expectedValue)}` : ""}
+      </div>
+      {s.message ? <div className="text-xs">{s.message}</div> : null}
+      {isEditable(s) ? (
+        <div className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+          <Button size="sm" variant="outline" onClick={() => openEdit(s)}>
+            Editar
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => doCancel.mutate(s.id)}>
+            Cancelar
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
 
   const openEdit = (s: BidSchedule) => {
     setEditing(s);
@@ -243,11 +322,25 @@ function AgendamentosPage() {
         </p>
       </div>
 
-      {cancelledCount > 0 ? (
-        <Button size="sm" variant="outline" onClick={() => setShowCancelled((v) => !v)}>
-          {showCancelled ? "Esconder cancelados" : `Mostrar cancelados (${cancelledCount})`}
-        </Button>
-      ) : null}
+      <div className="flex flex-wrap gap-2">
+        {cancelledCount > 0 ? (
+          <Button size="sm" variant="outline" onClick={() => setShowCancelled((v) => !v)}>
+            {showCancelled ? "Esconder cancelados" : `Mostrar cancelados (${cancelledCount})`}
+          </Button>
+        ) : null}
+        {clearableCount > 0 ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => doClear.mutate()}
+            disabled={doClear.isPending}
+            title="Guarda expirados, não dispararam e falhas nas sacolas abaixo (nada é apagado)"
+          >
+            <Eraser className="mr-1 h-3.5 w-3.5" />
+            Limpar ({clearableCount})
+          </Button>
+        ) : null}
+      </div>
       {query.data && groups.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nenhum agendamento ativo.</p>
       ) : null}
@@ -272,58 +365,29 @@ function AgendamentosPage() {
                   </a>
                 ) : null}
               </div>
-              {h.items.map((s) => (
-                <div
-                  key={s.id}
-                  className="cursor-pointer space-y-1 rounded-md border bg-muted/30 p-2 hover:border-primary"
-                  role="button"
-                  tabIndex={0}
-                  title="Abrir o card do lote"
-                  onClick={() => setOpenLot(s)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      setOpenLot(s);
-                    }
-                  }}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className={`text-sm font-medium ${STATUS_TONE[s.status]}`}>
-                      {STATUS_LABEL[s.status]}
-                    </span>
-                    <span className="text-xs text-muted-foreground">Lote {s.targetLote}</span>
-                  </div>
-                  {s.status === "waiting" ? (
-                    <div className="flex min-h-5 items-center">
-                      <LiveLotNow url={s.presencialUrl} />
-                    </div>
-                  ) : null}
-                  <div className="text-sm">
-                    Ao chegar no lote <b>{s.triggerLote}</b> → 1 lance no lote <b>{s.targetLote}</b>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Próximo lance, teto {brl(s.maxValue)}
-                    {s.expectedValue !== null
-                      ? ` · só se o valor atual for ${brl(s.expectedValue)}`
-                      : ""}
-                  </div>
-                  {s.message ? <div className="text-xs">{s.message}</div> : null}
-                  {isEditable(s) ? (
-                    <div className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
-                      <Button size="sm" variant="outline" onClick={() => openEdit(s)}>
-                        Editar
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => doCancel.mutate(s.id)}>
-                        Cancelar
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              ))}
+              {h.items.map((s) => renderItem(s))}
             </div>
           ))}
         </section>
       ))}
+
+      {archived.length > 0 ? (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold">Sacolas</h2>
+          {BAGS.map((b) => {
+            const items = archived.filter((s) => s.status === b.status);
+            if (items.length === 0) return null;
+            return (
+              <details key={b.status} className="rounded-lg border p-3">
+                <summary className="cursor-pointer text-sm font-medium">
+                  {b.title} ({items.length})
+                </summary>
+                <div className="mt-2 space-y-2">{items.map((s) => renderItem(s, true))}</div>
+              </details>
+            );
+          })}
+        </section>
+      ) : null}
 
       {openLot ? (
         <ScheduledLotDialog

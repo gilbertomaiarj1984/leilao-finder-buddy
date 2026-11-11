@@ -71,6 +71,15 @@ export const cancelBidSchedule = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** "Limpar": guarda expirados, não disparou e falhas nas sacolas. */
+export const clearBidSchedules = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .handler(async ({ context }) => {
+    await guard(context);
+    const { archiveFinishedSchedules } = await import("./bid-schedule.server");
+    return { count: await archiveFinishedSchedules() };
+  });
+
 /** Liga/desliga o envio REAL (desligado = simulação). */
 export const setBidScheduleLive = createServerFn({ method: "POST" })
   .middleware([requireAuth])

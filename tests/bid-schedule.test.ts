@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  archiveFinished,
   decideBid,
   decideTrigger,
   parseBrl,
   parseLoteNumber,
   parseSchedules,
   validateScheduleInput,
+  type BidSchedule,
+  type BidScheduleStatus,
 } from "../src/lib/bid-schedule";
 
 const base = {
@@ -63,8 +66,40 @@ describe("bid-schedule", () => {
     expect(decideBid(base, { currentValue: 20, nextBid: null })).toMatchObject({ action: "skip" });
   });
 
+  test("archiveFinished guarda só expirado/não disparou/falha", () => {
+    const mk = (id: string, status: BidScheduleStatus): BidSchedule => ({
+      ...base,
+      id,
+      status,
+      createdAt: "",
+      updatedAt: "",
+      message: "",
+      archived: false,
+    });
+    const list = [
+      mk("a", "expired"),
+      mk("b", "skipped"),
+      mk("c", "failed"),
+      mk("d", "waiting"),
+      mk("e", "simulated"),
+      mk("f", "cancelled"),
+    ];
+    const r = archiveFinished(list);
+    expect(r.count).toBe(3);
+    expect(r.list.filter((s) => s.archived).map((s) => s.id)).toEqual(["a", "b", "c"]);
+    expect(archiveFinished(r.list).count).toBe(0);
+  });
+
   test("parseSchedules descarta itens inválidos", () => {
-    const ok = { ...base, id: "a", status: "waiting", createdAt: "", updatedAt: "", message: "" };
+    const ok = {
+      ...base,
+      id: "a",
+      status: "waiting",
+      createdAt: "",
+      updatedAt: "",
+      message: "",
+      archived: false,
+    };
     expect(parseSchedules([ok, { id: 1 }, null, { ...ok, status: "x" }])).toHaveLength(1);
     expect(parseSchedules("lixo")).toEqual([]);
   });
