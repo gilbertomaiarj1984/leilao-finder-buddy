@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Gavel, Play } from "lucide-react";
+import { ArrowLeft, Gavel, Play, Radio } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -16,6 +16,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { HouseLight } from "@/components/vinyl/house-light";
 import { LiveLotNow } from "@/components/vinyl/live-lot-now";
+import { ScheduledLotDialog } from "@/components/vinyl/scheduled-lot-dialog";
+import { usePersistedState } from "@/lib/persisted-state";
 import { dayLabel } from "@/components/vinyl/grouping";
 import { isEditable, type BidSchedule, type BidScheduleStatus } from "@/lib/bid-schedule";
 import {
@@ -107,6 +109,12 @@ function AgendamentosPage() {
   const setLive = useServerFn(setBidScheduleLive);
   const runNow = useServerFn(runBidSchedulerNow);
   const [editing, setEditing] = useState<BidSchedule | null>(null);
+  const [openLot, setOpenLot] = useState<BidSchedule | null>(null);
+  // Cancelados ficam escondidos por padrão (a escolha é lembrada neste aparelho).
+  const [showCancelled, setShowCancelled] = usePersistedState(
+    "ui-state:agendamentos-cancelados",
+    false,
+  );
   const [form, setForm] = useState({ trigger: "", expected: "", max: "" });
 
   const query = useQuery({
@@ -160,7 +168,13 @@ function AgendamentosPage() {
     onError: fail,
   });
 
-  const groups = useMemo(() => groupSchedules(query.data?.schedules ?? []), [query.data]);
+  const all = query.data?.schedules ?? [];
+  const cancelledCount = all.filter((s) => s.status === "cancelled").length;
+  const groups = useMemo(
+    () => groupSchedules(showCancelled ? all : all.filter((s) => s.status !== "cancelled")),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [query.data, showCancelled],
+  );
   const live = query.data?.live === true;
 
   const openEdit = (s: BidSchedule) => {
@@ -229,8 +243,13 @@ function AgendamentosPage() {
         </p>
       </div>
 
+      {cancelledCount > 0 ? (
+        <Button size="sm" variant="outline" onClick={() => setShowCancelled((v) => !v)}>
+          {showCancelled ? "Esconder cancelados" : `Mostrar cancelados (${cancelledCount})`}
+        </Button>
+      ) : null}
       {query.data && groups.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nenhum agendamento ainda.</p>
+        <p className="text-sm text-muted-foreground">Nenhum agendamento ativo.</p>
       ) : null}
 
       {groups.map((g) => (
@@ -241,9 +260,33 @@ function AgendamentosPage() {
               <div className="flex items-center gap-2 text-sm font-medium">
                 <HouseLight house={h.house} />
                 {h.house || "Casa não informada"}
+                {h.items[0]?.presencialUrl ? (
+                  <a
+                    className="ml-auto inline-flex items-center gap-1 text-xs font-normal text-primary hover:underline"
+                    href={h.items[0].presencialUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Acompanhar o pregão presencial desta casa"
+                  >
+                    <Radio className="h-3 w-3" /> pregão presencial
+                  </a>
+                ) : null}
               </div>
               {h.items.map((s) => (
-                <div key={s.id} className="space-y-1 rounded-md border bg-muted/30 p-2">
+                <div
+                  key={s.id}
+                  className="cursor-pointer space-y-1 rounded-md border bg-muted/30 p-2 hover:border-primary"
+                  role="button"
+                  tabIndex={0}
+                  title="Abrir o card do lote"
+                  onClick={() => setOpenLot(s)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setOpenLot(s);
+                    }
+                  }}
+                >
                   <div className="flex items-center justify-between">
                     <span className={`text-sm font-medium ${STATUS_TONE[s.status]}`}>
                       {STATUS_LABEL[s.status]}
@@ -266,7 +309,7 @@ function AgendamentosPage() {
                   </div>
                   {s.message ? <div className="text-xs">{s.message}</div> : null}
                   {isEditable(s) ? (
-                    <div className="flex gap-2 pt-1">
+                    <div className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
                       <Button size="sm" variant="outline" onClick={() => openEdit(s)}>
                         Editar
                       </Button>
@@ -281,6 +324,14 @@ function AgendamentosPage() {
           ))}
         </section>
       ))}
+
+      {openLot ? (
+        <ScheduledLotDialog
+          idLeilao={openLot.idLeilao}
+          targetLote={openLot.targetLote}
+          onClose={() => setOpenLot(null)}
+        />
+      ) : null}
 
       {editing ? (
         <Dialog open onOpenChange={(o) => (o ? undefined : setEditing(null))}>

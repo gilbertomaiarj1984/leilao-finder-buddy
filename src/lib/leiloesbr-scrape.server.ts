@@ -730,7 +730,7 @@ type LotRow = {
   artist: string;
 };
 
-function rowToLot(row: LotRow): VinylLot {
+export function rowToLot(row: LotRow): VinylLot {
   return {
     id: row.id,
     idPeca: row.id_peca,

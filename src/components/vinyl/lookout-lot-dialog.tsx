@@ -1,24 +1,8 @@
-import { useMemo } from "react";
-
-import {
-  toLotAi,
-  toLotMarket,
-  withConditionAnchor,
-  type LotAi,
-} from "@/components/vinyl/ai-score-utils";
 import { LotCard } from "@/components/vinyl/lot-card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { effectiveTextRules } from "@/lib/condition-text";
-import { parseConditionFromText, scoreCondition, type Grade } from "@/lib/grading";
+import { useLotCardData } from "@/components/vinyl/use-lot-card-data";
 import type { LookoutItem } from "@/lib/lookout-match";
 import type { LookoutUpcoming } from "@/lib/lookout-matches.server";
-import {
-  useAiPanelQuery,
-  useLotAiQuery,
-  useLotConditionQuery,
-  useLotIdentQuery,
-  useLotMarketQuery,
-} from "@/lib/queries";
 
 /**
  * Cartão COMPLETO do lote (o mesmo `LotCard` da home: nota da IA, Discogs, estado Disco/Capa,
@@ -40,54 +24,8 @@ export function LookoutLotDialog({
   onWatch: (m: LookoutUpcoming) => void;
   onClose: () => void;
 }) {
-  const aiQuery = useLotAiQuery();
-  const identQuery = useLotIdentQuery();
-  const marketQuery = useLotMarketQuery();
-  const aiPanelQuery = useAiPanelQuery();
-  const conditionQuery = useLotConditionQuery();
-
-  const id = lot?.lotId ?? "";
-  const ai = useMemo<LotAi | undefined>(() => {
-    const r = (aiQuery.data ?? []).find((x) => x.id === id);
-    return r ? toLotAi(r) : undefined;
-  }, [aiQuery.data, id]);
-  const marketRaw = useMemo(() => {
-    const r = (marketQuery.data ?? []).find((x) => x.id === id);
-    return r ? toLotMarket(r) : undefined;
-  }, [marketQuery.data, id]);
-  const album = useMemo(() => {
-    const fromAi = (aiQuery.data ?? []).find((x) => x.id === id)?.album;
-    return fromAi || (identQuery.data ?? []).find((x) => x.id === id)?.album || null;
-  }, [aiQuery.data, identQuery.data, id]);
-  const cond = useMemo(() => {
-    const r = (conditionQuery.data ?? []).find((x) => x.id === id);
-    return r ?? null;
-  }, [conditionQuery.data, id]);
-  const condition = useMemo(() => {
-    if (cond) {
-      const { media, sleeve, score, faixa } = scoreCondition(
-        (cond.media || null) as Grade | null,
-        (cond.sleeve || null) as Grade | null,
-      );
-      const insert =
-        cond.insert_state === "sim"
-          ? ("sim" as const)
-          : cond.insert_state === "nao"
-            ? ("nao" as const)
-            : null;
-      if (media || sleeve || insert !== null) {
-        return { media, sleeve, insert, score, faixa, source: "regex" as const, raw: "" };
-      }
-    }
-    return parseConditionFromText(
-      lot?.title ?? "",
-      effectiveTextRules(aiPanelQuery.data?.rules, aiPanelQuery.data?.disabledRules),
-    );
-  }, [cond, lot?.title, aiPanelQuery.data]);
-  // Mercado com a âncora de preço da condição (mídia) do lote.
-  const market = useMemo(
-    () => withConditionAnchor(marketRaw, condition.media, lot?.uf, aiPanelQuery.data),
-    [marketRaw, condition.media, lot?.uf, aiPanelQuery.data],
+  const { ai, market, album, condition, demand } = useLotCardData(
+    lot ? { id: lot.lotId, title: lot.title, uf: lot.uf } : null,
   );
 
   return (
@@ -119,11 +57,7 @@ export function LookoutLotDialog({
             market={market}
             album={album}
             condition={condition}
-            demand={
-              cond && (cond.views != null || cond.bids != null)
-                ? { views: cond.views ?? null, bids: cond.bids ?? null }
-                : null
-            }
+            demand={demand}
             lookout={{ on: true, hit: null, maxPrice: item?.maxPrice ?? null }}
           />
         ) : null}
