@@ -28,7 +28,7 @@ import {
   type BidScheduleStatus,
 } from "./bid-schedule";
 import { db } from "./db-client.server";
-import { authFetchFor } from "./leiloesbr-auth.server";
+import { authFetchFor, ensureSessionFor } from "./leiloesbr-auth.server";
 import { rowToLot } from "./leiloesbr-scrape.server";
 import { parseLivePeca, type LivePeca } from "./leiloesbr-lot-details.server";
 import { fetchPresencialNow } from "./leiloesbr-presencial.server";
@@ -349,6 +349,29 @@ async function sendOldTemplate(s: BidSchedule, c: SendCtx): Promise<void> {
 // --------------------------------------------------------------------- ciclo/poller ---
 
 let running = false;
+/** Último resultado do aquecimento do login por agendamento (só grava a mensagem quando muda). */
+const warmed = new Map<string, string>();
+
+/** Pregão em andamento + agendamento aguardando: já entra na conta da casa (sessão pronta no gatilho). */
+async function warmLogin(s: BidSchedule): Promise<void> {
+  let status: string;
+  try {
+    await ensureSessionFor(new URL(s.presencialUrl).origin);
+    status = "ok";
+  } catch (error) {
+    status = `erro:${(error instanceof Error ? error.message : String(error)).replace(/\s+/g, " ").slice(0, 160)}`;
+  }
+  if (warmed.get(s.id) === status) return;
+  warmed.set(s.id, status);
+  if (warmed.size > 500) warmed.clear();
+  const message =
+    status === "ok"
+      ? "Pregão em andamento: login na casa feito. Aguardando o lote gatilho."
+      : `Pregão em andamento, mas o login na casa falhou (${status.slice(5)}). O lance pode falhar.`;
+  await mutateSchedules((list) =>
+    list.map((x) => (x.id === s.id && x.status === "waiting" ? { ...x, message } : x)),
+  );
+}
 
 /** Um ciclo: lê o pregão de cada leilão com agendamento aguardando e age. */
 export async function runSchedulerOnce(): Promise<{ checked: number }> {
@@ -365,7 +388,9 @@ export async function runSchedulerOnce(): Promise<{ checked: number }> {
           const now = await fetchPresencialNow(s.presencialUrl);
           nowByUrl.set(s.presencialUrl, now ? parseLoteNumber(now.lote) : null);
         }
-        const decision = decideTrigger(s, nowByUrl.get(s.presencialUrl) ?? null);
+        const currentLote = nowByUrl.get(s.presencialUrl) ?? null;
+        const decision = decideTrigger(s, currentLote);
+        if (decision === "wait" && currentLote !== null) await warmLogin(s);
         if (decision === "expire") {
           await finish(s.id, "expired", "O pregão já passou do lote alvo antes do disparo.");
         } else if (decision === "fire" && (await claim(s.id))) {

@@ -315,6 +315,14 @@ export async function authFetchFor(
   return html;
 }
 
+/**
+ * Garante a sessão logada da casa (`origin`) ANTES de precisar dela (login preguiçoso e em cache):
+ * o lance agendado a aquece quando o pregão começa, para não gastar tempo logando no gatilho.
+ */
+export async function ensureSessionFor(origin: string): Promise<void> {
+  await getSessionCookieFor(origin);
+}
+
 export function loginEmail(): string {
   const email = process.env["LEILOESBR_EMAIL"];
   if (!email) throw new Error("LEILOESBR_EMAIL não configurado.");
