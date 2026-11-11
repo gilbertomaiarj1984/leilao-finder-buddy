@@ -89,3 +89,16 @@ export const runBidSchedulerNow = createServerFn({ method: "POST" })
     const { runSchedulerOnce } = await import("./bid-schedule.server");
     return await runSchedulerOnce();
   });
+
+/** Lote do agendamento (do banco), para abrir o card completo ao clicar na lista. */
+export const getScheduledLot = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .inputValidator((input: { idLeilao?: string; targetLote?: number } | undefined) => ({
+    idLeilao: String(input?.idLeilao ?? ""),
+    targetLote: Number(input?.targetLote ?? 0),
+  }))
+  .handler(async ({ context, data }) => {
+    await guard(context);
+    const { findLotCard } = await import("./bid-schedule.server");
+    return await findLotCard(data.idLeilao, data.targetLote);
+  });

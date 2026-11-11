@@ -312,6 +312,8 @@ simulação/real e "Rodar agora". Código: `bid-schedule.ts` (regras puras, test
   então o sucesso é CONFIRMADO relendo a página (valor atual = lance). ⚠️ Envio real do template
   antigo ainda não exercitado (`lanceclicado` é repetido como veio da página). Página que não é de
   nenhum dos dois modelos = não envia e marca `failed`.
+- **Lista (v0.191.2):** cancelados escondidos por padrão (`ui-state:agendamentos-cancelados`); clicar no agendamento abre `ScheduledLotDialog` (o `LotCard` completo; lote do banco por leilão + nº via `getScheduledLot`; dados do card em `useLotCardData`, compartilhado com `LookoutLotDialog`); a linha da casa tem o link "pregão presencial".
+- **Erro no disparo (v0.191.2):** exceção dentro de `processFired` vira `failed` com a ETAPA (`Progress.stage`: banco, login/leitura da página, termos, envio) e a mensagem do erro (200 caracteres); o stack vai para o log do servidor (`[bid-schedule] falha ao processar o disparo`).
 - **Acompanhamento automático:** `ensureBidSchedulerStarted` (chamado em `server.ts`) só liga com
   `BID_SCHEDULER=1` no `.env` do VPS (ciclo de 15 s; o preview compartilha o banco e NÃO deve
   disparar). "Rodar agora" na tela executa um ciclo manual (útil no preview, em simulação).

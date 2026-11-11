@@ -29,6 +29,7 @@ import {
 } from "./bid-schedule";
 import { db } from "./db-client.server";
 import { authFetchFor } from "./leiloesbr-auth.server";
+import { rowToLot } from "./leiloesbr-scrape.server";
 import { parseLivePeca, type LivePeca } from "./leiloesbr-lot-details.server";
 import { fetchPresencialNow } from "./leiloesbr-presencial.server";
 import { auctionHouseDomain, presencialUrlFrom } from "./vinyl-parse";
@@ -163,7 +164,11 @@ function bidAccepted(r: BidResponse): boolean {
   return n === "0" || n === "4";
 }
 
-async function processFired(s: BidSchedule, live: boolean): Promise<void> {
+/** Etapa em andamento: se algo lançar exceção, a mensagem do agendamento diz onde parou. */
+type Progress = { stage: string };
+
+async function processFired(s: BidSchedule, live: boolean, progress: Progress): Promise<void> {
+  progress.stage = "procurar o lote no banco";
   const lot = await findTargetLot(s);
   const origin = lot ? auctionHouseDomain(lot.url)?.replace(/^http:/i, "https:") : null;
   if (!lot || !origin) {
@@ -172,6 +177,7 @@ async function processFired(s: BidSchedule, live: boolean): Promise<void> {
   }
   const pecaUrl = `${origin}/peca.asp?id=${lot.idPeca}`;
   // Página lida COM login: só assim `VENCENDO` vem preenchido.
+  progress.stage = "entrar na conta da casa e ler a página da peça";
   const html = await authFetchFor(origin, pecaUrl, { referer: `${origin}/` });
   const peca = parseLivePeca(html);
   if (peca.winning) {
@@ -203,9 +209,15 @@ async function processFired(s: BidSchedule, live: boolean): Promise<void> {
   }
 
   if (peca.template === "old") {
+    progress.stage = "enviar o lance (modelo antigo)";
     await sendOldTemplate(s, { origin, pecaUrl, idPeca: lot.idPeca, value, valueTxt, peca });
   } else {
-    await sendNewTemplate(s, { origin, pecaUrl, idPeca: lot.idPeca, value, valueTxt, peca });
+    progress.stage = "conferir os termos do leilão na conta";
+    await sendNewTemplate(
+      s,
+      { origin, pecaUrl, idPeca: lot.idPeca, value, valueTxt, peca },
+      progress,
+    );
   }
 }
 
@@ -219,7 +231,7 @@ type SendCtx = {
 };
 
 /** Template NOVO (ex.: Escafandro): `fazerlance.asp`, resposta JSON. */
-async function sendNewTemplate(s: BidSchedule, c: SendCtx): Promise<void> {
+async function sendNewTemplate(s: BidSchedule, c: SendCtx, progress: Progress): Promise<void> {
   // Termos do leilão precisam já estar aceitos na conta (não aceitamos termos por você).
   const terms = (
     await authFetchFor(
@@ -237,6 +249,7 @@ async function sendNewTemplate(s: BidSchedule, c: SendCtx): Promise<void> {
     return;
   }
 
+  progress.stage = "enviar o lance (modelo novo)";
   const v = formatBidValue(c.value);
   const qs = new URLSearchParams({
     ValorMinimo: v,
@@ -356,11 +369,19 @@ export async function runSchedulerOnce(): Promise<{ checked: number }> {
         if (decision === "expire") {
           await finish(s.id, "expired", "O pregão já passou do lote alvo antes do disparo.");
         } else if (decision === "fire" && (await claim(s.id))) {
+          const progress: Progress = { stage: "iniciar" };
           try {
-            await processFired(s, live);
+            await processFired(s, live, progress);
           } catch (error) {
             console.error("[bid-schedule] falha ao processar o disparo", error);
-            await finish(s.id, "failed", "Erro ao preparar o lance: confira o lote no site.");
+            const detail = (error instanceof Error ? error.message : String(error))
+              .replace(/\s+/g, " ")
+              .slice(0, 200);
+            await finish(
+              s.id,
+              "failed",
+              `Erro ao ${progress.stage}: ${detail}. O lance pode não ter sido enviado: confira o lote no site.`,
+            );
           }
         }
       } catch (error) {
@@ -424,4 +445,18 @@ export async function listSchedulableAuctions(): Promise<SchedulableAuction[]> {
     });
   }
   return out;
+}
+
+/** Lote (do banco) de um leilão pelo número do lote, para abrir o card a partir do agendamento. */
+export async function findLotCard(idLeilao: string, lote: number) {
+  const { data, error } = await db
+    .from("lots")
+    .select(
+      "id, id_leilao, id_peca, base, lote, title, url, image, price, day_key, start_time, uf, house, house_url, artist",
+    )
+    .eq("id_leilao", idLeilao);
+  if (error) throw error;
+  const rows = (data ?? []) as Parameters<typeof rowToLot>[0][];
+  const row = rows.find((r) => parseLoteNumber(r.lote) === lote);
+  return row ? rowToLot(row) : null;
 }
