@@ -22,6 +22,7 @@ type ConditionRow = {
   insert_state?: string | null;
   views?: number | null;
   bids?: number | null;
+  demand_at?: string | null;
 };
 
 /**
@@ -45,11 +46,11 @@ export function conditionMap(rows: readonly ConditionRow[] | undefined): Map<str
 /** Demanda do catálogo (visitas e lances) por lote, da mesma tabela `lot_condition`. */
 export function demandMap(
   rows: readonly ConditionRow[] | undefined,
-): Map<string, { views: number | null; bids: number | null }> {
-  const map = new Map<string, { views: number | null; bids: number | null }>();
+): Map<string, { views: number | null; bids: number | null; at: string | null }> {
+  const map = new Map<string, { views: number | null; bids: number | null; at: string | null }>();
   for (const r of rows ?? []) {
-    if (r.views == null && r.bids == null) continue;
-    map.set(r.id, { views: r.views ?? null, bids: r.bids ?? null });
+    if (r.views == null && r.bids == null && !r.demand_at) continue;
+    map.set(r.id, { views: r.views ?? null, bids: r.bids ?? null, at: r.demand_at ?? null });
   }
   return map;
 }

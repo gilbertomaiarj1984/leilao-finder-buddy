@@ -71,6 +71,7 @@ const LOCKED_STEPS = new Set([
   "sales",
   "market",
   "condition",
+  "demand",
   "tracklist",
   "fame",
 ]);
@@ -412,6 +413,15 @@ async function runCronStep(step: string, url: URL): Promise<Response> {
       return json(await enrichConditions(max));
     }
 
+    // Relê a DEMANDA (visitas/lances) dos lotes de hoje e amanhã direto do catálogo da casa e
+    // atualiza `lot_condition`. Chunked: repete até `done=true`. Roda a cada ~30 min no
+    // workflow `refresh-demand.yml`; ver `lot-demand.server.ts`.
+    if (step === "demand") {
+      const { refreshDemand } = await import("./lot-demand.server");
+      const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 4, 1), 10);
+      return json(await refreshDemand(max));
+    }
+
     // Captura de VENDAS pós-leilão (histórico `lot_sales`, base do Vinil Analytics).
     // Varre o catálogo da casa (1 req/leilão) dos leilões JÁ CONHECIDOS que terminaram e
     // ainda não foram capturados (cursor em `app_state.sales_captured`). Chunked: repete
@@ -747,7 +757,7 @@ async function runCronStep(step: string, url: URL): Promise<Response> {
     return json(
       {
         error:
-          "step inválido (use chunk|enrich|aieval|aiident|market|condition|sales|salesthumbs|resetnosourcethumbs|reident|purchases|backfillbundle|compressimages|prune|cleannonvinyl|salesdebug|catdebug|findlot|findlot2|findlotraw|findlotcat|galleries|galleryscan|pagedebug|windowaudit|catalogdebug)",
+          "step inválido (use chunk|enrich|aieval|aiident|market|condition|demand|sales|salesthumbs|resetnosourcethumbs|reident|purchases|backfillbundle|compressimages|prune|cleannonvinyl|salesdebug|catdebug|findlot|findlot2|findlotraw|findlotcat|galleries|galleryscan|pagedebug|windowaudit|catalogdebug)",
       },
       400,
     );

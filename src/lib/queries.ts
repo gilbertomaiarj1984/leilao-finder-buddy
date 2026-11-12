@@ -374,7 +374,7 @@ export function useHomeLotConditionQuery() {
   return useScopedLotRows(
     queryKeys.lotCondition,
     (scope) => fetchLotCondition({ data: { scope } }),
-    10 * MIN,
+    3 * MIN,
   );
 }
 

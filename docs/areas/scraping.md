@@ -69,6 +69,7 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
     (v0.89.0 — lotes SEM lance, o inverso do filtro de vendas: mesma fonte, sob DEMANDA do
     usuário pela visão "Sem lance" de hoje (v0.156.0; casa ao vivo = só lotes já passados; "sem lance" = `isUnsoldCatalogLot`, não só `!sold`, v0.185.2), não pelo cron; cache em memória de 5 min evita bater o
     catálogo de novo ao abrir/fechar a lista na mesma sessão — ver `docs/areas/ui.md`).
+- **Demanda (`VISITAS`/`QTDLANCE`) fresca (v0.196.0):** `lot_condition.views/bids` eram gravados só quando o lote entrava na fila de estado (`enrichConditions`), e nunca relidos. Agora `refreshDemand` (`lot-demand.server.ts`, step `demand`, workflow `refresh-demand.yml` a cada ~30 min, 08h–23h30 BRT) pega os lotes de hoje e amanhã com `demand_at` > 15 min (ou nulo), agrupa por leilão, lê o catálogo e faz UPDATE só de `views`/`bids`/`demand_at`. Leilões de leitura mais velha primeiro (`pickDemandAuctions`, puro); casa que falha (403) só é pulada; catálogo em HTML antigo (sem os campos) não sobrescreve. Limite conhecido: casas sem `QTDLANCE` no catálogo (ex.: RT Leilões) seguem sem o número de lances (aparece "—").
 - **Peça individual** (`leiloesbr-lot-details.server.ts`, `fetchLotDetails`/`fetchOne`):
   `<domínio>/peca.asp?id=<idPeca>` (ou `?ID=`, mesma página) — HTML com um JSON `loadData`
   embutido que traz os **MESMOS campos do catálogo, só que para ESSE lote**: `NOVO_VALOR`

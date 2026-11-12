@@ -59,7 +59,7 @@ export type LotInsight = {
   /** Mercado já ancorado na condição do disco e com o frete da UF. */
   market: LotMarket | undefined;
   condition: Condition;
-  demand: { views: number | null; bids: number | null } | null;
+  demand: { views: number | null; bids: number | null; at?: string | null } | null;
   /** Relação com a Coleção ("já tenho"); `null` = nenhuma. */
   owned: OwnedHit | null;
   lookout: LookoutMark | null;

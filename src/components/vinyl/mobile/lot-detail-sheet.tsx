@@ -27,6 +27,7 @@ import { OWNED_CONFIDENT_MIN } from "@/lib/wantlist-match";
 import { cn } from "@/lib/utils";
 
 import type { LotCardProps } from "../lot-card";
+import { demandAgeLabel } from "@/lib/lot-demand";
 import { BottomSheet } from "./bottom-sheet";
 import { lotCardState } from "./lot-card-state";
 
@@ -326,11 +327,10 @@ export function LotDetailSheet(
                 {lot.dayKey ? <Row label="Data">{lot.dayKey}</Row> : null}
                 {lot.time ? <Row label="Hora">{lot.time}</Row> : null}
                 {lot.uf ? <Row label="UF">{lot.uf}</Row> : null}
-                {demand && (demand.views != null || demand.bids != null) ? (
+                {demand && (demand.views != null || demand.bids != null || demand.at) ? (
                   <Row label="Demanda">
-                    {demand.views != null ? `👁 ${demand.views}` : ""}
-                    {demand.views != null && demand.bids != null ? " · " : ""}
-                    {demand.bids != null ? `🔨 ${demand.bids}` : ""}
+                    {`👁 ${demand.views ?? "—"} · 🔨 ${demand.bids ?? "—"}`}
+                    {demandAgeLabel(demand.at) ? ` (lido ${demandAgeLabel(demand.at)})` : ""}
                   </Row>
                 ) : null}
               </dl>
