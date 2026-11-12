@@ -144,13 +144,16 @@ export async function setAuctionNote(idLeilao: string, note: string): Promise<vo
 
 /**
  * Loja do pregão (vazio = a própria casa do LeilõesBR). Mudar a loja muda a casa efetiva, então um
- * pregão que já segue numa remessa precisa sair dela antes (a remessa é de uma casa só).
+ * pregão que já segue numa remessa em andamento precisa sair dela antes (a remessa é de uma casa só);
+ * pregão "recebido" (histórico) pode ser ajustado e continua na remessa.
  */
 export async function setAuctionStore(idLeilao: string, store: string): Promise<void> {
   const prev = await readState(idLeilao);
   const clean = store.replace(/\s+/g, " ").trim().slice(0, 80);
   if ((prev?.store ?? "") === clean) return;
-  if (prev?.shipmentId) {
+  // Remessa já recebida é histórico: dá para ajustar a loja (arrumar o passado) sem mexer nela.
+  const inFinishedShipment = prev?.status === "recebido";
+  if (prev?.shipmentId && !inFinishedShipment) {
     throw new Error("Separe o pregão da remessa antes de mudar a loja.");
   }
   const { error } = await db.from("purchase_auctions").upsert(
@@ -159,7 +162,7 @@ export async function setAuctionStore(idLeilao: string, store: string): Promise<
       status: prev?.status ?? "aberto",
       paid_at: prev?.paidAt ?? null,
       received_at: prev?.receivedAt ?? null,
-      shipment_id: null,
+      shipment_id: prev?.shipmentId ?? null,
       note: prev?.note ?? "",
       store: clean,
     },
