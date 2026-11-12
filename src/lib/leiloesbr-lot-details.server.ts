@@ -71,6 +71,12 @@ function formatValor(raw: string | undefined): string | null {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function formatNumber(n: number | null): string | null {
+  return n != null && n > 0
+    ? n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+    : null;
+}
+
 /** Valor de um campo numérico do `loadData` — com ou sem aspas (`"X":"105,00"` / `"X":105`). */
 function loadDataField(html: string, field: string): string | undefined {
   const m = html.match(new RegExp(`"${field}"\\s*:\\s*"?\\s*(\\d[\\d.,]*)`));
@@ -212,6 +218,17 @@ async function fetchOne(target: {
     if (currentValue) details.currentValue = currentValue;
     const nextBid = parseNextBid(html);
     if (nextBid) details.nextBid = nextBid;
+    // Casas do template ANTIGO (ex.: Trem das 7) não embutem o `loadData`: o valor atual e o
+    // próximo lance saem do formulário `frmLances` (mesmo leitor do lance agendado).
+    if (!details.currentValue || !details.nextBid) {
+      const live = parseLivePeca(html);
+      if (live.template === "old") {
+        const cur = formatNumber(live.currentValue);
+        const next = formatNumber(live.nextBid);
+        if (!details.currentValue && cur) details.currentValue = cur;
+        if (!details.nextBid && next) details.nextBid = next;
+      }
+    }
     const sold = parseSold(html);
     if (sold) details.sold = sold;
     const bids = parseBidCount(html);
