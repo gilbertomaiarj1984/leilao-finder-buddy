@@ -1601,12 +1601,14 @@ export function useDashboardData() {
       ] as const,
       queryFn: () => fetchLotDetails({ data: { targets: chunk } }),
       staleTime: 3 * 60 * 1000,
-      // Com lote começando em até 2 h (ou há menos de 1 h), relê a cada 5 min enquanto o app está
-      // aberto — valor atual, próximo lance e nº de lances ao vivo. Fora disso, só ao abrir a tela.
+      // Com lote começando em até 2 h (ou há menos de 1 h) relê a cada 5 min; com lote de hoje mais
+      // distante, a cada 10 min — enquanto o app está aberto — valor atual, próximo lance e nº de lances ao vivo. Fora disso, só ao abrir a tela.
       refetchInterval: () =>
         chunk.some((t) => isHotLot(dayKeyByLotId.get(t.id), timeByLotId.get(t.id)))
           ? 5 * 60 * 1000
-          : false,
+          : chunk.some((t) => dayKeyByLotId.get(t.id) === localTodayKey())
+            ? 10 * 60 * 1000 // lote de hoje, pregão ainda distante: relê a cada 10 min
+            : false,
       // Sempre rechecar ao abrir a tela (o conjunto já é pequeno/escopado — vigiados+lances).
       refetchOnMount: "always" as const,
       refetchOnWindowFocus: false,
