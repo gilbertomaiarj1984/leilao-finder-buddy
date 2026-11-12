@@ -4,7 +4,6 @@ import {
   ChevronRight,
   ChevronUp,
   Eye,
-  ExternalLink,
   Gavel,
   Loader2,
   RefreshCw,
@@ -44,13 +43,14 @@ import {
   type HouseGroup,
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
-import { DayLotListButton, HouseLotListButton } from "@/components/vinyl/house-lot-list";
-import { PresencialLink } from "@/components/vinyl/presencial-link";
+import { DayLotListButton } from "@/components/vinyl/house-lot-list";
 import { useDayNoBid } from "@/components/vinyl/use-day-no-bid";
 import { countUnsoldHouses } from "@/components/vinyl/use-today-unsold";
 import { DAY_PAGE, TODAY_INDEX } from "@/lib/day-bar";
 import { auctionDayPassed, UNCLASSIFIED_LABEL } from "@/lib/vinyl-parse";
 
+import { AuctionHeaderActions } from "./auction-header-actions";
+import { DashboardLotCard } from "./dashboard-lot-card";
 import { UnsoldView } from "./unsold-view";
 import type { DashboardData } from "./use-dashboard-data";
 
@@ -118,30 +118,15 @@ function AuctionSection<
           onToggle={toggleStatFilter}
         />
         <AuctionStatusInline info={info} />
-        <div className="ml-auto flex flex-wrap items-center gap-3">
-          <HouseLotListButton
-            d={d}
-            house={`${house} · catálogo ${auction.idLeilao}`}
-            lots={auction.lots}
-            noBidIds={noBidIds}
-          />
-          {info?.presencialUrl ? (
-            <PresencialLink
-              presencialUrl={info.presencialUrl}
-              idLeilao={info.idLeilao}
-              dayKey={info.dayKey}
-              status={info.status}
-            />
-          ) : null}
-          <a
-            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-            href={info?.catalogUrl ?? houseUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            ver catálogo <ExternalLink className="h-3 w-3" />
-          </a>
-        </div>
+        <AuctionHeaderActions
+          d={d}
+          house={`${house} · catálogo ${auction.idLeilao}`}
+          houseUrl={houseUrl}
+          info={info}
+          lots={auction.lots}
+          noBidIds={noBidIds}
+          linkLabel="ver catálogo"
+        />
       </div>
       {isOpen ? children : null}
     </div>
@@ -226,9 +211,6 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     albumById,
     searchScore,
     search,
-    possibleTrashFor,
-    setExcludeTarget,
-    dismissTrashMutation,
     openHouses,
     verifiedHouses,
     houseArtist,
@@ -492,7 +474,9 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
         )}
       {isUnsoldView ? (
         <UnsoldView
+          d={d}
           houses={todayUnsold}
+          dayKey={day}
           dayLabel={dayLabel(day, index - TODAY_INDEX)}
           onBack={() => setUnsoldViewDay(null)}
         />
@@ -595,25 +579,13 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                       onToggle={toggleStatFilter}
                     />
                     <AuctionStatusInline info={auctionInfo} />
-                    <div className="ml-auto flex flex-wrap items-center gap-3">
-                      <HouseLotListButton d={d} house={houseGroup.house} lots={houseGroup.lots} />
-                      {auctionInfo?.presencialUrl ? (
-                        <PresencialLink
-                          presencialUrl={auctionInfo.presencialUrl}
-                          idLeilao={auctionInfo.idLeilao}
-                          dayKey={auctionInfo.dayKey}
-                          status={auctionInfo.status}
-                        />
-                      ) : null}
-                      <a
-                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                        href={auctionInfo?.catalogUrl ?? houseGroup.houseUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        site da casa <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </div>
+                    <AuctionHeaderActions
+                      d={d}
+                      house={houseGroup.house}
+                      houseUrl={houseGroup.houseUrl}
+                      info={auctionInfo}
+                      lots={houseGroup.lots}
+                    />
                   </div>
                   {!isHouseOpen ? null : multi ? (
                     <div className="space-y-6 border-l-2 border-border pl-3 sm:pl-5">
@@ -713,42 +685,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
               </p>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {ranked.map((lot) => (
-                  <LotCard
-                    key={lot.id}
-                    lot={{
-                      ...lot,
-                      price: currentPriceFor(lot.id, lot.price),
-                      lote: lot.lote || loteById.get(lot.idPeca) || "",
-                      myBid: myBidById.get(lot.idPeca),
-                      nextBid: nextBidById.get(lot.id),
-                    }}
-                    busy={pending === lot.idPeca}
-                    ai={aiFor(lot)}
-                    market={marketFor(lot)}
-                    album={albumFor(lot)}
-                    condition={conditionFor(lot)}
-                    demand={demandFor(lot)}
-                    owned={ownedFor(lot)}
-                    {...lookoutProps(lot)}
-                    onOpenOwned={() => setOwnedPanelLot(lot)}
-                    onEditTags={editTags(lot.id)}
-                    bidStatus={bidStatusById.get(lot.idPeca)}
-                    sold={soldById.get(lot.id)}
-                    possibleTrash={possibleTrashFor(lot)}
-                    onExclude={() => setExcludeTarget({ id: lot.id, title: lot.title })}
-                    onDismissTrash={() => {
-                      const signal = possibleTrashFor(lot);
-                      if (signal) dismissTrashMutation.mutate(signal.matchedTerms);
-                    }}
-                    onToggle={() =>
-                      toggle.mutate({
-                        idPeca: lot.idPeca,
-                        idLeilao: lot.idLeilao,
-                        base: lot.base,
-                        watch: !lot.watched,
-                      })
-                    }
-                  />
+                  <DashboardLotCard key={lot.id} d={d} lot={lot} />
                 ))}
               </div>
             </div>
@@ -780,42 +717,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                   </h3>
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {artistGroup.lots.map((lot) => (
-                      <LotCard
-                        key={lot.id}
-                        lot={{
-                          ...lot,
-                          price: currentPriceFor(lot.id, lot.price),
-                          lote: lot.lote || loteById.get(lot.idPeca) || "",
-                          myBid: myBidById.get(lot.idPeca),
-                          nextBid: nextBidById.get(lot.id),
-                        }}
-                        busy={pending === lot.idPeca}
-                        ai={aiFor(lot)}
-                        market={marketFor(lot)}
-                        album={albumFor(lot)}
-                        condition={conditionFor(lot)}
-                        demand={demandFor(lot)}
-                        owned={ownedFor(lot)}
-                        {...lookoutProps(lot)}
-                        onOpenOwned={() => setOwnedPanelLot(lot)}
-                        onEditTags={editTags(lot.id)}
-                        bidStatus={bidStatusById.get(lot.idPeca)}
-                        sold={soldById.get(lot.id)}
-                        possibleTrash={possibleTrashFor(lot)}
-                        onExclude={() => setExcludeTarget({ id: lot.id, title: lot.title })}
-                        onDismissTrash={() => {
-                          const signal = possibleTrashFor(lot);
-                          if (signal) dismissTrashMutation.mutate(signal.matchedTerms);
-                        }}
-                        onToggle={() =>
-                          toggle.mutate({
-                            idPeca: lot.idPeca,
-                            idLeilao: lot.idLeilao,
-                            base: lot.base,
-                            watch: !lot.watched,
-                          })
-                        }
-                      />
+                      <DashboardLotCard key={lot.id} d={d} lot={lot} />
                     ))}
                   </div>
                 </div>
@@ -902,30 +804,14 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                       onToggle={toggleStatFilter}
                     />
                     <AuctionStatusInline info={auctionInfo} />
-                    <div className="ml-auto flex flex-wrap items-center gap-3">
-                      <HouseLotListButton
-                        d={d}
-                        house={group.house}
-                        lots={houseLots}
-                        noBidIds={noBidActive ? noBid.ids : null}
-                      />
-                      {auctionInfo?.presencialUrl ? (
-                        <PresencialLink
-                          presencialUrl={auctionInfo.presencialUrl}
-                          idLeilao={auctionInfo.idLeilao}
-                          dayKey={auctionInfo.dayKey}
-                          status={auctionInfo.status}
-                        />
-                      ) : null}
-                      <a
-                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                        href={auctionInfo?.catalogUrl ?? group.houseUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        site da casa <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </div>
+                    <AuctionHeaderActions
+                      d={d}
+                      house={group.house}
+                      houseUrl={group.houseUrl}
+                      info={auctionInfo}
+                      lots={houseLots}
+                      noBidIds={noBidActive ? noBid.ids : null}
+                    />
                   </div>
                   {isOpen ? (
                     <div className="flex flex-wrap items-center gap-2">

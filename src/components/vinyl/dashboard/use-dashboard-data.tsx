@@ -1748,15 +1748,19 @@ export function useDashboardData() {
     [bids.data, houseUrlByName, houseTimeByDayHouse, dayKeyByLotId],
   );
 
-  // Visão "Lotes sem lance" do dia de hoje (ícone ao lado de Hoje) — vive só na sessão.
-  const [unsoldViewDay, setUnsoldViewDay] = useState<string | null>(null);
+  // Visão "Lotes sem lance" do dia de hoje (ícone ao lado de Hoje) — persiste no navegador para
+  // voltar nela ao reabrir a home (outro dia salvo simplesmente não casa com hoje).
+  const [unsoldViewDay, setUnsoldViewDay, unsoldViewHydrated] = usePersistedState<string | null>(
+    "home-unsold-view-day",
+    null,
+  );
   const todayUnsold = useTodayUnsold(lots.data?.lots ?? [], todayKey);
   // Filtro "Sem lance" da listagem do dia (ícone verde) — vale para o dia aberto, só na sessão.
   const [noBidFilter, setNoBidFilter] = useState(false);
 
   usePersistedScroll(
     `home:${tab}:${watchedViewDay ?? ""}:${bidsViewDay ?? ""}:${unsoldViewDay ?? ""}`,
-    navReady && !lots.isLoading,
+    navReady && !lots.isLoading && unsoldViewHydrated,
   );
 
   return {
