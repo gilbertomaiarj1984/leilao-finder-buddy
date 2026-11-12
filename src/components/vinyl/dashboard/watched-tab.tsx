@@ -287,6 +287,16 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
               </p>
             );
           }
+          // Filtro dos contadores (verde/vermelho/amarelo) fica salvo no navegador: avisa quando está
+          // escondendo lotes (ex.: o amarelo "só vigia" esconde os que já têm lance).
+          const hiddenByStat =
+            statFilter.size > 0
+              ? watchedList.filter(
+                  (lot) =>
+                    (!futureOnly || isFuture(watchedDateToKey(lot.date))) &&
+                    watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
+                ).length - filtered.length
+              : 0;
           const houses = groupWatchedByHouseCatalog(filtered);
           const allDayKeys = [
             ...new Set(houses.flatMap((h) => h.catalogs.flatMap((c) => c.dayKeys))),
@@ -424,6 +434,19 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
 
           return (
             <div className="space-y-6">
+              {statFilter.size > 0 ? (
+                <p className="rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs text-foreground">
+                  Filtro dos contadores ativo
+                  {hiddenByStat > 0 ? ` — ${hiddenByStat} lote(s) escondido(s)` : ""}.{" "}
+                  <button
+                    type="button"
+                    onClick={clearStatFilter}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    Limpar filtro
+                  </button>
+                </p>
+              ) : null}
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
                   <div

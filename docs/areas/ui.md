@@ -236,6 +236,7 @@ preço atual)` (só com `eval_price` gravado) e botão **"Reavaliar defasadas"**
   ponteiro chega a ~90px do topo/rodapé (v0.98.1; o mesmo hook vale para arrastar venda → álbum
   no Analytics). Não há subgrupo de álbum em Vigiados.
 - **Lote com lance aparece em Vigiados (v0.184.1):** dar lance não vigia o lote no LeilõesBR. `use-dashboard-data.tsx` expõe `watchedList` = `watched.data` ∪ lances fora da vigia (`withBidsAsWatched`, `watched-accum.ts`): dia do LEILÃO via `bidDayKey`, horário por `houseTimeByDayHouse`, só de hoje em diante (como a poda dos vigiados). Usado pela aba Vigiados, "Vigiados do dia", "Dias Futuros" e contadores; `watchedIds`/botão Vigiar seguem só com a vigia real (o lote aparece com "Vigiar").
+- **Filtro dos contadores avisado na aba Vigiados (v0.195.3):** `statFilter` (badges verde/vermelho/amarelo de `HouseStatBadges`) é persistido no navegador e o amarelo "vigia" exclui lotes com lance; `watched-tab.tsx` mostra um aviso no topo ("Filtro dos contadores ativo — N lote(s) escondido(s)" + "Limpar filtro") enquanto houver filtro.
 - **Vigiados — visão "Por artista" (v0.95.0):** `watched-tab.tsx` tem seletor de visão ("Por casa"
   = a de cima, padrão; "Por artista"), estado local (`view`). Por artista: `groupWatchedByArtist`
   (`grouping.ts`) — artistas alfabéticos, baldes genéricos no fim, lotes por **casa → data →
