@@ -9,6 +9,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { LotBidScheduleButton } from "@/components/vinyl/lot-bid-schedule-button";
+import { HouseNameWithStore } from "@/components/vinyl/auction-store";
 import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { useEffect, useRef, useState, type ComponentProps } from "react";
@@ -234,8 +235,12 @@ function LotCardDesktop({
               : "bg-yellow-400 text-yellow-950"
           }`}
         >
-          <HouseLight house={origin.house} className="bg-white/90 !p-0.5" />
-          <span className="font-bold">{origin.house}</span>
+          <HouseLight
+            house={origin.house}
+            idLeilao={origin.idLeilao}
+            className="bg-white/90 !p-0.5"
+          />
+          <HouseNameWithStore house={origin.house} idLeilao={origin.idLeilao} />
           <HouseUf house={origin.house} className="text-inherit opacity-80" />
           {origin.houseWinning || origin.houseCovered ? (
             <span className="inline-flex items-center gap-0.5 rounded bg-white/90 px-1 text-[11px] leading-4">

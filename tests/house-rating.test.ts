@@ -4,6 +4,7 @@ import {
   guardedHouses,
   houseKey,
   levelFromScores,
+  lotHouse,
   pregaoRefs,
   sanitizeRating,
   summarizeHouses,
@@ -100,5 +101,20 @@ describe("pregaoRefs com loja por pregão", () => {
     const refs = pregaoRefs(compras, { "100": "Discos da Palmeira" });
     const guarded = guardedHouses(refs, new Set(["100"]));
     expect(guarded).toEqual({ "discos da palmeira": 1 });
+  });
+});
+
+describe("lotHouse", () => {
+  const stores = { "66898": "Discos da Palmeira" };
+  test("usa a loja informada para o pregão", () => {
+    expect(lotHouse(stores, "66898", "Alberto Lopes")).toBe("Discos da Palmeira");
+  });
+  test("sem loja (ou sem pregão) mantém a casa do LeilõesBR", () => {
+    expect(lotHouse(stores, "1", "Alberto Lopes")).toBe("Alberto Lopes");
+    expect(lotHouse(stores, undefined, "Alberto Lopes")).toBe("Alberto Lopes");
+    expect(lotHouse(undefined, "66898", "Alberto Lopes")).toBe("Alberto Lopes");
+  });
+  test("loja só com espaços não conta", () => {
+    expect(lotHouse({ "7": "   " }, "7", "Bruce Angeiras")).toBe("Bruce Angeiras");
   });
 });

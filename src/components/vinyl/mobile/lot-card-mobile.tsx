@@ -1,5 +1,6 @@
 import { ArrowRightLeft, Binoculars, Disc3, Eye, EyeOff, Loader2 } from "lucide-react";
 import { LotBidScheduleButton } from "@/components/vinyl/lot-bid-schedule-button";
+import { HouseNameWithStore } from "@/components/vinyl/auction-store";
 import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { useEffect, useRef, useState } from "react";
@@ -79,8 +80,12 @@ export function LotCardMobile(props: LotCardProps) {
             barTone,
           )}
         >
-          <HouseLight house={origin.house} className="bg-white/90 !p-0.5" />
-          <span className="font-bold">{origin.house}</span>
+          <HouseLight
+            house={origin.house}
+            idLeilao={origin.idLeilao}
+            className="bg-white/90 !p-0.5"
+          />
+          <HouseNameWithStore house={origin.house} idLeilao={origin.idLeilao} />
           <HouseUf house={origin.house} className="text-inherit opacity-80" />
           {origin.houseWinning || origin.houseCovered ? (
             <span className="inline-flex gap-0.5 rounded bg-white/90 px-1 leading-4">

@@ -220,7 +220,7 @@ function AgendamentosPage() {
     >
       {showHouse ? (
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <HouseLight house={s.house} />
+          <HouseLight house={s.house} idLeilao={s.idLeilao} />
           {s.house || "Casa não informada"} · {dayTitle(s.dayKey || NO_DAY)}
         </div>
       ) : null}
