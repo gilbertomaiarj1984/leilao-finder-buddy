@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { withBidsAsWatched } from "@/lib/watched-accum";
+import { mergeWatchedAccum, withBidsAsWatched } from "@/lib/watched-accum";
 import type { MyBid } from "@/lib/leiloesbr-bids.server";
 import type { WatchedLot } from "@/lib/leiloesbr-watch.server";
 
@@ -48,5 +48,18 @@ describe("withBidsAsWatched", () => {
       timeOf: (_dayKey, _house, idLeilao) => times[idLeilao] ?? "",
     });
     expect(r[0]!.time).toBe("19h");
+  });
+});
+
+describe("mergeWatchedAccum — lances de leilão multi-dia", () => {
+  test("lance que a conta ainda traz não expira pela data de início do leilão", () => {
+    const acc = new Map<string, MyBid>();
+    const fresh = [bid("66336-33153425", { date: "01/01/2020" })];
+    const out = mergeWatchedAccum(acc, fresh, "k");
+    expect(out.map((b) => b.id)).toEqual(["66336-33153425"]);
+  });
+  test("lance antigo que a conta já não traz continua sendo podado", () => {
+    const acc = new Map<string, MyBid>([["1-1", bid("1-1", { date: "01/01/2020" })]]);
+    expect(mergeWatchedAccum(acc, [], "k")).toEqual([]);
   });
 });

@@ -102,6 +102,10 @@ export function mergeWatchedAccum<T extends { id: string; date: string; time?: s
   const todayKey = upcomingDayKeys(1)[0]!;
   const validBidDays = new Set(recentDayKeys(BID_RETENTION_DAYS));
   for (const [id, item] of acc) {
+    // Lance que a conta AINDA traz (`fresh`) nunca expira por data: em leilão multi-dia (ex.: Trem das
+    // 7, 09/11 a 13/11) a `date` lida do card é a do INÍCIO do leilão, e o lance sumia da tela assim
+    // que esse dia saía da janela de retenção, mesmo com o lote ainda em pregão.
+    if (item.time === undefined && freshIds.has(id)) continue;
     if (accumItemExpired(item, todayKey, validBidDays)) {
       acc.delete(id);
       continue;
