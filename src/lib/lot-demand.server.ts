@@ -3,6 +3,14 @@ import { getAllLotCondition, invalidateLotConditionCache } from "./lot-condition
 import { pickDemandAuctions, type DemandCandidate } from "./lot-demand";
 
 /**
+ * Leilões já tentados (auctionKey → instante). Um leilão cujo catálogo não traz VISITAS/QTDLANCE
+ * (ou não traz o lote) nunca recebe `demand_at` novo e ficaria sempre no topo da fila, travando os
+ * demais: por isso cada tentativa, com ou sem dado, o põe de lado por `RETRY_MS`.
+ */
+const attempted = new Map<string, number>();
+const RETRY_MS = 15 * 60_000;
+
+/**
  * Relê a DEMANDA (VISITAS/QTDLANCE) dos lotes dos próximos dias direto do catálogo da casa
  * (1 requisição paginada por leilão, nunca por lote) e atualiza só `views`/`bids`/`demand_at` em
  * `lot_condition`. Antes a demanda era gravada uma única vez, quando o lote entrava na fila de
@@ -49,7 +57,10 @@ export async function refreshDemand(
     });
   }
 
-  const picked = pickDemandAuctions(candidates, upcomingDayKeys(dayCount));
+  const nowMs = Date.now();
+  const picked = pickDemandAuctions(candidates, upcomingDayKeys(dayCount)).filter(
+    (a) => nowMs - (attempted.get(a.auctionKey) ?? 0) >= RETRY_MS,
+  );
   const batch = picked.slice(0, maxAuctions);
   const ids: string[] = [];
   const views: (number | null)[] = [];
@@ -57,6 +68,7 @@ export async function refreshDemand(
   let failed = 0;
   for (const auction of batch) {
     const ref = refs.get(auction.auctionKey)!;
+    attempted.set(auction.auctionKey, nowMs);
     let catalog;
     try {
       catalog = await fetchCatalogData(ref.domain, ref.idLeilao);
