@@ -266,9 +266,11 @@ export function UnsoldView({
           );
         };
         const countLabel = (h: TodayUnsoldHouse) =>
-          h.total !== null
-            ? `${h.lots.length} de ${h.total} sem lance`
-            : `${h.lots.length} sem lance`;
+          h.loading && !h.lots.length
+            ? "buscando…"
+            : h.total !== null
+              ? `${h.lots.length} de ${h.total} sem lance`
+              : `${h.lots.length} sem lance`;
         const liveHint = (h: TodayUnsoldHouse) =>
           h.status === "live" ? (
             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary">
@@ -299,7 +301,7 @@ export function UnsoldView({
               <HouseLight house={house} />
               {multi ? null : <AuctionStore idLeilao={first.idLeilao} house={house} />}
               {multi ? <Badge variant="outline">{rows.length} catálogos</Badge> : null}
-              <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold">
+              <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-sm font-bold text-primary">
                 {multi ? `${houseUnsold} sem lance` : countLabel(first)}
               </span>
               {multi ? null : (
@@ -344,7 +346,7 @@ export function UnsoldView({
                             Catálogo {row.h.idLeilao}
                           </span>
                         </button>
-                        <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold">
+                        <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-sm font-bold text-primary">
                           {countLabel(row.h)}
                         </span>
                         <AuctionStore idLeilao={row.h.idLeilao} house={house} />
