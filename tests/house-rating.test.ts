@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  guardedHouses,
   houseKey,
   levelFromScores,
   pregaoRefs,
@@ -76,5 +77,28 @@ describe("summarizeHouses", () => {
     expect(out["casa a"]!.tags[0]).toEqual({ tag: "Envio rápido", count: 2 });
     expect(out["casa a"]!.notes[0]!.note).toBe("nova");
     expect(out["casa a"]!.notes[0]!.label).toBe("Pregão 2");
+  });
+});
+
+describe("pregaoRefs com loja por pregão", () => {
+  const alberto = "Alberto Lopes - Leiloeiro Público";
+  const compras = [
+    { idLeilao: "100", house: alberto, wonDate: "2026-11-09" },
+    { idLeilao: "200", house: alberto, wonDate: "2026-11-10" },
+  ];
+
+  test("sem loja informada, a casa do LeilõesBR segue valendo", () => {
+    expect(pregaoRefs(compras).map((x) => x.house)).toEqual([alberto, alberto]);
+  });
+
+  test("a loja substitui a casa só no pregão que a informou", () => {
+    const refs = pregaoRefs(compras, { "100": "Discos da Palmeira", "200": "  " });
+    expect(refs.map((x) => x.house)).toEqual(["Discos da Palmeira", alberto]);
+  });
+
+  test("a mala de guarda conta na loja, não no leiloeiro", () => {
+    const refs = pregaoRefs(compras, { "100": "Discos da Palmeira" });
+    const guarded = guardedHouses(refs, new Set(["100"]));
+    expect(guarded).toEqual({ "discos da palmeira": 1 });
   });
 });

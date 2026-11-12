@@ -13,8 +13,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { LevelDot } from "@/components/vinyl/level-dot";
-import { savePregaoRating } from "@/lib/house-rating.functions";
+import { savePregaoRating, saveHouseNoGuard } from "@/lib/house-rating.functions";
 import {
+  houseKey,
   LEVEL_META,
   NEGATIVE_TAGS,
   POSITIVE_TAGS,
@@ -22,7 +23,7 @@ import {
   type PregaoRating,
   type RatingLevel,
 } from "@/lib/house-rating";
-import { queryKeys } from "@/lib/queries";
+import { queryKeys, useHouseRatingsQuery } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 /**
@@ -61,6 +62,18 @@ export function PregaoRatingDialog({
     onError: (e) => toast.error(e instanceof Error ? e.message : "Não foi possível salvar"),
   });
 
+  const { data: ratingsData } = useHouseRatingsQuery();
+  const noGuard = !!ratingsData?.noGuard?.[houseKey(house)];
+  const saveNoGuard = useServerFn(saveHouseNoGuard);
+  const noGuardMut = useMutation({
+    mutationFn: (value: boolean) => saveNoGuard({ data: { house, noGuard: value } }),
+    onSuccess: async (_r, value) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.houseRatings });
+      toast.success(value ? 'Casa marcada como "não aceita guarda"' : "Marcação removida");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Não foi possível salvar"),
+  });
+
   const toggle = (tag: string) =>
     setTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
 
@@ -92,6 +105,31 @@ export function PregaoRatingDialog({
             ))}
           </div>
           {level ? <p className="text-xs text-muted-foreground">{LEVEL_META[level].hint}</p> : null}
+
+          {house ? (
+            <label
+              htmlFor="house-no-guard"
+              className={cn(
+                "flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 text-sm",
+                noGuard ? "border-red-500/60 bg-red-500/10" : "border-border",
+              )}
+            >
+              <input
+                id="house-no-guard"
+                type="checkbox"
+                checked={noGuard}
+                disabled={noGuardMut.isPending}
+                onChange={(e) => noGuardMut.mutate(e.target.checked)}
+                className="mt-0.5 h-4 w-4"
+              />
+              <span>
+                <span className="font-medium text-foreground">Casa não aceita guarda</span>
+                <span className="block text-xs text-muted-foreground">
+                  Vale para a casa toda (salva na hora). Aparece ao lado do semáforo em todo o app.
+                </span>
+              </span>
+            </label>
+          ) : null}
 
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">Motivos (opcional)</p>

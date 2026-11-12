@@ -82,6 +82,18 @@ export const setPregaoNote = createServerFn({ method: "POST" })
     await setAuctionNote(data.idLeilao, data.note);
   });
 
+export const setPregaoStore = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { idLeilao?: string; store?: string } | undefined) => {
+    if (!input?.idLeilao || typeof input.idLeilao !== "string") throw new Error("Pregão inválido.");
+    return { idLeilao: input.idLeilao, store: typeof input.store === "string" ? input.store : "" };
+  })
+  .handler(async ({ context, data }) => {
+    await guard(context);
+    const { setAuctionStore } = await import("./purchase-shipping.server");
+    await setAuctionStore(data.idLeilao, data.store);
+  });
+
 export const approveShipment = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator(

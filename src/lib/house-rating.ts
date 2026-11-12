@@ -55,9 +55,16 @@ export type RatingsPayload = {
   houses: Record<string, HouseSummary>;
   /** Casas com compras "na guarda" (chave = `houseKey`) → nº de pregões na guarda. */
   guarded: Record<string, number>;
+  /** Casas marcadas como "não aceita guarda" (chave = `houseKey`). */
+  noGuard: Record<string, true>;
 };
 
-export const EMPTY_RATINGS: RatingsPayload = { ratings: {}, houses: {}, guarded: {} };
+export const EMPTY_RATINGS: RatingsPayload = {
+  ratings: {},
+  houses: {},
+  guarded: {},
+  noGuard: {},
+};
 
 /** Casas com pregões na guarda: `guardIds` = ids dos pregões com status "guarda". */
 export function guardedHouses(
@@ -125,16 +132,22 @@ export function levelFromScores(scoresNewestFirst: number[]): RatingLevel | null
 /** Um pregão (leilão) em que houve compra: a unidade avaliada. `id` = `purchases.id_leilao`. */
 type PregaoRef = { id: string; house: string; date: string | null };
 
-/** Pregões distintos das compras (data = a mais recente do pregão). */
+/**
+ * Pregões distintos das compras (data = a mais recente do pregão). `stores` (id do pregão → loja)
+ * troca a casa do LeilõesBR pela loja informada: semáforo e mala de guarda passam a ser da loja.
+ */
 export function pregaoRefs(
   purchases: readonly { idLeilao: string; house: string; wonDate: string | null }[],
+  stores: Readonly<Record<string, string>> = {},
 ): PregaoRef[] {
   const map = new Map<string, PregaoRef>();
   for (const p of purchases) {
     if (!p.idLeilao) continue;
     const cur = map.get(p.idLeilao);
-    if (!cur) map.set(p.idLeilao, { id: p.idLeilao, house: p.house, date: p.wonDate });
-    else if (p.wonDate && (!cur.date || p.wonDate > cur.date)) cur.date = p.wonDate;
+    if (!cur) {
+      const store = (stores[p.idLeilao] ?? "").trim();
+      map.set(p.idLeilao, { id: p.idLeilao, house: store || p.house, date: p.wonDate });
+    } else if (p.wonDate && (!cur.date || p.wonDate > cur.date)) cur.date = p.wonDate;
   }
   return [...map.values()];
 }

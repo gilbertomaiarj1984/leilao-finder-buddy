@@ -46,6 +46,11 @@ export type AuctionState = {
   receivedAt: string | null;
   note: string;
   shipmentId: string | null;
+  /**
+   * Loja que de fato vende/envia este pregão, quando difere da casa mostrada pelo LeilõesBR (leiloeiro
+   * que hospeda lojas sem site próprio, ex.: Alberto Lopes → Discos da Palmeira). Vazio = a própria casa.
+   */
+  store: string;
 };
 
 export type Shipment = {
@@ -66,9 +71,17 @@ type PurchaseLike = {
   wonPrice: string;
 };
 
+/** Casa efetiva do pregão: a loja informada, senão a casa do LeilõesBR. Base de remessa, guarda e totais. */
+export function effectiveHouse(store: string | null | undefined, house: string): string {
+  return (store ?? "").trim() || house;
+}
+
 export type PregaoGroup<P extends PurchaseLike> = {
   idLeilao: string;
+  /** Casa EFETIVA (loja quando informada). Use `siteHouse` para o nome que o LeilõesBR mostra. */
   house: string;
+  /** Casa como o LeilõesBR mostra (o site dono do leilão). */
+  siteHouse: string;
   uf: string;
   date: string | null;
   purchases: P[];
@@ -78,7 +91,15 @@ export type PregaoGroup<P extends PurchaseLike> = {
 };
 
 function defaultState(idLeilao: string): AuctionState {
-  return { idLeilao, status: "aberto", paidAt: null, receivedAt: null, note: "", shipmentId: null };
+  return {
+    idLeilao,
+    status: "aberto",
+    paidAt: null,
+    receivedAt: null,
+    note: "",
+    shipmentId: null,
+    store: "",
+  };
 }
 
 /** Agrupa as compras por pregão, do mais recente ao mais antigo (data, depois id do leilão). */
@@ -101,7 +122,8 @@ export function groupByPregao<P extends PurchaseLike>(
     const state = states.get(idLeilao) ?? defaultState(idLeilao);
     groups.push({
       idLeilao,
-      house: first.house,
+      house: effectiveHouse(state.store, first.house),
+      siteHouse: first.house,
       uf: first.uf,
       date: dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : null,
       purchases: list,
