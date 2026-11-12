@@ -839,8 +839,18 @@ como histórico). A linha da casa agora só tem `PresencialLink` (`presencial-li
   cabeçalho e visão). Um lote recém-passado pode aparecer um instante antes de o catálogo
   marcá-lo vendido; some no refetch seguinte.
 - **`UnsoldView`** (`dashboard/unsold-view.tsx`, renderizada no `DayTab` de hoje): botão "Voltar ao
-  dia", busca local, seção por casa (abre/fecha, "N de M sem lance", "Ao vivo · buscando…" /
-  "Encerrado"), cards `UnsoldLotCard` (lote recém-achado ganha destaque verde por 3 s).
+  dia", busca, seção por casa/pregão e cards `UnsoldLotCard` (lote recém-achado ganha destaque verde
+  por 3 s). **v0.195.0:** (1) as casas começam **fechadas**; o conjunto de abertas (`home-unsold-open`,
+  chaves `dia|idLeilao` / `dia|house|casa` / `dia|cat|idLeilao`, só do dia atual), a busca
+  (`home-unsold-query`) e o dia da visão (`home-unsold-view-day`, em `use-dashboard-data.tsx`) vão
+  para o `localStorage` (`usePersistedState`); a rolagem já era salva por `usePersistedScroll`, agora
+  só restaura depois de o dia da visão hidratar. (2) Clicar no card abre um `Dialog` com o
+  `DashboardLotCard` (`dashboard/dashboard-lot-card.tsx`: o mesmo `LotCard` da grade do dia, ligado
+  às ações da home); o lote completo vem de `lots.data` por `idLeilao|idPeca` e, sem ele, o card
+  cai no link do lote. (3) O cabeçalho reusa `HouseUf`, `HouseLight`, `AuctionStore`,
+  `HouseStatBadges` (filtro de status vale aqui também), `AuctionStatusInline` (`info` agora vem de
+  `useTodayUnsold`) e `AuctionHeaderActions` (`dashboard/auction-header-actions.tsx`: lista +
+  presencial + site/catálogo, também usado por Dia, Vigiados e `AuctionSection`).
 - **Servidor:** `getUnsoldLots` ganha `currentLote` opcional (`unsold-lots.server.ts`; cache de 45 s
   quando informado, 5 min sem ele).
 - **Falso "sem lance" em lote vendido (v0.185.2):** o `sold` do catálogo só é verdadeiro com valor de
