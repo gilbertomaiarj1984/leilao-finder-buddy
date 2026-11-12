@@ -1,0 +1,35 @@
+name: Atualização da demanda (visitas e lances)
+
+# Relê visitas/lances dos lotes de hoje e amanhã direto do catálogo da casa (1 requisição por
+# leilão), a cada ~30 min entre 08h e 23h30 BRT (UTC 11:07–02:37). É leve e independente do
+# `refresh.yml` (varredura completa, 4x/dia). Ver `src/lib/lot-demand.server.ts`.
+on:
+  schedule:
+    - cron: "7,37 11-23,0-2 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: refresh-demanda
+  cancel-in-progress: false
+
+jobs:
+  demand:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Reler demanda dos lotes próximos
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL:-}" ] || [ -z "${CRON_TOKEN:-}" ]; then
+            echo "Configure os secrets APP_URL e CRON_TOKEN no repositório."; exit 1
+          fi
+          base="${APP_URL%/}"
+          # Chunked: cada chamada lê até 4 leilões (os de leitura mais velha primeiro).
+          for i in $(seq 1 8); do
+            res="$(curl -fsS --max-time 120 --retry 2 --retry-delay 5 -H "x-cron-token: $CRON_TOKEN" "$base/api/cron?step=demand&max=4")"
+            echo "demand $i: $res"
+            if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
+          done

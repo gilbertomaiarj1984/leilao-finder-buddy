@@ -8,6 +8,7 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
+import { demandAgeLabel, isDemandStale } from "@/lib/lot-demand";
 import { LotBidScheduleButton } from "@/components/vinyl/lot-bid-schedule-button";
 import { HouseNameWithStore } from "@/components/vinyl/auction-store";
 import { HouseLight } from "@/components/vinyl/house-light";
@@ -101,7 +102,7 @@ function LotCardDesktop({
   condition?: Condition | null;
   // Sinais de demanda do catálogo (visualizações/lances), resolvidos pelo pai. Ajudam a
   // identificar lotes "quentes" antes do leilão. Ausentes → badge não aparece.
-  demand?: { views: number | null; bids: number | null } | null;
+  demand?: { views: number | null; bids: number | null; at?: string | null } | null;
   // Artista/álbum identificado pela IA (avaliação completa OU identificação simples),
   // já resolvido pelo pai. Priorizado sobre o título quando existir.
   album?: string | null;
@@ -505,14 +506,18 @@ function LotCardDesktop({
             {lot.time ? <span>{lot.time}</span> : null}
             {lot.uf ? <span>{lot.uf}</span> : null}
             {/* Demanda (visualizações · lances) do catálogo — sinaliza lote "quente". */}
-            {demand && (demand.views != null || demand.bids != null) ? (
+            {demand && (demand.views != null || demand.bids != null || demand.at) ? (
               <span
-                className="rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground"
-                title="Demanda: visualizações · lances"
+                className={`rounded bg-secondary px-1.5 py-0.5 font-medium text-foreground ${
+                  isDemandStale(demand.at) ? "opacity-60" : ""
+                }`}
+                title={`Demanda: visualizações · lances${
+                  demandAgeLabel(demand.at)
+                    ? ` — lido ${demandAgeLabel(demand.at)}`
+                    : " — ainda não lido no catálogo"
+                }`}
               >
-                {demand.views != null ? `👁 ${demand.views}` : ""}
-                {demand.views != null && demand.bids != null ? " · " : ""}
-                {demand.bids != null ? `🔨 ${demand.bids}` : ""}
+                {`👁 ${demand.views ?? "—"} · 🔨 ${demand.bids ?? "—"}`}
               </span>
             ) : null}
             {/* Estado de conservação (Disco/Capa/Faixa/encarte) numa linha própria. */}

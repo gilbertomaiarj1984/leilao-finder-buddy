@@ -25,12 +25,13 @@ type LotConditionRow = {
   source: string; // 'catalog' | 'title' | 'ia' | 'indefinido'
   views: number | null; // VISITAS — demanda (visualizações) do lote pré-leilão
   bids: number | null; // QTDLANCE — demanda (lances) do lote pré-leilão
+  demand_at?: string | null; // quando views/bids foram lidos do catálogo (ver lot-demand.server.ts)
   /** Descrição completa (catálogo), limpa/truncada — vai no prompt da IA. Fora de `COND_COLUMNS`. */
   description?: string;
 };
 
 const COND_COLUMNS =
-  "id, title_hash, media, sleeve, insert_state, score, faixa, source, views, bids";
+  "id, title_hash, media, sleeve, insert_state, score, faixa, source, views, bids, demand_at";
 
 /**
  * Versão do leitor de estado. Suba ao mudar `grading.ts`/`condition-text.ts` de forma que o
@@ -133,6 +134,7 @@ function conditionRow(
     description: cleanLotDescription(catalog?.text, lot.title),
     views: catalog?.views ?? null,
     bids: catalog?.bids ?? null,
+    demand_at: catalog ? new Date().toISOString() : null,
   };
 }
 

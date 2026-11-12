@@ -128,11 +128,15 @@ import {
   TODAY_INDEX,
   TODAY_PAGE,
 } from "@/lib/day-bar";
+import { isHotLot } from "@/lib/lot-demand";
 
 /** Tamanho de cada bloco da busca de detalhes (peca.asp) — o servidor aceita até 100. */
 const LOT_DETAILS_CHUNK = 50;
 
-type LotDetailsMap = Record<string, { currentValue?: string; nextBid?: string; sold?: string }>;
+type LotDetailsMap = Record<
+  string,
+  { currentValue?: string; nextBid?: string; sold?: string; bids?: number; at?: number }
+>;
 
 /** Dia de hoje (fuso local) no formato das chaves de dia do app (`yyyy-mm-dd`). */
 function localTodayKey(): string {
@@ -143,9 +147,13 @@ function localTodayKey(): string {
 }
 
 /** Junta os blocos da busca de detalhes num só mapa por `id` (estável: fora do componente). */
-function combineLotDetails(results: { data?: LotDetailsMap }[]): LotDetailsMap {
+function combineLotDetails(
+  results: { data?: LotDetailsMap; dataUpdatedAt?: number }[],
+): LotDetailsMap {
   const out: LotDetailsMap = {};
-  for (const r of results) if (r.data) Object.assign(out, r.data);
+  for (const r of results)
+    if (r.data)
+      for (const [id, d] of Object.entries(r.data)) out[id] = { ...d, at: r.dataUpdatedAt };
   return out;
 }
 
@@ -598,7 +606,19 @@ export function useDashboardData() {
   });
   // Demanda (visualizações/lances) por lote, do mesmo cache `lot_condition`.
   const demandById = useMemo(() => demandMap(lotConditionQuery.data), [lotConditionQuery.data]);
-  const demandFor = (lot: { id?: string }) => (lot.id ? demandById.get(lot.id) : undefined) ?? null;
+  // Nº de lances AO VIVO (peca.asp) dos vigiados/lances/agendados tem prioridade sobre o do
+  // catálogo (relido a cada ~30 min no servidor).
+  const demandFor = (lot: { id?: string }) => {
+    if (!lot.id) return null;
+    const base = demandById.get(lot.id);
+    const live = lotDetailsData[lot.id];
+    if (live?.bids === undefined) return base ?? null;
+    return {
+      views: base?.views ?? null,
+      bids: live.bids,
+      at: live.at ? new Date(live.at).toISOString() : (base?.at ?? null),
+    };
+  };
 
   // Coleção do usuário: discos que ele JÁ possui (`collection_items`). Usada só para marcar
   // no card, com um ícone roxo, os lotes que ele já tem — evitando arrematar duplicado. Mesma
@@ -1451,6 +1471,11 @@ export function useDashboardData() {
     for (const lot of lots.data?.lots ?? []) if (lot.dayKey) map.set(lot.id, lot.dayKey);
     return map;
   }, [lots.data]);
+  const timeByLotId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const lot of lots.data?.lots ?? []) if (lot.time) map.set(lot.id, lot.time);
+    return map;
+  }, [lots.data]);
   const bidDayKey = (bid: { id: string; date: string }) =>
     dayKeyByLotId.get(bid.id) || watchedDateToKey(bid.date) || bid.date || "";
   // Horário do leilão por `${dia}|casa` — "Meus lances" não traz o horário (só a data do
@@ -1576,6 +1601,14 @@ export function useDashboardData() {
       ] as const,
       queryFn: () => fetchLotDetails({ data: { targets: chunk } }),
       staleTime: 3 * 60 * 1000,
+      // Com lote começando em até 2 h (ou há menos de 1 h) relê a cada 5 min; com lote de hoje mais
+      // distante, a cada 10 min — enquanto o app está aberto — valor atual, próximo lance e nº de lances ao vivo. Fora disso, só ao abrir a tela.
+      refetchInterval: () =>
+        chunk.some((t) => isHotLot(dayKeyByLotId.get(t.id), timeByLotId.get(t.id)))
+          ? 5 * 60 * 1000
+          : chunk.some((t) => dayKeyByLotId.get(t.id) === localTodayKey())
+            ? 10 * 60 * 1000 // lote de hoje, pregão ainda distante: relê a cada 10 min
+            : false,
       // Sempre rechecar ao abrir a tela (o conjunto já é pequeno/escopado — vigiados+lances).
       refetchOnMount: "always" as const,
       refetchOnWindowFocus: false,

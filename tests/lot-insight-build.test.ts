@@ -25,10 +25,10 @@ describe("conditionMap / demandMap", () => {
   test("o lado desconhecido é espelhado pelo scoreCondition", () => {
     expect(conditionMap(rows).get("a")!.sleeve).toBe("VG+");
   });
-  test("demanda só guarda linhas com visitas ou lances", () => {
+  test("demanda só guarda linhas com visitas, lances ou leitura", () => {
     const m = demandMap(rows);
     expect([...m.keys()]).toEqual(["a", "c"]);
-    expect(m.get("c")).toEqual({ views: 0, bids: null });
+    expect(m.get("c")).toEqual({ views: 0, bids: null, at: null });
   });
   test("entrada ausente vira mapa vazio", () => {
     expect(conditionMap(undefined).size).toBe(0);
