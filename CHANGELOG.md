@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.195.4** — **Casa-pai em destaque**: a linha "via <leiloeiro>" do pregão (Compras) e do cabeçalho do lote passa a ter fonte maior, negrito e cor de destaque, em vez do cinza miúdo. Só visual
 - **0.195.3** — **Aviso de filtro ativo na aba Vigiados**: o filtro dos contadores (verde/vermelho/amarelo, salvo no navegador) escondia lotes sem sinal — ex.: o amarelo "só vigia" some com o lote vigiado que já tem lance. Agora um aviso no topo mostra quantos lotes estão escondidos, com "Limpar filtro" (`watched-tab.tsx`).
 - **0.195.2** — **Docs**: Dokploy e preview `garimpo-preview` desligados na VPS (sem apagar), com como religar documentado em `docs/areas/infra.md`. Sem mudança de código
 - **0.195.1** — "Lotes sem lance": contagem da casa em destaque (e "buscando…" enquanto carrega) mesmo com a casa fechada.
