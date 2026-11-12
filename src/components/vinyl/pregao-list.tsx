@@ -726,7 +726,7 @@ function PregaoCard({
             {g.house ? <HouseUf house={g.house} uf={g.uf} className="ml-1" /> : null}
           </h3>
           {g.siteHouse && g.siteHouse !== g.house ? (
-            <p className="text-xs text-muted-foreground">via {g.siteHouse}</p>
+            <p className="text-sm font-semibold text-primary">via {g.siteHouse}</p>
           ) : null}
           <p className="text-xs text-muted-foreground">
             {brDate(g.date)} · {g.purchases.length} disco(s)

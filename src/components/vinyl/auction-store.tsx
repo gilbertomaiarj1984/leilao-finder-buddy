@@ -145,7 +145,7 @@ export function HouseNameWithStore({ house, idLeilao }: { house: string; idLeila
   return (
     <>
       <span className="font-bold">{store}</span>
-      <span className="text-[11px] opacity-80">via {house}</span>
+      <span className="text-xs font-semibold">via {house}</span>
     </>
   );
 }
