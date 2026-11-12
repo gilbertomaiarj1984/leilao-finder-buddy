@@ -61,6 +61,21 @@ pull && up -d`, disparado a cada push em `vps`). `version-bump.yml` passou a com
   novo `step=prune` no cron (`seen_auctions`, só remove leilões com vendas já capturadas,
   nunca perde backlog). Roteiro completo, riscos e verificação por fase em
   `docs/economia-fase-2-vps-unico.md`.
+- **Dokploy/preview DESLIGADO (12/11/2026, v0.195.2):** o Dokploy (painel `:3000`, `dokploy-postgres`,
+  `dokploy-traefik`) e o app de preview `garimpo-preview` (`preview.143-95-214-240.sslip.io`, mesmo
+  banco da produção) ocupavam ~910 MB numa VPS de 4 GB. Foram **parados, sem apagar nada**: a memória
+  usada caiu de 1,8 GiB para ~980 MiB e o swap de ~495 para ~190 MiB. Hoje **não há preview no ar**:
+  cada PR passa pelo CI e é conferido em produção após o deploy. Produção nunca dependeu dele (o
+  Caddy atende 80/443; o Traefik do Dokploy usava 8081/8444).
+  - **Religar** (na VPS, por SSH, usuário `deploy`):
+    `docker service scale dokploy-postgres=1 dokploy=1` (painel e banco são serviços Swarm) e depois
+    `docker start dokploy-traefik leiloeswepapp-garimpopreview-y7tebi-previewapp-1` (containers
+    soltos). Depois, no painel, ajustar o campo Branch do app e fazer Deploy.
+  - **Desligar de novo:** `docker service scale dokploy=0 dokploy-postgres=0` e
+    `docker stop leiloeswepapp-garimpopreview-y7tebi-previewapp-1 dokploy-traefik`.
+  - Se não fizer falta em algumas semanas, remover de vez (serviços, containers e volumes do
+    Dokploy). Atenção: os containers soltos podem voltar sozinhos após reboot da VPS se tiverem
+    restart policy; conferir com `docker ps`.
 - **Órfãos (rebaixado a item secundário):** o schema não tem FK nem `CASCADE`, então
   `lot_ai`/`lot_ident`/`lot_market`/`lot_condition` acumulam órfãos quando `lots` é podada. Com
   49/500 MB não é urgente, mas órfã em `lot_ident` é linha lida à toa pelo anti-join.
