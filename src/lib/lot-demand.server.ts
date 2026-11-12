@@ -1,5 +1,5 @@
 import { getSql } from "./db.server";
-import { getAllLotCondition } from "./lot-condition.server";
+import { getAllLotCondition, invalidateLotConditionCache } from "./lot-condition.server";
 import { pickDemandAuctions, type DemandCandidate } from "./lot-demand";
 
 /**
@@ -85,6 +85,8 @@ export async function refreshDemand(
              as d(id, views, bids)
        where lc.id = d.id`;
     updated = res.count;
+    // Sem isto a próxima chamada (cache de 30 s) releria os MESMOS leilões, achando-os ainda velhos.
+    invalidateLotConditionCache();
   }
   const remaining = Math.max(0, picked.length - batch.length);
   // Todas as casas da rodada falharam: encerra (insistir repetiria as mesmas requisições bloqueadas).
