@@ -67,7 +67,9 @@ export function PurchaseCard({
           {purchase.title || "(sem título)"}
         </p>
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          {purchase.house ? <HouseLight house={purchase.house} className="-ml-1" /> : null}
+          {purchase.house ? (
+            <HouseLight house={purchase.house} idLeilao={purchase.idLeilao} className="-ml-1" />
+          ) : null}
           <span>{[purchase.house, purchase.uf].filter(Boolean).join(" — ")}</span>
         </div>
 

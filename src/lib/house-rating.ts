@@ -57,6 +57,8 @@ export type RatingsPayload = {
   guarded: Record<string, number>;
   /** Casas marcadas como "não aceita guarda" (chave = `houseKey`). */
   noGuard: Record<string, true>;
+  /** Loja informada por pregão (id do pregão → loja), em qualquer tela — não só nas compras. */
+  stores: Record<string, string>;
 };
 
 export const EMPTY_RATINGS: RatingsPayload = {
@@ -64,7 +66,20 @@ export const EMPTY_RATINGS: RatingsPayload = {
   houses: {},
   guarded: {},
   noGuard: {},
+  stores: {},
 };
+
+/**
+ * Casa efetiva de um lote/pregão: a loja informada para o pregão (`stores[idLeilao]`) ou, sem ela,
+ * a casa do LeilõesBR. Semáforo, mala de guarda e selo "sem guarda" seguem a casa efetiva.
+ */
+export function lotHouse(
+  stores: Readonly<Record<string, string>> | undefined,
+  idLeilao: string | undefined,
+  house: string,
+): string {
+  return ((idLeilao && stores?.[idLeilao]) || "").trim() || house;
+}
 
 /** Casas com pregões na guarda: `guardIds` = ids dos pregões com status "guarda". */
 export function guardedHouses(

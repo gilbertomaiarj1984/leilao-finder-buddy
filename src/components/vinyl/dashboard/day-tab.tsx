@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TabsContent } from "@/components/ui/tabs";
+import { AuctionStore } from "@/components/vinyl/auction-store";
 import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { AuctionStatusInline, BidStatBadges, HouseStatBadges } from "@/components/vinyl/badges";
@@ -110,6 +111,7 @@ function AuctionSection<
         </button>
         <Badge variant="secondary">{auction.lots.length} lote(s)</Badge>
         <span className="text-xs text-muted-foreground">{`${day.slice(8, 10)}/${day.slice(5, 7)}`}</span>
+        <AuctionStore idLeilao={auction.idLeilao} house={house} />
         <HouseStatBadges
           stats={computeHouseStats(auction.lots, watchedIds, bidStatusById)}
           active={statFilter}
@@ -579,6 +581,12 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     </button>
                     <HouseUf house={houseGroup.house} />
                     <HouseLight house={houseGroup.house} />
+                    {!multi && houseGroup.lots[0] ? (
+                      <AuctionStore
+                        idLeilao={houseGroup.lots[0].idLeilao}
+                        house={houseGroup.house}
+                      />
+                    ) : null}
                     <Badge variant="secondary">{houseGroup.lots.length} lote(s)</Badge>
                     {multi ? <Badge variant="outline">{auctions.length} catálogos</Badge> : null}
                     <HouseStatBadges
@@ -881,6 +889,9 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     </button>
                     <HouseUf house={group.house} uf={group.lots[0]?.uf} />
                     <HouseLight house={group.house} />
+                    {!multi && group.lots[0] ? (
+                      <AuctionStore idLeilao={group.lots[0].idLeilao} house={group.house} />
+                    ) : null}
                     <Badge variant="secondary">{houseLots.length} lotes</Badge>
                     {multi ? (
                       <Badge variant="outline">{splitByAuction(group.lots).length} catálogos</Badge>

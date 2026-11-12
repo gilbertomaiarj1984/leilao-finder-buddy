@@ -2,7 +2,13 @@ import { Luggage, PackageX } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { houseKey, LEVEL_META, NEGATIVE_TAGS, type HouseSummary } from "@/lib/house-rating";
+import {
+  houseKey,
+  LEVEL_META,
+  lotHouse,
+  NEGATIVE_TAGS,
+  type HouseSummary,
+} from "@/lib/house-rating";
 import { useHouseRatingsQuery } from "@/lib/queries";
 import { LevelDot } from "@/components/vinyl/level-dot";
 import { cn } from "@/lib/utils";
@@ -44,9 +50,19 @@ function NoGuardBadge({ className }: { className?: string }) {
  * avaliação, mostra uma bolinha tracejada. Ao parar o mouse (ou tocar) abre o detalhamento:
  * tags mais marcadas e anotações recentes dos pregões avaliados. A avaliação em si é feita
  * por pregão, na página Compras. Casas com compras na guarda ganham uma mala ao lado.
+ * Com `idLeilao`, vale a loja informada para o pregão (casas que hospedam várias lojas).
  */
-export function HouseLight({ house, className }: { house: string; className?: string }) {
+export function HouseLight({
+  house: siteHouse,
+  idLeilao,
+  className,
+}: {
+  house: string;
+  idLeilao?: string;
+  className?: string;
+}) {
   const { data } = useHouseRatingsQuery();
+  const house = lotHouse(data?.stores, idLeilao, siteHouse);
   const summary: HouseSummary | undefined = data?.houses[houseKey(house)];
   const level = summary?.level ?? null;
   const guarded = data?.guarded?.[houseKey(house)] ?? 0;
@@ -100,8 +116,9 @@ export function HouseLight({ house, className }: { house: string; className?: st
 }
 
 /** Só a bolinha (sem popover) — para lugares dentro de link, onde um botão não pode ser aninhado. */
-export function HouseDot({ house }: { house: string }) {
+export function HouseDot({ house: siteHouse, idLeilao }: { house: string; idLeilao?: string }) {
   const { data } = useHouseRatingsQuery();
+  const house = lotHouse(data?.stores, idLeilao, siteHouse);
   const summary = data?.houses[houseKey(house)];
   const guarded = data?.guarded?.[houseKey(house)] ?? 0;
   const noGuard = !!data?.noGuard?.[houseKey(house)];

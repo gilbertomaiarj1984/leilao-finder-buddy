@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, ChevronUp, ExternalLink } from "lucide-react";
 
+import { AuctionStore } from "@/components/vinyl/auction-store";
 import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { Badge } from "@/components/ui/badge";
@@ -160,6 +161,9 @@ export function BidHouseSections({
               )}
               <HouseUf house={houseGroup.house} />
               <HouseLight house={houseGroup.house} />
+              {!multi && houseGroup.lots[0] ? (
+                <AuctionStore idLeilao={houseGroup.lots[0].idLeilao} house={houseGroup.house} />
+              ) : null}
               <Badge variant="secondary">{houseGroup.lots.length} lance(s)</Badge>
               {multi ? <Badge variant="outline">{auctions.length} catálogos</Badge> : null}
               <BidStatBadges stats={computeBidStats(houseGroup.lots)} />
@@ -213,6 +217,7 @@ export function BidHouseSections({
                           </span>
                         )}
                         <Badge variant="secondary">{auction.lots.length} lance(s)</Badge>
+                        <AuctionStore idLeilao={auction.idLeilao} house={houseGroup.house} />
                         <BidStatBadges stats={computeBidStats(auction.lots)} />
                         {catalogUrl && catalogUrl !== "#" ? (
                           <a

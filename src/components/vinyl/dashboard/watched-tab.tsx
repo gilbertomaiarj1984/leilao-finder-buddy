@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TabsContent } from "@/components/ui/tabs";
+import { AuctionStore } from "@/components/vinyl/auction-store";
 import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { AuctionStatusInline, HouseStatBadges } from "@/components/vinyl/badges";
@@ -720,6 +721,9 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                           </button>
                           <HouseUf house={houseGroup.house} />
                           <HouseLight house={houseGroup.house} />
+                          {single ? (
+                            <AuctionStore idLeilao={single.idLeilao} house={houseGroup.house} />
+                          ) : null}
                           <Badge variant="secondary">{houseLots.length} lote(s)</Badge>
                           {houseGroup.multi ? (
                             <Badge variant="outline">{houseGroup.shown.length} catálogos</Badge>
@@ -808,6 +812,10 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                                     <span className="text-xs text-muted-foreground">
                                       {daysRangeLabel(catalog.dayKeys)}
                                     </span>
+                                    <AuctionStore
+                                      idLeilao={catalog.idLeilao}
+                                      house={houseGroup.house}
+                                    />
                                     <HouseStatBadges
                                       stats={computeHouseStats(
                                         catalog.lots,

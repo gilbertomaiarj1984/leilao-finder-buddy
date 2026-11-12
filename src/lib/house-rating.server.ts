@@ -77,6 +77,7 @@ export async function getHouseRatings(): Promise<RatingsPayload> {
     houses: summarizeHouses(refs, ratings),
     guarded: guardedHouses(refs, guardIds),
     noGuard: Object.fromEntries(noGuard.map((k) => [k, true as const])),
+    stores,
   };
 }
 
