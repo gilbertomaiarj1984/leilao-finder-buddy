@@ -3,7 +3,7 @@ import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { LevelDot } from "@/components/vinyl/level-dot";
 import { PregaoRatingDialog } from "@/components/vinyl/pregao-rating-dialog";
-import { LEVEL_META } from "@/lib/house-rating";
+import { houseKey, LEVEL_META } from "@/lib/house-rating";
 import { useHouseRatingsQuery } from "@/lib/queries";
 import { useServerFn } from "@tanstack/react-start";
 import { ChevronDown, ChevronUp, GripVertical, Package, Truck } from "lucide-react";
@@ -29,6 +29,7 @@ import {
   receiveShipment,
   setPregaoNote,
   setPregaoStatus,
+  setPregaoStore,
 } from "@/lib/purchases.functions";
 import {
   AUCTION_STATUSES,
@@ -100,6 +101,11 @@ export function PregaoView({
 
   const groups = useMemo(() => groupByPregao(purchases, shipping), [purchases, shipping]);
   const summary = useMemo(() => summarizeByStatus(groups), [groups]);
+  // Lojas já informadas: sugestões do campo "Loja" (evita variações do mesmo nome).
+  const storeNames = useMemo(
+    () => [...new Set(groups.map((g) => g.state.store.trim()).filter(Boolean))].sort(),
+    [groups],
+  );
   const today = todayBr();
 
   const setStatus = useServerFn(setPregaoStatus);
@@ -168,6 +174,7 @@ export function PregaoView({
       canDrag={JOINABLE_STATUSES.includes(g.state.status)}
       dropOk={!!dragging && canJoinShipment(dragging, g)}
       joinOptions={groups.filter((o) => canJoinShipment(g, o))}
+      storeNames={storeNames}
       onDragId={setDragId}
       onDropHere={(fromId) => joinMut.mutate({ fromId, ontoId: g.idLeilao })}
       onLeave={() => leaveMut.mutate(g.idLeilao)}
@@ -585,6 +592,7 @@ function PregaoCard({
   canDrag,
   dropOk,
   joinOptions,
+  storeNames,
   onDragId,
   onDropHere,
   onLeave,
@@ -607,6 +615,8 @@ function PregaoCard({
   dropOk: boolean;
   /** Pregões da mesma casa/status com quem este pode seguir junto (alternativa ao arrastar). */
   joinOptions: PregaoGroup<Purchase>[];
+  /** Lojas já informadas em outros pregões (sugestões do campo "Loja"). */
+  storeNames: string[];
   onDragId: (id: string | null) => void;
   onDropHere: (fromId: string) => void;
   onLeave: () => void;
@@ -633,6 +643,20 @@ function PregaoCard({
     onSuccess: onChanged,
     onError: (e: Error) => toast.error(e.message || "Não foi possível salvar a observação"),
   });
+  const [store, setStore] = useState(g.state.store);
+  useEffect(() => setStore(g.state.store), [g.state.store]);
+  const saveStore = useServerFn(setPregaoStore);
+  const storeMut = useMutation({
+    mutationFn: (v: string) => saveStore({ data: { idLeilao: g.idLeilao, store: v } }),
+    onSuccess: () => {
+      onChanged();
+      toast.success("Loja salva.");
+    },
+    onError: (e: Error) => {
+      setStore(g.state.store);
+      toast.error(e.message || "Não foi possível salvar a loja");
+    },
+  });
   const saveShipment = useServerFn(editShipment);
   const [tracking, setTracking] = useState(g.shipment?.tracking ?? "");
   useEffect(() => setTracking(g.shipment?.tracking ?? ""), [g.shipment?.tracking]);
@@ -644,6 +668,7 @@ function PregaoCard({
 
   const { data: ratings } = useHouseRatingsQuery();
   const rating = ratings?.ratings[g.idLeilao];
+  const noGuard = !!ratings?.noGuard?.[houseKey(g.house)];
   const [rateOpen, setRateOpen] = useState(false);
   const drop = useDropTarget(dropOk, onDropHere);
   const joinWith = useServerFn(joinPregoes);
@@ -700,6 +725,9 @@ function PregaoCard({
             {g.house || "casa não identificada"}
             {g.house ? <HouseUf house={g.house} uf={g.uf} className="ml-1" /> : null}
           </h3>
+          {g.siteHouse && g.siteHouse !== g.house ? (
+            <p className="text-xs text-muted-foreground">via {g.siteHouse}</p>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             {brDate(g.date)} · {g.purchases.length} disco(s)
             {g.state.paidAt ? ` · pago em ${brDate(g.state.paidAt)}` : ""}
@@ -751,6 +779,14 @@ function PregaoCard({
         </button>
       </div>
 
+      {noGuard && status !== "recebido" && status !== "transito" ? (
+        <p className="border-t border-border bg-red-100 px-3 py-1.5 text-xs font-medium text-red-800 dark:bg-red-950 dark:text-red-300">
+          {status === "guarda"
+            ? `${g.house} não aceita guarda: confirme com a casa o envio deste pregão.`
+            : `${g.house} não aceita guarda: pague e envie logo.`}
+        </p>
+      ) : null}
+
       {days !== null && days >= GUARD_ALERT_DAYS ? (
         <p className="border-t border-border bg-amber-100 px-3 py-1.5 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-300">
           Na guarda há {days} dias. Confira com {g.house} o prazo máximo de guarda.
@@ -760,6 +796,26 @@ function PregaoCard({
       {expanded ? (
         <div className="space-y-3 border-t border-border px-3 py-3">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+            <label
+              className="flex items-center gap-2"
+              title="Preencha só quando a loja que vende for diferente da casa (ex.: leiloeiro que leiloa para várias lojas). A guarda, o frete único e o semáforo passam a ser da loja."
+            >
+              Loja
+              <Input
+                value={store}
+                list={`lojas-${g.idLeilao}`}
+                onChange={(e) => setStore(e.target.value)}
+                onBlur={() => store.trim() !== g.state.store && storeMut.mutate(store)}
+                placeholder={g.siteHouse || "igual à casa"}
+                className="h-8 w-60 max-w-full"
+                maxLength={80}
+              />
+              <datalist id={`lojas-${g.idLeilao}`}>
+                {storeNames.map((n) => (
+                  <option key={n} value={n} />
+                ))}
+              </datalist>
+            </label>
             <label className="flex items-center gap-2">
               Observação
               <Input

@@ -411,6 +411,9 @@ CREATE TABLE IF NOT EXISTS public.purchase_auctions (
 ALTER TABLE public.purchase_auctions DROP CONSTRAINT IF EXISTS purchase_auctions_status_check;
 ALTER TABLE public.purchase_auctions ADD CONSTRAINT purchase_auctions_status_check
   CHECK (status IN ('aberto','frete','pago','guarda','transito','recebido'));
+-- v0.193.0: loja que de fato vende/envia o pregão quando difere da casa do LeilõesBR (leiloeiro que
+-- hospeda lojas sem site próprio). Vazio = a própria casa. Histórico: migrations/20261112160000_*.
+ALTER TABLE public.purchase_auctions ADD COLUMN IF NOT EXISTS store text NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS purchase_auctions_shipment_idx ON public.purchase_auctions (shipment_id);
 
 DROP TRIGGER IF EXISTS update_shipments_updated_at ON public.shipments;

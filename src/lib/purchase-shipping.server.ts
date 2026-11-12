@@ -2,6 +2,7 @@ import { db } from "@/lib/db-client.server";
 
 import {
   JOINABLE_STATUSES,
+  effectiveHouse,
   SHIPMENT_STATUSES,
   isAuctionStatus,
   isUnpaid,
@@ -18,6 +19,7 @@ type AuctionRow = {
   received_at: string | null;
   note: string;
   shipment_id: string | null;
+  store: string | null;
 };
 type ShipmentRow = {
   id: string;
@@ -27,7 +29,7 @@ type ShipmentRow = {
   created_at: string;
 };
 
-const AUCTION_COLS = "id_leilao, status, paid_at, received_at, note, shipment_id";
+const AUCTION_COLS = "id_leilao, status, paid_at, received_at, note, shipment_id, store";
 
 /** Data de hoje (yyyy-mm-dd) no fuso de Brasília — a data gravada em pago/recebido. */
 function todayIso(): string {
@@ -49,6 +51,7 @@ function toState(r: AuctionRow): AuctionState {
     receivedAt: dateOnly(r.received_at),
     note: r.note ?? "",
     shipmentId: r.shipment_id,
+    store: r.store ?? "",
   };
 }
 
@@ -114,6 +117,7 @@ export async function setAuctionStatus(idLeilao: string, status: AuctionStatus):
       received_at: receivedAt,
       shipment_id: shipmentId,
       note: prev?.note ?? "",
+      store: prev?.store ?? "",
     },
     { onConflict: "id_leilao" },
   );
@@ -131,10 +135,51 @@ export async function setAuctionNote(idLeilao: string, note: string): Promise<vo
       received_at: prev?.receivedAt ?? null,
       shipment_id: prev?.shipmentId ?? null,
       note: note.slice(0, 500),
+      store: prev?.store ?? "",
     },
     { onConflict: "id_leilao" },
   );
   if (error) throw new Error(`Não foi possível salvar a observação: ${error.message}`);
+}
+
+/**
+ * Loja do pregão (vazio = a própria casa do LeilõesBR). Mudar a loja muda a casa efetiva, então um
+ * pregão que já segue numa remessa precisa sair dela antes (a remessa é de uma casa só).
+ */
+export async function setAuctionStore(idLeilao: string, store: string): Promise<void> {
+  const prev = await readState(idLeilao);
+  const clean = store.replace(/\s+/g, " ").trim().slice(0, 80);
+  if ((prev?.store ?? "") === clean) return;
+  if (prev?.shipmentId) {
+    throw new Error("Separe o pregão da remessa antes de mudar a loja.");
+  }
+  const { error } = await db.from("purchase_auctions").upsert(
+    {
+      id_leilao: idLeilao,
+      status: prev?.status ?? "aberto",
+      paid_at: prev?.paidAt ?? null,
+      received_at: prev?.receivedAt ?? null,
+      shipment_id: null,
+      note: prev?.note ?? "",
+      store: clean,
+    },
+    { onConflict: "id_leilao" },
+  );
+  if (error) throw new Error(`Não foi possível salvar a loja: ${error.message}`);
+}
+
+/** Casa efetiva de cada pregão (loja informada, senão a casa gravada nas compras). */
+function effectiveHouses(
+  ids: string[],
+  states: AuctionRow[],
+  purchases: { id_leilao: string; house: string }[],
+): Set<string> {
+  const storeOf = new Map(states.map((r) => [r.id_leilao, r.store ?? ""]));
+  const siteHouse = new Map<string, string>();
+  for (const p of purchases) if (!siteHouse.has(p.id_leilao)) siteHouse.set(p.id_leilao, p.house);
+  return new Set(
+    ids.map((id) => effectiveHouse(storeOf.get(id), siteHouse.get(id) ?? "")).filter(Boolean),
+  );
 }
 
 async function deleteOrphanShipment(shipmentId: string): Promise<void> {
@@ -171,7 +216,7 @@ export async function createShipment(input: {
   if (!ids.every((id) => statusOf.get(id) === "guarda")) {
     throw new Error('Só pregões "Na guarda" entram numa remessa.');
   }
-  const houses = new Set((purchases.data ?? []).map((p) => p.house));
+  const houses = effectiveHouses(ids, states.data ?? [], purchases.data ?? []);
   if (houses.size !== 1) throw new Error("Os pregões da remessa precisam ser da mesma casa.");
 
   const freight = Number.isFinite(input.freight) && input.freight > 0 ? input.freight : 0;
@@ -247,7 +292,7 @@ export async function joinShipment(
       'Só pregões "Pago · a enviar" ou "Em trânsito" (no mesmo status) seguem juntos.',
     );
   }
-  const houses = new Set((purchases.data ?? []).map((p) => p.house));
+  const houses = effectiveHouses(ids, states.data ?? [], purchases.data ?? []);
   if (houses.size !== 1 || ![...houses][0]) {
     throw new Error("Os pregões precisam ser da mesma casa.");
   }
