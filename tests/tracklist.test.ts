@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   applyFame,
+  buildFamePrompt,
   groupTracksBySide,
   normalizeTracklist,
   parseDiscogsTracklist,
@@ -163,5 +164,21 @@ describe("fama da IA", () => {
     expect(needsFame(applyFame(rated, ["alta", "alta", "baixa", "baixa"]))).toBe(false);
     expect(needsFame(null)).toBe(false);
     expect(parseFameText("lixo", 2)).toEqual([null, null]);
+  });
+});
+
+describe("buildFamePrompt", () => {
+  const p = buildFamePrompt("Chico Buarque - Chico Buarque de Hollanda, Volume 2", [
+    { side: "A", title: "Quem Te Viu, Quem Te Vê" },
+    { side: "B", title: "Realejo" },
+  ]);
+  test("lista as faixas e o álbum", () => {
+    expect(p).toContain("Quem Te Viu, Quem Te Vê");
+    expect(p).toContain("Chico Buarque");
+  });
+  test("régua é fama geral, sem viés de lado B nem 'baixa' como padrão", () => {
+    expect(p).not.toContain("lado B");
+    expect(p).not.toContain("maiores sucessos do álbum");
+    expect(p).toContain("MAIS ALTO");
   });
 });

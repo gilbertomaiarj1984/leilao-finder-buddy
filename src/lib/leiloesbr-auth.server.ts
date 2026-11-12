@@ -76,33 +76,54 @@ async function performLogin(origin: string): Promise<string> {
   });
 
   const seeded = jars.get(origin);
-  const response = await fetch(`${origin}/portal/assets/modulos/login/asp/login.asp`, {
-    method: "POST",
-    headers: {
-      "User-Agent": UA,
-      "Content-Type": "application/x-www-form-urlencoded",
-      "X-Requested-With": "XMLHttpRequest",
-      Referer: `${origin}/default.asp`,
-      Accept: "*/*",
-      ...(seeded ? { Cookie: seeded } : {}),
-    },
-    body: body.toString(),
-    redirect: "manual",
-  });
+  const post = (path: string, referer: string, form: URLSearchParams) =>
+    fetch(`${origin}${path}`, {
+      method: "POST",
+      headers: {
+        "User-Agent": UA,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Requested-With": "XMLHttpRequest",
+        Referer: `${origin}${referer}`,
+        Accept: "*/*",
+        ...(seeded ? { Cookie: seeded } : {}),
+      },
+      body: form.toString(),
+      redirect: "manual",
+    });
 
-  const text = await response.text();
-  let payload: { NUM_ERRO?: number; MENSAGEM_ERRO?: string } = {};
-  try {
-    payload = JSON.parse(text) as typeof payload;
-  } catch {
-    // Diagnóstico: o site devolveu algo que não é o JSON esperado (HTML/redirect/erro).
-    const snippet = text.replace(/\s+/g, " ").trim().slice(0, 160);
-    throw new Error(
-      `Login em ${origin} não retornou JSON (HTTP ${response.status}): ${snippet || "resposta vazia"}`,
-    );
-  }
-  if (payload.NUM_ERRO && payload.NUM_ERRO !== 0) {
-    throw new Error(payload.MENSAGEM_ERRO ?? `Login em ${origin} recusado.`);
+  let response = await post("/portal/assets/modulos/login/asp/login.asp", "/default.asp", body);
+  let text = await response.text();
+  if (response.status === 404) {
+    // Casa com o login no modelo antigo (ex.: Trem das 7): POST em /ajax/le_login_cliente.asp,
+    // resposta "0|<id>|<nome>" quando dá certo; outro código na frente = recusado.
+    const legacy = new URLSearchParams({ campoeml: email, campopwd: password });
+    response = await post("/ajax/le_login_cliente.asp", "/login_site.asp", legacy);
+    text = await response.text();
+    const m = /^\s*(\d+)\|/.exec(text);
+    if (!m) {
+      const snippet = text.replace(/\s+/g, " ").trim().slice(0, 160);
+      throw new Error(
+        `Login em ${origin} não retornou o formato esperado (HTTP ${response.status}): ${snippet || "resposta vazia"}`,
+      );
+    }
+    if (m[1] !== "0") {
+      const detail = text.replace(/\s+/g, " ").trim().slice(0, 120);
+      throw new Error(`Login em ${origin} recusado: ${detail}`);
+    }
+  } else {
+    let payload: { NUM_ERRO?: number; MENSAGEM_ERRO?: string } = {};
+    try {
+      payload = JSON.parse(text) as typeof payload;
+    } catch {
+      // Diagnóstico: o site devolveu algo que não é o JSON esperado (HTML/redirect/erro).
+      const snippet = text.replace(/\s+/g, " ").trim().slice(0, 160);
+      throw new Error(
+        `Login em ${origin} não retornou JSON (HTTP ${response.status}): ${snippet || "resposta vazia"}`,
+      );
+    }
+    if (payload.NUM_ERRO && payload.NUM_ERRO !== 0) {
+      throw new Error(payload.MENSAGEM_ERRO ?? `Login em ${origin} recusado.`);
+    }
   }
 
   const cookie = mergeCookies(jars.get(origin), response);
@@ -129,11 +150,6 @@ async function getSessionCookieFor(origin: string, force = false): Promise<strin
     logins.set(origin, pending);
   }
   return await pending;
-}
-
-/** Compat.: sessão logada do domínio principal (leiloesbr.com.br). */
-async function getSessionCookie(force = false): Promise<string> {
-  return await getSessionCookieFor(BASE_URL, force);
 }
 
 type AuthFetchInit = {
@@ -300,11 +316,32 @@ export async function authFetch(
   init: AuthFetchInit = {},
   isLoggedOut?: (html: string) => boolean,
 ): Promise<string> {
-  let html = await fetchWithRetry(url, init, await getSessionCookie());
+  return authFetchFor(BASE_URL, url, init, isLoggedOut);
+}
+
+/**
+ * Igual a `authFetch`, mas com a sessão logada de OUTRA origem (domínio de uma casa parceira:
+ * cada casa tem o seu próprio cookie). Usado pelo envio de lance agendado.
+ */
+export async function authFetchFor(
+  origin: string,
+  url: string,
+  init: AuthFetchInit = {},
+  isLoggedOut?: (html: string) => boolean,
+): Promise<string> {
+  let html = await fetchWithRetry(url, init, await getSessionCookieFor(origin));
   if (isLoggedOut?.(html)) {
-    html = await fetchWithRetry(url, init, await getSessionCookie(true));
+    html = await fetchWithRetry(url, init, await getSessionCookieFor(origin, true));
   }
   return html;
+}
+
+/**
+ * Garante a sessão logada da casa (`origin`) ANTES de precisar dela (login preguiçoso e em cache):
+ * o lance agendado a aquece quando o pregão começa, para não gastar tempo logando no gatilho.
+ */
+export async function ensureSessionFor(origin: string): Promise<void> {
+  await getSessionCookieFor(origin);
 }
 
 export function loginEmail(): string {

@@ -42,3 +42,16 @@ export const savePregaoRating = createServerFn({ method: "POST" })
     if (data.level && !rating) throw new Error("Nível inválido.");
     await setPregaoRating(data.idLeilao, rating);
   });
+
+/** Marca/desmarca "casa não aceita guarda" (vale para a casa toda, em todos os pregões). */
+export const saveHouseNoGuard = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { house?: string; noGuard?: boolean } | undefined) => {
+    if (!input?.house || typeof input.house !== "string") throw new Error("Casa inválida.");
+    return { house: input.house, noGuard: input.noGuard === true };
+  })
+  .handler(async ({ context, data }) => {
+    await guard(context);
+    const { setHouseNoGuard } = await import("./house-rating.server");
+    await setHouseNoGuard(data.house, data.noGuard);
+  });

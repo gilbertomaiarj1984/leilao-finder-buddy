@@ -250,6 +250,8 @@ export function useDashboardData() {
   // Alvo (via portal) para a barra de controles do dia (Vigiados/Lances/Analisar/casas),
   // renderizada dentro do header — acima da lista de dias — em vez de sticky abaixo dele.
   const [dayBarHost, setDayBarHost] = useState<HTMLDivElement | null>(null);
+  // Alvo (via portal) no fim do painel flutuante de casas (desktop): botão "Exportar dia".
+  const [navFooterHost, setNavFooterHost] = useState<HTMLDivElement | null>(null);
   // Alvo (via portal) para o botão "Incluir/Ocultar finalizados", renderizado ao final da
   // faixa de dias (depois de "Lances"), em vez de junto com a barra de controles do dia.
   const [finishedToggleHost, setFinishedToggleHost] = useState<HTMLDivElement | null>(null);
@@ -1746,15 +1748,19 @@ export function useDashboardData() {
     [bids.data, houseUrlByName, houseTimeByDayHouse, dayKeyByLotId],
   );
 
-  // Visão "Lotes sem lance" do dia de hoje (ícone ao lado de Hoje) — vive só na sessão.
-  const [unsoldViewDay, setUnsoldViewDay] = useState<string | null>(null);
+  // Visão "Lotes sem lance" do dia de hoje (ícone ao lado de Hoje) — persiste no navegador para
+  // voltar nela ao reabrir a home (outro dia salvo simplesmente não casa com hoje).
+  const [unsoldViewDay, setUnsoldViewDay, unsoldViewHydrated] = usePersistedState<string | null>(
+    "home-unsold-view-day",
+    null,
+  );
   const todayUnsold = useTodayUnsold(lots.data?.lots ?? [], todayKey);
   // Filtro "Sem lance" da listagem do dia (ícone verde) — vale para o dia aberto, só na sessão.
   const [noBidFilter, setNoBidFilter] = useState(false);
 
   usePersistedScroll(
     `home:${tab}:${watchedViewDay ?? ""}:${bidsViewDay ?? ""}:${unsoldViewDay ?? ""}`,
-    navReady && !lots.isLoading,
+    navReady && !lots.isLoading && unsoldViewHydrated,
   );
 
   return {
@@ -1768,6 +1774,8 @@ export function useDashboardData() {
     setSearch,
     lots,
     setDayBarHost,
+    navFooterHost,
+    setNavFooterHost,
     tabsBarRef,
     days,
     barDays,

@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Fragment } from "react";
 import {
   BarChart3,
+  Gavel,
   Binoculars,
   ChevronLeft,
   ChevronRight,
@@ -160,6 +161,18 @@ export function DashboardHeader({
                 <Link to="/vinil-analytics">
                   <BarChart3 className="mr-1 h-3.5 w-3.5" />
                   Analytics
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                asChild
+                title="Agendar um lance único num lote"
+              >
+                <Link to="/agendamentos">
+                  <Gavel className="mr-1 h-3.5 w-3.5" />
+                  Agendamentos
                 </Link>
               </Button>
               <Button

@@ -9,6 +9,7 @@ import {
   Target,
   Trash2,
 } from "lucide-react";
+import { LotBidScheduleButton } from "@/components/vinyl/lot-bid-schedule-button";
 import { memo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -305,7 +306,7 @@ function AnaliseLotRowImpl({
           </div>
 
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-            <HouseLight house={lot.house} className="-mx-0.5" />
+            <HouseLight house={lot.house} idLeilao={lot.idLeilao} className="-mx-0.5" />
             <span>{lot.house}</span>
             <HouseUf house={lot.house} uf={lot.uf} />
             {houseLevel === "vermelho" || houseLevel === "laranja" ? (
@@ -468,8 +469,9 @@ function AnaliseLotRowImpl({
           ) : (
             <Eye className="h-4 w-4" />
           )}
-          {watched ? "Desvigiar" : "Vigiar"}
+          <span className="sr-only">{watched ? "Desvigiar" : "Vigiar"}</span>
         </Button>
+        <LotBidScheduleButton lot={lot} />
       </footer>
     </article>
   );

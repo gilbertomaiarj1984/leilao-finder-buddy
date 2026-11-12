@@ -161,7 +161,7 @@ cfg)` respeita `blocks` e `hiddenFields`), **Correlação de condições** (`rul
   do **Discogs** (`GET /releases/{id}` → `fetchDiscogsTracklist` em `discogs.server.ts`, que acha o
   release com o mesmo `findRelease` do `fetchMarket` ou usa o `release_id` já casado em
   `lot_market`; `parseDiscogsTracklist` em `tracklist.ts`: ignora `heading`, expande `index`/
-  `sub_tracks`, lado pela `position` "A1"→A). A IA **só classifica a fama** (`alta`/`media`/`baixa`
+  `sub_tracks`, lado pela `position` "A1"→A). A IA **só classifica a fama** — régua = fama da música para o público geral, não posição/lado (v0.187.4) — (`alta`/`media`/`baixa`
   → verde/amarelo/vermelho) e **não precisa rodar junto**: duas etapas independentes em
   `tracklist-step.server.ts` — `step=tracklist` (Discogs, sem IA; exige `DISCOGS_TOKEN`; lotes com
   `day_key >=` hoje, `lot_ai.album` e `tracklist` NULL; `[]` = Discogs não achou, nunca cai para
@@ -182,6 +182,7 @@ cfg)` respeita `blocks` e `hiddenFields`), **Correlação de condições** (`rul
   **Clique no ícone sem tracklist** (`TracklistHover` com `lotId`) dispara esse mesmo refresh (v0.127.0); sem linha em `lot_ai` com álbum dá erro explicando. **Medley**: item `index` do Discogs vira a faixa-mãe + partes com `sub: true` (lado herdado); posições planas "A2.1"/"A9.3" (sem mãe com título) ganham uma mãe sintética "Medley" — indentadas com ↳ na UI. Teto de 80 faixas. Listas já gravadas só mudam com o botão "atualizar".
   Normalização/agrupamento puros em `tracklist.ts`; UI em `tracklist-hover.tsx`/`tracklist-refresh.ts`.
   **Sob demanda (v0.146.0):** o navegador NÃO recebe as faixas na lista de avaliações — `getLotAi` (`getAllLotAiClient`) manda só `hasTracklist`; as faixas vêm de `getLotTracklist(id)` (`useLotTracklist`, chave `queryKeys.lotTracklist(id)`) quando o ícone é tocado/passado o mouse ou a aba "Faixas" abre. Quem grava faixas (refresh, `reevaluateLot`) atualiza as duas chaves do cache. Mapeamento `lot_ai` → `LotAi` da UI: `toLotAi` (`lot-score.ts`).
+- **Fama por reproduções reais (0.187.5):** `rateFameDetailed` (`tracklist-step.server.ts`) tenta primeiro o ranking do artista no **ListenBrainz** (`getArtistRanking`: artista achado no MusicBrainz, `top-recordings-for-artist`, exige `LISTENBRAINZ_TOKEN`; cache em memória 7 dias, falha 1 h). `buildRanking` soma gravações da mesma música (`normTitle`), exige ≥10 músicas e ≥500 reproduções na topo; `fameFromRank`: verde até 8% das músicas (teto 40), amarelo até 30% (teto 150). Faixa fora do ranking (ex.: medley, nome diferente) e artista sem dado caem na IA; ranking completo dispensa a IA. Sem token = comportamento anterior.
 - **Lote sem nota (v0.112.0):** o `LotCard` mostra `EvaluateCornerButton` (✨, onde ficaria o selo) que chama `reevaluateLot`; resposta ilegível da IA conta como `failed` em `evalLotsSync` e o toast de `analyzeOnDemand` distingue escopo vazio (login) de "tudo já avaliado".
 - **Modo automático — chave `ai_mode`** (`getAiMode`/`setAiMode`): `"off" | "all" | "watched"`,
   **padrão `"watched"`** (econômico). No `step=aieval`: `off` não coleta/submete; `all` = todos

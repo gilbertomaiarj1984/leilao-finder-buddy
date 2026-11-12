@@ -4,7 +4,6 @@ import {
   ChevronRight,
   ChevronUp,
   Eye,
-  ExternalLink,
   Gavel,
   Loader2,
   RefreshCw,
@@ -18,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TabsContent } from "@/components/ui/tabs";
+import { AuctionStore } from "@/components/vinyl/auction-store";
 import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { AuctionStatusInline, BidStatBadges, HouseStatBadges } from "@/components/vinyl/badges";
@@ -43,12 +43,14 @@ import {
   type HouseGroup,
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
-import { PresencialLink } from "@/components/vinyl/presencial-link";
+import { DayLotListButton } from "@/components/vinyl/house-lot-list";
 import { useDayNoBid } from "@/components/vinyl/use-day-no-bid";
 import { countUnsoldHouses } from "@/components/vinyl/use-today-unsold";
 import { DAY_PAGE, TODAY_INDEX } from "@/lib/day-bar";
 import { auctionDayPassed, UNCLASSIFIED_LABEL } from "@/lib/vinyl-parse";
 
+import { AuctionHeaderActions } from "./auction-header-actions";
+import { DashboardLotCard } from "./dashboard-lot-card";
 import { UnsoldView } from "./unsold-view";
 import type { DashboardData } from "./use-dashboard-data";
 
@@ -57,9 +59,20 @@ import type { DashboardData } from "./use-dashboard-data";
  * recolhível "Catálogo N" com data, contadores, horário/status/lote em pregão e links próprios —
  * o mesmo desenho da aba Vigiados. Sem isso a linha da casa mostrava o status do 1º pregão só.
  */
-function AuctionSection<T extends { idLeilao: string; time: string; url: string; idPeca: string }>({
+function AuctionSection<
+  T extends {
+    id: string;
+    idLeilao: string;
+    time: string;
+    url: string;
+    idPeca: string;
+    title: string;
+  },
+>({
   d,
   day,
+  house,
+  noBidIds,
   houseUrl,
   sectionKey,
   auction,
@@ -67,6 +80,8 @@ function AuctionSection<T extends { idLeilao: string; time: string; url: string;
 }: {
   d: DashboardData;
   day: string;
+  house: string;
+  noBidIds?: ReadonlySet<string> | null;
   houseUrl: string;
   sectionKey: string;
   auction: { idLeilao: string; lots: T[] };
@@ -96,30 +111,22 @@ function AuctionSection<T extends { idLeilao: string; time: string; url: string;
         </button>
         <Badge variant="secondary">{auction.lots.length} lote(s)</Badge>
         <span className="text-xs text-muted-foreground">{`${day.slice(8, 10)}/${day.slice(5, 7)}`}</span>
+        <AuctionStore idLeilao={auction.idLeilao} house={house} />
         <HouseStatBadges
           stats={computeHouseStats(auction.lots, watchedIds, bidStatusById)}
           active={statFilter}
           onToggle={toggleStatFilter}
         />
         <AuctionStatusInline info={info} />
-        <div className="ml-auto flex flex-wrap items-center gap-3">
-          {info?.presencialUrl ? (
-            <PresencialLink
-              presencialUrl={info.presencialUrl}
-              idLeilao={info.idLeilao}
-              dayKey={info.dayKey}
-              status={info.status}
-            />
-          ) : null}
-          <a
-            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-            href={info?.catalogUrl ?? houseUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            ver catálogo <ExternalLink className="h-3 w-3" />
-          </a>
-        </div>
+        <AuctionHeaderActions
+          d={d}
+          house={`${house} · catálogo ${auction.idLeilao}`}
+          houseUrl={houseUrl}
+          info={info}
+          lots={auction.lots}
+          noBidIds={noBidIds}
+          linkLabel="ver catálogo"
+        />
       </div>
       {isOpen ? children : null}
     </div>
@@ -169,6 +176,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     bidsWithHouseUrl,
     bidDayKey,
     dayBarHost,
+    navFooterHost,
     refreshDay,
     refreshingDay,
     setBidsViewDay,
@@ -203,9 +211,6 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     albumById,
     searchScore,
     search,
-    possibleTrashFor,
-    setExcludeTarget,
-    dismissTrashMutation,
     openHouses,
     verifiedHouses,
     houseArtist,
@@ -257,6 +262,17 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     // Sem lance: enquanto os catálogos carregam (`ids` nulo) a lista fica vazia, com aviso.
     .filter((lot) => !noBidActive || Boolean(noBid.ids?.has(lot.idPeca)));
   const groups = groupByHouse(visibleLots);
+  // Filtros por casa (artista / faixa de valor) — usados na grade e no "Exportar dia".
+  const filterHouseLots = (group: HouseGroup) => {
+    const houseKey = `${day}|${group.house}`;
+    const perArtist = globalActive ? "" : (houseArtist[houseKey] ?? "");
+    const perPrice = housePrice[houseKey] ?? "";
+    let houseLots = group.lots;
+    if (perArtist)
+      houseLots = houseLots.filter((lot) => (lot.artist || UNCLASSIFIED_LABEL) === perArtist);
+    if (perPrice) houseLots = houseLots.filter((lot) => matchesPriceRange(lot.price, perPrice));
+    return houseLots;
+  };
   const isUnsoldView = unsoldViewDay === day && index === TODAY_INDEX;
   const isWatchedView = watchedViewDay === day;
   // Vigiados do dia: a busca principal também filtra aqui.
@@ -278,6 +294,17 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
 
   return (
     <TabsContent value={`day-${index}`} className="space-y-6">
+      {navFooterHost && !isUnsoldView && !isWatchedView && !isBidsView
+        ? createPortal(
+            <DayLotListButton
+              d={d}
+              title={shortDayLabel(day, index - TODAY_INDEX)}
+              sections={groups.map((g) => ({ house: g.house, lots: filterHouseLots(g) }))}
+              noBidIds={noBidActive ? noBid.ids : null}
+            />,
+            navFooterHost,
+          )
+        : null}
       {dayBarHost &&
         createPortal(
           <div className="space-y-1 border-t border-border px-4 py-1.5">
@@ -447,7 +474,9 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
         )}
       {isUnsoldView ? (
         <UnsoldView
+          d={d}
           houses={todayUnsold}
+          dayKey={day}
           dayLabel={dayLabel(day, index - TODAY_INDEX)}
           onBack={() => setUnsoldViewDay(null)}
         />
@@ -536,6 +565,12 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     </button>
                     <HouseUf house={houseGroup.house} />
                     <HouseLight house={houseGroup.house} />
+                    {!multi && houseGroup.lots[0] ? (
+                      <AuctionStore
+                        idLeilao={houseGroup.lots[0].idLeilao}
+                        house={houseGroup.house}
+                      />
+                    ) : null}
                     <Badge variant="secondary">{houseGroup.lots.length} lote(s)</Badge>
                     {multi ? <Badge variant="outline">{auctions.length} catálogos</Badge> : null}
                     <HouseStatBadges
@@ -544,24 +579,13 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                       onToggle={toggleStatFilter}
                     />
                     <AuctionStatusInline info={auctionInfo} />
-                    <div className="ml-auto flex flex-wrap items-center gap-3">
-                      {auctionInfo?.presencialUrl ? (
-                        <PresencialLink
-                          presencialUrl={auctionInfo.presencialUrl}
-                          idLeilao={auctionInfo.idLeilao}
-                          dayKey={auctionInfo.dayKey}
-                          status={auctionInfo.status}
-                        />
-                      ) : null}
-                      <a
-                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                        href={auctionInfo?.catalogUrl ?? houseGroup.houseUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        site da casa <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </div>
+                    <AuctionHeaderActions
+                      d={d}
+                      house={houseGroup.house}
+                      houseUrl={houseGroup.houseUrl}
+                      info={auctionInfo}
+                      lots={houseGroup.lots}
+                    />
                   </div>
                   {!isHouseOpen ? null : multi ? (
                     <div className="space-y-6 border-l-2 border-border pl-3 sm:pl-5">
@@ -570,6 +594,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                           key={auction.idLeilao}
                           d={d}
                           day={day}
+                          house={houseGroup.house}
                           houseUrl={houseGroup.houseUrl}
                           sectionKey={`${houseSectionKey}|${auction.idLeilao}`}
                           auction={auction}
@@ -660,42 +685,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
               </p>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {ranked.map((lot) => (
-                  <LotCard
-                    key={lot.id}
-                    lot={{
-                      ...lot,
-                      price: currentPriceFor(lot.id, lot.price),
-                      lote: lot.lote || loteById.get(lot.idPeca) || "",
-                      myBid: myBidById.get(lot.idPeca),
-                      nextBid: nextBidById.get(lot.id),
-                    }}
-                    busy={pending === lot.idPeca}
-                    ai={aiFor(lot)}
-                    market={marketFor(lot)}
-                    album={albumFor(lot)}
-                    condition={conditionFor(lot)}
-                    demand={demandFor(lot)}
-                    owned={ownedFor(lot)}
-                    {...lookoutProps(lot)}
-                    onOpenOwned={() => setOwnedPanelLot(lot)}
-                    onEditTags={editTags(lot.id)}
-                    bidStatus={bidStatusById.get(lot.idPeca)}
-                    sold={soldById.get(lot.id)}
-                    possibleTrash={possibleTrashFor(lot)}
-                    onExclude={() => setExcludeTarget({ id: lot.id, title: lot.title })}
-                    onDismissTrash={() => {
-                      const signal = possibleTrashFor(lot);
-                      if (signal) dismissTrashMutation.mutate(signal.matchedTerms);
-                    }}
-                    onToggle={() =>
-                      toggle.mutate({
-                        idPeca: lot.idPeca,
-                        idLeilao: lot.idLeilao,
-                        base: lot.base,
-                        watch: !lot.watched,
-                      })
-                    }
-                  />
+                  <DashboardLotCard key={lot.id} d={d} lot={lot} />
                 ))}
               </div>
             </div>
@@ -709,13 +699,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
             const isVerified = verifiedHouses.has(houseKey);
             const perArtist = globalActive ? "" : (houseArtist[houseKey] ?? "");
             const perPrice = housePrice[houseKey] ?? "";
-            let houseLots = group.lots;
-            if (perArtist)
-              houseLots = houseLots.filter(
-                (lot) => (lot.artist || UNCLASSIFIED_LABEL) === perArtist,
-              );
-            if (perPrice)
-              houseLots = houseLots.filter((lot) => matchesPriceRange(lot.price, perPrice));
+            const houseLots = filterHouseLots(group);
             const renderArtistGroups = (lots: typeof houseLots) =>
               groupByArtist(lots).map((artistGroup) => (
                 <div key={artistGroup.artist} className="space-y-3">
@@ -733,42 +717,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                   </h3>
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {artistGroup.lots.map((lot) => (
-                      <LotCard
-                        key={lot.id}
-                        lot={{
-                          ...lot,
-                          price: currentPriceFor(lot.id, lot.price),
-                          lote: lot.lote || loteById.get(lot.idPeca) || "",
-                          myBid: myBidById.get(lot.idPeca),
-                          nextBid: nextBidById.get(lot.id),
-                        }}
-                        busy={pending === lot.idPeca}
-                        ai={aiFor(lot)}
-                        market={marketFor(lot)}
-                        album={albumFor(lot)}
-                        condition={conditionFor(lot)}
-                        demand={demandFor(lot)}
-                        owned={ownedFor(lot)}
-                        {...lookoutProps(lot)}
-                        onOpenOwned={() => setOwnedPanelLot(lot)}
-                        onEditTags={editTags(lot.id)}
-                        bidStatus={bidStatusById.get(lot.idPeca)}
-                        sold={soldById.get(lot.id)}
-                        possibleTrash={possibleTrashFor(lot)}
-                        onExclude={() => setExcludeTarget({ id: lot.id, title: lot.title })}
-                        onDismissTrash={() => {
-                          const signal = possibleTrashFor(lot);
-                          if (signal) dismissTrashMutation.mutate(signal.matchedTerms);
-                        }}
-                        onToggle={() =>
-                          toggle.mutate({
-                            idPeca: lot.idPeca,
-                            idLeilao: lot.idLeilao,
-                            base: lot.base,
-                            watch: !lot.watched,
-                          })
-                        }
-                      />
+                      <DashboardLotCard key={lot.id} d={d} lot={lot} />
                     ))}
                   </div>
                 </div>
@@ -842,6 +791,9 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     </button>
                     <HouseUf house={group.house} uf={group.lots[0]?.uf} />
                     <HouseLight house={group.house} />
+                    {!multi && group.lots[0] ? (
+                      <AuctionStore idLeilao={group.lots[0].idLeilao} house={group.house} />
+                    ) : null}
                     <Badge variant="secondary">{houseLots.length} lotes</Badge>
                     {multi ? (
                       <Badge variant="outline">{splitByAuction(group.lots).length} catálogos</Badge>
@@ -852,24 +804,14 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                       onToggle={toggleStatFilter}
                     />
                     <AuctionStatusInline info={auctionInfo} />
-                    <div className="ml-auto flex flex-wrap items-center gap-3">
-                      {auctionInfo?.presencialUrl ? (
-                        <PresencialLink
-                          presencialUrl={auctionInfo.presencialUrl}
-                          idLeilao={auctionInfo.idLeilao}
-                          dayKey={auctionInfo.dayKey}
-                          status={auctionInfo.status}
-                        />
-                      ) : null}
-                      <a
-                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                        href={auctionInfo?.catalogUrl ?? group.houseUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        site da casa <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </div>
+                    <AuctionHeaderActions
+                      d={d}
+                      house={group.house}
+                      houseUrl={group.houseUrl}
+                      info={auctionInfo}
+                      lots={houseLots}
+                      noBidIds={noBidActive ? noBid.ids : null}
+                    />
                   </div>
                   {isOpen ? (
                     <div className="flex flex-wrap items-center gap-2">
@@ -905,6 +847,8 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                             key={auction.idLeilao}
                             d={d}
                             day={day}
+                            house={group.house}
+                            noBidIds={noBidActive ? noBid.ids : null}
                             houseUrl={group.houseUrl}
                             sectionKey={`${day}|${group.house}|${auction.idLeilao}`}
                             auction={auction}
@@ -916,7 +860,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                     ) : (
                       renderArtistGroups(houseLots)
                     )}
-                    <div className="pt-2">
+                    <div className="flex items-stretch gap-2 pt-2">
                       <button
                         type="button"
                         onClick={() => {
@@ -930,11 +874,23 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                               }),
                           );
                         }}
-                        className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                        className="inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-md border border-border py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-primary"
                       >
                         <ChevronUp className="h-4 w-4" />
                         Fechar {group.house}
                       </button>
+                      {!isVerified ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleVerified(houseKey)}
+                          title="Marcar casa como verificada e fechar"
+                          aria-label={`Marcar ${group.house} como verificada e fechar`}
+                          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-green-600 hover:text-green-600"
+                        >
+                          <Check className="h-4 w-4" />
+                          Verificada
+                        </button>
+                      ) : null}
                     </div>
                   </>
                 ) : null}

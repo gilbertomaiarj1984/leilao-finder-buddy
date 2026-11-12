@@ -8,6 +8,8 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
+import { LotBidScheduleButton } from "@/components/vinyl/lot-bid-schedule-button";
+import { HouseNameWithStore } from "@/components/vinyl/auction-store";
 import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { useEffect, useRef, useState, type ComponentProps } from "react";
@@ -233,8 +235,12 @@ function LotCardDesktop({
               : "bg-yellow-400 text-yellow-950"
           }`}
         >
-          <HouseLight house={origin.house} className="bg-white/90 !p-0.5" />
-          <span className="font-bold">{origin.house}</span>
+          <HouseLight
+            house={origin.house}
+            idLeilao={origin.idLeilao}
+            className="bg-white/90 !p-0.5"
+          />
+          <HouseNameWithStore house={origin.house} idLeilao={origin.idLeilao} />
           <HouseUf house={origin.house} className="text-inherit opacity-80" />
           {origin.houseWinning || origin.houseCovered ? (
             <span className="inline-flex items-center gap-0.5 rounded bg-white/90 px-1 text-[11px] leading-4">
@@ -521,19 +527,20 @@ function LotCardDesktop({
             <Button
               size="sm"
               variant={lot.watched ? "default" : "outline"}
-              className="flex-1"
+              title={lot.watched ? "Vigiando — clique para parar" : "Vigiar este lote"}
               onClick={onToggle}
               disabled={busy}
             >
               {busy ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : lot.watched ? (
-                <EyeOff className="mr-2 h-4 w-4" />
+                <EyeOff className="h-4 w-4" />
               ) : (
-                <Eye className="mr-2 h-4 w-4" />
+                <Eye className="h-4 w-4" />
               )}
-              {lot.watched ? "Vigiando" : "Vigiar"}
+              <span className="sr-only">{lot.watched ? "Parar de vigiar" : "Vigiar"}</span>
             </Button>
+            <LotBidScheduleButton lot={lot} className="h-9 w-9" />
             {onToggleLookout ? (
               <Button
                 size="sm"

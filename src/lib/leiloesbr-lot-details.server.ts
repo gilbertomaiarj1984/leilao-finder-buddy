@@ -77,6 +77,67 @@ function loadDataField(html: string, field: string): string | undefined {
   return m?.[1]?.replace(/[.,]$/, "");
 }
 
+/** Campo `<input type="hidden" name="X" value="V">` do formulário de lance do template ANTIGO. */
+function hiddenInput(html: string, name: string): string | undefined {
+  const m = new RegExp(`<input[^>]*name=["']${name}["'][^>]*>`, "i").exec(html)?.[0];
+  return m ? /value=["']([^"']*)["']/i.exec(m)?.[1] : undefined;
+}
+
+export type LivePeca = {
+  /** "new" = JSON `loadData` (fazerlance.asp); "old" = formulário POST em `peca.asp`; null = nenhum. */
+  template: "new" | "old" | null;
+  currentValue: number | null;
+  nextBid: number | null;
+  qtdLances: string;
+  winning: boolean;
+  /** Template antigo: campos ocultos do formulário, repetidos no envio. */
+  oldForm: { valorMinimo: string; lanceclicado: string; vold: string } | null;
+};
+
+/**
+ * Valores AO VIVO da página da peça para o lance agendado. Template novo: `VALOR_VALUE`,
+ * `NOVO_VALOR`, `QTDLANCE` (o `qtdl` do formulário) e `VENCENDO` (true só com a página lida COM
+ * login). Template antigo (sem `loadData`): valor atual em `<span class="is-valor">`, próximo
+ * lance em `ValorMinimo` e `vold` (valor atual) nos campos ocultos do formulário `frmLances`.
+ */
+export function parseLivePeca(html: string): LivePeca {
+  const newNext = parseLoadDataNumber(loadDataField(html, "NOVO_VALOR"));
+  if (newNext !== null) {
+    return {
+      template: "new",
+      currentValue: parseLoadDataNumber(loadDataField(html, "VALOR_VALUE")),
+      nextBid: newNext,
+      qtdLances: loadDataField(html, "QTDLANCE") ?? "0",
+      winning: /"VENCENDO"\s*:\s*true/.test(html),
+      oldForm: null,
+    };
+  }
+  const minimo = hiddenInput(html, "ValorMinimo");
+  if (minimo !== undefined && /name=["']IdPeca["']/i.test(html)) {
+    const atual = /Valor\s+Atual[\s\S]{0,300}?is-valor["'][^>]*>\s*([\d.,]+)/i.exec(html)?.[1];
+    return {
+      template: "old",
+      currentValue: parseLoadDataNumber(atual) ?? parseLoadDataNumber(hiddenInput(html, "vold")),
+      nextBid: parseLoadDataNumber(minimo),
+      qtdLances: "0",
+      winning: false,
+      oldForm: {
+        valorMinimo: minimo,
+        lanceclicado: hiddenInput(html, "lanceclicado") ?? "0",
+        vold: hiddenInput(html, "vold") ?? "",
+      },
+    };
+  }
+  return {
+    template: null,
+    currentValue: null,
+    nextBid: null,
+    qtdLances: "0",
+    winning: false,
+    oldForm: null,
+  };
+}
+
 /** Extrai o valor atual (VALOR_VALUE) do HTML da peça e formata em BRL. */
 function parseCurrentValue(html: string): string | null {
   return formatValor(loadDataField(html, "VALOR_VALUE"));

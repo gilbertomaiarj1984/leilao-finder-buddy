@@ -1,8 +1,14 @@
-import { Luggage } from "lucide-react";
+import { Luggage, PackageX } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { houseKey, LEVEL_META, NEGATIVE_TAGS, type HouseSummary } from "@/lib/house-rating";
+import {
+  houseKey,
+  LEVEL_META,
+  lotHouse,
+  NEGATIVE_TAGS,
+  type HouseSummary,
+} from "@/lib/house-rating";
 import { useHouseRatingsQuery } from "@/lib/queries";
 import { LevelDot } from "@/components/vinyl/level-dot";
 import { cn } from "@/lib/utils";
@@ -21,17 +27,46 @@ function GuardBag({ count, className }: { count: number; className?: string }) {
   );
 }
 
+/** Alerta vermelho ao lado do semáforo: a casa NÃO aceita guardar compras (pague e envie logo). */
+function NoGuardBadge({ className }: { className?: string }) {
+  return (
+    <span
+      role="img"
+      title="Casa não aceita guarda"
+      aria-label="Casa não aceita guarda"
+      className={cn(
+        "inline-flex shrink-0 items-center gap-0.5 rounded-full border border-red-500/60 bg-red-500/10 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-red-400",
+        className,
+      )}
+    >
+      <PackageX className="h-3 w-3" />
+      sem guarda
+    </span>
+  );
+}
+
 /**
  * Semáforo da casa (verde/amarelo/laranja/vermelho), ao lado do nome em qualquer tela. Sem
  * avaliação, mostra uma bolinha tracejada. Ao parar o mouse (ou tocar) abre o detalhamento:
  * tags mais marcadas e anotações recentes dos pregões avaliados. A avaliação em si é feita
  * por pregão, na página Compras. Casas com compras na guarda ganham uma mala ao lado.
+ * Com `idLeilao`, vale a loja informada para o pregão (casas que hospedam várias lojas).
  */
-export function HouseLight({ house, className }: { house: string; className?: string }) {
+export function HouseLight({
+  house: siteHouse,
+  idLeilao,
+  className,
+}: {
+  house: string;
+  idLeilao?: string;
+  className?: string;
+}) {
   const { data } = useHouseRatingsQuery();
+  const house = lotHouse(data?.stores, idLeilao, siteHouse);
   const summary: HouseSummary | undefined = data?.houses[houseKey(house)];
   const level = summary?.level ?? null;
   const guarded = data?.guarded?.[houseKey(house)] ?? 0;
+  const noGuard = !!data?.noGuard?.[houseKey(house)];
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -71,19 +106,22 @@ export function HouseLight({ house, className }: { house: string; className?: st
           onMouseLeave={hide}
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
-          <HouseLightDetail house={house} summary={summary} guarded={guarded} />
+          <HouseLightDetail house={house} summary={summary} guarded={guarded} noGuard={noGuard} />
         </PopoverContent>
       </Popover>
       {guarded ? <GuardBag count={guarded} /> : null}
+      {noGuard ? <NoGuardBadge className="ml-0.5" /> : null}
     </span>
   );
 }
 
 /** Só a bolinha (sem popover) — para lugares dentro de link, onde um botão não pode ser aninhado. */
-export function HouseDot({ house }: { house: string }) {
+export function HouseDot({ house: siteHouse, idLeilao }: { house: string; idLeilao?: string }) {
   const { data } = useHouseRatingsQuery();
+  const house = lotHouse(data?.stores, idLeilao, siteHouse);
   const summary = data?.houses[houseKey(house)];
   const guarded = data?.guarded?.[houseKey(house)] ?? 0;
+  const noGuard = !!data?.noGuard?.[houseKey(house)];
   return (
     <span
       className="inline-flex items-center gap-1"
@@ -93,6 +131,7 @@ export function HouseDot({ house }: { house: string }) {
     >
       <LevelDot level={summary?.level ?? null} />
       {guarded ? <GuardBag count={guarded} /> : null}
+      {noGuard ? <NoGuardBadge /> : null}
     </span>
   );
 }
@@ -101,10 +140,12 @@ function HouseLightDetail({
   house,
   summary,
   guarded,
+  noGuard,
 }: {
   house: string;
   summary?: HouseSummary;
   guarded: number;
+  noGuard: boolean;
 }) {
   const level = summary?.level ?? null;
   return (
@@ -121,6 +162,12 @@ function HouseLightDetail({
           </p>
         </div>
       </div>
+      {noGuard ? (
+        <p className="flex items-center gap-1.5 rounded-md border border-red-500/50 bg-red-500/10 px-2 py-1.5 font-medium text-red-400">
+          <PackageX className="h-4 w-4 shrink-0" />
+          Casa não aceita guarda: pague e envie logo.
+        </p>
+      ) : null}
       {!level ? (
         <p className="text-muted-foreground">
           Avalie um pregão desta casa na página Compras para ver o detalhamento aqui.

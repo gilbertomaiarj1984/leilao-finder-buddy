@@ -145,7 +145,8 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
 
 - "Marcar casa como verificada" (chave `${dia}|${casa}`) **PERSISTE no servidor**: `app_state`
   chave `verified_houses` (array global). `getVerifiedHouses`/`setVerifiedHouses`. **Marcar
-  também FECHA a casa** (`toggleVerified` remove de `openHouses`) e migra para "Já verificadas".
+  também FECHA a casa** (`toggleVerified` remove de `openHouses`) e migra para "Já verificadas". No rodapé da casa expandida há também o botão "Verificada" (v0.187.6),
+  ao lado de "Fechar <casa>": marca e fecha; a barra segue fechando sem marcar.
 - **localStorage vira só cache** (pinta a tela na hora); fonte da verdade é o servidor. No 1º
   load há **migração única** localStorage → servidor. (Antes ficava só no localStorage → sumia
   ao trocar de navegador/dispositivo ou usar a URL de preview, de origem diferente.)

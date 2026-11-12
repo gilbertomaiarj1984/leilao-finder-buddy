@@ -16,6 +16,9 @@ import { getAiProvider } from "./app-state.server";
 import { resolveGeminiModel, SYNC_CONCURRENCY } from "./ai-eval.server";
 import { discogsConfigured, fetchDiscogsTracklist, findReleaseByCode } from "./discogs.server";
 import { parseDiscCode } from "./disc-code";
+import { parseAlbum } from "./discogs-match";
+import { getArtistRanking } from "./listenbrainz.server";
+import { fameFromRanking } from "./track-popularity";
 import { getAllLotMarket } from "./lot-market.server";
 import type { AiProvider } from "./ai-provider.server";
 import {
@@ -26,6 +29,7 @@ import {
   parseFameText,
   withoutFame,
   type Track,
+  type TrackFame,
 } from "./tracklist";
 
 const FAME_SYSTEM =
@@ -63,6 +67,10 @@ async function rateFameDetailed(
   provider: AiProvider,
   geminiModel: Awaited<ReturnType<typeof resolveGeminiModel>>,
 ): Promise<FameResult> {
+  // Fonte principal: ranking real de reproduções do artista (estável); a IA só cobre o que faltar.
+  const real = await popularityFames(album, tracks);
+  if (real?.every(Boolean)) return { tracks: applyFame(tracks, real), used: null, error: null };
+  const merge = (fames: (TrackFame | null)[]) => fames.map((f, i) => real?.[i] ?? f);
   let failure = "erro";
   for (const json of [true, false]) {
     try {
@@ -79,7 +87,8 @@ async function rateFameDetailed(
       );
       const used = { provider: r.provider, model: r.model, switched: r.switched };
       const fames = parseFameText(r.text, tracks.length);
-      if (fames.some(Boolean)) return { tracks: applyFame(tracks, fames), used, error: null };
+      if (fames.some(Boolean))
+        return { tracks: applyFame(tracks, merge(fames)), used, error: null };
       console.error(
         `[tracklist] fama ilegível em "${album}" (json=${json}): ${r.text.slice(0, 200)}`,
       );
@@ -89,7 +98,19 @@ async function rateFameDetailed(
       failure = (error as Error)?.message?.slice(0, 200) || "erro";
     }
   }
+  if (real?.some(Boolean)) return { tracks: applyFame(tracks, real), used: null, error: null };
   return { tracks: null, used: null, error: failure };
+}
+
+/** Fama pelo ranking do ListenBrainz (por faixa; `null` onde não achou). `null` sem dado do artista. */
+async function popularityFames(
+  album: string,
+  tracks: Track[],
+): Promise<(TrackFame | null)[] | null> {
+  const artist = parseAlbum(album).artist;
+  if (!artist) return null;
+  const ranking = await getArtistRanking(artist);
+  return ranking ? fameFromRanking(tracks, ranking) : null;
 }
 
 function todayKeySaoPaulo(): string {

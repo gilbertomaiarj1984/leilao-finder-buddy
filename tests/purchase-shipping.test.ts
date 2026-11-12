@@ -6,6 +6,7 @@ import {
   canJoinShipment,
   isUnpaid,
   daysBetween,
+  effectiveHouse,
   groupByPregao,
   groupByHouse,
   guardDays,
@@ -30,6 +31,7 @@ const st = (idLeilao: string, status: AuctionState["status"], paidAt: string | n
   receivedAt: null,
   note: "",
   shipmentId: null,
+  store: "",
 });
 
 const purchases = [
@@ -204,5 +206,56 @@ describe("agrupar pregões por arrastar (remessa)", () => {
         o.kind === "bundle" ? o.groups.map((g) => g.idLeilao).join("+") : o.group.idLeilao,
       ),
     ).toEqual(["1+3", "2", "4"]);
+  });
+});
+
+describe("loja por pregão (leiloeiro que hospeda lojas)", () => {
+  const alberto = "Alberto Lopes - Leiloeiro Público";
+  const ps = [
+    p("100", alberto, "2026-11-09", "R$ 35,00"),
+    p("200", alberto, "2026-11-10", "R$ 20,00"),
+    p("300", alberto, "2026-11-11", "R$ 10,00"),
+  ];
+  const withStore = (idLeilao: string, store: string): AuctionState => ({
+    ...st(idLeilao, "guarda", "2026-11-12"),
+    store,
+  });
+  const shipping = {
+    auctions: [
+      withStore("100", "Discos da Palmeira"),
+      withStore("200", "JM Antiguidades"),
+      withStore("300", ""),
+    ],
+    shipments: [],
+  };
+
+  test("effectiveHouse: loja informada vence; vazio/espaços usa a casa", () => {
+    expect(effectiveHouse("JM Antiguidades", alberto)).toBe("JM Antiguidades");
+    expect(effectiveHouse("  ", alberto)).toBe(alberto);
+    expect(effectiveHouse(undefined, alberto)).toBe(alberto);
+  });
+
+  test("groupByPregao: house = loja; siteHouse guarda o nome do LeilõesBR", () => {
+    const g = groupByPregao(ps, shipping);
+    const byId = Object.fromEntries(g.map((x) => [x.idLeilao, x]));
+    expect(byId["100"]!.house).toBe("Discos da Palmeira");
+    expect(byId["100"]!.siteHouse).toBe(alberto);
+    expect(byId["300"]!.house).toBe(alberto);
+  });
+
+  test("lojas diferentes do mesmo leiloeiro NÃO fecham remessa juntas", () => {
+    const g = groupByPregao(ps, shipping);
+    expect(
+      canBundle([g.find((x) => x.idLeilao === "100")!, g.find((x) => x.idLeilao === "200")!]),
+    ).toBe(false);
+  });
+
+  test("groupByHouse separa as lojas", () => {
+    const houses = groupByHouse(groupByPregao(ps, shipping)).map((h) => h.house);
+    expect(houses).toEqual(
+      [alberto, "Discos da Palmeira", "JM Antiguidades"].sort((a, b) =>
+        a.localeCompare(b, "pt-BR"),
+      ),
+    );
   });
 });

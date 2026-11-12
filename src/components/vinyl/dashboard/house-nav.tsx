@@ -14,7 +14,14 @@ const SPY_OFFSET = 200;
  * `rootRef` (grade do dia, vigiados do dia, Vigiados, Lances) e refaz a lista quando a tela muda
  * (troca de aba, filtro, busca…); destaca a casa que está no topo ao rolar.
  */
-export function HouseNav({ rootRef }: { rootRef: RefObject<HTMLElement | null> }) {
+export function HouseNav({
+  rootRef,
+  footerHostRef,
+}: {
+  rootRef: RefObject<HTMLElement | null>;
+  /** Alvo (portal) no fim do painel, p.ex. para o botão "Exportar dia" do `DayTab`. */
+  footerHostRef?: (el: HTMLDivElement | null) => void;
+}) {
   const [labels, setLabels] = useState<string[]>([]);
   const [active, setActive] = useState(-1);
   const elsRef = useRef<HTMLElement[]>([]);
@@ -88,6 +95,7 @@ export function HouseNav({ rootRef }: { rootRef: RefObject<HTMLElement | null> }
           </li>
         ))}
       </ul>
+      <div ref={footerHostRef} className="border-t border-border empty:hidden" />
     </nav>
   );
 }

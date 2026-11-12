@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TabsContent } from "@/components/ui/tabs";
+import { AuctionStore } from "@/components/vinyl/auction-store";
 import { HouseLight } from "@/components/vinyl/house-light";
 import { HouseUf } from "@/components/vinyl/house-uf";
 import { AuctionStatusInline, HouseStatBadges } from "@/components/vinyl/badges";
@@ -34,6 +35,7 @@ import {
   watchedMatchesSearch,
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
+import { HouseLotListButton } from "@/components/vinyl/house-lot-list";
 import { PresencialLink } from "@/components/vinyl/presencial-link";
 import { useDragAutoScroll } from "@/components/vinyl/use-drag-autoscroll";
 import {
@@ -673,6 +675,7 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                                       </span>
                                       <AuctionStatusInline info={info} />
                                       <div className="ml-auto flex flex-wrap items-center gap-3">
+                                        <HouseLotListButton d={d} house={h.house} lots={c.lots} />
                                         {info?.presencialUrl ? (
                                           <PresencialLink
                                             presencialUrl={info.presencialUrl}
@@ -741,6 +744,9 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                           </button>
                           <HouseUf house={houseGroup.house} />
                           <HouseLight house={houseGroup.house} />
+                          {single ? (
+                            <AuctionStore idLeilao={single.idLeilao} house={houseGroup.house} />
+                          ) : null}
                           <Badge variant="secondary">{houseLots.length} lote(s)</Badge>
                           {houseGroup.multi ? (
                             <Badge variant="outline">{houseGroup.shown.length} catálogos</Badge>
@@ -762,6 +768,11 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                               ) : null}
                               <AuctionStatusInline info={singleInfo} />
                               <div className="ml-auto flex flex-wrap items-center gap-3">
+                                <HouseLotListButton
+                                  d={d}
+                                  house={houseGroup.house}
+                                  lots={houseLots}
+                                />
                                 {singleInfo?.presencialUrl ? (
                                   <PresencialLink
                                     presencialUrl={singleInfo.presencialUrl}
@@ -824,6 +835,10 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                                     <span className="text-xs text-muted-foreground">
                                       {daysRangeLabel(catalog.dayKeys)}
                                     </span>
+                                    <AuctionStore
+                                      idLeilao={catalog.idLeilao}
+                                      house={houseGroup.house}
+                                    />
                                     <HouseStatBadges
                                       stats={computeHouseStats(
                                         catalog.lots,
@@ -835,6 +850,11 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                                     />
                                     <AuctionStatusInline info={info} />
                                     <div className="ml-auto flex flex-wrap items-center gap-3">
+                                      <HouseLotListButton
+                                        d={d}
+                                        house={`${houseGroup.house} · catálogo ${catalog.idLeilao}`}
+                                        lots={catalog.lots}
+                                      />
                                       {info?.presencialUrl ? (
                                         <PresencialLink
                                           presencialUrl={info.presencialUrl}

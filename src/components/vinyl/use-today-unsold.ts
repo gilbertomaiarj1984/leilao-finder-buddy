@@ -6,7 +6,7 @@ import { getPresencialNow, getUnsoldLots } from "@/lib/leiloesbr.functions";
 import { isSeenLive, markSeenLive } from "@/lib/auction-seen-live";
 import { trackedAuctionStatus, type VinylLot } from "@/lib/vinyl-parse";
 
-import { groupByHouse, houseAuctionInfo, splitByAuction } from "./grouping";
+import { groupByHouse, houseAuctionInfo, splitByAuction, type HouseAuctionInfo } from "./grouping";
 
 export type UnsoldLotItem = Awaited<ReturnType<typeof getUnsoldLots>>["lots"][number];
 
@@ -16,6 +16,8 @@ export type TodayUnsoldHouse = {
   uf: string;
   catalogUrl: string | null;
   idLeilao: string;
+  /** horário/status/presencial do pregão (mesmo `houseAuctionInfo` do cabeçalho das outras telas). */
+  info: HouseAuctionInfo;
   status: "live" | "ended";
   /** lotes sem lance achados até agora (casa ao vivo: só os que já passaram no pregão). */
   lots: UnsoldLotItem[];
@@ -128,6 +130,7 @@ export function useTodayUnsold(lots: VinylLot[], dayKey: string | null): TodayUn
         uf: r.group.lots[0]?.uf ?? "",
         catalogUrl: r.info.catalogUrl,
         idLeilao: r.info.idLeilao,
+        info: r.info,
         status: r.status,
         lots: q?.data?.lots ?? [],
         total: q?.data?.total ?? null,
