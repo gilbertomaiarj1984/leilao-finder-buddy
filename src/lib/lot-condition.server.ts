@@ -59,6 +59,11 @@ function rulesFingerprint(rules: readonly unknown[], disabled: readonly string[]
 let allCache: { at: number; rows: LotConditionRow[] } | null = null;
 const ALL_TTL_MS = 30_000;
 
+/** Descarta o cache em memória (quem grava em `lot_condition` por fora, ex.: `refreshDemand`). */
+export function invalidateLotConditionCache(): void {
+  allCache = null;
+}
+
 /** Lê todo o cache de estado (single-user). Best-effort. */
 export async function getAllLotCondition(): Promise<LotConditionRow[]> {
   if (allCache && Date.now() - allCache.at < ALL_TTL_MS) return allCache.rows;
