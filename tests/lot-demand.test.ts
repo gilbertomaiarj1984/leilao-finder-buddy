@@ -39,3 +39,18 @@ describe("demandAgeLabel / isDemandStale", () => {
     expect(isDemandStale(null, NOW)).toBe(true);
   });
 });
+
+import { isHotLot } from "../src/lib/lot-demand";
+
+describe("isHotLot", () => {
+  // 20:00Z = 17:00 em São Paulo (12/11/2026)
+  test("janela de 2 h antes até 1 h depois, só hoje", () => {
+    expect(isHotLot("2026-11-12", "18:30", NOW)).toBe(true);
+    expect(isHotLot("2026-11-12", "19:00", NOW)).toBe(true);
+    expect(isHotLot("2026-11-12", "19:30", NOW)).toBe(false);
+    expect(isHotLot("2026-11-12", "16:30", NOW)).toBe(true);
+    expect(isHotLot("2026-11-12", "15:30", NOW)).toBe(false);
+    expect(isHotLot("2026-11-13", "17:30", NOW)).toBe(false);
+    expect(isHotLot("2026-11-12", "", NOW)).toBe(false);
+  });
+});

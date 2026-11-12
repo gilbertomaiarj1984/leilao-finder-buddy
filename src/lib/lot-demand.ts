@@ -61,3 +61,39 @@ export function isDemandStale(at: string | null | undefined, now = Date.now()): 
   const t = at ? Date.parse(at) : NaN;
   return !Number.isFinite(t) || now - t > 3 * 3_600_000;
 }
+
+/** Minutos desde 00:00 de hoje em São Paulo, e a chave do dia (yyyy-mm-dd). */
+function saoPauloNow(now: number): { dayKey: string; minutes: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(now));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "0";
+  return {
+    dayKey: `${get("year")}-${get("month")}-${get("day")}`,
+    minutes: Number(get("hour")) * 60 + Number(get("minute")),
+  };
+}
+
+/**
+ * Lote "quente": o pregão dele começa em até 2 h ou começou há menos de 1 h (hoje, horário de
+ * São Paulo). Esses são relidos a cada 5 min enquanto o app está aberto.
+ */
+export function isHotLot(
+  dayKey: string | null | undefined,
+  time: string | null | undefined,
+  now = Date.now(),
+): boolean {
+  const m = /^(\d{1,2}):(\d{2})/.exec(time ?? "");
+  if (!dayKey || !m) return false;
+  const sp = saoPauloNow(now);
+  if (dayKey !== sp.dayKey) return false;
+  const start = Number(m[1]) * 60 + Number(m[2]);
+  const diff = start - sp.minutes; // >0: ainda vai começar
+  return diff <= 120 && diff >= -60;
+}
