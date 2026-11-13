@@ -189,6 +189,15 @@ jobs:
             if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
           done
 
+          echo "== Loja dos pregões novos (contatos do bloco Local) =="
+          # Reconhece a loja de pregões novos de leiloeiros que hospedam várias lojas (vincula por
+          # contato forte, sugere por fraco). Best-effort, chunked: não derruba a run se falhar.
+          for i in $(seq 1 10); do
+            res="$(call_soft "/api/cron?step=storelink&max=6")" || { echo "storelink $i: falhou (ignorado): $res"; break; }
+            echo "storelink $i: $res"
+            if echo "$res" | jq -e '.done == true' >/dev/null 2>&1; then break; fi
+          done
+
           echo "== Captura de vendas pós-leilão (histórico lot_sales) =="
           # Varre o catálogo da casa (1 req/leilão) dos leilões terminados ainda não
           # capturados e grava o valor de venda + estado. Chunked (cursor no servidor):

@@ -146,11 +146,30 @@ export async function setAuctionNote(idLeilao: string, note: string): Promise<vo
  * Loja do pregão (vazio = a própria casa do LeilõesBR). Mudar a loja muda a casa efetiva, então um
  * pregão que já segue numa remessa em andamento precisa sair dela antes (a remessa é de uma casa só);
  * pregão "recebido" (histórico) pode ser ajustado e continua na remessa.
+ * `source` registra quem definiu: "manual" (o usuário), "confirmado" (aceitou uma sugestão) ou
+ * "auto" (vínculo automático por contato). Só manual/confirmado ENSINAM o reconhecimento.
+ * Com `onlyIfEmpty` (vínculo automático) nunca sobrescreve loja existente nem mexe em pregão que
+ * está numa remessa em andamento; devolve `false` quando não gravou.
  */
-export async function setAuctionStore(idLeilao: string, store: string): Promise<void> {
+export async function setAuctionStoreWithSource(
+  idLeilao: string,
+  store: string,
+  source: "manual" | "auto" | "confirmado" | "",
+  opts: { onlyIfEmpty?: boolean } = {},
+): Promise<boolean> {
   const prev = await readState(idLeilao);
   const clean = store.replace(/\s+/g, " ").trim().slice(0, 80);
-  if ((prev?.store ?? "") === clean) return;
+  const cleanSource = clean ? source : "";
+  if (opts.onlyIfEmpty) {
+    if (prev?.store) return false;
+    if (prev?.shipmentId && prev.status !== "recebido") return false;
+  }
+  const { data: cur } = await db
+    .from<{ store_source: string }>("purchase_auctions")
+    .select("store_source")
+    .eq("id_leilao", idLeilao);
+  const curSource = (cur ?? [])[0]?.store_source ?? "";
+  if ((prev?.store ?? "") === clean && curSource === cleanSource) return true;
   // Remessa já recebida é histórico: dá para ajustar a loja (arrumar o passado) sem mexer nela.
   const inFinishedShipment = prev?.status === "recebido";
   if (prev?.shipmentId && !inFinishedShipment) {
@@ -165,10 +184,17 @@ export async function setAuctionStore(idLeilao: string, store: string): Promise<
       shipment_id: prev?.shipmentId ?? null,
       note: prev?.note ?? "",
       store: clean,
+      store_source: cleanSource,
     },
     { onConflict: "id_leilao" },
   );
   if (error) throw new Error(`Não foi possível salvar a loja: ${error.message}`);
+  return true;
+}
+
+/** Loja informada pelo usuário (vale como "manual"). */
+export async function setAuctionStore(idLeilao: string, store: string): Promise<void> {
+  await setAuctionStoreWithSource(idLeilao, store, "manual");
 }
 
 /** Casa efetiva de cada pregão (loja informada, senão a casa gravada nas compras). */

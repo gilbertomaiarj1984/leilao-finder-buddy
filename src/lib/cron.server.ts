@@ -413,6 +413,17 @@ async function runCronStep(step: string, url: URL): Promise<Response> {
       return json(await enrichConditions(max));
     }
 
+    // Reconhece a LOJA de pregões novos de leiloeiros que hospedam várias lojas: lê o bloco "Local"
+    // da página do pregão e compara os contatos com as lojas que o usuário já informou. Contato
+    // forte vincula sozinho; fraco só sugere. Também aprende os pregões que já tinham loja
+    // informada. Chunked: repete até `done=true`; falha de leitura não trava nada. Ver
+    // `auction-contact.server.ts`.
+    if (step === "storelink") {
+      const { linkNewAuctions } = await import("./auction-contact.server");
+      const max = Math.min(Math.max(Number(url.searchParams.get("max")) || 6, 1), 12);
+      return json(await linkNewAuctions(max));
+    }
+
     // Relê a DEMANDA (visitas/lances) dos lotes de hoje e amanhã direto do catálogo da casa e
     // atualiza `lot_condition`. Chunked: repete até `done=true`. Roda a cada ~30 min no
     // workflow `refresh-demand.yml`; ver `lot-demand.server.ts`.

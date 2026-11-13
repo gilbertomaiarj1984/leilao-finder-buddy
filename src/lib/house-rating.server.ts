@@ -57,6 +57,22 @@ async function readRatings(): Promise<Record<string, PregaoRating>> {
   return out;
 }
 
+// Acessórios: a tela de semáforo não pode quebrar se a tabela de contatos ainda não existir.
+async function autoStoresSafe(): Promise<Record<string, string>> {
+  try {
+    return await (await import("./auction-contact.server")).getAutoStores();
+  } catch {
+    return {};
+  }
+}
+async function suggestionsSafe(): Promise<Record<string, { store: string; via: string }>> {
+  try {
+    return await (await import("./auction-contact.server")).getStoreSuggestions();
+  } catch {
+    return {};
+  }
+}
+
 /** Avaliações por pregão + semáforo agregado por casa. */
 export async function getHouseRatings(): Promise<RatingsPayload> {
   const [ratings, purchases, shipping, noGuard] = await Promise.all([
@@ -78,6 +94,8 @@ export async function getHouseRatings(): Promise<RatingsPayload> {
     guarded: guardedHouses(refs, guardIds),
     noGuard: Object.fromEntries(noGuard.map((k) => [k, true as const])),
     stores,
+    autoStores: await autoStoresSafe(),
+    suggestions: await suggestionsSafe(),
   };
 }
 
