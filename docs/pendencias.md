@@ -98,7 +98,7 @@ aderente é **acrescentar provedores à camada plugável que já existe** (`runT
      texto), Together AI (muitos modelos open + visão + batch), Cloudflare Workers AI (free tier,
      visão via LLaVA, REST).
 
-## Loja por pregão — detecção automática (levantado em 12/11/2026)
+## Loja por pregão — detecção automática (levantado em 12/11/2026; implementada na v0.197.0 por contato, ver `docs/areas/colecao-sondagem-compras.md`)
 
 - Hoje o campo "Loja" é manual (v0.193.0). Detecção automática para leilões publicados no site de um leiloeiro: ler a página do leilão e usar (1) e-mail/telefone do bloco LOCAL diferente do rodapé do site (Alberto Lopes: modelo V7.1 renderizado no HTML; Bruce Angeiras: modelo sem `loadData`), (2) título, marcado "a confirmar", e aprender a loja por e-mail depois de confirmada. Modelo V8.9 (Claudio Firmino) traz `NOMESITE`/`IDSITE` no `loadData`, mas o leilão de outro site vem com o erro "Esse leilão não pertence a esse site". Antes: testar do VPS se o servidor consegue abrir essas páginas (o site responde 403 a acesso automático, segundo o Giba). Desde a v0.194.0 a loja informada vale em toda a listagem (ícone de loja no cabeçalho do catálogo); a detecção automática só evitaria o preenchimento manual por pregão novo.
 

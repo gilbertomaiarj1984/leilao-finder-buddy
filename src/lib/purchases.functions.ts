@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 
 import { requireAuth } from "@/lib/auth-middleware";
 
+import type { StoreSaveResult } from "./auction-contact";
+
 /** Compras (vinil) gravadas em `purchases`, mais recente primeiro. Best-effort: [] em erro. */
 export const getPurchases = createServerFn({ method: "GET" })
   .middleware([requireAuth])
@@ -82,16 +84,58 @@ export const setPregaoNote = createServerFn({ method: "POST" })
     await setAuctionNote(data.idLeilao, data.note);
   });
 
+/**
+ * Informa a loja do pregão. Com loja, lê também a página do pregão e guarda os contatos do bloco
+ * "Local" (impressão digital da loja); falha na leitura NUNCA impede salvar — vira um aviso.
+ */
 export const setPregaoStore = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((input: { idLeilao?: string; store?: string } | undefined) => {
     if (!input?.idLeilao || typeof input.idLeilao !== "string") throw new Error("Pregão inválido.");
     return { idLeilao: input.idLeilao, store: typeof input.store === "string" ? input.store : "" };
   })
-  .handler(async ({ context, data }) => {
+  .handler(async ({ context, data }): Promise<StoreSaveResult> => {
     await guard(context);
     const { setAuctionStore } = await import("./purchase-shipping.server");
     await setAuctionStore(data.idLeilao, data.store);
+    if (!data.store.trim()) return { capture: null };
+    try {
+      const { captureAuctionContacts } = await import("./auction-contact.server");
+      return { capture: await captureAuctionContacts(data.idLeilao) };
+    } catch {
+      return { capture: null };
+    }
+  });
+
+/** Relê a página do pregão e mostra os contatos achados (diagnóstico; não muda a loja). */
+export const readPregaoContacts = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { idLeilao?: string } | undefined) => {
+    if (!input?.idLeilao || typeof input.idLeilao !== "string") throw new Error("Pregão inválido.");
+    return { idLeilao: input.idLeilao };
+  })
+  .handler(async ({ context, data }): Promise<StoreSaveResult> => {
+    await guard(context);
+    const { captureAuctionContacts } = await import("./auction-contact.server");
+    return { capture: await captureAuctionContacts(data.idLeilao) };
+  });
+
+/** Aceita ("accept") ou recusa ("dismiss") a loja sugerida, ou desfaz o vínculo automático ("undo"). */
+export const resolveStoreLink = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { idLeilao?: string; action?: string } | undefined) => {
+    if (!input?.idLeilao || typeof input.idLeilao !== "string") throw new Error("Pregão inválido.");
+    if (input.action !== "accept" && input.action !== "dismiss" && input.action !== "undo") {
+      throw new Error("Ação inválida.");
+    }
+    return { idLeilao: input.idLeilao, action: input.action };
+  })
+  .handler(async ({ context, data }) => {
+    await guard(context);
+    const mod = await import("./auction-contact.server");
+    if (data.action === "accept") await mod.confirmStoreSuggestion(data.idLeilao);
+    else if (data.action === "dismiss") await mod.dismissStoreSuggestion(data.idLeilao);
+    else await mod.undoAutoStore(data.idLeilao);
   });
 
 export const approveShipment = createServerFn({ method: "POST" })

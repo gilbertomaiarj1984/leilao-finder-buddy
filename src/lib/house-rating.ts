@@ -59,6 +59,10 @@ export type RatingsPayload = {
   noGuard: Record<string, true>;
   /** Loja informada por pregão (id do pregão → loja), em qualquer tela — não só nas compras. */
   stores: Record<string, string>;
+  /** Pregões em que a loja foi ligada SOZINHA (id → chave do contato que levou a ela). */
+  autoStores: Record<string, string>;
+  /** Lojas SUGERIDAS por contato fraco, aguardando "Confirmar" / "Não é" (id → loja e chave). */
+  suggestions: Record<string, { store: string; via: string }>;
 };
 
 export const EMPTY_RATINGS: RatingsPayload = {
@@ -67,6 +71,8 @@ export const EMPTY_RATINGS: RatingsPayload = {
   guarded: {},
   noGuard: {},
   stores: {},
+  autoStores: {},
+  suggestions: {},
 };
 
 /**
