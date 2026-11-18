@@ -66,6 +66,15 @@ describe("vinil x não-vinil", () => {
       false,
     );
     expect(looksNonVinyl("LP Cher - Heart of Stone")).toBe(false);
+    // HQ/gibi/quadrinhos, mesmo com "disco" no texto
+    expect(
+      looksNonVinyl("Hq Um Sinal do Espaço Will Eisner HQ antiga, por se tratar de disco"),
+    ).toBe(true);
+    expect(looksNonVinyl("Lote HQs Corrieri Dei Piccoli 02 HQ antiga")).toBe(true);
+    expect(looksNonVinyl("LIVRO História em Quadrinhos Comunicação em Massa")).toBe(true);
+    expect(looksNonVinyl("Lote 3 gibis antigos - disco")).toBe(true);
+    expect(isVinylTitle("Hq The Tomb Of Dracula HQ antiga")).toBe(false);
+    expect(looksNonVinyl("LP Trilha sonora do filme Quadrinhos")).toBe(false);
   });
 });
 

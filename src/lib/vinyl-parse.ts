@@ -115,6 +115,7 @@ function isNonRecordObject(title: string): boolean {
   return NON_RECORD_OBJECT_RE.test(t) && !RECORD_PHRASE_RE.test(t);
 }
 
+const COMICS_RE = /\b(?:hqs?|gibis?|quadrinhos?)\b/;
 const DVD_BLURAY_RE = /\b(?:dvds?|blu[-\s]?ray|lds?|laser\s*-?\s*discs?|laserdiscs?)\b/;
 
 // Ficha de disco usada por casas dedicadas a vinil (ex.: Disco de Vinil, discodevinil.com):
@@ -142,6 +143,7 @@ export function isVinylTitle(title: string): boolean {
   if (isNonRecordObject(title)) return false;
   const t = ` ${normalize(title)} `;
   if (DVD_BLURAY_RE.test(t) && !VINYL_STRONG_RE.test(t)) return false;
+  if (COMICS_RE.test(t) && !VINYL_STRONG_RE.test(t)) return false;
   if (RECORD_SPEC_RE.test(t) && !NON_VINYL_HINTS.some((hint) => t.includes(hint))) return true;
   const hasVinyl = VINYL_HINTS.some((hint) =>
     hint.length <= 3 ? new RegExp(`\\b${hint}\\b`).test(t) : t.includes(hint),
@@ -168,6 +170,9 @@ export function looksNonVinyl(title: string): boolean {
   // sinal FORTE de vinil (LP, vinil, compacto…). Achado v0.85.4 ("DVD - Box Carnivàle - 6
   // discos", "Box em Blu Ray Saga Completa de Star Wars… 3 discos de bônus").
   if (DVD_BLURAY_RE.test(t) && !VINYL_STRONG_RE.test(t)) return true;
+  // HQ/gibi/quadrinhos: as casas listam na categoria de vinil e a descrição costuma citar
+  // "disco" ou nada — "disco" sozinho não salva, só sinal FORTE de vinil (LP, vinil…).
+  if (COMICS_RE.test(t) && !VINYL_STRONG_RE.test(t)) return true;
   const mentionsVinyl =
     t.includes("vinil") ||
     t.includes("vinyl") ||
