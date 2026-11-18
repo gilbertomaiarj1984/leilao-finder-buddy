@@ -10,7 +10,7 @@
   Vinil" — o site renomeou de "Disco de vinil" em 2026-10; o `tp=` antigo devolve "Nenhum", 0 lotes,
   sem erro: **se a varredura "zerar", confira o nome da categoria na lista `tipo…` da listagem**)
   → **todo lote já é vinil**; não exigir palavra-chave no título, só descartar CD/DVD/LD (Laser Disc)/K7
-  (`looksNonVinyl`, em `vinyl-parse.ts`).
+  (`looksNonVinyl`, em `vinyl-parse.ts`). HQ/gibi/quadrinhos sem sinal forte de vinil também são descartados (0.197.1).
 - **Login (`authFetch`)** só para a **conta**: env `LEILOESBR_EMAIL` / `LEILOESBR_SENHA`.
   - **Vigias** (lê até `MAX_ACCOUNT_PAGES`=100 páginas): `conta_site.asp?l=8` → `listWatchedFromSite` (cards `.oc-item`,
     `data-watch="idPeca,email,idLeilao,base"`, preço em `<b class="pb-1">`).
