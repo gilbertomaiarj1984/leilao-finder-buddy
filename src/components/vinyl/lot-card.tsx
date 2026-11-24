@@ -6,6 +6,7 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  Star,
   Trash2,
 } from "lucide-react";
 import { demandAgeLabel, isDemandStale } from "@/lib/lot-demand";
@@ -82,6 +83,8 @@ function LotCardDesktop({
   onDismissTrash,
   lookout,
   onToggleLookout,
+  followed,
+  onToggleFollow,
   onResolveLookout,
   origin,
   dateBar,
@@ -128,6 +131,10 @@ function LotCardDesktop({
   // `onResolveLookout` (decisão por lote, aprendida em `app_state.lookout_links`).
   lookout?: { on: boolean; hit: LookoutHit | null; maxPrice: number | null };
   onToggleLookout?: () => void;
+  // Vigiados: acompanhar este lote (sobe para o painel "Acompanhando" com o pregão da casa). O
+  // botão ★ só aparece com `onToggleFollow`.
+  followed?: boolean;
+  onToggleFollow?: () => void;
   onResolveLookout?: (decision: "confirm" | "dismiss") => void;
   // Barra superior de origem (visão "Por artista" dos Vigiados): casa, pregão e data. A cor
   // segue o estado do card — amarelo vigiando, verde ganhando, vermelho coberto.
@@ -545,6 +552,20 @@ function LotCardDesktop({
               )}
               <span className="sr-only">{lot.watched ? "Parar de vigiar" : "Vigiar"}</span>
             </Button>
+            {onToggleFollow ? (
+              <Button
+                size="sm"
+                variant={followed ? "secondary" : "ghost"}
+                title={followed ? "Acompanhando — clique para parar" : "Acompanhar este lote"}
+                aria-pressed={!!followed}
+                onClick={onToggleFollow}
+              >
+                <Star
+                  className={`h-4 w-4 ${followed ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"}`}
+                />
+                <span className="sr-only">{followed ? "Parar de acompanhar" : "Acompanhar"}</span>
+              </Button>
+            ) : null}
             <LotBidScheduleButton lot={lot} className="h-9 w-9" />
             {onToggleLookout ? (
               <Button

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 
 import { getPresencialNow } from "@/lib/leiloesbr.functions";
@@ -30,4 +30,29 @@ export function usePresencialNow(url: string | null | undefined) {
     now && now.peca !== null && now.total !== null && now.peca < now.total,
   );
   return { now, isFinished, inProgress };
+}
+
+/**
+ * Várias casas de uma vez (painel "Acompanhando"): `url → lote em pregão agora`, com a MESMA
+ * chave de query do `usePresencialNow` (cada casa compartilha a consulta com o resto do app).
+ */
+export function usePresencialNowMap(urls: string[]) {
+  const fetchNow = useServerFn(getPresencialNow);
+  return useQueries({
+    queries: urls.map((url) => ({
+      queryKey: ["presencial-now", url] as const,
+      queryFn: () => fetchNow({ data: { url } }),
+      staleTime: 30 * 1000,
+      refetchInterval: 60 * 1000,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
+    })),
+    combine: (results) => {
+      const map = new Map<string, NonNullable<(typeof results)[number]["data"]>>();
+      results.forEach((r, i) => {
+        if (r.data) map.set(urls[i]!, r.data);
+      });
+      return map;
+    },
+  });
 }
