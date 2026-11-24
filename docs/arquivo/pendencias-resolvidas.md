@@ -297,3 +297,24 @@ idLeilao)` (`leiloesbr-catalog.server.ts`, já existente, usada por `enrich`/`co
 ## Web Push nativo e selo no ícone do PWA (resolvido na v0.138.0)
 
 Eram as duas primeiras pendências do PWA (v0.137.0). Ver `docs/areas/ui.md`, "PWA instalável".
+
+## Movido de `docs/pendencias.md` em 24/11/2026 (limpeza de itens já feitos)
+
+> Atualização (v0.143.2): já feitos dos itens da revisão — memoização de `marketFor`/`conditionFor`,
+> `getAllLotAiLean`, teto do estado por IA, hash do prompt pelo texto, `basis` normalizado e testes dos
+> parsers de resposta. (v0.146.0: a tracklist agora é carregada sob demanda — `getLotAi` manda só
+> `hasTracklist`.) Continuam abertos: as duplicações/camadas e o restante da lista acima.
+
+> Atualização (v0.144.0): feitos — «Meus lances» com nota/mercado/estado, De olho com veredicto de mercado, «Oportunidade»
+> de mercado no lugar da gravada pela IA, blocos «em breve» no painel. Lista completa de pendências e dos testes
+> manuais: `docs/checklist-ia.md`.
+
+- **Alerta "vigiado passou/está abaixo do teto de lance"**~~ feito na v0.171.0 (ver `docs/areas/infra.md`). Texto original:
+- **Alerta "vigiado passou/está abaixo do teto de lance"**: exige o valor AO VIVO do lote (a varredura geral
+  defasa até 6 h) e a conta de mercado no servidor (`getAllLotMarket` + `withConditionAnchor` + `lotEconomics`,
+  como o `daily-digest`). Pensar em aviso de **cruzamento** (snapshot lote → "abaixo"/"acima" em `app_state`), não
+  de "continua abaixo". Sem `lot_market` casado o alerta não existe.
+
+- ~~`DUP(lot-insights)`~~ resolvido em v0.164.0: home e Análise usam as mesmas funções puras de
+  `src/lib/lot-insight-build.ts`; a home segue com as queries escopadas e os acessores por lote, que alimentam os
+  diálogos de decisão da Coleção.

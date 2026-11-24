@@ -59,7 +59,7 @@ obrigatório em todo PR (`src/lib/version.ts` + `package.json`), rodapé de atri
   parsing/grading/matching) + `knip` (código/export/dependência sem uso). `bun run build` à parte.
 - **Schema consolidado em `supabase/setup.sql`, re-executável (tudo `IF NOT EXISTS`).** Não é
   mais Supabase hospedado (Postgres próprio no VPS, ver `docs/areas/infra.md`) — em **produção**, `deploy.yml` reaplica `setup.sql` sozinho a cada push pra
-  `main`/`vps` (`docker compose exec postgres psql -f /docker-entrypoint-initdb.d/01-setup.sql`,
+  `main` (`docker compose exec postgres psql -f /docker-entrypoint-initdb.d/01-setup.sql`,
   depois do `up -d`), então uma tabela/coluna nova já existe no próximo deploy sem passo manual.
   Localmente, aplicar com `psql -f supabase/setup.sql` contra o Postgres do `docker compose` de
   dev (ou recriar o volume). Migrações incrementais em `supabase/migrations/` continuam só como

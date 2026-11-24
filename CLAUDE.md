@@ -2,22 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Leia primeiro, nesta ordem:** `AGENTS.md` (convenções de trabalho) e
-> `docs/notas-desenvolvimento.md` (índice curto: restrições, arquitetura de dados, mapa da
-> documentação). Depois, **só a página de `docs/areas/` da área que vai mexer** (scraping, UI,
-> IA, coleção…) — é a fonte da mecânica fina, mais confiável que o código sozinho. Não leia
-> `CHANGELOG.md` nem `docs/arquivo/` inteiros: use `grep` quando precisar do histórico. O código
-> é refatorado com frequência — prefira `grep` por nome de função a caminhos/linhas exatos.
+@AGENTS.md
+
+> Depois de AGENTS.md, leia `docs/notas-desenvolvimento.md` (índice: restrições, arquitetura de
+> dados, mapa) e **só a página de `docs/areas/` da área em que vai mexer** — é mais confiável que o
+> código sozinho. Não leia `CHANGELOG.md` nem `docs/arquivo/` inteiros: use `grep`. O código é
+> refatorado com frequência: prefira `grep` por nome de função a caminhos/linhas exatos.
 
 ## O que é o app
 
-Garimpa discos de vinil em leilão no LeilõesBR e casas parceiras, agrupando por dia → casa de
-leilão → artista, com vigia e lances sincronizados com a conta do usuário, avaliação por IA e
-âncora de preço do Discogs. Stack: **TanStack Start** (React 19 + SSR) + **Postgres** próprio
-(via `postgres.js`) + **Google OAuth** direto, deploy em **VPS** (Docker Compose + Caddy, build
-via Vite + Nitro preset `node-server`), atualização periódica via **GitHub Actions**.
-Migração do free tier anterior para VPS único (cutover concluído) documentada em
-`docs/arquivo/economia-fase-2-vps-unico.md`.
+Garimpa discos de vinil em leilão (LeilõesBR e casas parceiras), agrupando por dia → casa →
+artista, com vigia/lances sincronizados com a conta, avaliação por IA e âncora de preço do Discogs.
+Stack e histórico: `docs/notas-desenvolvimento.md`.
 
 ## Comandos
 
@@ -44,13 +40,6 @@ caso em `tests/`. O ambiente tem **acesso irrestrito à internet**: scraping e c
 podem ser testados contra o site real (LeilõesBR e casas parceiras) durante a implementação.
 Login/lance só com credenciais fornecidas pelo usuário; nunca dar lance nem alterar a conta sem
 pedido explícito.
-
-## Convenções de trabalho
-
-Ver `AGENTS.md` (fonte única — responder em PT, branch a partir de `origin/main`, bump de
-versão obrigatório em todo PR, atualizar a documentação (página da área + `CHANGELOG.md`) antes de mesclar,
-`supabase/setup.sql` reaplicado automaticamente em produção a cada deploy — ver
-`docs/notas-desenvolvimento.md`, "Restrições do ambiente").
 
 ## Arquitetura
 
@@ -106,17 +95,14 @@ versão obrigatório em todo PR, atualizar a documentação (página da área + 
   Tailwind v4 via `@tailwindcss/vite`.
 - **Banco**: Postgres próprio (rodando em container, no `docker-compose.yml`); schema
   consolidado em `supabase/setup.sql` (nome histórico, mantido — schema puro, sem nada
-  específico do Supabase); histórico incremental em `supabase/migrations/`. Tabelas
-  principais: `lots`, `known_artists`, `app_state`, `seen_auctions`, `lot_ai`, `lot_ident`,
-  `lot_market`, `lot_condition`, `lot_sales`, `lookout_items`, `collection_items` (a antiga Sondagem, `wantlist_items`, foi migrada para o De olho e removida).
+  específico do Supabase); histórico incremental em `supabase/migrations/`. Lista das tabelas: `docs/notas-desenvolvimento.md` ("Restrições do ambiente").
 - **Fotos da Coleção**: arquivos em disco (`COLLECTION_DIR`, volume Docker), servidos pelo
   Caddy em produção (`/collection/*`, `Cache-Control` 7 dias) — ver `Caddyfile` e
   `src/lib/collection-storage.server.ts`.
 - **Deploy**: `docker-compose.yml` (`caddy` + `app` + `postgres:17` + `backup`) num VPS único;
   `.github/workflows/deploy.yml` builda as imagens (`Dockerfile` do app, preset
-  `node-server`; `docker/backup/Dockerfile` do backup) e publica no GHCR a cada push nas
-  branches `main` (produção, pós-cutover da Fase 6) ou `vps` (ainda usada pela Fase 7/preview
-  deployments), depois faz `docker compose pull && up -d` por SSH.
+  `node-server`; `docker/backup/Dockerfile` do backup) e publica no GHCR a cada push na
+  `main` (produção), depois faz `docker compose pull && up -d` por SSH.
 - **Backup/monitoramento**: `pg_dump` diário do serviço `backup` para o Cloudflare R2
   (retenção por lifecycle no bucket, não no script); ping pro healthchecks.io no fim/erro
   do `refresh.yml` (`HEALTHCHECKS_PING_URL`, opcional). FKs `ON DELETE CASCADE` de
