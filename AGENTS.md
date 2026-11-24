@@ -1,62 +1,45 @@
 # Notas para agentes
 
-Este projeto é um app **TanStack Start** (React 19 + SSR, build com Vite + Nitro),
-com **Postgres** próprio como backend e deploy em **VPS** (Docker Compose + Caddy).
+App **TanStack Start** (React 19 + SSR, Vite + Nitro) com **Postgres** próprio, deploy em **VPS**
+(Docker Compose + Caddy). Mapa da documentação e arquitetura de dados: `docs/notas-desenvolvimento.md`
+(leia inteiro) e, depois, **só a página de `docs/areas/` da área em que vai mexer**. Este arquivo é a
+fonte única das **convenções de trabalho**.
 
-> **Antes de começar, leia `docs/notas-desenvolvimento.md`** (índice curto) e só a página de
-> `docs/areas/` da área que vai mexer. Arquitetura resumida no `CLAUDE.md`; este arquivo é a
-> fonte única das **convenções de trabalho**.
-
-> **Migração pra VPS concluída.** `main` é a branch de produção e de trabalho. **Não usar `vps`
-> como base** (ficou parada, sem uso; o preview via Dokploy foi desligado em 12/11/2026). Histórico
-> completo em `docs/arquivo/economia-fase-2-vps-unico.md`.
+> `main` é a branch de produção e de trabalho. **Não usar `vps` como base** (parada, sem uso; o
+> preview via Dokploy foi desligado em 12/11/2026). Histórico: `docs/arquivo/economia-fase-2-vps-unico.md`.
 
 ## Convenções de trabalho
 
-- **ESCOPO (regra de sessão):** este repositório é SÓ o app de leilão (`leilao-finder-buddy`). Se a
-  branch/sessão é do `pdf-unite-and-print` (gerador de etiquetas), NUNCA ler, editar, commitar,
-  dar push ou abrir PR aqui — e, numa sessão daqui, nunca tocar no `pdf-unite-and-print`. Não
-  aplicar pedido, código, commit ou doc de um projeto no outro; se o pedido parecer ser do outro,
-  perguntar antes. Resumos falam de um projeto por vez.
-- **Antes de implementar, avaliar o que já existe para reaproveitar** (helpers, server functions,
-  componentes, fluxos como o de capas da Coleção) e, ao terminar, **avaliar se algo descoberto
-  melhora outros pontos do app** — aplicar se for pequeno e seguro, senão registrar em
-  `docs/pendencias.md`.
-- **Código repetido (regra permanente):** ao tocar numa área, procure duplicação e **ajuste na mesma
-  entrega** (extraia para um ponto único, com teste) quando for pequeno e seguro. Quando não der
-  (grande demais, sem teste, risco para código que funciona), **deixe a marca `// DUP(<tema>): …`**
-  no código repetido e registre em `docs/pendencias.md` ("Código repetido"). Para achar as marcas:
-  `grep -rn "DUP(" src`. Quem mexer numa cópia marcada deve consolidar todas as cópias do tema.
-  Já consolidado: `titleHash` (`ai-eval.server.ts`), leitura de JSON de resposta de IA
-  (`json-extract.ts`), faixas do veredicto (`lot-score.ts`), e `lot-score.ts` como casa das funções
-  puras de nota/mercado (antes em `components/`, importadas pelo servidor).
 - **Responder em português** ao interagir com o usuário.
-- **Recriar a branch de trabalho a partir de `origin/main` antes de cada tarefa.**
-- Fluxo: branch de trabalho → PR **para `main`** → merge.
-- **Rodar `bun run check` antes de todo push** (lint + typecheck + testes + knip).
-- **Atualizar a documentação antes de mesclar QUALQUER PR**: mudança de mecânica na página da
-  área em `docs/areas/`, uma linha no topo do `CHANGELOG.md`, pendência nova em
-  `docs/pendencias.md` (resolvida vai para `docs/arquivo/pendencias-resolvidas.md`). O índice
-  `docs/notas-desenvolvimento.md` só muda se mudar o mapa/restrições/arquitetura de dados.
-- **Subir a versão do app em TODO PR:** bump em `src/lib/version.ts` (`APP_VERSION`) e
-  no `package.json`, seguindo semver (PATCH=correção, MINOR=nova função, MAJOR=quebra).
-  É o número mostrado no rodapé em produção. **Obrigatório** — o CI `version-bump.yml`
-  falha o PR se a versão não subir. Coloque a versão no título do PR (ex.: `v0.2.0 — …`).
-- Rodapé de atribuição em qualquer post no GitHub; commits terminam com
-  `Co-Authored-By: Claude ...`.
-- **Nunca editar `Caddyfile` sem validar a sintaxe antes de mandar pro VPS** — `deploy.yml`
-  aplica direto em produção a cada push na `main`, sem passo de revisão manual no meio. Baixar o
-  binário oficial do Caddy (não precisa de Docker: `curl -fsSL -o caddy.tar.gz
-"https://github.com/caddyserver/caddy/releases/download/vX.Y.Z/caddy_X.Y.Z_linux_amd64.tar.gz"`,
-  extrair, `caddy validate --config Caddyfile --adapter caddyfile` com as envs via `VAR=valor`
-  na frente do comando) e, se mexer em matcher/expressão/roteamento novo, também `caddy run`
-  numa porta alternativa (`http_port`/`https_port` no bloco global) pra testar de verdade antes
-  do push — já causou crash-loop de produção duas vezes (v0.69.5: env vazia virando bloco
-  Caddyfile inválido; ver `docs/arquivo/economia-fase-2-vps-unico.md`, Fase 7).
-- **Uma mudança de `Caddyfile` só vale de verdade em produção depois do `caddy reload`
-  no `deploy.yml`** — `docker compose up -d` não recria/reinicia um serviço só porque o
-  CONTEÚDO de um arquivo montado via bind mount mudou (mesma classe de bug do `.env`,
-  v0.69.5/v0.69.8). Achado com um bug de verdade no v0.69.21-23: o Caddy ficou rodando a
-  config antiga por 3 deploys seguidos sem ninguém perceber, porque o arquivo no disco do
-  VPS mudava mas o processo nunca recarregava. `deploy.yml` já faz `docker compose exec
-caddy caddy reload` depois do `up -d` — não remover isso.
+- **Escopo:** este repo é SÓ o app de leilão. Nunca ler/editar/commitar no `pdf-unite-and-print`
+  (gerador de etiquetas) a partir daqui, nem aplicar pedido de um projeto no outro; na dúvida,
+  perguntar antes.
+- **Fluxo:** recriar a branch a partir de `origin/main` antes de cada tarefa → PR **para `main`** → merge.
+- **Antes de push:** `bun run check` (lint + typecheck + testes + knip). Ao mexer em parsing,
+  grading ou matching, acrescente um caso em `tests/`.
+- **Versão em TODO PR:** subir `APP_VERSION` em `src/lib/version.ts` e `version` no `package.json`
+  (semver: PATCH=correção, MINOR=função nova, MAJOR=quebra) e pôr a versão no título do PR
+  (`v0.2.0 — …`). O CI `version-bump.yml` falha o PR se a versão não subir.
+- **Documentação antes de mesclar QUALQUER PR:** mecânica que mudou → página da área em
+  `docs/areas/`; 1 linha no topo do `CHANGELOG.md`; pendência nova → `docs/pendencias.md`
+  (resolvida → `docs/arquivo/pendencias-resolvidas.md`). O índice `docs/notas-desenvolvimento.md`
+  só muda se mudar o mapa, as restrições ou a arquitetura de dados.
+- **Reaproveitar antes de criar:** antes de criar helper, server function ou componente, procure
+  com `grep` em `src/lib` e `src/components`. Ao terminar, se algo descoberto melhora outro ponto
+  e é pequeno e seguro, aplique; senão registre em `docs/pendencias.md`.
+- **Código repetido:** ao tocar numa área, consolide duplicação pequena e segura na mesma entrega
+  (com teste). Se não der, deixe `// DUP(<tema>): …` no código e registre em `docs/pendencias.md`
+  ("Código repetido"). Achar as marcas: `grep -rn "DUP(" src`; quem mexer numa cópia consolida
+  todas as do tema.
+- **GitHub:** rodapé de atribuição em qualquer post; commits terminam com `Co-Authored-By: Claude ...`.
+- **Sem lance e sem alterar a conta** da LeilõesBR/casas sem pedido explícito; login só com
+  credenciais fornecidas pelo usuário. Scraping público pode ser testado contra o site real.
+
+## Caddyfile (já derrubou produção duas vezes)
+
+- **Validar antes do push:** `deploy.yml` aplica direto em produção a cada push na `main`. Baixe o
+  binário oficial do Caddy (sem Docker) e rode `caddy validate --config Caddyfile --adapter caddyfile`
+  (envs via `VAR=valor` na frente); se mexeu em matcher/roteamento, teste também com `caddy run`
+  numa porta alternativa. Passo a passo e histórico (v0.69.5, v0.69.21-23): `docs/areas/infra.md`.
+- **Não remover o `caddy reload`** do `deploy.yml`: `docker compose up -d` não reinicia o serviço
+  quando só o conteúdo de um arquivo montado muda.

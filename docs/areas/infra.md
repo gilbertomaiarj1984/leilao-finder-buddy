@@ -91,6 +91,21 @@ pull && up -d`, disparado a cada push em `vps`). `version-bump.yml` passou a com
   Postgres e o app do AgendaBoa participam dessa rede; o AgendaBoa deve usar banco e role próprios.
   ⚠️ O deploy recria o container do Postgres (breve indisponibilidade) — mesclar fora do cron/backup.
 
+## Editar o `Caddyfile` com segurança (movido do AGENTS.md na v0.200.1)
+
+- **Validar antes do push.** `deploy.yml` aplica direto em produção a cada push na `main`. Baixe o
+  binário oficial (não precisa de Docker): `curl -fsSL -o caddy.tar.gz
+  "https://github.com/caddyserver/caddy/releases/download/vX.Y.Z/caddy_X.Y.Z_linux_amd64.tar.gz"`,
+  extraia e rode `caddy validate --config Caddyfile --adapter caddyfile` com as envs via `VAR=valor`
+  na frente do comando. Se mexer em matcher/expressão/roteamento, rode também `caddy run` numa porta
+  alternativa (`http_port`/`https_port` no bloco global) para testar de verdade.
+- **Por quê:** já causou crash-loop de produção duas vezes (v0.69.5: env vazia virando bloco
+  inválido; ver `docs/arquivo/economia-fase-2-vps-unico.md`, Fase 7).
+- **`caddy reload` no `deploy.yml` é obrigatório.** `docker compose up -d` não reinicia um serviço só
+  porque o CONTEÚDO de um arquivo montado por bind mount mudou (mesma classe de bug do `.env`,
+  v0.69.5/v0.69.8). Na v0.69.21-23 o Caddy rodou a config antiga por 3 deploys seguidos sem ninguém
+  perceber. O `deploy.yml` faz `docker compose exec caddy caddy reload` depois do `up -d`: não remover.
+
 ## Ferramenta separada: `tools/missleiloes-sniper.user.js`
 
 Userscript (Tampermonkey/bookmarklet) que roda **na página do pregão ao vivo** do missleiloes
