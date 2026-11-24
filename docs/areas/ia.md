@@ -132,7 +132,7 @@ razao_preco_vs_mediana}`), calculado por `past-sales.server.ts` (`loadPastSales`
   > lote, coletâneas, álbum não identificado) nunca entram. Na UI: `PastSalesBlock` em `ScoreDetails`
   > (`useLotPastSales`, busca ao abrir o detalhe) com o link «ver no Analytics».
   > **Perfil do colecionador (v0.149.0):** bloco `colecionador` → `perfil_do_colecionador` (ver
-  > `docs/areas/colecao-sondagem-compras.md`); `collector-profile.server.ts` lê interesses, De olho (+ vínculos), Coleção
+  > `docs/areas/de-olho.md`); `collector-profile.server.ts` lê interesses, De olho (+ vínculos), Coleção
   > e a lista de termos negados a cada lote de lotes (sem cache) e `profileForLot` devolve só o resultado por lote.
   > Ainda fora do prompt: tracklist e correções do usuário (ver `docs/pendencias.md`).
 - **Painel de IA — `/ia-painel` (v0.143.0):** configuração em `app_state.ai_panel` (`PanelConfig`,

@@ -1,7 +1,7 @@
 // Cache curto (com deduplicação de chamadas simultâneas) das leituras da CONTA do LeilõesBR
 // (`conta_site.asp` l=8 vigiados / l=4 lances — até 100 páginas cada, com login). Antes a home,
 // o auto-refresh da aba Vigiados e o De olho (`getAccountLots`) liam a conta cada um por conta
-// própria, muitas vezes ao mesmo tempo. Ver `docs/areas/ui.md`, "Desempenho das telas (v0.155.0)".
+// própria, muitas vezes ao mesmo tempo. Ver `docs/areas/ui-desempenho-e-estado.md`, "Desempenho das telas (v0.155.0)".
 
 /** Idade máxima aceita pelas telas (home, De olho). Cron/alertas passam 0 (sempre fresco). */
 export const ACCOUNT_CACHE_MS = 60_000;

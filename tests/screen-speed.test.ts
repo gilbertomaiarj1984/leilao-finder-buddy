@@ -5,7 +5,7 @@ import { parseLotScope } from "@/lib/lot-scope";
 import { recentDayKeys, upcomingDayKeys } from "@/lib/vinyl-parse";
 import { accumSnapshot, mergeWatchedAccum } from "@/lib/watched-accum";
 
-// Desempenho das telas (v0.155.0) — ver docs/areas/ui.md, "Desempenho das telas".
+// Desempenho das telas (v0.155.0) — ver docs/areas/ui-desempenho-e-estado.md, "Desempenho das telas".
 
 /** dayKey `YYYY-MM-DD` → data da conta `dd/mm/yyyy`. */
 const br = (dayKey: string) => dayKey.split("-").reverse().join("/");

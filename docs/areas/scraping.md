@@ -68,7 +68,7 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
     lote), `lot-sales.server.ts` (histórico de vendas/Vinil Analytics), `unsold-lots.server.ts`
     (v0.89.0 — lotes SEM lance, o inverso do filtro de vendas: mesma fonte, sob DEMANDA do
     usuário pela visão "Sem lance" de hoje (v0.156.0; casa ao vivo = só lotes já passados; "sem lance" = `isUnsoldCatalogLot`, não só `!sold`, v0.185.2), não pelo cron; cache em memória de 5 min evita bater o
-    catálogo de novo ao abrir/fechar a lista na mesma sessão — ver `docs/areas/ui.md`).
+    catálogo de novo ao abrir/fechar a lista na mesma sessão — ver `docs/areas/ui-pregao-ao-vivo.md`).
 - **Demanda (`VISITAS`/`QTDLANCE`) fresca (v0.196.0):** `lot_condition.views/bids` eram gravados só quando o lote entrava na fila de estado (`enrichConditions`), e nunca relidos. Agora `refreshDemand` (`lot-demand.server.ts`, step `demand`, workflow `refresh-demand.yml` a cada ~30 min, 08h–23h30 BRT) pega os lotes de hoje e amanhã com `demand_at` > 15 min (ou nulo), agrupa por leilão, lê o catálogo e faz UPDATE só de `views`/`bids`/`demand_at`. Leilões de leitura mais velha primeiro (`pickDemandAuctions`, puro); casa que falha (403) só é pulada; catálogo em HTML antigo (sem os campos) não sobrescreve. Na home, os vigiados+lances (`lot-details`, `peca.asp`) têm `refetchInterval` de 5 min quando algum lote do bloco é "quente" (`isHotLot`: pregão hoje começando em até 2 h ou há < 1 h) e o `bids` ao vivo substitui o do catálogo em `demandFor`. Limite conhecido: casas sem `QTDLANCE` no catálogo (ex.: RT Leilões) seguem sem o número de lances (aparece "—").
 - **Peça individual** (`leiloesbr-lot-details.server.ts`, `fetchLotDetails`/`fetchOne`):
   `<domínio>/peca.asp?id=<idPeca>` (ou `?ID=`, mesma página) — HTML com um JSON `loadData`
@@ -231,7 +231,7 @@ LIVRE no HTML (ex.: procurar a palavra "vendido" solta) já causou bug real nest
   `seen_auctions` é outro módulo, `recordAuctions`; tolerável, best-effort).
 
 - **Retenção de `lots` (v0.92.0):** a poda não apaga mais dias passados até 10 dias atrás, nem futuros até +14; `step=chunk|enrich&ext=1` cobre +5..+14 (cron 02:00 BRT).
-- **`step=lookoutnotify` (v0.107.0):** aviso push (ntfy.sh) de lotes novos que casam com um disco "De olho" — roda no `refresh.yml` depois de aiident/market e antes de `prune`, com `call_soft` (não reprova a run). No-op sem `NTFY_TOPIC`. Mecânica em `colecao-sondagem-compras.md`.
+- **`step=lookoutnotify` (v0.107.0):** aviso push (ntfy.sh) de lotes novos que casam com um disco "De olho" — roda no `refresh.yml` depois de aiident/market e antes de `prune`, com `call_soft` (não reprova a run). No-op sem `NTFY_TOPIC`. Mecânica em `de-olho.md`.
 
 - **O que é "Lote" (v0.182.0, `discBundleKind`):** só conjunto de verdade — `lote/kit com|de|contendo` com palavra de disco
   até 3 palavras adiante, quantidade ≥3 com a unidade no PLURAL (`3 compactos`, `cinco discos`), `diversos/vários` colado a

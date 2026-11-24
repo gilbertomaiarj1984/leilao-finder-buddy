@@ -296,7 +296,7 @@ idLeilao)` (`leiloesbr-catalog.server.ts`, já existente, usada por `enrich`/`co
 
 ## Web Push nativo e selo no ícone do PWA (resolvido na v0.138.0)
 
-Eram as duas primeiras pendências do PWA (v0.137.0). Ver `docs/areas/ui.md`, "PWA instalável".
+Eram as duas primeiras pendências do PWA (v0.137.0). Ver `docs/areas/ui-mobile-pwa.md`, "PWA instalável".
 
 ## Movido de `docs/pendencias.md` em 24/11/2026 (limpeza de itens já feitos)
 
