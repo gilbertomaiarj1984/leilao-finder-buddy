@@ -114,9 +114,8 @@ versão obrigatório em todo PR, atualizar a documentação (página da área + 
   `src/lib/collection-storage.server.ts`.
 - **Deploy**: `docker-compose.yml` (`caddy` + `app` + `postgres:17` + `backup`) num VPS único;
   `.github/workflows/deploy.yml` builda as imagens (`Dockerfile` do app, preset
-  `node-server`; `docker/backup/Dockerfile` do backup) e publica no GHCR a cada push nas
-  branches `main` (produção, pós-cutover da Fase 6) ou `vps` (ainda usada pela Fase 7/preview
-  deployments), depois faz `docker compose pull && up -d` por SSH.
+  `node-server`; `docker/backup/Dockerfile` do backup) e publica no GHCR a cada push na
+  `main` (produção), depois faz `docker compose pull && up -d` por SSH.
 - **Backup/monitoramento**: `pg_dump` diário do serviço `backup` para o Cloudflare R2
   (retenção por lifecycle no bucket, não no script); ping pro healthchecks.io no fim/erro
   do `refresh.yml` (`HEALTHCHECKS_PING_URL`, opcional). FKs `ON DELETE CASCADE` de

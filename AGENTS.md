@@ -7,12 +7,9 @@ com **Postgres** próprio como backend e deploy em **VPS** (Docker Compose + Cad
 > `docs/areas/` da área que vai mexer. Arquitetura resumida no `CLAUDE.md`; este arquivo é a
 > fonte única das **convenções de trabalho**.
 
-> **Migração pra VPS concluída (Fase 6, cutover feito).** `main` voltou a ser a branch de
-> produção/trabalho padrão — **não usar `vps` como base pra novo trabalho** (ela só segue viva
-> em paralelo enquanto durar a Fase 7/preview deployments via Dokploy, trabalho de outra sessão;
-> sincronizar com `main` de vez em quando, não abrir PR novo contra ela). Ver
-> `docs/arquivo/economia-fase-2-vps-unico.md` pra histórico completo do cutover e achados de produção
-> pós-migração (ex.: colisão de alias de rede com o preview do Dokploy).
+> **Migração pra VPS concluída.** `main` é a branch de produção e de trabalho. **Não usar `vps`
+> como base** (ficou parada, sem uso; o preview via Dokploy foi desligado em 12/11/2026). Histórico
+> completo em `docs/arquivo/economia-fase-2-vps-unico.md`.
 
 ## Convenções de trabalho
 
@@ -34,9 +31,7 @@ com **Postgres** próprio como backend e deploy em **VPS** (Docker Compose + Cad
   (`json-extract.ts`), faixas do veredicto (`lot-score.ts`), e `lot-score.ts` como casa das funções
   puras de nota/mercado (antes em `components/`, importadas pelo servidor).
 - **Responder em português** ao interagir com o usuário.
-- **Recriar a branch de trabalho a partir de `origin/main` antes de cada tarefa**
-  (pós-cutover da Fase 6 — ver aviso acima; `main` é a branch de produção/base agora).
-  **Não usar `vps` como base pra trabalho novo.**
+- **Recriar a branch de trabalho a partir de `origin/main` antes de cada tarefa.**
 - Fluxo: branch de trabalho → PR **para `main`** → merge.
 - **Rodar `bun run check` antes de todo push** (lint + typecheck + testes + knip).
 - **Atualizar a documentação antes de mesclar QUALQUER PR**: mudança de mecânica na página da
@@ -50,7 +45,7 @@ com **Postgres** próprio como backend e deploy em **VPS** (Docker Compose + Cad
 - Rodapé de atribuição em qualquer post no GitHub; commits terminam com
   `Co-Authored-By: Claude ...`.
 - **Nunca editar `Caddyfile` sem validar a sintaxe antes de mandar pro VPS** — `deploy.yml`
-  aplica direto em produção a cada push na `vps`, sem passo de revisão manual no meio. Baixar o
+  aplica direto em produção a cada push na `main`, sem passo de revisão manual no meio. Baixar o
   binário oficial do Caddy (não precisa de Docker: `curl -fsSL -o caddy.tar.gz
 "https://github.com/caddyserver/caddy/releases/download/vX.Y.Z/caddy_X.Y.Z_linux_amd64.tar.gz"`,
   extrair, `caddy validate --config Caddyfile --adapter caddyfile` com as envs via `VAR=valor`

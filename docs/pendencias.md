@@ -199,15 +199,6 @@ Achados da revisão que ficaram para depois (nenhum quebra nada hoje):
   `marketBasis`, starvation de `enrichConditions`.
 - `ai-provider-controls.tsx`: trocar provedor+modelo grava em duas server functions (pode gravar só uma).
 
-> Atualização (v0.143.2): já feitos dos itens da revisão — memoização de `marketFor`/`conditionFor`,
-> `getAllLotAiLean`, teto do estado por IA, hash do prompt pelo texto, `basis` normalizado e testes dos
-> parsers de resposta. (v0.146.0: a tracklist agora é carregada sob demanda — `getLotAi` manda só
-> `hasTracklist`.) Continuam abertos: as duplicações/camadas e o restante da lista acima.
-
-> Atualização (v0.144.0): feitos — «Meus lances» com nota/mercado/estado, De olho com veredicto de mercado, «Oportunidade»
-> de mercado no lugar da gravada pela IA, blocos «em breve» no painel. Lista completa de pendências e dos testes
-> manuais: `docs/checklist-ia.md`.
-
 ## Lance agendado — o que ficou de fora (v0.191.0)
 
 - Template antigo das casas (RT Leilões): envio implementado mas nunca exercitado; a confirmação relê a página. Validar o campo `lanceclicado` e a resposta com um lance real.
@@ -289,17 +280,9 @@ Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score
 
 ## Análise de Lotes — o que ficou de fora das fases 1–4 (v0.161.0)
 
-- ~~**Alerta "vigiado passou/está abaixo do teto de lance"**~~ feito na v0.171.0 (ver `docs/areas/infra.md`). Texto original:
-- **Alerta "vigiado passou/está abaixo do teto de lance"**: exige o valor AO VIVO do lote (a varredura geral
-  defasa até 6 h) e a conta de mercado no servidor (`getAllLotMarket` + `withConditionAnchor` + `lotEconomics`,
-  como o `daily-digest`). Pensar em aviso de **cruzamento** (snapshot lote → "abaixo"/"acima" em `app_state`), não
-  de "continua abaixo". Sem `lot_market` casado o alerta não existe.
 - **Medir o efeito do contexto do prompt** (comparar notas antes/depois da v0.142.0 pela calibração do painel).
 - **Pendentes exatos**: a cobertura da Análise conta lote sem `lot_ai`/sem nota; o servidor também reavalia por
   mudança de título/versão do prompt (hash só existe no servidor). Uma server fn de contagem daria o número exato.
-- ~~`DUP(lot-insights)`~~ resolvido em v0.164.0: home e Análise usam as mesmas funções puras de
-  `src/lib/lot-insight-build.ts`; a home segue com as queries escopadas e os acessores por lote, que alimentam os
-  diálogos de decisão da Coleção.
 - **Pesos do índice de garimpo** são palpite: calibrar com compras reais (`purchases`) antes de tratá-lo como
   critério padrão.
 

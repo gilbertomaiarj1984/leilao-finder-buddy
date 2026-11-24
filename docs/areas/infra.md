@@ -36,8 +36,8 @@ folgado (49/500 MB), mas **egress do Supabase já estourado** e **Active CPU da 
   **`vps`** paralela enquanto a `main` ficou intocada na Vercel; a Fase 6 (cutover, v0.69.13)
   migrou o banco de produção real pro VPS e mesclou `vps` → `main` — `main` voltou a ser a
   branch de trabalho/produção padrão (v0.69.17), Supabase/Vercel mantidos de pé só como rede
-  de reversão (sem prazo definido pra desligar). `vps` segue viva em paralelo só pelo trabalho
-  experimental da Fase 7 (preview deployments via Dokploy, abaixo). A camada de dados saiu por
+  de reversão (sem prazo definido pra desligar). A branch `vps` ficou parada (sem uso) e deixou de disparar deploy e
+  checagem de versão (v0.200.1); a Fase 7 (preview via Dokploy, abaixo) foi desligada em 12/11/2026. A camada de dados saiu por
   um **shim `postgres.js`** que preserva o nome exportado `supabaseAdmin` e é ligado por
   `DATABASE_URL` —
   os 15 arquivos de lógica e toda a UI não mudaram. Auth virou OAuth Google direto (o contrato
