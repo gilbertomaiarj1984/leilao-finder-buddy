@@ -369,7 +369,7 @@ export function groupWatchedByHouse<
 }
 
 /** Um catálogo (`idLeilao`) de uma casa nos vigiados; pode passar por vários dias. */
-type WatchedCatalog<T> = {
+export type WatchedCatalog<T> = {
   idLeilao: string;
   /** Dias (yyyy-mm-dd, crescente) em que o catálogo tem lote vigiado; sem data fica de fora. */
   dayKeys: string[];
@@ -378,7 +378,7 @@ type WatchedCatalog<T> = {
   lots: T[];
 };
 
-type WatchedHouse<T> = {
+export type WatchedHouse<T> = {
   house: string;
   houseUrl: string;
   catalogs: WatchedCatalog<T>[];

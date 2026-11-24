@@ -361,6 +361,29 @@ export function useDashboardData() {
     setClosedHouseSections((prev) => new Set([...prev, ...keys]));
   const openAllHouseSections = (keys: string[]) =>
     setClosedHouseSections((prev) => new Set([...prev].filter((key) => !keys.includes(key))));
+  // Vigiados: casas ocultas (só some da tela, os vigiados seguem salvos) e lotes acompanhados
+  // (sobem para o painel "Acompanhando", com o pregão da casa). Ficam no navegador (por aparelho).
+  const [hiddenHouses, setHiddenHouses] = usePersistedState<Set<string>>(
+    "watched-hidden-houses",
+    new Set(),
+    setCodec,
+  );
+  const hideHouse = (house: string) => setHiddenHouses((prev) => new Set([...prev, house]));
+  const showHouse = (house: string) =>
+    setHiddenHouses((prev) => new Set([...prev].filter((h) => h !== house)));
+  const showAllHouses = () => setHiddenHouses(new Set());
+  const [followedIds, setFollowedIds] = usePersistedState<Set<string>>(
+    "watched-followed-lots",
+    new Set(),
+    setCodec,
+  );
+  const toggleFollow = (lotId: string) =>
+    setFollowedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(lotId)) next.delete(lotId);
+      else next.add(lotId);
+      return next;
+    });
   // Casas já verificadas (chave `${dia}|${casa}`): marcador verde que move a casa
   // para a seção "Já verificadas" no fim da lista. PERSISTE no servidor (app_state,
   // via getVerifiedHouses/setVerifiedHouses) — antes ficava só no localStorage do
@@ -1859,6 +1882,12 @@ export function useDashboardData() {
     openAllHouseSections,
     closedHouseSections,
     toggleHouseSection,
+    hiddenHouses,
+    hideHouse,
+    showHouse,
+    showAllHouses,
+    followedIds,
+    toggleFollow,
     currentPriceFor,
     myBidById,
     nextBidById,

@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Binoculars, Disc3, Eye, EyeOff, Loader2 } from "lucide-react";
+import { ArrowRightLeft, Binoculars, Disc3, Eye, EyeOff, Loader2, Star } from "lucide-react";
 import { LotBidScheduleButton } from "@/components/vinyl/lot-bid-schedule-button";
 import { HouseNameWithStore } from "@/components/vinyl/auction-store";
 import { HouseLight } from "@/components/vinyl/house-light";
@@ -279,6 +279,27 @@ export function LotCardMobile(props: LotCardProps) {
               <EyeOff className="h-5 w-5" />
             )}
           </button>
+          {props.onToggleFollow ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                props.onToggleFollow?.();
+              }}
+              aria-pressed={!!props.followed}
+              aria-label={props.followed ? "Parar de acompanhar" : "Acompanhar"}
+              className={cn(
+                "grid h-10 w-10 place-items-center rounded-xl border",
+                props.followed
+                  ? "border-yellow-500 bg-yellow-500/15"
+                  : "border-border bg-background text-muted-foreground",
+              )}
+            >
+              <Star
+                className={cn("h-5 w-5", props.followed && "fill-yellow-400 text-yellow-400")}
+              />
+            </button>
+          ) : null}
           <LotBidScheduleButton lot={lot} className="h-10 w-10 rounded-xl" />
         </div>
       </article>

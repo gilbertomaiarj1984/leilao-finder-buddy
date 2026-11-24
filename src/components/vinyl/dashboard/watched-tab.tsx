@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  EyeOff,
   ExternalLink,
   GripVertical,
   Loader2,
@@ -46,6 +47,7 @@ import {
 import { FUTURE_LABEL, FUTURE_TAB, isFutureDay } from "@/lib/day-bar";
 import { queryKeys, useAnalyticsAliasesQuery } from "@/lib/queries";
 
+import { FollowPanel } from "./follow-panel";
 import type { DashboardData } from "./use-dashboard-data";
 import { ConfirmMoveDialog, WatchedLotDialog, WatchedArtistDialog } from "./watched-artist-dialog";
 
@@ -116,6 +118,12 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
     statFilter,
     clearStatFilter,
     toggleStatFilter,
+    hiddenHouses,
+    hideHouse,
+    showHouse,
+    showAllHouses,
+    followedIds,
+    toggleFollow,
   } = d;
   // Enquanto a aba Vigiados está aberta, atualiza em silêncio a cada minuto: o valor atual/próximo
   // lance (`peca.asp`) todo minuto e a LISTA da conta (vigiados + lances, até 100 páginas cada) só
@@ -297,7 +305,22 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                     watchedMatchesSearch(lot, searchNorm, albumFor(lot)),
                 ).length - filtered.length
               : 0;
-          const houses = groupWatchedByHouseCatalog(filtered);
+          // Casas ocultas: somem da lista (os vigiados seguem salvos) e voltam pela faixa "Ocultas".
+          const houses = groupWatchedByHouseCatalog(
+            filtered.filter((l) => !hiddenHouses.has(l.house)),
+          );
+          const hiddenNames = [...new Set(watchedList.map((l) => l.house))]
+            .filter((h) => hiddenHouses.has(h))
+            .sort((a, b) => a.localeCompare(b, "pt-BR"));
+          // Painel "Acompanhando": lotes com ★ (da aba de dias futuros só os futuros, da principal os demais).
+          const followedHouses = groupWatchedByHouseCatalog(
+            watchedList.filter(
+              (l) =>
+                followedIds.has(l.id) &&
+                !hiddenHouses.has(l.house) &&
+                isFuture(watchedDateToKey(l.date)) === futureOnly,
+            ),
+          );
           const allDayKeys = [
             ...new Set(houses.flatMap((h) => h.catalogs.flatMap((c) => c.dayKeys))),
           ].sort();
@@ -336,11 +359,12 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
           const artistGroups = groupWatchedByArtist(
             filtered.filter(
               (lot) =>
-                activeDay === "all" ||
-                hasDay(
-                  { dayKeys: catalogDays.get(`${lot.house}|${lot.idLeilao}`) ?? [] },
-                  activeDay,
-                ),
+                !hiddenHouses.has(lot.house) &&
+                (activeDay === "all" ||
+                  hasDay(
+                    { dayKeys: catalogDays.get(`${lot.house}|${lot.idLeilao}`) ?? [] },
+                    activeDay,
+                  )),
             ),
             curation,
           );
@@ -388,6 +412,8 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                     : undefined
                 }
                 busy={pending === lot.idPeca}
+                followed={followedIds.has(lot.id)}
+                onToggleFollow={() => toggleFollow(lot.id)}
                 ai={aiFor(lot)}
                 market={marketFor(lot)}
                 album={albumFor(lot)}
@@ -446,6 +472,32 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                     Limpar filtro
                   </button>
                 </p>
+              ) : null}
+              <FollowPanel d={d} houses={followedHouses} />
+              {hiddenNames.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-border px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">
+                    Casas ocultas ({hiddenNames.length}) — os vigiados continuam salvos:
+                  </span>
+                  {hiddenNames.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => showHouse(name)}
+                      title="Mostrar esta casa de novo"
+                      className="inline-flex items-center gap-1 rounded border border-border bg-secondary px-2 py-0.5 hover:bg-secondary/70"
+                    >
+                      {name} <span className="font-medium text-primary">Mostrar</span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={showAllHouses}
+                    className="ml-auto font-medium text-primary hover:underline"
+                  >
+                    Mostrar todas
+                  </button>
+                </div>
               ) : null}
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
@@ -744,6 +796,14 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                           </button>
                           <HouseUf house={houseGroup.house} />
                           <HouseLight house={houseGroup.house} />
+                          <button
+                            type="button"
+                            onClick={() => hideHouse(houseGroup.house)}
+                            title="Ocultar esta casa (os vigiados continuam salvos)"
+                            className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-secondary"
+                          >
+                            <EyeOff className="h-3.5 w-3.5" /> Ocultar
+                          </button>
                           {single ? (
                             <AuctionStore idLeilao={single.idLeilao} house={houseGroup.house} />
                           ) : null}
