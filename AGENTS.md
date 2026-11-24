@@ -15,11 +15,13 @@ fonte única das **convenções de trabalho**.
   (gerador de etiquetas) a partir daqui, nem aplicar pedido de um projeto no outro; na dúvida,
   perguntar antes.
 - **Fluxo:** recriar a branch a partir de `origin/main` antes de cada tarefa → PR **para `main`** → merge.
-- **Antes de push:** `bun run check` (lint + typecheck + testes + knip). Ao mexer em parsing,
-  grading ou matching, acrescente um caso em `tests/`.
+- **Antes de push:** `bun run check` (lint + typecheck + testes + knip). Um hook em
+  `.claude/settings.json` roda isso sozinho em todo `git push` e bloqueia se falhar. Ao mexer em
+  parsing, grading ou matching, acrescente um caso em `tests/`.
 - **Versão em TODO PR:** subir `APP_VERSION` em `src/lib/version.ts` e `version` no `package.json`
   (semver: PATCH=correção, MINOR=função nova, MAJOR=quebra) e pôr a versão no título do PR
   (`v0.2.0 — …`). O CI `version-bump.yml` falha o PR se a versão não subir.
+- **Fechar PR:** siga a skill `fechar-pr` (`.claude/skills/fechar-pr/SKILL.md`).
 - **Documentação antes de mesclar QUALQUER PR:** mecânica que mudou → página da área em
   `docs/areas/`; 1 linha no topo do `CHANGELOG.md`; pendência nova → `docs/pendencias.md`
   (resolvida → `docs/arquivo/pendencias-resolvidas.md`). O índice `docs/notas-desenvolvimento.md`
@@ -40,6 +42,6 @@ fonte única das **convenções de trabalho**.
 - **Validar antes do push:** `deploy.yml` aplica direto em produção a cada push na `main`. Baixe o
   binário oficial do Caddy (sem Docker) e rode `caddy validate --config Caddyfile --adapter caddyfile`
   (envs via `VAR=valor` na frente); se mexeu em matcher/roteamento, teste também com `caddy run`
-  numa porta alternativa. Passo a passo e histórico (v0.69.5, v0.69.21-23): `docs/areas/infra.md`.
+  numa porta alternativa (skill `validar-caddyfile`). Passo a passo e histórico (v0.69.5, v0.69.21-23): `docs/areas/infra.md`.
 - **Não remover o `caddy reload`** do `deploy.yml`: `docker compose up -d` não reinicia o serviço
   quando só o conteúdo de um arquivo montado muda.

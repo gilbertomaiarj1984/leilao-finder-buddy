@@ -43,7 +43,7 @@ function lotAuctionId(lot: Props["lot"]): string {
 
 /**
  * Martelo do lote: abre o modal para agendar UM lance neste lote (alvo). O gatilho padrão é o
- * lote anterior. Mecânica e regras: `docs/areas/ui.md` ("Agendamentos de lance").
+ * lote anterior. Mecânica e regras: `docs/areas/ui-agendamentos.md` ("Agendamentos de lance").
  */
 export function LotBidScheduleButton({ lot, className }: Props) {
   const [open, setOpen] = useState(false);

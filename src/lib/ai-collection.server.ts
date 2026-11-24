@@ -1,5 +1,5 @@
 // IA da Coleção: identifica + descreve UM disco da coleção do usuário (artista/álbum/ano +
-// descritivo), só texto. Chamada síncrona (sem Batches). Ver docs/areas/colecao-sondagem-compras.md.
+// descritivo), só texto. Chamada síncrona (sem Batches). Ver docs/areas/colecao.md.
 
 import { runText, type AiProvider, type AiRequest } from "./ai-provider.server";
 import {

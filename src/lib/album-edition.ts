@@ -1,7 +1,7 @@
 /**
  * Edição de um disco (original × reedição) e identidade "mesmo disco?" — funções PURAS/client-safe.
  *
- * Duas marcas manuais (caixas de seleção, ver `docs/areas/colecao-sondagem-compras.md`):
+ * Duas marcas manuais (caixas de seleção, ver `docs/areas/colecao.md`):
  *  - `modern`: reedição MODERNA (relançamento recente). É OUTRO disco para o colecionador: não
  *    casa com o original, não conta como "já tenho" do original e não se funde com ele.
  *  - `period`: reedição de ÉPOCA que é o MESMO disco do original mesmo com ano diferente (só
