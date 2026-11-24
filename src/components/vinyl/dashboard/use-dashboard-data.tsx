@@ -274,10 +274,6 @@ export function useDashboardData() {
   // digitado vive isolado em `LotSearchBox` para não re-renderizar esta árvore inteira a cada
   // tecla (era isso que travava a digitação, mesmo já não filtrando em tempo real).
   const [search, setSearch] = usePersistedState<string>("home-search", "");
-  const [watchedViewDay, setWatchedViewDay] = usePersistedState<string | null>(
-    "home-watched-view-day",
-    null,
-  );
   const [bidsViewDay, setBidsViewDay] = usePersistedState<string | null>(
     "home-bids-view-day",
     null,
@@ -1792,7 +1788,7 @@ export function useDashboardData() {
   const [noBidFilter, setNoBidFilter] = useState(false);
 
   usePersistedScroll(
-    `home:${tab}:${watchedViewDay ?? ""}:${bidsViewDay ?? ""}:${unsoldViewDay ?? ""}`,
+    `home:${tab}:${bidsViewDay ?? ""}:${unsoldViewDay ?? ""}`,
     navReady && !lots.isLoading && unsoldViewHydrated,
   );
 
@@ -1830,7 +1826,6 @@ export function useDashboardData() {
     houseBidFlags,
     showFinishedDays,
     artistFilter,
-    watchedViewDay,
     bidsViewDay,
     unsoldViewDay,
     setUnsoldViewDay,
@@ -1844,7 +1839,6 @@ export function useDashboardData() {
     refreshDay,
     refreshingDay,
     setBidsViewDay,
-    setWatchedViewDay,
     refreshWatched,
     refreshingWatched,
     refreshBids,

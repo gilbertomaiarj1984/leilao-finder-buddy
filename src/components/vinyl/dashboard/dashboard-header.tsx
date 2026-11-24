@@ -74,7 +74,6 @@ export function DashboardHeader({
     futureCount,
     todayUnsold,
     setUnsoldViewDay,
-    setWatchedViewDay,
     setBidsViewDay,
     unsoldViewDay,
     noBidFilter,
@@ -268,7 +267,6 @@ export function DashboardHeader({
                     <button
                       type="button"
                       onClick={() => {
-                        setWatchedViewDay(null);
                         setBidsViewDay(null);
                         setUnsoldViewDay(unsoldViewDay === day ? null : day);
                         setTab(`day-${index}`);
@@ -290,7 +288,6 @@ export function DashboardHeader({
                     type="button"
                     onClick={() => {
                       const on = noBidFilter && tab === `day-${index}`;
-                      setWatchedViewDay(null);
                       setBidsViewDay(null);
                       setUnsoldViewDay(null);
                       setNoBidFilter(!on);
