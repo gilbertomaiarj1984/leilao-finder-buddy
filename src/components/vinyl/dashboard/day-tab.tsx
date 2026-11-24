@@ -42,7 +42,6 @@ import {
   watchedMatchesSearch,
   type HouseGroup,
 } from "@/components/vinyl/grouping";
-import { LotCard } from "@/components/vinyl/lot-card";
 import { DayLotListButton } from "@/components/vinyl/house-lot-list";
 import { useDayNoBid } from "@/components/vinyl/use-day-no-bid";
 import { countUnsoldHouses } from "@/components/vinyl/use-today-unsold";
@@ -164,11 +163,9 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     showFinishedDays,
     matchesSearch,
     artistFilter,
-    watchedViewDay,
     unsoldViewDay,
     setUnsoldViewDay,
     todayUnsold,
-    watched,
     watchedList,
     searchNorm,
     albumFor,
@@ -180,7 +177,6 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     refreshDay,
     refreshingDay,
     setBidsViewDay,
-    setWatchedViewDay,
     refreshWatchedAndBids,
     refreshingWatchedAndBids,
     analyzeScope,
@@ -191,18 +187,13 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     closeAllHouseSections,
     closedHouseSections,
     toggleHouseSection,
-    currentPriceFor,
-    myBidById,
     nextBidById,
     pending,
     aiFor,
     marketFor,
     conditionFor,
-    demandFor,
     ownedFor,
-    lookoutProps,
     setOwnedPanelLot,
-    editTags,
     soldById,
     toggle,
     bids,
@@ -274,16 +265,13 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
     return houseLots;
   };
   const isUnsoldView = unsoldViewDay === day && index === TODAY_INDEX;
-  const isWatchedView = watchedViewDay === day;
-  // Vigiados do dia: a busca principal também filtra aqui.
+  // Vigiados do dia (só a contagem, em texto): a busca principal também filtra aqui.
   const watchedForDay = watchedList.filter(
     (lot) =>
       watchedDateToKey(lot.date) === day &&
       watchedMatchesSearch(lot, searchNorm, albumFor(lot)) &&
       matchesStatFilter(lot.idPeca, watchedIds, bidStatusById, statFilter),
   );
-  // Vigiados do dia agrupados por casa e ordenados por nº do lote.
-  const watchedByHouse = groupWatchedByHouse(watchedForDay);
   const isBidsView = bidsViewDay === day;
   // Lances do dia: a busca principal também filtra aqui.
   const bidsForDay = bidsWithHouseUrl.filter(
@@ -294,7 +282,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
 
   return (
     <TabsContent value={`day-${index}`} className="space-y-6">
-      {navFooterHost && !isUnsoldView && !isWatchedView && !isBidsView
+      {navFooterHost && !isUnsoldView && !isBidsView
         ? createPortal(
             <DayLotListButton
               d={d}
@@ -328,32 +316,17 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                   )}
                 </button>
               ) : null}
-              <button
-                type="button"
-                onClick={() => {
-                  setBidsViewDay(null);
-                  setUnsoldViewDay(null);
-                  setWatchedViewDay((cur) => (cur === day ? null : day));
-                }}
-                title="Ver vigiados deste dia"
-                aria-label={`Ver vigiados de ${dayLabel(day, index - TODAY_INDEX)}`}
-                aria-pressed={isWatchedView}
-                className={
-                  isWatchedView
-                    ? "inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2 py-1 text-xs font-medium text-primary"
-                    : "inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
-                }
+              <span
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+                title="Lotes vigiados neste dia (use a aba Vigiados para ver a lista)"
               >
                 <Eye className="h-3.5 w-3.5" />
-                Vigiados do dia
-                {watchedForDay.length ? (
-                  <span className="ml-0.5 text-muted-foreground">{watchedForDay.length}</span>
-                ) : null}
-              </button>
+                {watchedForDay.length === 1 ? "1 vigiado" : `${watchedForDay.length} vigiados`}
+                {index === TODAY_INDEX ? " hoje" : " neste dia"}
+              </span>
               <button
                 type="button"
                 onClick={() => {
-                  setWatchedViewDay(null);
                   setUnsoldViewDay(null);
                   setBidsViewDay((cur) => (cur === day ? null : day));
                 }}
@@ -401,7 +374,7 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                 )}
                 Analisar dia
               </button>
-              {!isWatchedView && !isBidsView && !isUnsoldView ? (
+              {!isBidsView && !isUnsoldView ? (
                 <>
                   <ArtistFilter artists={artists} value={artistFilter} onChange={setArtistFilter} />
                   {artistFilter ? (
@@ -440,15 +413,6 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
                 <span className="text-xs text-muted-foreground">
                   {countUnsoldHouses(todayUnsold)} casa(s) com pregão encerrado ou em andamento
                 </span>
-              ) : isWatchedView ? (
-                <span className="text-xs text-muted-foreground">
-                  {watchedForDay.length} lote(s) vigiado(s) neste dia
-                  {statFilter.size > 0 ? (
-                    <Button variant="ghost" size="sm" onClick={clearStatFilter}>
-                      Limpar filtro de status
-                    </Button>
-                  ) : null}
-                </span>
               ) : (
                 <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   {bidsForDay.length} lance(s) neste dia
@@ -460,7 +424,6 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
           dayBarHost,
         )}
       {finishedToggleHost &&
-        !isWatchedView &&
         !isBidsView &&
         !isUnsoldView &&
         finishedCount > 0 &&
@@ -480,141 +443,6 @@ export function DayTab({ d, day, index }: { d: DashboardData; day: string; index
           dayLabel={dayLabel(day, index - TODAY_INDEX)}
           onBack={() => setUnsoldViewDay(null)}
         />
-      ) : isWatchedView ? (
-        watched.isLoading ? (
-          <Skeleton className="h-40 w-full" />
-        ) : watchedForDay.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Nenhum lote vigiado neste dia{statFilter.size > 0 ? " com este filtro" : ""}.
-          </p>
-        ) : (
-          <div className="space-y-8">
-            {watchedByHouse.length > 1 ? (
-              <button
-                type="button"
-                onClick={() =>
-                  closeAllHouseSections(watchedByHouse.map((g) => `watched-day|${day}|${g.house}`))
-                }
-                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-              >
-                <ChevronUp className="h-3.5 w-3.5" />
-                Fechar todas
-              </button>
-            ) : null}
-            {watchedByHouse.map((houseGroup) => {
-              // Casa com mais de um pregão no dia: sub-cabeçalho por pregão (`AuctionSection`).
-              const auctions = splitByAuction(houseGroup.lots);
-              const multi = auctions.length > 1;
-              const auctionInfo = multi ? null : houseAuctionInfo(day, houseGroup.lots[0]);
-              const houseSectionKey = `watched-day|${day}|${houseGroup.house}`;
-              const isHouseOpen = !closedHouseSections.has(houseSectionKey);
-              const renderWatchedCard = (lot: (typeof houseGroup.lots)[number]) => (
-                <LotCard
-                  key={lot.id}
-                  lot={{
-                    ...lot,
-                    price: currentPriceFor(lot.id, lot.price),
-                    dayKey: watchedDateToKey(lot.date) || lot.date,
-                    watched: true,
-                    myBid: myBidById.get(lot.idPeca),
-                    nextBid: nextBidById.get(lot.id),
-                  }}
-                  busy={pending === lot.idPeca}
-                  ai={aiFor(lot)}
-                  market={marketFor(lot)}
-                  album={albumFor(lot)}
-                  condition={conditionFor(lot)}
-                  demand={demandFor(lot)}
-                  owned={ownedFor(lot)}
-                  {...lookoutProps(lot)}
-                  onOpenOwned={() => setOwnedPanelLot(lot)}
-                  onEditTags={editTags(lot.id)}
-                  bidStatus={bidStatusById.get(lot.idPeca)}
-                  sold={soldById.get(lot.id)}
-                  onToggle={() =>
-                    toggle.mutate({
-                      idPeca: lot.idPeca,
-                      idLeilao: lot.idLeilao,
-                      base: lot.base,
-                      watch: false,
-                    })
-                  }
-                />
-              );
-              return (
-                <section
-                  key={houseGroup.house}
-                  data-house-nav={houseGroup.house}
-                  className="scroll-mt-32 space-y-3"
-                >
-                  <div className="flex flex-wrap items-baseline gap-3 border-b border-border pb-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleHouseSection(houseSectionKey)}
-                      aria-expanded={isHouseOpen}
-                      className="flex items-center gap-2 text-left"
-                    >
-                      {isHouseOpen ? (
-                        <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-                      )}
-                      <span className="text-xl font-semibold tracking-tight text-foreground">
-                        {houseGroup.house}
-                      </span>
-                    </button>
-                    <HouseUf house={houseGroup.house} />
-                    <HouseLight house={houseGroup.house} />
-                    {!multi && houseGroup.lots[0] ? (
-                      <AuctionStore
-                        idLeilao={houseGroup.lots[0].idLeilao}
-                        house={houseGroup.house}
-                      />
-                    ) : null}
-                    <Badge variant="secondary">{houseGroup.lots.length} lote(s)</Badge>
-                    {multi ? <Badge variant="outline">{auctions.length} catálogos</Badge> : null}
-                    <HouseStatBadges
-                      stats={computeHouseStats(houseGroup.lots, watchedIds, bidStatusById)}
-                      active={statFilter}
-                      onToggle={toggleStatFilter}
-                    />
-                    <AuctionStatusInline info={auctionInfo} />
-                    <AuctionHeaderActions
-                      d={d}
-                      house={houseGroup.house}
-                      houseUrl={houseGroup.houseUrl}
-                      info={auctionInfo}
-                      lots={houseGroup.lots}
-                    />
-                  </div>
-                  {!isHouseOpen ? null : multi ? (
-                    <div className="space-y-6 border-l-2 border-border pl-3 sm:pl-5">
-                      {auctions.map((auction) => (
-                        <AuctionSection
-                          key={auction.idLeilao}
-                          d={d}
-                          day={day}
-                          house={houseGroup.house}
-                          houseUrl={houseGroup.houseUrl}
-                          sectionKey={`${houseSectionKey}|${auction.idLeilao}`}
-                          auction={auction}
-                        >
-                          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                            {auction.lots.map(renderWatchedCard)}
-                          </div>
-                        </AuctionSection>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      {houseGroup.lots.map(renderWatchedCard)}
-                    </div>
-                  )}
-                </section>
-              );
-            })}
-          </div>
-        )
       ) : isBidsView ? (
         bids.isLoading ? (
           <Skeleton className="h-40 w-full" />

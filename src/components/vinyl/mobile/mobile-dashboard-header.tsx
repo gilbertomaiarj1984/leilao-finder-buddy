@@ -59,9 +59,7 @@ export function MobileDashboardHeader({
     refreshAll,
     refreshingAll,
     refreshPct,
-    watchedViewDay,
     bidsViewDay,
-    setWatchedViewDay,
     unsoldViewDay,
     setUnsoldViewDay,
     noBidFilter,
@@ -291,32 +289,17 @@ export function MobileDashboardHeader({
           {[
             {
               label: "Todos os lotes",
-              on:
-                watchedViewDay !== day &&
-                bidsViewDay !== day &&
-                unsoldViewDay !== day &&
-                !noBidFilter,
+              on: bidsViewDay !== day && unsoldViewDay !== day && !noBidFilter,
               click: () => {
-                setWatchedViewDay(null);
                 setBidsViewDay(null);
                 setUnsoldViewDay(null);
                 setNoBidFilter(false);
               },
             },
             {
-              label: "Vigiados do dia",
-              on: watchedViewDay === day,
-              click: () => {
-                setBidsViewDay(null);
-                setUnsoldViewDay(null);
-                setWatchedViewDay(watchedViewDay === day ? null : day);
-              },
-            },
-            {
               label: "Lances do dia",
               on: bidsViewDay === day,
               click: () => {
-                setWatchedViewDay(null);
                 setUnsoldViewDay(null);
                 setBidsViewDay(bidsViewDay === day ? null : day);
               },
@@ -325,7 +308,6 @@ export function MobileDashboardHeader({
               label: "Só sem lance",
               on: noBidFilter,
               click: () => {
-                setWatchedViewDay(null);
                 setBidsViewDay(null);
                 setUnsoldViewDay(null);
                 setNoBidFilter(!noBidFilter);
@@ -337,7 +319,6 @@ export function MobileDashboardHeader({
                     label: `Sem lance (${unsoldCount})`,
                     on: unsoldViewDay === day,
                     click: () => {
-                      setWatchedViewDay(null);
                       setBidsViewDay(null);
                       setUnsoldViewDay(unsoldViewDay === day ? null : day);
                     },
