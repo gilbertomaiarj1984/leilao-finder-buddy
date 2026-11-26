@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { etaMinutes, followTone, lotDistance } from "../src/lib/follow";
+import { etaMinutes, followTone, lotDistance, timelineLayout } from "../src/lib/follow";
 
 describe("lotDistance", () => {
   test("diferença entre o lote do item e o lote em pregão", () => {
@@ -39,5 +39,29 @@ describe("etaMinutes", () => {
     expect(etaMinutes({ ...base, peca: 30, distance: 10, now: start - 60000 })).toBeNull();
     expect(etaMinutes({ ...base, peca: 30, distance: 0, now: start + 60 * 60000 })).toBeNull();
     expect(etaMinutes({ ...base, peca: 30, distance: 10, now: start + 20 * 3600000 })).toBeNull();
+  });
+});
+
+describe("timelineLayout", () => {
+  test("usa a peça estimada (lote − deslocamento) e mostra todos os itens", () => {
+    // lote 364 = peça 174 de 190 → deslocamento 190; #384 é peça 194 (outro dia) e a escala cresce.
+    const r = timelineLayout(["293", "358", "384"], { lote: "364", peca: 174, total: 190 });
+    expect(r.pins).toHaveLength(3);
+    const pcts = r.pins.map((p) => p.pct);
+    expect(new Set(pcts).size).toBe(3);
+    expect(pcts[0]!).toBeLessThan(pcts[1]!);
+    expect(pcts[1]!).toBeLessThan(pcts[2]!);
+    expect(r.endPct).not.toBeNull();
+    expect(r.endPct!).toBeLessThan(100);
+  });
+  test("tudo dentro do total → sem marca de fim", () => {
+    const r = timelineLayout(["100", "150"], { lote: "120", peca: 120, total: 200 });
+    expect(r.endPct).toBeNull();
+    expect(r.progressPct).toBe(60);
+  });
+  test("lote sem número é ignorado e posições ficam entre 1% e 99%", () => {
+    const r = timelineLayout(["abc", "5000"], { lote: "10", peca: 10, total: 100 });
+    expect(r.pins).toHaveLength(1);
+    expect(r.pins[0]!.pct).toBeLessThanOrEqual(99);
   });
 });

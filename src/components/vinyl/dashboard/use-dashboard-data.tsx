@@ -2,6 +2,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
+  hiddenByDayCodec,
   localDayKey,
   setCodec,
   shiftSavedDayTab,
@@ -363,15 +364,28 @@ export function useDashboardData() {
     setClosedHouseSections((prev) => new Set([...prev].filter((key) => !keys.includes(key))));
   // Vigiados: casas ocultas (só some da tela, os vigiados seguem salvos) e lotes acompanhados
   // (sobem para o painel "Acompanhando", com o pregão da casa). Ficam no navegador (por aparelho).
-  const [hiddenHouses, setHiddenHouses] = usePersistedState<Set<string>>(
-    "watched-hidden-houses",
-    new Set(),
-    setCodec,
+  // "Ocultar" vale só para o dia em que foi feito: guardamos casa → dia (YYYY-MM-DD) e a casa
+  // volta sozinha no dia seguinte (se tiver leilão de novo).
+  const [hiddenOnDay, setHiddenOnDay] = usePersistedState<Record<string, string>>(
+    "watched-hidden-houses-by-day",
+    {},
+    hiddenByDayCodec,
   );
-  const hideHouse = (house: string) => setHiddenHouses((prev) => new Set([...prev, house]));
+  const hiddenToday = localDayKey();
+  const hiddenHouses = useMemo(
+    () =>
+      new Set(
+        Object.entries(hiddenOnDay)
+          .filter(([, day]) => day === hiddenToday)
+          .map(([house]) => house),
+      ),
+    [hiddenOnDay, hiddenToday],
+  );
+  const hideHouse = (house: string) =>
+    setHiddenOnDay((prev) => ({ ...prev, [house]: localDayKey() }));
   const showHouse = (house: string) =>
-    setHiddenHouses((prev) => new Set([...prev].filter((h) => h !== house)));
-  const showAllHouses = () => setHiddenHouses(new Set());
+    setHiddenOnDay((prev) => Object.fromEntries(Object.entries(prev).filter(([h]) => h !== house)));
+  const showAllHouses = () => setHiddenOnDay({});
   const [followedIds, setFollowedIds] = usePersistedState<Set<string>>(
     "watched-followed-lots",
     new Set(),

@@ -56,6 +56,20 @@ export function usePersistedState<T>(
   return [value, setValue, hydrated];
 }
 
+/** Mapa casa → dia (`YYYY-MM-DD`) em que foi ocultada (Vigiados). Ignora entradas inválidas. */
+export const hiddenByDayCodec: Codec<Record<string, string>> = {
+  encode: (v) => v,
+  decode: (raw) =>
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? Object.fromEntries(
+          Object.entries(raw).filter(
+            (e): e is [string, string] =>
+              typeof e[1] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e[1]),
+          ),
+        )
+      : {},
+};
+
 /** Dia local `YYYY-MM-DD` (para saber se a aba salva "day-N" ainda aponta para o mesmo dia). */
 export function localDayKey(now = new Date()): string {
   const p = (n: number) => String(n).padStart(2, "0");

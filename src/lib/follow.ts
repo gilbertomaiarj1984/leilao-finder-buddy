@@ -41,3 +41,32 @@ export function etaMinutes(opts: {
   if (elapsedMin <= 0 || elapsedMin > MAX_RUN_MIN) return null;
   return Math.max(1, Math.round((elapsedMin / peca) * distance));
 }
+
+type TimelinePin = { index: number; pct: number };
+
+/**
+ * Posição dos itens acompanhados na barra do pregão. O nº do lote não é a peça (o lote 364 pode
+ * ser a peça 174), então a posição estimada é `peça atual + (lote do item − lote atual)`. Itens
+ * de dias seguintes (multi-dia) passam do total do dia: a escala cresce para caber TODOS e
+ * `endPct` marca onde o dia termina (null quando tudo cabe no total). Itens sem nº legível ficam
+ * de fora. `progressPct` é o avanço do pregão nessa mesma escala.
+ */
+export function timelineLayout(
+  lotes: string[],
+  now: { lote: string; peca: number | null; total: number },
+): { pins: TimelinePin[]; endPct: number | null; progressPct: number } {
+  const cur = Number.parseInt(now.lote, 10);
+  const offset = now.peca !== null && Number.isFinite(cur) ? cur - now.peca : 0;
+  const est: { index: number; at: number }[] = [];
+  lotes.forEach((lote, index) => {
+    const n = Number.parseInt(lote, 10);
+    if (Number.isFinite(n)) est.push({ index, at: Math.max(0, n - offset) });
+  });
+  const scale = Math.max(now.total, now.peca ?? 0, ...est.map((e) => e.at));
+  const pct = (v: number) => Math.min(99, Math.max(1, (v / scale) * 100));
+  return {
+    pins: est.map((e) => ({ index: e.index, pct: pct(e.at) })),
+    endPct: scale > now.total ? (now.total / scale) * 100 : null,
+    progressPct: Math.min(100, ((now.peca ?? 0) / scale) * 100),
+  };
+}
