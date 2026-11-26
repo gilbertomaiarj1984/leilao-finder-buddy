@@ -12,7 +12,7 @@ import { HouseUf } from "@/components/vinyl/house-uf";
 import { usePresencialNowMap } from "@/components/vinyl/use-presencial-now";
 import type { PresencialNow } from "@/lib/presencial-now";
 import { bidIsWinning, lotOpenUrl } from "@/lib/vinyl-parse";
-import { etaMinutes, followTone, lotDistance, type FollowTone } from "@/lib/follow";
+import { etaMinutes, followTone, lotDistance, timelineLayout, type FollowTone } from "@/lib/follow";
 
 import type { DashboardData } from "./use-dashboard-data";
 
@@ -57,6 +57,13 @@ function FollowCatalogBlock({
   const tone = HOUSE_TONES[index % HOUSE_TONES.length]!;
   const total = now?.total ?? null;
   const pct = now?.pct ?? null;
+  const layout =
+    now && total
+      ? timelineLayout(
+          catalog.lots.map((l) => l.lote),
+          { lote: now.lote, peca: now.peca, total },
+        )
+      : null;
 
   return (
     <section className={`overflow-hidden rounded-lg border-2 ${tone.box}`}>
@@ -96,24 +103,31 @@ function FollowCatalogBlock({
             <div className="relative h-2.5 rounded bg-muted/60">
               <div
                 className="absolute inset-y-0 left-0 rounded bg-yellow-700/60"
-                style={{ width: `${pct ?? 0}%` }}
+                style={{ width: `${layout?.progressPct ?? pct ?? 0}%` }}
               />
-              {catalog.lots.map((lot) => {
-                const n = Number.parseInt(lot.lote, 10);
-                if (!Number.isFinite(n)) return null;
-                const dist = lotDistance(lot.lote, now.lote);
+              {layout?.endPct != null ? (
+                <span
+                  className="absolute -inset-y-0.5 w-px bg-muted-foreground/70"
+                  style={{ left: `${layout.endPct}%` }}
+                  title="Fim da sequência de hoje — os itens à direita são de outro dia"
+                  aria-hidden
+                />
+              ) : null}
+              {layout?.pins.map(({ index, pct: left }) => {
+                const lot = catalog.lots[index]!;
+                const dist = lotDistance(lot.lote, now!.lote);
                 return (
                   <span
                     key={lot.id}
                     title={`Lote ${lot.lote}`}
                     className={`absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-background ${TONE_PIN[followTone(dist)]}`}
-                    style={{ left: `${Math.min(98, (n / total) * 100)}%` }}
+                    style={{ left: `${left}%` }}
                   />
                 );
               })}
               <span
                 className="absolute -inset-y-1 w-0.5 bg-primary"
-                style={{ left: `${pct ?? 0}%` }}
+                style={{ left: `${layout?.progressPct ?? pct ?? 0}%` }}
                 aria-hidden
               />
             </div>
