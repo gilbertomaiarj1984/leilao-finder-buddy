@@ -199,7 +199,7 @@ export function hasStrongVinylSignal(text: string): boolean {
 // Formatos que NÃO são vinil (inequívocos) — no histórico de vendas/Analytics excluímos o
 // lote inteiro quando aparecem SEM sinal forte de vinil. Cobre DVD/HQ/revista/livro/K7/VHS…
 const NON_VINYL_SALE_RE =
-  /\b(?:dvds?|blu[-\s]?ray|lds?|laser\s*-?\s*discs?|laserdiscs?|vhs|hqs?|gibis?|quadrinhos?|revistas?|livros?|figurinhas?|fita\s*k7|k7|cass?ete?s?)\b/;
+  /\b(?:dvds?|blu[-\s]?ray|lds?|laser\s*-?\s*discs?|laserdiscs?|vhs|hqs?|gibis?|quadrinhos?|revistas?|livros?|figurinhas?|fita\s*k7|k7|cass?ete?s?|cds?|compact\s*discs?|digipaks?)\b/;
 
 /**
  * No contexto de VENDAS/Analytics: true quando o lote é claramente de OUTRO formato

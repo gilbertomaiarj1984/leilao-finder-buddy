@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.203.1** — **Analytics: CDs fora**: `looksNonVinylSale` passa a reconhecer CD/compact disc/digipak (sem sinal forte de vinil) — barra a captura de CDs em `lot_sales` e os esconde do Analytics na leitura (nada é apagado).
 - **0.203.0** — **Analytics: agrupar álbuns (IA) v2, ampla e com capas**: botão "Agrupar álbuns (IA)" no topo varre vários artistas (os com mais álbuns primeiro), a IA vê títulos + uma folha de capas numerada (`album-cover-sheet.server.ts`) e sinaliza grupos "provável igual" (título e capa concordam, já marcados) ou "conferir" (desmarcados); "Juntar" grava tudo de uma vez nos apelidos de álbum. O botão por artista ganhou capas e confiança
 - **0.202.0** — **Analytics: piloto "Agrupar álbuns (IA)"**: botão no artista pede à IA (provedor padrão) quais álbuns são o mesmo disco; a tela mostra a proposta (grupos com aviso vêm desmarcados) e só grava os apelidos de álbum após o aceite; regras duras em `album-grouping.ts` (números de edição diferentes nunca fundem; nome final é sempre um existente)
 - **0.201.1** — **Vigiados**: timeline do pregão mostra todas as bolinhas (posição pela peça estimada, escala cresce em multi-dia) e "Ocultar" casa vale só para o dia (volta no dia seguinte)
