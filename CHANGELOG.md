@@ -4,6 +4,7 @@ Uma linha por versão (mais recente primeiro). Fonte da versão: `src/lib/versio
 (`APP_VERSION`) + `package.json` — bump obrigatório em todo PR. A mecânica atual de cada área
 fica em `docs/areas/`; aqui é só "o que mudou e quando" (para `grep`).
 
+- **0.206.3** — **Vigiados: painel Acompanhando mais limpo**: artista sem "/" solta e álbum sem o artista repetido (`splitArtistAlbum` em `follow.ts`, testado); coluna "faltam/min" e botões ↗/★ mais estreitos para caber mais do álbum e do status.
 - **0.206.2** — **Vigiados: painel Acompanhando legível no celular sem mudar o tamanho da caixa**: 3 linhas compactas (artista / álbum / #lote · valor · status), cada uma em uma linha só, e botões ↗/★ mais estreitos para dar largura ao texto.
 - **0.206.1** — **Vigiados: painel Acompanhando com borda por status e artista/álbum em 2 linhas**: a borda de cada lote segue a dos cards (verde = vencendo, vermelho = coberto, amarelo = só vigiado) e o título pode ocupar 2 linhas (legível no celular).
 - **0.206.0** — **Vigiados: acompanhados (★) e casas ocultas sincronizados entre aparelhos**: o que se marca no desktop aparece no celular e vice-versa (`app_state.watched_prefs`, operação atômica por mudança, `changeWatchedPrefs`/`getWatchedPrefs`; o cache local continua e o que já estava só num aparelho sobe na 1ª abertura). Normalizador e regras testados em `watched-prefs.ts`/`tests/watched-prefs.test.ts`.

@@ -12,7 +12,14 @@ import { HouseUf } from "@/components/vinyl/house-uf";
 import { usePresencialNowMap } from "@/components/vinyl/use-presencial-now";
 import type { PresencialNow } from "@/lib/presencial-now";
 import { bidIsWinning, lotOpenUrl } from "@/lib/vinyl-parse";
-import { etaMinutes, followTone, lotDistance, timelineLayout, type FollowTone } from "@/lib/follow";
+import {
+  etaMinutes,
+  followTone,
+  lotDistance,
+  splitArtistAlbum,
+  timelineLayout,
+  type FollowTone,
+} from "@/lib/follow";
 
 import type { DashboardData } from "./use-dashboard-data";
 
@@ -154,13 +161,7 @@ function FollowCatalogBlock({
           const bidStatus = d.bidStatusById.get(lot.idPeca);
           const winning = !!bidStatus && bidIsWinning(bidStatus);
           // Artista e álbum em linhas separadas (o título costuma vir "Artista - Álbum").
-          const rawAlbum = d.albumFor(lot) ?? lot.title;
-          const artist = lot.artist?.trim() ?? "";
-          const prefix = `${artist} - `;
-          const album =
-            artist && rawAlbum.toLowerCase().startsWith(prefix.toLowerCase())
-              ? rawAlbum.slice(prefix.length)
-              : rawAlbum;
+          const { artist, album } = splitArtistAlbum(lot.artist, d.albumFor(lot) ?? lot.title);
           return (
             <div
               key={lot.id}
@@ -200,7 +201,7 @@ function FollowCatalogBlock({
                 </p>
               </div>
               <div
-                className={`shrink-0 text-right text-xs font-bold leading-tight ${TONE_TEXT[toneKey]}`}
+                className={`shrink-0 text-right text-[11px] font-bold leading-tight ${TONE_TEXT[toneKey]}`}
               >
                 {dist === null ? (
                   <span className="text-xs font-normal text-muted-foreground">
@@ -231,7 +232,7 @@ function FollowCatalogBlock({
                 rel="noreferrer"
                 title="Abrir o lote no site da casa"
                 aria-label="Abrir o lote no site da casa"
-                className="grid h-8 w-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-secondary"
+                className="grid h-8 w-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-secondary"
               >
                 <ExternalLink className="h-4 w-4" />
               </a>
@@ -240,7 +241,7 @@ function FollowCatalogBlock({
                 onClick={() => d.toggleFollow(lot.id)}
                 title="Parar de acompanhar"
                 aria-label="Parar de acompanhar"
-                className="grid h-8 w-8 shrink-0 place-items-center rounded hover:bg-secondary"
+                className="grid h-8 w-7 shrink-0 place-items-center rounded hover:bg-secondary"
               >
                 <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
               </button>

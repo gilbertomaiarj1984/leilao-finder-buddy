@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import { etaMinutes, followTone, lotDistance, timelineLayout } from "../src/lib/follow";
+import {
+  etaMinutes,
+  followTone,
+  lotDistance,
+  splitArtistAlbum,
+  timelineLayout,
+} from "../src/lib/follow";
 
 describe("lotDistance", () => {
   test("diferença entre o lote do item e o lote em pregão", () => {
@@ -63,5 +69,23 @@ describe("timelineLayout", () => {
     const r = timelineLayout(["abc", "5000"], { lote: "10", peca: 10, total: 100 });
     expect(r.pins).toHaveLength(1);
     expect(r.pins[0]!.pct).toBeLessThanOrEqual(99);
+  });
+});
+
+describe("splitArtistAlbum", () => {
+  test("tira a barra solta do artista e o artista repetido no álbum", () => {
+    expect(splitArtistAlbum("Gonzaguinha /", "Gonzaguinha - Caminhos Do Coração")).toEqual({
+      artist: "Gonzaguinha",
+      album: "Caminhos Do Coração",
+    });
+  });
+  test("álbum que só começa com o nome do artista fica como está", () => {
+    expect(splitArtistAlbum("Gilberto Gil", "Gilberto Gil Em Concerto")).toEqual({
+      artist: "Gilberto Gil",
+      album: "Gilberto Gil Em Concerto",
+    });
+  });
+  test("sem artista identificado devolve só o álbum", () => {
+    expect(splitArtistAlbum("", "Gal (1983)")).toEqual({ artist: "", album: "Gal (1983)" });
   });
 });
