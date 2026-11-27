@@ -13,6 +13,7 @@ import {
   splitRecordSpec,
   laterAuctionSlot,
   looksNonVinyl,
+  looksNonVinylSale,
   lotOpenUrl,
   normalizeForMatch,
   parsePrice,
@@ -560,5 +561,17 @@ describe("isLotePassed", () => {
     expect(isLotePassed(null, "40")).toBe(false);
     expect(isLotePassed("", "40")).toBe(false);
     expect(isLotePassed("12", "--")).toBe(false);
+  });
+});
+
+describe("looksNonVinylSale — CDs", () => {
+  test("CD sem sinal forte de vinil é descartado", () => {
+    expect(looksNonVinylSale("CD Caetano Veloso - Transa")).toBe(true);
+    expect(looksNonVinylSale("Cds duplo Legião Urbana - Disco e capa VG+")).toBe(true);
+    expect(looksNonVinylSale("Compact Disc Chico Buarque - Paratodos")).toBe(true);
+  });
+  test("vinil que cita CD no texto continua valendo", () => {
+    expect(looksNonVinylSale("LP Caetano Veloso - Transa (acompanha encarte, sem CD)")).toBe(false);
+    expect(looksNonVinylSale("Disco de vinil Chico Buarque - Construção")).toBe(false);
   });
 });

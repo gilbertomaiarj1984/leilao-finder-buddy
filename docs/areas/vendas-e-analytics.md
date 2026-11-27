@@ -36,6 +36,7 @@ ver "Estrutura do card do catálogo" abaixo; outras casas podem exigir ajuste de
   **artista/título vêm do NOSSO lote já parseado** — não do texto ruidoso do catálogo (que só serve
   para valor + estado). Sem isso, entrava lixo (ex.: "Porta-caixa de fósforos") com artista
   `&ctd=…`. (v0.32.2) Diagnóstico `debugSales(num)` sonda um leilão específico.
+- ⚠️ **CDs (v0.203.1):** `NON_VINYL_SALE_RE` (usado por `looksNonVinylSale`) inclui `cd(s)`/`compact disc`/`digipak`. Barra a captura e, como `makeSalePlacer` reaplica o filtro na LEITURA (título+artista), esconde do Analytics os CDs já gravados sem apagar nada. Lacuna: venda cujo título foi reescrito pela IA sem a palavra "CD" não é pega pelo filtro de leitura — conferir por `orig_text` no banco.
 - **Estado inline:** cada venda guarda `media`/`sleeve`/`score`/`faixa`/`insert_state` via
   `parseConditionFromText` do **descritivo do card** — capturado do **tooltip** (`longestAttr`
   pega o atributo mais longo: `title`/`alt`/`data-*`), que traz o texto completo tipo
