@@ -41,10 +41,12 @@ import {
   runGalleryscan,
   scrapeVinylChunk,
   setVerifiedHouses,
+  changeWatchedPrefs,
 } from "@/lib/leiloesbr.functions";
 import type { AiProvider } from "@/lib/ai-provider";
 import { resolveLotEdition } from "@/lib/album-edition";
 import { toggleWatch } from "@/lib/leiloesbr-watch.functions";
+import type { WatchedPrefsOp } from "@/lib/watched-prefs";
 import { attachLookout, setLookoutLink, toggleLookout } from "@/lib/lookout.functions";
 import {
   lookoutCandidates,
@@ -119,6 +121,7 @@ import {
   patchLotsCaches,
   useBidsQuery,
   useWatchedQuery,
+  useWatchedPrefsQuery,
   queryKeys,
 } from "@/lib/queries";
 import {
@@ -366,7 +369,7 @@ export function useDashboardData() {
   // (sobem para o painel "Acompanhando", com o pregão da casa). Ficam no navegador (por aparelho).
   // "Ocultar" vale só para o dia em que foi feito: guardamos casa → dia (YYYY-MM-DD) e a casa
   // volta sozinha no dia seguinte (se tiver leilão de novo).
-  const [hiddenOnDay, setHiddenOnDay] = usePersistedState<Record<string, string>>(
+  const [hiddenOnDay, setHiddenOnDay, hiddenHydrated] = usePersistedState<Record<string, string>>(
     "watched-hidden-houses-by-day",
     {},
     hiddenByDayCodec,
@@ -381,23 +384,89 @@ export function useDashboardData() {
       ),
     [hiddenOnDay, hiddenToday],
   );
-  const hideHouse = (house: string) =>
-    setHiddenOnDay((prev) => ({ ...prev, [house]: localDayKey() }));
-  const showHouse = (house: string) =>
-    setHiddenOnDay((prev) => Object.fromEntries(Object.entries(prev).filter(([h]) => h !== house)));
-  const showAllHouses = () => setHiddenOnDay({});
-  const [followedIds, setFollowedIds] = usePersistedState<Set<string>>(
+  const [followedIds, setFollowedIds, followedHydrated] = usePersistedState<Set<string>>(
     "watched-followed-lots",
     new Set(),
     setCodec,
   );
-  const toggleFollow = (lotId: string) =>
+  // Sincronia entre aparelhos: o servidor (`app_state.watched_prefs`) é a fonte; o que está no
+  // aparelho (`usePersistedState` acima) é cache de leitura instantânea. Cada mudança é uma
+  // operação pequena e atômica (`changeWatchedPrefs`), então celular e desktop não se sobrescrevem.
+  // Ao abrir/voltar ao app, o que veio do servidor substitui o cache — exceto enquanto há envio
+  // pendente (evita a marcação "piscar"). Erro de leitura: mantém o que há no aparelho.
+  const prefsQuery = useWatchedPrefsQuery();
+  const runChangePrefs = useServerFn(changeWatchedPrefs);
+  const prefsPending = useRef(0);
+  // Cada aparelho sobe UMA vez o que já tinha guardado (a 1ª abertura depois da atualização), mesmo
+  // se o servidor já tiver coisas de outro aparelho — `merge` só soma, nunca apaga. Depois disso o
+  // servidor manda.
+  const [prefsMigrated, setPrefsMigrated, migratedHydrated] = usePersistedState(
+    "watched-prefs-migrated",
+    false,
+  );
+  const sendPrefsOp = (op: WatchedPrefsOp) => {
+    prefsPending.current += 1;
+    void runChangePrefs({ data: { op } })
+      .then((fresh) => queryClient.setQueryData(queryKeys.watchedPrefs, fresh))
+      .catch((error: unknown) =>
+        toast.error(
+          `Não foi possível sincronizar com os outros aparelhos: ${(error as Error)?.message ?? ""}`,
+        ),
+      )
+      .finally(() => {
+        prefsPending.current -= 1;
+      });
+  };
+  const serverPrefs = prefsQuery.data;
+  useEffect(() => {
+    if (!serverPrefs || prefsPending.current > 0) return;
+    if (!migratedHydrated || !followedHydrated || !hiddenHydrated) return;
+    if (!prefsMigrated) {
+      setPrefsMigrated(true);
+      if (followedIds.size > 0 || Object.keys(hiddenOnDay).length > 0) {
+        sendPrefsOp({
+          t: "merge",
+          followed: [...followedIds],
+          hidden: hiddenOnDay,
+          at: new Date().toISOString(),
+        });
+        return;
+      }
+    }
+    setFollowedIds((cur) => {
+      const next = Object.keys(serverPrefs.followed);
+      return cur.size === next.length && next.every((id) => cur.has(id)) ? cur : new Set(next);
+    });
+    setHiddenOnDay((cur) =>
+      JSON.stringify(cur) === JSON.stringify(serverPrefs.hidden) ? cur : serverPrefs.hidden,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reage só ao que chega do servidor
+  }, [serverPrefs, migratedHydrated, followedHydrated, hiddenHydrated]);
+  const hideHouse = (house: string) => {
+    const day = localDayKey();
+    setHiddenOnDay((prev) => ({ ...prev, [house]: day }));
+    sendPrefsOp({ t: "hide", house, day });
+  };
+  const showHouse = (house: string) => {
+    setHiddenOnDay((prev) => Object.fromEntries(Object.entries(prev).filter(([h]) => h !== house)));
+    sendPrefsOp({ t: "show", house });
+  };
+  const showAllHouses = () => {
+    setHiddenOnDay({});
+    sendPrefsOp({ t: "showAll" });
+  };
+  const toggleFollow = (lotId: string) => {
+    const on = !followedIds.has(lotId);
     setFollowedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(lotId)) next.delete(lotId);
-      else next.add(lotId);
+      if (on) next.add(lotId);
+      else next.delete(lotId);
       return next;
     });
+    sendPrefsOp(
+      on ? { t: "follow", id: lotId, at: new Date().toISOString() } : { t: "unfollow", id: lotId },
+    );
+  };
   // Casas já verificadas (chave `${dia}|${casa}`): marcador verde que move a casa
   // para a seção "Já verificadas" no fim da lista. PERSISTE no servidor (app_state,
   // via getVerifiedHouses/setVerifiedHouses) — antes ficava só no localStorage do

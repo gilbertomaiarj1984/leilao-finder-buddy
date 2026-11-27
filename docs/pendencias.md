@@ -3,7 +3,7 @@
 > Só o que ainda está em aberto. Ao resolver um item, mova-o para
 > `docs/arquivo/pendencias-resolvidas.md` (e registre a versão no `CHANGELOG.md`).
 
-**Vigiados: ocultar casa e acompanhar (v0.199.0)** — as casas ocultas e os lotes acompanhados ficam só no `localStorage` do aparelho (celular e desktop não se enxergam). Próximo passo combinado: gravar em `app_state` (via `mutateAppState`) para sincronizar; e, se o Giba quiser, alerta de "lote chegando" com o app fechado (push). Modo foco em tela cheia (do protótipo) e pílulas fixas (sticky) no celular ainda não foram feitos.
+**Vigiados: acompanhar/ocultar (v0.199.0, sincronizado na v0.206.0)** — falta o modo foco em tela cheia e as pílulas fixas (sticky) no celular, o alerta de "lote chegando" com o app fechado (push) e um link que caia direto no lote dentro da sala ao vivo (depende de cada casa).
 
 **Review de código (30/10/2026) — itens que ficaram em aberto** — relatório completo na thread do
 projeto; os itens 1 e 2 (app_state atômico, vigia sem retry) saíram na v0.185.7 e a limpeza na v0.185.8.
