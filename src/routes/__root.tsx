@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { type ReactNode } from "react";
 
+import { DeepProgressBar } from "@/components/deep-progress-bar";
 import { Footer } from "@/components/Footer";
 import { PwaSetup } from "@/components/PwaSetup";
 import { Toaster } from "@/components/ui/sonner";
@@ -134,6 +135,7 @@ function RootComponent() {
         </div>
       </div>
       <Footer />
+      <DeepProgressBar variant="mobile" />
       <PwaSetup />
       <Toaster richColors mobileOffset={{ bottom: 88 }} />
     </QueryClientProvider>

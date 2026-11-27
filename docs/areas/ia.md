@@ -251,6 +251,9 @@ esse caminho do servidor continua existindo mas a tela não o usa mais.
   `upsertLotAi` só grava `deep` quando vem preenchido (a avaliação comum não o apaga).
 - **Selo "nota desatualizada":** `deepIsStale` (lote com `deep` + `priceRoseSinceEval`): anel âmbar e "!" no selo e aviso no painel.
   O reprice automático (cliente e `repriceLotAi`) **pula** lotes com `deep` — só o botão os refaz.
+- **Andamento e erros (v0.205.0):** o progresso (`feitos/total`) vive num store de módulo (`deep-progress.ts`) e aparece no rodapé
+  (`DeepProgressBar`; pílula acima da barra inferior no celular) em qualquer tela. Ao terminar fica o resumo; falhas viram
+  "Ver erros" (lote + motivo; falha de chamada inteira marca o bloco todo) até fechar no X.
 
 ### Custo de referência
 
