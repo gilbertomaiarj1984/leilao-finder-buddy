@@ -124,10 +124,16 @@ export const reidentifySales = createServerFn({ method: "POST" })
  */
 export const proposeAlbumGrouping = createServerFn({ method: "POST" })
   .middleware([requireAuth])
-  .inputValidator((input: { artist?: unknown; albums?: unknown }) => {
+  .inputValidator((input: { artist?: unknown; albums?: unknown; useCovers?: unknown }) => {
     const albums = Array.isArray(input?.albums)
       ? input.albums.flatMap((a: unknown) => {
-          const o = a as { key?: unknown; name?: unknown; count?: unknown; sample?: unknown };
+          const o = a as {
+            key?: unknown;
+            name?: unknown;
+            count?: unknown;
+            sample?: unknown;
+            image?: unknown;
+          };
           if (typeof o?.key !== "string" || typeof o?.name !== "string" || !o.key) return [];
           return [
             {
@@ -135,6 +141,7 @@ export const proposeAlbumGrouping = createServerFn({ method: "POST" })
               name: o.name.slice(0, 160),
               count: Number(o.count) || 1,
               sample: typeof o.sample === "string" ? o.sample.slice(0, 200) : undefined,
+              image: typeof o.image === "string" && o.image ? o.image.slice(0, 300) : null,
             },
           ];
         })
@@ -142,13 +149,14 @@ export const proposeAlbumGrouping = createServerFn({ method: "POST" })
     return {
       artist: typeof input?.artist === "string" ? input.artist.slice(0, 120) : "",
       albums: albums.slice(0, 400),
+      useCovers: input?.useCovers !== false,
     };
   })
   .handler(async ({ context, data }) => {
     const { assertAllowed } = await import("./access.server");
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { proposeAlbumGroups } = await import("./album-grouping.server");
-    return await proposeAlbumGroups(data.artist, data.albums);
+    return await proposeAlbumGroups(data.artist, data.albums, { useCovers: data.useCovers });
   });
 
 /**

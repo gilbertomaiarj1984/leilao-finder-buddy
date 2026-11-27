@@ -241,4 +241,12 @@ valendo por cima e se desfaz pelo lápis do álbum).
   × "… 2"), itens repetidos/inexistentes e grupos de 1; o nome do grupo é forçado a ser o de um
   membro (a IA não inventa título); ao vivo × estúdio e coletânea × álbum viram aviso (grupo
   vem desmarcado). Teto de 120 álbuns por pedido (os de mais vendas).
-- **Ainda não faz:** usar a capa (imagem) para desempatar casos duvidosos; rodar no cron.
+- **v0.203.0 (ampla + capas):** botão **"Agrupar álbuns (IA)"** no topo (`AlbumGroupingScan`) varre N
+  artistas (padrão 30, até 300; os com mais álbuns primeiro; 2 em paralelo; botão Parar) e junta as
+  propostas numa lista de revisão; **"Juntar"** aplica todos os marcados num update otimista só
+  (`applyAlbumBatch` na rota). A IA recebe os títulos **e uma folha de capas** (`album-cover-sheet.server.ts`:
+  miniaturas de `lot_sales.image` lidas do disco, ladrilhos de 160 px, 8 colunas, número de cada
+  álbum desenhado com segmentos — sem depender de fonte do sistema; 1 imagem por pedido, que é o que
+  `runText` aceita). Cada grupo volta com `confidence` ("alta" = título e capa concordam, vem marcado;
+  "media" ou com aviso, vem desmarcado) e `reason`. Sem capas legíveis, vai só texto.
+- **Ainda não faz:** rodar sozinha no cron / guardar o resultado em cache; usar Discogs (master).

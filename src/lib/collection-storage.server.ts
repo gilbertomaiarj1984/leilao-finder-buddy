@@ -49,6 +49,17 @@ export async function uploadCollectionFile(
   return { publicUrl: `${publicBase()}${relPath}` };
 }
 
+/** Lê um arquivo já gravado (`null` se não existe ou o caminho foge da pasta). */
+export async function readCollectionFile(relPath: string): Promise<Buffer | null> {
+  const target = safeResolve(relPath);
+  if (!target) return null;
+  try {
+    return await readFile(target);
+  } catch {
+    return null;
+  }
+}
+
 export function getCollectionPublicUrl(relPath: string): string {
   return `${publicBase()}${relPath}`;
 }

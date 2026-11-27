@@ -17,6 +17,7 @@ import {
   type SaleRow,
 } from "@/lib/analytics";
 import { normalizeForMatch } from "@/lib/vinyl-parse";
+import { AlbumGroupingScan, type AlbumMergeItem } from "./analytics-grouping";
 import { ArtistRow, EmptyState, HiddenPanel, SortToggle, StatChip } from "./analytics-rows";
 import {
   ApplySaleOverride,
@@ -40,6 +41,7 @@ export type AnalyticsMutationHandlers = {
   onApplyArtistAlias: (sourceKeys: string[], name: string) => void;
   onClearArtist: (artist: ArtistAgg) => void;
   onApplyAlbumAlias: (keys: string[], name: string) => void;
+  onApplyAlbumBatch: (items: AlbumMergeItem[]) => void;
   onApplySaleOverride: ApplySaleOverride;
   onExcludeSale: ExcludeSale;
   onExcludeArtist: ExcludeArtist;
@@ -170,6 +172,9 @@ export function AnalyticsView({
                   {ai.reidentifying ? "Reidentificando…" : "Reidentificar (IA)"}
                 </Button>
               ) : null}
+              {canEdit && handlers ? (
+                <AlbumGroupingScan artists={analytics} onApplyBatch={handlers.onApplyAlbumBatch} />
+              ) : null}
               {onRefetch ? (
                 <Button variant="outline" size="sm" onClick={onRefetch} disabled={isFetching}>
                   <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
@@ -230,6 +235,7 @@ export function AnalyticsView({
                 onApplyArtist={handlers?.onApplyArtistAlias}
                 onClearArtist={handlers ? () => handlers.onClearArtist(a) : undefined}
                 onApplyAlbum={handlers?.onApplyAlbumAlias}
+                onApplyAlbumBatch={handlers?.onApplyAlbumBatch}
                 onApplySaleOverride={handlers?.onApplySaleOverride}
                 onReidentGroup={handlers?.onReidentGroup}
                 onReidentAllAlbums={handlers?.onReidentAllAlbums}

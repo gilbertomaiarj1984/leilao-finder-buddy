@@ -118,6 +118,26 @@ function VinilAnalyticsPage() {
       });
   };
 
+  // Junta VÁRIOS grupos de álbuns de uma vez (revisão/varredura de IA): um update otimista só,
+  // gravações em sequência (cada uma é atômica no servidor) e um único aviso no fim.
+  const applyAlbumBatch = (items: { keys: string[]; name: string }[]) => {
+    if (!items.length) return;
+    const prev = aliasesQuery.data;
+    const next = cloneAliases();
+    for (const it of items) for (const k of it.keys) next.albums![k] = it.name;
+    queryClient.setQueryData(queryKeys.analyticsAliases, next);
+    void (async () => {
+      try {
+        for (const it of items) await runSetAlbumAlias({ data: { keys: it.keys, name: it.name } });
+        toast.success(`${items.length} grupo(s) de álbuns juntado(s)`);
+      } catch (error) {
+        revertAliases(prev);
+        await queryClient.invalidateQueries({ queryKey: queryKeys.analyticsAliases });
+        toast.error((error as Error)?.message || "Não foi possível juntar os álbuns");
+      }
+    })();
+  };
+
   // Desfaz os apelidos de um artista (remove suas chaves dos dois mapas). Volta ao automático.
   const clearArtistAlias = (artist: ArtistAgg) => {
     const prev = aliasesQuery.data;
@@ -288,6 +308,7 @@ function VinilAnalyticsPage() {
     onApplyArtistAlias: applyArtistAlias,
     onClearArtist: clearArtistAlias,
     onApplyAlbumAlias: applyAlbumAlias,
+    onApplyAlbumBatch: applyAlbumBatch,
     onApplySaleOverride: applySaleOverride,
     onExcludeSale: (sale, label) => setSaleExcluded(sale.lot_id, true, label),
     onExcludeArtist: (artist) => setArtistExcluded(artist, true),
