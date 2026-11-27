@@ -119,6 +119,39 @@ export const reidentifySales = createServerFn({ method: "POST" })
   });
 
 /**
+ * Proposta de agrupamento de álbuns de UM artista pela IA (piloto). NÃO grava nada: devolve os
+ * grupos sugeridos para a tela mostrar; quem grava é `setAnalyticsAlbumAlias`, após o aceite.
+ */
+export const proposeAlbumGrouping = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { artist?: unknown; albums?: unknown }) => {
+    const albums = Array.isArray(input?.albums)
+      ? input.albums.flatMap((a: unknown) => {
+          const o = a as { key?: unknown; name?: unknown; count?: unknown; sample?: unknown };
+          if (typeof o?.key !== "string" || typeof o?.name !== "string" || !o.key) return [];
+          return [
+            {
+              key: o.key,
+              name: o.name.slice(0, 160),
+              count: Number(o.count) || 1,
+              sample: typeof o.sample === "string" ? o.sample.slice(0, 200) : undefined,
+            },
+          ];
+        })
+      : [];
+    return {
+      artist: typeof input?.artist === "string" ? input.artist.slice(0, 120) : "",
+      albums: albums.slice(0, 400),
+    };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { proposeAlbumGroups } = await import("./album-grouping.server");
+    return await proposeAlbumGroups(data.artist, data.albums);
+  });
+
+/**
  * Apelidos do Vinil Analytics (curadoria manual do agrupamento artista → álbum, com
  * "aprendizado" durável). Ver `app-state.server.ts` / `buildAnalytics`.
  */

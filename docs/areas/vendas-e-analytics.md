@@ -227,3 +227,18 @@ Curadoria de **exclusão** (ocultar, NÃO deletar do banco) — reversível, apl
   (`ArtistRow.focusAlbumKey`), o álbum abre e ganha borda destacada e a página rola até ele
   (`useScrollToFocus`). Usado pelo link «ver no Analytics» da nota da IA. `UNIDENTIFIED_ALBUM` é a
   constante do placeholder "(álbum não identificado)".
+
+### Agrupar álbuns de um artista com IA (piloto, v0.202.0)
+
+Botão `Combine` no artista (`analytics-grouping.tsx`, só no modo editável). Mandamos à IA (provedor
+padrão, `runText`, JSON) a lista numerada dos álbuns JÁ agrupados do artista (nome, nº de vendas e
+um título original de exemplo) e ela devolve `{groups:[{name, items:[n…]}]}` — `proposeAlbumGrouping`
+(`analytics.functions.ts`) → `album-grouping.server.ts`. **Não grava nada**: o diálogo mostra a
+proposta e, ao "Aplicar", usa o mesmo `setAnalyticsAlbumAlias` da curadoria manual (que continua
+valendo por cima e se desfaz pelo lápis do álbum).
+- Regras em `album-grouping.ts` (puro, `tests/album-grouping.test.ts`): prompt "na dúvida, não
+  agrupe"; `validateAlbumGroups` descarta grupo com número de edição diferente ("Clube da Esquina"
+  × "… 2"), itens repetidos/inexistentes e grupos de 1; o nome do grupo é forçado a ser o de um
+  membro (a IA não inventa título); ao vivo × estúdio e coletânea × álbum viram aviso (grupo
+  vem desmarcado). Teto de 120 álbuns por pedido (os de mais vendas).
+- **Ainda não faz:** usar a capa (imagem) para desempatar casos duvidosos; rodar no cron.
