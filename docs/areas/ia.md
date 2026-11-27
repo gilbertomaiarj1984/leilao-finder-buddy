@@ -231,6 +231,27 @@ image})` chama `evalLotsSync` **direto** (ignora o cache por `title_hash` — é
   card/linha atualizam sozinhos. Só aparece quando o chamador passa o prop `lot` (dados
   mínimos do lote); `CardLot.id` é opcional só por cautela de tipo (todo lote real tem id).
 
+### Análise profunda dos vigiados (v0.204.0)
+
+Botão **"Analisar vigiados"** (aba Vigiados, ao lado de "Abrir todas"): abre `WatchedDeepDialog` e analisa
+**só o dia selecionado** (vigiados + lances, sem vendidos; desabilitado em "Todos"/"Dias Futuros" — nunca roda
+tudo de uma vez). Antes o botão chamava `analyzeOnDemand({watched:true})` (nota simples, todos os vigiados);
+esse caminho do servidor continua existindo mas a tela não o usa mais.
+- **Escopo/limites:** só este fluxo usa o modo profundo; cron (`aieval`), botões do dia/casa e do card seguem com o
+  prompt simples (`SYSTEM_PROMPT`/`USER_INSTRUCTIONS`, hash inalterado — nenhum lote é reavaliado por causa disto).
+- **Servidor:** `analyzeWatchedDay` (`ai.functions.ts`, 12 lotes por chamada; o cliente repete em laço) busca o
+  texto **completo** de cada lote no catálogo da casa (`fetchCatalogData`, `DESCRICAO`, até 6000 caracteres no
+  prompt) e roda `evalLotsSync(..., {deep})` com `buildDeepRequest` (`ai-eval.server.ts`): `SYSTEM_PROMPT` +
+  `DEEP_SYSTEM_EXTRA` (nota = raridade + oportunidade + sinergia com a coleção + estado; **texto prevalece sobre a
+  imagem** no estado; imagem ajuda a identificar). Fila: lotes sem `lot_ai.deep` ou com `priceRoseSinceEval`; "refazer" ignora o filtro.
+- **Preço avaliado** (`deepPriceFor`, `ai-deep.ts`): lance meu **ganhando** = valor atual; só vigiado ou lance **superado** = **próximo lance**.
+  Fica em `lot_ai.eval_price` (e em `deep.preco`).
+- **Dados:** coluna `lot_ai.deep` (jsonb, `DeepAnalysis`): `descricao` (2–4 frases do álbum), `estado` (disco/capa/encarte/defeitos/inclui/base),
+  `sinergia`, `analytics` (preço × vendas passadas/Discogs), `preco`, `at`. Aparece no painel da nota (`ScoreDetails`/`DeepBlock`).
+  `upsertLotAi` só grava `deep` quando vem preenchido (a avaliação comum não o apaga).
+- **Selo "nota desatualizada":** `deepIsStale` (lote com `deep` + `priceRoseSinceEval`): anel âmbar e "!" no selo e aviso no painel.
+  O reprice automático (cliente e `repriceLotAi`) **pula** lotes com `deep` — só o botão os refaz.
+
 ### Custo de referência
 
 - **Custo Gemini (referência):** `gemini-flash-latest` ≈ US$0,75/US$3,75 por 1M tok in/out (mais

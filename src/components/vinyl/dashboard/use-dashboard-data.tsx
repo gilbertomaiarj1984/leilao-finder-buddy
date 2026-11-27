@@ -1715,7 +1715,8 @@ export function useDashboardData() {
       const day = dayKeyByLotId.get(l.id) || l.day;
       if (day && day < today) return false;
       const row = aiRowById.get(l.id);
-      if (!row || !l.price) return false;
+      // Nota com análise profunda só é refeita pelo botão "Analisar vigiados" (mostra o selo).
+      if (!row || row.deep || !l.price) return false;
       if (repriceAttemptedRef.current.has(`${l.id}|${l.price}`)) return false;
       return priceRoseSinceEval(row.eval_price, parsePrice(l.price));
     });

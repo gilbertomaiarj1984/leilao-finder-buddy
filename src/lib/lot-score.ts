@@ -1,3 +1,4 @@
+import type { DeepAnalysis } from "@/lib/ai-deep";
 import type { PanelConfig } from "@/lib/ai-panel-config";
 import { auctionFreight } from "@/lib/auction-freight";
 import {
@@ -112,6 +113,8 @@ export type LotAi = {
   /** Existe tracklist (faixas + fama) gravada — a lista em si vem sob demanda (`useLotTracklist`). */
   hasTracklist?: boolean;
   matchesInterests?: boolean;
+  /** Análise profunda dos vigiados (descritivo, estado, sinergia, analytics) — ver `ai-deep.ts`. */
+  deep?: DeepAnalysis | null;
 };
 
 /** Linha de `getLotAi` (banco, snake_case) → `LotAi` da UI. DUP(lot-ai-mapper): único ponto. */
@@ -124,6 +127,7 @@ export function toLotAi(r: {
   tags: string[];
   eval_price: number | null;
   hasTracklist: boolean;
+  deep?: DeepAnalysis | null;
 }): LotAi {
   return {
     score: r.score,
@@ -134,6 +138,7 @@ export function toLotAi(r: {
     tags: r.tags,
     evalPrice: r.eval_price,
     hasTracklist: r.hasTracklist,
+    deep: r.deep ?? null,
   };
 }
 

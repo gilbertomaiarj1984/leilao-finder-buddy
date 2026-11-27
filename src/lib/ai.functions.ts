@@ -300,6 +300,9 @@ export const repriceLotAi = createServerFn({ method: "POST" })
     const byId = new Map((await getAllLotAiClient()).map((r) => [r.id, r]));
     const toEval = data.lots.filter((l) => {
       const row = byId.get(l.id);
+      // Nota com análise profunda só é refeita pelo botão "Analisar vigiados" (aparece o selo
+      // "nota desatualizada"): o reprice automático usa o prompt simples e a descaracterizaria.
+      if (row?.deep) return false;
       return row ? priceRoseSinceEval(row.eval_price, parsePrice(l.price)) : false;
     });
     if (!toEval.length) return empty;
@@ -316,6 +319,136 @@ export const repriceLotAi = createServerFn({ method: "POST" })
       console.error("[lot-ai] falha ao reavaliar lotes por subida de preço", error);
       return empty;
     }
+  });
+
+/**
+ * Análise PROFUNDA dos vigiados (botão "Analisar vigiados", um DIA por vez, escolhido na tela):
+ * vigiados + lotes com lance. O cliente manda os lotes já com o PREÇO a avaliar (valor atual com
+ * lance meu ganhando; próximo lance nos demais — ver `deepPriceFor`). Aqui o servidor busca o
+ * texto COMPLETO de cada lote no catálogo da casa e roda o prompt profundo (`ai-eval.server.ts`):
+ * nota + descritivo do álbum + estado + sinergia + análise de preço. Só entra o que ainda não tem
+ * análise profunda (ou cujo preço subiu o bastante); `redo` refaz tudo. Teto de 12 por chamada
+ * (o cliente repete em laço). O cron e os demais botões NÃO passam por aqui.
+ */
+export const analyzeWatchedDay = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator(
+    (
+      input:
+        | {
+            lots?: {
+              id?: string;
+              idPeca?: string;
+              url?: string;
+              title?: string;
+              price?: string;
+              house?: string;
+              image?: string | null;
+            }[];
+            mode?: string;
+            redo?: boolean;
+            provider?: string;
+          }
+        | undefined,
+    ) => ({
+      lots: (Array.isArray(input?.lots) ? input!.lots : [])
+        .filter(
+          (l) => l && typeof l.id === "string" && l.id && typeof l.title === "string" && l.title,
+        )
+        .slice(0, 12)
+        .map((l) => ({
+          id: l.id as string,
+          idPeca: typeof l.idPeca === "string" ? l.idPeca : "",
+          url: typeof l.url === "string" ? l.url : "",
+          title: l.title as string,
+          price: typeof l.price === "string" ? l.price : "",
+          house: typeof l.house === "string" ? l.house : "",
+          image: typeof l.image === "string" ? l.image : null,
+        })),
+      mode: input?.mode === "text" ? ("text" as const) : ("image" as const),
+      redo: input?.redo === true,
+      provider: isAiProvider(input?.provider) ? input.provider : null,
+    }),
+  )
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const base = {
+      rows: [] as Awaited<ReturnType<typeof import("./lot-ai.server").getAllLotAiClient>>,
+      evaluated: 0,
+      failed: 0,
+      skipped: 0,
+      remaining: 0,
+      served: null as AiProvider | null,
+      switched: false,
+      error: null as string | null,
+      attemptErrors: {} as Partial<Record<AiProvider, string>>,
+    };
+    if (!data.lots.length) return base;
+    const { aiConfigured, evalLotsSync } = await import("./ai-eval.server");
+    if (!aiConfigured()) {
+      throw new Error("A IA não está configurada (nenhuma chave de provedor no servidor).");
+    }
+    const { getAiProvider } = await import("./app-state.server");
+    const provider = data.provider ?? (await getAiProvider());
+    const { getAllLotAiClient, upsertLotAi, toClientRow } = await import("./lot-ai.server");
+    const { priceRoseSinceEval } = await import("./ai-reprice");
+    const { parsePrice } = await import("./vinyl-parse");
+    const byId = new Map((await getAllLotAiClient()).map((r) => [r.id, r]));
+    const toEval = data.lots.filter((l) => {
+      if (data.redo) return true;
+      const row = byId.get(l.id);
+      return !row?.deep || priceRoseSinceEval(row.eval_price, parsePrice(l.price));
+    });
+    const skipped = data.lots.length - toEval.length;
+    if (!toEval.length) return { ...base, skipped };
+
+    // Texto COMPLETO de cada lote: 1 leitura de catálogo por leilão (a descrição da casa).
+    const { parseAuctionRef, fetchCatalogData } = await import("./leiloesbr-catalog.server");
+    const byAuction = new Map<string, { domain: string; idLeilao: string }>();
+    for (const l of toEval) {
+      const ref = l.url ? parseAuctionRef(l.url) : null;
+      if (ref) byAuction.set(`${ref.domain}|${ref.idLeilao}`, ref);
+    }
+    const catalogs = new Map<string, Awaited<ReturnType<typeof fetchCatalogData>>>();
+    await Promise.all(
+      [...byAuction].map(async ([key, ref]) => {
+        try {
+          catalogs.set(key, await fetchCatalogData(ref.domain, ref.idLeilao, Date.now() + 20_000));
+        } catch (error) {
+          console.error(`[analyzeWatchedDay] catálogo do leilão ${ref.idLeilao} falhou`, error);
+        }
+      }),
+    );
+    const fullText = new Map<string, string>();
+    for (const l of toEval) {
+      const ref = l.url ? parseAuctionRef(l.url) : null;
+      const text = ref ? catalogs.get(`${ref.domain}|${ref.idLeilao}`)?.get(l.idPeca)?.text : "";
+      fullText.set(l.id, text?.trim() || l.title);
+    }
+
+    const { rows, served, switched, failed, error, attemptErrors } = await evalLotsSync(
+      toEval.map(({ idPeca: _idPeca, url: _url, ...lot }) => lot),
+      provider,
+      { mode: data.mode, deep: { fullText } },
+    );
+    await upsertLotAi(rows); // não zera as faixas já gravadas
+    // A avaliação sem faixas não as apaga no banco: o cliente também as mantém.
+    const out = rows.map((r) => ({
+      ...toClientRow(r),
+      hasTracklist: Boolean(r.tracklist?.length) || (byId.get(r.id)?.hasTracklist ?? false),
+    }));
+    return {
+      ...base,
+      rows: out,
+      evaluated: rows.length,
+      failed,
+      skipped,
+      served,
+      switched,
+      error,
+      attemptErrors,
+    };
   });
 
 /** Modo da avaliação por IA da rodada automática: "off" | "all" | "watched". Global. */

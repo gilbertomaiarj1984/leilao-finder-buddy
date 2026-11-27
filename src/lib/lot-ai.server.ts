@@ -1,5 +1,6 @@
 import { db } from "@/lib/db-client.server";
 import { albumWithIdentPriority } from "@/lib/album-pick";
+import { normalizeDeep, type DeepAnalysis } from "@/lib/ai-deep";
 import { normalizeTracklist, type Track } from "@/lib/tracklist";
 
 /**
@@ -21,13 +22,18 @@ export type LotAiRow = {
   eval_price: number | null;
   /** Tracklist do álbum com a fama de cada faixa (ver `tracklist.ts`); null = não informada. */
   tracklist: Track[] | null;
+  /** Análise profunda dos vigiados (`ai-deep.ts`); ausente/null = só a nota simples. */
+  deep?: DeepAnalysis | null;
 };
 
 /**
  * Linha enviada ao NAVEGADOR: igual à do banco, mas SEM as faixas (jsonb pesado, ~1 KB por disco ×
  * centenas de lotes). `hasTracklist` só diz se existe; a lista vem sob demanda (`getLotTracklist`).
  */
-type LotAiClient = Omit<LotAiRow, "tracklist"> & { hasTracklist: boolean };
+type LotAiClient = Omit<LotAiRow, "tracklist" | "deep"> & {
+  hasTracklist: boolean;
+  deep: DeepAnalysis | null;
+};
 
 /** `numeric` do Postgres chega como string (postgres.js) — normaliza para number|null. */
 function toPrice(value: unknown): number | null {
@@ -61,8 +67,8 @@ export function invalidateLotAiCache(): void {
 
 /** Tira as faixas de uma linha e a marca com `hasTracklist` (o que o navegador recebe). */
 export function toClientRow(r: LotAiRow): LotAiClient {
-  const { tracklist, ...rest } = r;
-  return { ...rest, hasTracklist: Boolean(tracklist?.length) };
+  const { tracklist, deep, ...rest } = r;
+  return { ...rest, hasTracklist: Boolean(tracklist?.length), deep: deep ?? null };
 }
 
 /**
@@ -74,7 +80,7 @@ export async function getAllLotAiClient(): Promise<LotAiClient[]> {
   const { data, error } = await db
     .from<LotAiRow & { has_tracklist: boolean }>("lot_ai")
     .select(
-      "id, title_hash, score, rarity, deal, album, reason, tags, model, eval_price, " +
+      "id, title_hash, score, rarity, deal, album, reason, tags, model, eval_price, deep, " +
         "(CASE WHEN jsonb_typeof(tracklist) = 'array' THEN jsonb_array_length(tracklist) > 0 ELSE false END) AS has_tracklist",
     );
   if (error) throw error;
@@ -90,6 +96,7 @@ export async function getAllLotAiClient(): Promise<LotAiClient[]> {
     model: r.model,
     eval_price: toPrice(r.eval_price),
     hasTracklist: r.has_tracklist === true,
+    deep: normalizeDeep(r.deep),
   }));
   clientCache = { at: Date.now(), rows };
   return rows;
@@ -198,6 +205,8 @@ export async function upsertLotAi(rows: LotAiRow[]): Promise<number> {
     eval_price: r.eval_price,
     // Reavaliar não apaga a tracklist (vem do Discogs, preenchida por step=tracklist).
     ...(r.tracklist ? { tracklist: r.tracklist } : {}),
+    // A análise profunda só é gravada por quem a gerou; a avaliação comum não a apaga.
+    ...(r.deep ? { deep: r.deep } : {}),
     evaluated_at: evaluatedAt,
   }));
   const { error } = await db.from("lot_ai").upsert(payload, { onConflict: "id" });
