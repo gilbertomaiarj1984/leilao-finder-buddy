@@ -184,7 +184,9 @@ function FollowCatalogBlock({
                 <div className="h-11 w-11 shrink-0 rounded bg-secondary" />
               )}
               <div className="min-w-0 flex-1 text-[10px] leading-[13px]" title={lot.title}>
-                <p className="truncate text-[11px] font-semibold text-foreground">{artist || album}</p>
+                <p className="truncate text-[11px] font-semibold text-foreground">
+                  {artist || album}
+                </p>
                 {artist ? <p className="truncate text-foreground/90">{album}</p> : null}
                 <p className="truncate text-muted-foreground">
                   <span className="font-semibold text-foreground/80">#{lot.lote}</span> ·{" "}
