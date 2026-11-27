@@ -153,12 +153,19 @@ function FollowCatalogBlock({
               : null;
           const bidStatus = d.bidStatusById.get(lot.idPeca);
           const winning = !!bidStatus && bidIsWinning(bidStatus);
-          const label = d.albumFor(lot) ?? lot.title;
+          // Artista e álbum em linhas separadas (o título costuma vir "Artista - Álbum").
+          const rawAlbum = d.albumFor(lot) ?? lot.title;
+          const artist = lot.artist?.trim() ?? "";
+          const prefix = `${artist} - `;
+          const album =
+            artist && rawAlbum.toLowerCase().startsWith(prefix.toLowerCase())
+              ? rawAlbum.slice(prefix.length)
+              : rawAlbum;
           return (
             <div
               key={lot.id}
               id={`follow-${lot.id}`}
-              className={`flex min-w-0 scroll-mt-24 items-center gap-2 rounded-md border bg-card p-1.5 ${
+              className={`flex min-w-0 scroll-mt-24 items-center gap-1.5 rounded-md border bg-card p-1.5 ${
                 !bidStatus
                   ? "border-yellow-500 ring-1 ring-yellow-500/40"
                   : winning
@@ -176,14 +183,11 @@ function FollowCatalogBlock({
               ) : (
                 <div className="h-11 w-11 shrink-0 rounded bg-secondary" />
               )}
-              <div className="min-w-0 flex-1 leading-tight">
-                <p
-                  className="line-clamp-2 break-words text-sm font-semibold text-foreground"
-                  title={lot.title}
-                >
-                  #{lot.lote} · {label}
-                </p>
-                <p className="text-[11px] text-muted-foreground">
+              <div className="min-w-0 flex-1 text-[10px] leading-[13px]" title={lot.title}>
+                <p className="truncate text-[11px] font-semibold text-foreground">{artist || album}</p>
+                {artist ? <p className="truncate text-foreground/90">{album}</p> : null}
+                <p className="truncate text-muted-foreground">
+                  <span className="font-semibold text-foreground/80">#{lot.lote}</span> ·{" "}
                   {d.currentPriceFor(lot.id, lot.price) || "sem valor"}
                   {bidStatus ? (
                     <span className={winning ? " text-green-500" : " text-red-500"}>
@@ -194,7 +198,7 @@ function FollowCatalogBlock({
                 </p>
               </div>
               <div
-                className={`shrink-0 text-right text-sm font-bold leading-tight ${TONE_TEXT[toneKey]}`}
+                className={`shrink-0 text-right text-xs font-bold leading-tight ${TONE_TEXT[toneKey]}`}
               >
                 {dist === null ? (
                   <span className="text-xs font-normal text-muted-foreground">
@@ -225,7 +229,7 @@ function FollowCatalogBlock({
                 rel="noreferrer"
                 title="Abrir o lote no site da casa"
                 aria-label="Abrir o lote no site da casa"
-                className="grid h-10 w-10 shrink-0 place-items-center rounded text-muted-foreground hover:bg-secondary"
+                className="grid h-8 w-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-secondary"
               >
                 <ExternalLink className="h-4 w-4" />
               </a>
@@ -234,7 +238,7 @@ function FollowCatalogBlock({
                 onClick={() => d.toggleFollow(lot.id)}
                 title="Parar de acompanhar"
                 aria-label="Parar de acompanhar"
-                className="grid h-10 w-10 shrink-0 place-items-center rounded hover:bg-secondary"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded hover:bg-secondary"
               >
                 <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
               </button>
