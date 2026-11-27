@@ -29,7 +29,7 @@ import {
   type SaleRow,
 } from "@/lib/analytics";
 import { type Condition } from "@/lib/grading";
-import { AlbumGroupingButton } from "./analytics-grouping";
+import { AlbumGroupingButton, type AlbumMergeItem } from "./analytics-grouping";
 import {
   AlbumEditDialog,
   ArtistEditDialog,
@@ -297,6 +297,7 @@ export function ArtistRow({
   onApplyArtist,
   onClearArtist,
   onApplyAlbum,
+  onApplyAlbumBatch,
   onApplySaleOverride,
   onReidentGroup,
   onReidentAllAlbums,
@@ -313,6 +314,7 @@ export function ArtistRow({
   onApplyArtist?: (sourceKeys: string[], name: string) => void;
   onClearArtist?: () => void;
   onApplyAlbum?: (keys: string[], name: string) => void;
+  onApplyAlbumBatch?: (items: AlbumMergeItem[]) => void;
   onApplySaleOverride?: ApplySaleOverride;
   onReidentGroup?: ReidentGroup;
   onReidentAllAlbums?: ReidentAllAlbums;
@@ -380,8 +382,8 @@ export function ArtistRow({
             title="Rodar a IA em cada álbum deste artista, um de cada vez (sem precisar abrir álbum por álbum)"
           />
         ) : null}
-        {canEdit && onApplyAlbum ? (
-          <AlbumGroupingButton artist={artist} onApplyAlbum={onApplyAlbum} />
+        {canEdit && onApplyAlbumBatch ? (
+          <AlbumGroupingButton artist={artist} onApplyBatch={onApplyAlbumBatch} />
         ) : null}
         {canEdit ? (
           <button

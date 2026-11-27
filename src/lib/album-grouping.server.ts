@@ -19,18 +19,27 @@ type AlbumGroupingResult = {
   model: string;
   /** Álbuns que não couberam no pedido (artista com mais de `MAX_GROUPING_ALBUMS`). */
   skipped: number;
+  /** A IA recebeu a folha de capas junto com os títulos. */
+  usedCovers: boolean;
 };
 
 export async function proposeAlbumGroups(
   artist: string,
   albumsIn: GroupingAlbum[],
+  opts: { useCovers?: boolean } = {},
 ): Promise<AlbumGroupingResult> {
   if (!aiConfigured()) throw new Error("Nenhuma IA configurada (chave de API ausente).");
   // Os de mais vendas primeiro: se passar do teto, os que ficam de fora são os mais raros.
   const sorted = [...albumsIn].sort((a, b) => b.count - a.count);
   const albums = sorted.slice(0, MAX_GROUPING_ALBUMS);
   if (albums.length < 2) {
-    return { groups: [], provider: "", model: "", skipped: 0 };
+    return { groups: [], provider: "", model: "", skipped: 0, usedCovers: false };
+  }
+  // Folha de capas (opcional): só os quadros que têm miniatura; sem nenhuma, vai só o texto.
+  let sheet: string | null = null;
+  if (opts.useCovers !== false && albums.some((a) => a.image)) {
+    const { buildCoverSheet } = await import("./album-cover-sheet.server");
+    sheet = await buildCoverSheet(albums);
   }
   const provider = await resolveAiProvider();
   const geminiModel = await resolveGeminiModel();
@@ -39,7 +48,7 @@ export async function proposeAlbumGroups(
       system: ALBUM_GROUPING_SYSTEM,
       maxTokens: 4096,
       text: buildAlbumGroupingText(artist, albums),
-      image: null,
+      image: sheet,
       json: true,
     },
     provider,
@@ -51,5 +60,6 @@ export async function proposeAlbumGroups(
     provider: r.provider,
     model: r.model,
     skipped: sorted.length - albums.length,
+    usedCovers: !!sheet,
   };
 }

@@ -66,6 +66,27 @@ describe("validateAlbumGroups", () => {
     expect(g[0]!.keys).toEqual(["luar", "a gente precisa ver o luar"]);
   });
 
+  test("confiança e motivo vêm da IA; aviso rebaixa para media", () => {
+    const g = validateAlbumGroups(
+      {
+        groups: [
+          { name: "Luar", items: [7, 8], confidence: "alta", reason: "mesma capa e título" },
+          { name: "Circuladô", items: [5, 6], confidence: "alta", reason: "x" },
+        ],
+      },
+      albums,
+    );
+    expect(g[0]!.confidence).toBe("alta");
+    expect(g[0]!.reason).toBe("mesma capa e título");
+    expect(g[1]!.confidence).toBe("media");
+  });
+
+  test("sem confiança informada vira media", () => {
+    const g = validateAlbumGroups({ groups: [{ name: "Luar", items: [7, 8] }] }, albums);
+    expect(g[0]!.confidence).toBe("media");
+    expect(g[0]!.reason).toBe("");
+  });
+
   test("resposta inválida não quebra", () => {
     expect(validateAlbumGroups(null, albums)).toEqual([]);
     expect(validateAlbumGroups({ groups: "x" }, albums)).toEqual([]);

@@ -12,6 +12,8 @@ export type GroupingAlbum = {
   count: number;
   /** Um título original de exemplo (ajuda a IA a ver a edição/gravadora). */
   sample?: string;
+  /** URL da miniatura da capa (nosso storage); só serve para montar a folha de capas. */
+  image?: string | null;
 };
 
 export type AlbumGroup = {
@@ -20,6 +22,10 @@ export type AlbumGroup = {
   keys: string[];
   /** Avisos para o usuário conferir (ex.: ao vivo misturado com estúdio). */
   warnings: string[];
+  /** "alta" = título e capa concordam (ou títulos quase idênticos); "media" = um só sinal. */
+  confidence: "alta" | "media";
+  /** Motivo curto dado pela IA (aparece na revisão). */
+  reason: string;
 };
 
 export const MAX_GROUPING_ALBUMS = 120;
@@ -36,7 +42,14 @@ REGRAS (na dúvida, NÃO agrupe — separar por engano é barato, juntar por eng
 - Ignore diferenças de acento, caixa, artigo inicial, gravadora, código, estado de conservação, ano.
 - O nome do grupo deve ser COPIADO de um dos itens do grupo (o mais limpo), nunca inventado.
 - Cada item entra em NO MÁXIMO um grupo. Itens sozinhos não aparecem na resposta.
-Responda SÓ JSON: {"groups":[{"name":"<nome copiado de um item>","items":[1,5,7]}]}`;
+CAPAS: quando houver uma imagem anexa, ela é uma folha de capas; cada quadro traz no canto o MESMO número
+da lista (quadro cinza liso = sem capa). Use a capa como segunda evidência: mesma arte de capa (mesmo
+desenho/foto/tipografia) reforça que é o mesmo disco; arte diferente enfraquece. Mas capa igual não prova
+nada contra o título (ao vivo e estúdio, ou volumes, às vezes repetem a arte) e reedição pode trocar a capa:
+o TÍTULO decide números, "ao vivo" e coletânea.
+Para cada grupo informe "confidence": "alta" (título e capa concordam, ou títulos praticamente idênticos) ou
+"media" (só um dos sinais) e "reason": motivo em até 12 palavras.
+Responda SÓ JSON: {"groups":[{"name":"<nome copiado de um item>","items":[1,5,7],"confidence":"alta","reason":"mesma capa e título"}]}`;
 
 /** Texto do pedido: lista numerada (1..N) — a IA responde com os números, nunca reescreve chaves. */
 export function buildAlbumGroupingText(artist: string, albums: GroupingAlbum[]): string {
@@ -45,7 +58,7 @@ export function buildAlbumGroupingText(artist: string, albums: GroupingAlbum[]):
       a.sample && normalizeForMatch(a.sample) !== normalizeForMatch(a.name) ? a.sample : "";
     return `${i + 1}. ${a.name} (${a.count} venda${a.count === 1 ? "" : "s"})${
       sample ? ` — título original: ${sample.slice(0, 110)}` : ""
-    }`;
+    }${a.image ? " [capa na folha]" : ""}`;
   });
   return `Artista: ${artist}\nÁlbuns:\n${lines.join("\n")}`;
 }
@@ -110,7 +123,16 @@ export function validateAlbumGroups(
     const byCount = [...members].sort((a, b) => b.count - a.count);
     const canon = members.find((m) => normalizeForMatch(m.name) === wanted) ?? byCount[0]!;
     for (const n of idx) used.add(n);
-    out.push({ name: canon.name, keys: members.map((m) => m.key), warnings });
+    const reasonRaw = typeof obj["reason"] === "string" ? obj["reason"].trim().slice(0, 120) : "";
+    // Aviso sempre rebaixa para "media": quem decide é o usuário.
+    const confidence = obj["confidence"] === "alta" && !warnings.length ? "alta" : "media";
+    out.push({
+      name: canon.name,
+      keys: members.map((m) => m.key),
+      warnings,
+      confidence,
+      reason: reasonRaw,
+    });
   }
   return out;
 }
