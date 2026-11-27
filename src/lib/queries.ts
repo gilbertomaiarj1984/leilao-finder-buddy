@@ -10,6 +10,7 @@ import { getAiPanel, getCalibration } from "@/lib/ai-panel.functions";
 import { collectorInterests } from "@/lib/collector-profile";
 import { buildInterestMatcher } from "@/lib/lot-score";
 import { getHouseRatings } from "@/lib/house-rating.functions";
+import type { WatchedPrefs } from "@/lib/watched-prefs";
 import { EMPTY_RATINGS, type RatingsPayload } from "@/lib/house-rating";
 
 import {
@@ -39,6 +40,7 @@ import {
   getLotMarket,
   getVinylLots,
   getVinylLotsRange,
+  getWatchedPrefs,
   listMyBids,
 } from "@/lib/leiloesbr.functions";
 import { getExcludedLotsForMatching, getTrashKeywordDenylist } from "@/lib/lot-exclusion.functions";
@@ -88,6 +90,7 @@ export const queryKeys = {
   lookoutOverview: ["lookout-overview"],
   analyticsAliases: ["analytics-aliases"],
   houseRatings: ["house-ratings"],
+  watchedPrefs: ["watched-prefs"],
   houseUfs: ["house-ufs"],
 } as const;
 
@@ -652,6 +655,21 @@ export function useHouseRatingsQuery() {
     },
     staleTime: HOUR,
     refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * Acompanhados (★) e casas ocultas da aba Vigiados, iguais em todos os aparelhos. Relê ao voltar
+ * para o app (foco) e a cada 2 min com a aba aberta; erro deixa `data` indefinido (a tela usa o que há no aparelho).
+ */
+export function useWatchedPrefsQuery() {
+  const fetchPrefs = useServerFn(getWatchedPrefs);
+  return useQuery<WatchedPrefs>({
+    queryKey: queryKeys.watchedPrefs,
+    queryFn: () => fetchPrefs(),
+    staleTime: 30 * 1000,
+    refetchInterval: 2 * MIN,
+    refetchOnWindowFocus: true,
   });
 }
 

@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 
 import { requireAuth } from "@/lib/auth-middleware";
 import { parseLotScope, type LotScope } from "@/lib/lot-scope";
+import { applyPrefsOp, parsePrefsOp } from "@/lib/watched-prefs";
 
 export const getAccessStatus = createServerFn({ method: "GET" })
   .middleware([requireAuth])
@@ -247,6 +248,31 @@ export const setVerifiedHouses = createServerFn({ method: "POST" })
     assertAllowed(context.claims?.["email"] as string | undefined);
     const { setVerifiedHouses } = await import("./app-state.server");
     return await setVerifiedHouses(data.keys);
+  });
+
+/** Lotes acompanhados (★) e casas ocultas da aba Vigiados — iguais em todos os aparelhos. */
+export const getWatchedPrefs = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .handler(async ({ context }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { getWatchedPrefs } = await import("./watched-prefs.server");
+    return await getWatchedPrefs();
+  });
+
+/** Aplica UMA mudança (acompanhar, ocultar…) de forma atômica e devolve as preferências novas. */
+export const changeWatchedPrefs = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input: { op?: unknown } | undefined) => {
+    const op = parsePrefsOp(input?.op);
+    if (!op) throw new Error("Operação inválida.");
+    return { op };
+  })
+  .handler(async ({ context, data }) => {
+    const { assertAllowed } = await import("./access.server");
+    assertAllowed(context.claims?.["email"] as string | undefined);
+    const { changeWatchedPrefs } = await import("./watched-prefs.server");
+    return await changeWatchedPrefs((cur) => applyPrefsOp(cur, data.op));
   });
 
 /** Estado de conservação (Disco/Capa) por lote p/ os cards (`lot_condition`). Best-effort: [] em erro. */
