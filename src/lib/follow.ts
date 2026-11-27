@@ -70,3 +70,26 @@ export function timelineLayout(
     progressPct: Math.min(100, ((now.peca ?? 0) / scale) * 100),
   };
 }
+
+/**
+ * Separa artista e álbum para exibir em linhas distintas: tira separadores soltos do fim do
+ * artista ("Gonzaguinha /" → "Gonzaguinha") e o artista repetido no começo do álbum
+ * ("Gonzaguinha - Caminhos" → "Caminhos"). Só remove o prefixo quando vem seguido de
+ * separador; um álbum que apenas começa com o nome do artista ("Gilberto Gil Em Concerto")
+ * fica como está.
+ */
+export function splitArtistAlbum(
+  artist: string | null | undefined,
+  rawAlbum: string,
+): { artist: string; album: string } {
+  const cleanArtist = (artist ?? "").replace(/[\s/\-–—:|,]+$/u, "").trim();
+  const album = rawAlbum.trim();
+  if (!cleanArtist) return { artist: "", album };
+  const head = album.slice(0, cleanArtist.length);
+  const rest = album.slice(cleanArtist.length);
+  if (head.toLowerCase() === cleanArtist.toLowerCase()) {
+    const m = rest.match(/^\s*[-–—/:|]\s*(\S.*)$/u);
+    if (m) return { artist: cleanArtist, album: m[1]! };
+  }
+  return { artist: cleanArtist, album };
+}
