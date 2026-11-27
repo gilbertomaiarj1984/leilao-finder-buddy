@@ -29,6 +29,7 @@ import {
   type SaleRow,
 } from "@/lib/analytics";
 import { type Condition } from "@/lib/grading";
+import { AlbumGroupingButton } from "./analytics-grouping";
 import {
   AlbumEditDialog,
   ArtistEditDialog,
@@ -378,6 +379,9 @@ export function ArtistRow({
             onReident={onReidentAllAlbums}
             title="Rodar a IA em cada álbum deste artista, um de cada vez (sem precisar abrir álbum por álbum)"
           />
+        ) : null}
+        {canEdit && onApplyAlbum ? (
+          <AlbumGroupingButton artist={artist} onApplyAlbum={onApplyAlbum} />
         ) : null}
         {canEdit ? (
           <button

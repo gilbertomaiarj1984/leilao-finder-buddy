@@ -303,3 +303,5 @@ Consolidados em v0.145.0: leitura de JSON de IA, faixas do veredicto, `lot-score
 
 - **Nota «também na sacola» dentro do álbum:** só a sacola mostra o selo; `LookoutSummaryRow` não recebe a informação.
 - **«Novo» e aviso para lote só da sacola:** não contam em `newCount` nem notificam; avaliar uma chave `lotId|bag:<artista>` em `lookout_seen`.
+
+- **Agrupar álbuns (IA), fase 2:** depois do piloto (Milton/Caetano/Gil), avaliar capa como desempate só nos pares duvidosos (`lot_sales.image`) e rodar por artista com venda nova (cache em `app_state`). Avaliação: `relatorios/avaliacao-ia-agrupar-albuns-analytics-2026-11-27.md` (pasta de arquivos do projeto).
