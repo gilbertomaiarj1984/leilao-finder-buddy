@@ -159,7 +159,11 @@ function FollowCatalogBlock({
               key={lot.id}
               id={`follow-${lot.id}`}
               className={`flex min-w-0 scroll-mt-24 items-center gap-2 rounded-md border bg-card p-1.5 ${
-                toneKey === "near" ? "border-red-500/70" : "border-yellow-500/50"
+                !bidStatus
+                  ? "border-yellow-500 ring-1 ring-yellow-500/40"
+                  : winning
+                    ? "border-green-500 ring-1 ring-green-500/40"
+                    : "border-red-500 ring-1 ring-red-500/40"
               }`}
             >
               {lot.image ? (
@@ -173,10 +177,13 @@ function FollowCatalogBlock({
                 <div className="h-11 w-11 shrink-0 rounded bg-secondary" />
               )}
               <div className="min-w-0 flex-1 leading-tight">
-                <p className="truncate text-sm font-semibold text-foreground" title={lot.title}>
+                <p
+                  className="line-clamp-2 break-words text-sm font-semibold text-foreground"
+                  title={lot.title}
+                >
                   #{lot.lote} · {label}
                 </p>
-                <p className="truncate text-[11px] text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                   {d.currentPriceFor(lot.id, lot.price) || "sem valor"}
                   {bidStatus ? (
                     <span className={winning ? " text-green-500" : " text-red-500"}>
