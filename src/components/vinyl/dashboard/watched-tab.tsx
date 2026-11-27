@@ -36,6 +36,7 @@ import {
   watchedMatchesSearch,
 } from "@/components/vinyl/grouping";
 import { LotCard } from "@/components/vinyl/lot-card";
+import { useAnalyzeWatchedDay, type DeepLotInput } from "@/components/vinyl/use-ai-actions";
 import { HouseLotListButton } from "@/components/vinyl/house-lot-list";
 import { PresencialLink } from "@/components/vinyl/presencial-link";
 import { useDragAutoScroll } from "@/components/vinyl/use-drag-autoscroll";
@@ -45,10 +46,14 @@ import {
   setAnalyticsSaleOverrides,
 } from "@/lib/analytics.functions";
 import { FUTURE_LABEL, FUTURE_TAB, isFutureDay } from "@/lib/day-bar";
+import { deepPriceFor } from "@/lib/ai-deep";
+import { priceRoseSinceEval } from "@/lib/ai-reprice";
 import { queryKeys, useAnalyticsAliasesQuery } from "@/lib/queries";
+import { bidIsWinning, parsePrice } from "@/lib/vinyl-parse";
 
 import { FollowPanel } from "./follow-panel";
 import type { DashboardData } from "./use-dashboard-data";
+import { WatchedDeepDialog } from "./watched-deep-dialog";
 import { ConfirmMoveDialog, WatchedLotDialog, WatchedArtistDialog } from "./watched-artist-dialog";
 
 const chipClass = (active: boolean) =>
@@ -93,8 +98,6 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
     closedHouseSections,
     toggleHouseSection,
     watchedIds,
-    analyzeScope,
-    analyzing,
     bidStatusById,
     houseBidFlags,
     currentPriceFor,
@@ -156,6 +159,9 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
   const [view, setView] = usePersistedState<"casa" | "artista">("watched-view", "casa");
   // Correção do nome do artista (renomear/juntar) — mesmos apelidos do Analytics.
   const [editingArtist, setEditingArtist] = useState<string | null>(null);
+  // Análise profunda dos vigiados do dia selecionado (botão "Analisar vigiados").
+  const [deepOpen, setDeepOpen] = useState(false);
+  const { progress: deepProgress, analyzeDay } = useAnalyzeWatchedDay();
   const queryClient = useQueryClient();
   const aliasesQuery = useAnalyticsAliasesQuery();
   const runSetArtistAlias = useServerFn(setAnalyticsArtistAlias);
@@ -340,6 +346,37 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                   .reduce((n, c) => n + c.lots.length, 0),
               0,
             );
+          // Análise profunda: só um DIA por vez (nunca "todos"). Vigiados + lances do dia, sem os já
+          // vendidos; o preço avaliado é o valor atual (lance meu ganhando) ou o próximo lance.
+          const deepDay = activeDay !== "all" && activeDay !== FUTURE_TAB ? activeDay : "";
+          const deepLots: DeepLotInput[] = deepDay
+            ? watchedList
+                .filter(
+                  (l) =>
+                    l.id &&
+                    l.title &&
+                    watchedDateToKey(l.date) === deepDay &&
+                    !hiddenHouses.has(l.house) &&
+                    !soldById.has(l.id),
+                )
+                .map((l) => ({
+                  id: l.id,
+                  idPeca: l.idPeca,
+                  url: l.url,
+                  title: l.title,
+                  house: l.house,
+                  image: l.image,
+                  price: deepPriceFor({
+                    winning: bidIsWinning(bidStatusById.get(l.idPeca) ?? ""),
+                    current: currentPriceFor(l.id, l.price),
+                    nextBid: nextBidById.get(l.id),
+                  }),
+                }))
+            : [];
+          const deepPending = deepLots.filter((l) => {
+            const ai = aiFor(l);
+            return !ai?.deep || priceRoseSinceEval(ai.evalPrice, parsePrice(l.price));
+          }).length;
           const visible = houses
             .map((h) => ({
               ...h,
@@ -549,16 +586,23 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                     <div className="flex gap-1.5">
                       <button
                         type="button"
-                        onClick={() => analyzeScope({ day: "", watched: true })}
-                        disabled={analyzing !== null}
-                        className={smallButtonClass}
+                        onClick={() => setDeepOpen(true)}
+                        disabled={deepProgress !== null || !deepDay || deepLots.length === 0}
+                        title={
+                          deepDay
+                            ? "Análise profunda dos vigiados e lances do dia selecionado"
+                            : "Escolha um dia (a análise profunda é feita dia a dia)"
+                        }
+                        className={`${smallButtonClass} disabled:opacity-60`}
                       >
-                        {analyzing === "watched" ? (
+                        {deepProgress ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
                           <Sparkles className="h-3.5 w-3.5" />
                         )}
-                        Analisar vigiados
+                        {deepProgress
+                          ? `Analisando ${deepProgress.done}/${deepProgress.total}`
+                          : "Analisar vigiados"}
                       </button>
                       <button
                         type="button"
@@ -579,6 +623,16 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                     </div>
                   </div>
                 </div>
+                <WatchedDeepDialog
+                  open={deepOpen && deepDay !== ""}
+                  onOpenChange={setDeepOpen}
+                  dayLabel={deepDay ? `${deepDay.slice(8, 10)}/${deepDay.slice(5, 7)}` : ""}
+                  total={deepLots.length}
+                  pending={deepPending}
+                  hasImages={deepLots.some((l) => Boolean(l.image))}
+                  running={deepProgress !== null}
+                  onRun={(opts) => analyzeDay(deepLots, opts)}
+                />
                 <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Dia">
                   <button
                     type="button"

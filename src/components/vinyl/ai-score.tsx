@@ -10,6 +10,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AiReprocessPopover, type AiReprocessMode } from "@/components/vinyl/ai-reprocess-menu";
 import { reevaluateLot } from "@/lib/ai.functions";
+import { deepIsStale, type DeepAnalysis } from "@/lib/ai-deep";
 import { formatAiUsed, type AiUsed } from "@/lib/ai-provider";
 
 import {
@@ -546,6 +547,67 @@ export function EvaluateCornerButton({ lot }: { lot: ReevalLot }) {
   );
 }
 
+/** Bloco da análise PROFUNDA (só vigiados): descritivo do álbum, estado, sinergia e análise de preço. */
+function DeepBlock({ deep, stale }: { deep: DeepAnalysis; stale: boolean }) {
+  const e = deep.estado;
+  const estado = e
+    ? [
+        e.disco ? `Disco ${e.disco}` : null,
+        e.capa ? `Capa ${e.capa}` : null,
+        e.encarte ? `Encarte: ${e.encarte === "sim" ? "sim" : "não"}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
+  const baseLabel =
+    e?.base === "texto"
+      ? "lido do texto da casa"
+      : e?.base === "imagem"
+        ? "lido da foto"
+        : e?.base === "misto"
+          ? "texto e foto"
+          : "";
+  return (
+    <div className="space-y-1.5 border-t border-border pt-1.5">
+      {stale ? (
+        <p className="rounded bg-amber-500/15 px-1.5 py-1 font-medium text-amber-700 dark:text-amber-400">
+          Nota desatualizada: o preço subiu desde a análise. Use "Analisar vigiados" para refazer.
+        </p>
+      ) : null}
+      {deep.descricao ? <p className="text-foreground">{deep.descricao}</p> : null}
+      {estado || e?.defeitos.length || e?.inclui.length ? (
+        <div>
+          <p className="font-semibold text-foreground">
+            Estado
+            {baseLabel ? (
+              <span className="font-normal text-muted-foreground"> ({baseLabel})</span>
+            ) : null}
+          </p>
+          {estado ? <p className="text-muted-foreground">{estado}</p> : null}
+          {e?.defeitos.length ? (
+            <p className="text-muted-foreground">Defeitos: {e.defeitos.join("; ")}</p>
+          ) : null}
+          {e?.inclui.length ? (
+            <p className="text-muted-foreground">Vem junto: {e.inclui.join("; ")}</p>
+          ) : null}
+        </div>
+      ) : null}
+      {deep.sinergia ? (
+        <p className="text-muted-foreground">
+          <span className="font-semibold text-foreground">Sinergia: </span>
+          {deep.sinergia}
+        </p>
+      ) : null}
+      {deep.analytics ? (
+        <p className="text-muted-foreground">
+          <span className="font-semibold text-foreground">Analytics: </span>
+          {deep.analytics}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 /** Conteúdo do overlay/coluna: o que compõe a nota. Reutilizado no card e na Análise. */
 export function ScoreDetails({
   ai,
@@ -602,6 +664,12 @@ export function ScoreDetails({
         ) : null}
       </dl>
       {ai.reason ? <p className="text-muted-foreground">{ai.reason}</p> : null}
+      {ai.deep ? (
+        <DeepBlock
+          deep={ai.deep}
+          stale={deepIsStale(ai.deep, ai.evalPrice, price ? parsePrice(price) : null)}
+        />
+      ) : null}
       {ai.tags.length ? (
         <div className="pt-0.5">
           <LotTags tags={ai.tags} />
@@ -630,6 +698,7 @@ export function ScoreCorner({
   lotId?: string;
 }) {
   if (ai.score === null) return null;
+  const stale = deepIsStale(ai.deep, ai.evalPrice, price ? parsePrice(price) : null);
   return (
     <div className="absolute right-2 top-2 z-10">
       <HoverDetails
@@ -637,10 +706,12 @@ export function ScoreCorner({
           <button
             type="button"
             aria-label={`Nota ${ai.score} de 100 — ver detalhes`}
-            className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-bold shadow ${scoreTone(ai.score)}`}
+            className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-bold shadow ${scoreTone(ai.score)} ${stale ? "ring-2 ring-amber-500" : ""}`}
+            title={stale ? "Nota desatualizada: o preço subiu desde a análise" : undefined}
           >
             {ai.matchesInterests ? <Star className="h-3 w-3 fill-current" /> : null}
             {ai.score}
+            {stale ? <span aria-hidden>!</span> : null}
           </button>
         }
       >

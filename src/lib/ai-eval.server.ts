@@ -17,6 +17,7 @@
  */
 import { parsePrice, type VinylLot } from "./vinyl-parse";
 import { priceRoseSinceEval } from "./ai-reprice";
+import { parseDeepText } from "./ai-deep";
 import type { LotAiRow } from "./lot-ai.server";
 import type { LotIdentRow } from "./lot-ident.server";
 import {
@@ -49,7 +50,12 @@ const HINT_MAX = 600;
  * `image` usa a capa (o padrão), `text` ignora a capa e vai só pelo título; `hint` é a dica livre
  * do colecionador (prioridade máxima, vale só para essa nota — não é gravada).
  */
-type EvalOptions = { mode?: "image" | "text"; hint?: string | null };
+type EvalOptions = {
+  mode?: "image" | "text";
+  hint?: string | null;
+  /** Análise PROFUNDA (só o botão dos vigiados): texto completo de cada lote, por id. */
+  deep?: { fullText: ReadonlyMap<string, string> };
+};
 
 /** Teto de lotes avaliados por rodada de cron (evita batches gigantes). */
 const MAX_PER_ROUND = 800;
@@ -287,6 +293,79 @@ function buildEvalRequest(
     maxTokens: 600,
     text: buildUserPrompt(lot, ctx, cfg, hint),
     image: usableImage(lot.image),
+    json: true,
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Análise PROFUNDA (vigiados) — prompts à parte; o SYSTEM_PROMPT/USER_INSTRUCTIONS acima (e o hash
+// que cobre o catálogo inteiro) NÃO mudam. Ver `ai-deep.ts` e docs/areas/ia.md.
+// ---------------------------------------------------------------------------------------------
+
+/** Texto completo do lote que vai no prompt profundo (a descrição da casa pode ser longa). */
+const DEEP_TEXT_MAX = 6000;
+
+const DEEP_SYSTEM_EXTRA =
+  " ANÁLISE PROFUNDA: a nota (score 0-100) combina raridade, oportunidade (o preço avaliado " +
+  "contra o valor do disco, o Discogs e as vendas passadas), sinergia com a coleção do " +
+  'colecionador (bloco "perfil_do_colecionador": o que ele quer, curte ou já tem) e o estado de ' +
+  'conservação. "preco_avaliado_reais" é o que o colecionador pagaria agora: o valor atual quando ' +
+  "o lance mais alto já é dele, ou o próximo lance nos demais casos. " +
+  '"texto_completo_do_lote" é a descrição integral da casa: para estado de conservação, defeitos ' +
+  "e o que vem junto o TEXTO PREVALECE sobre a imagem (na foto muita coisa se perde); use a " +
+  "imagem para identificar o disco (artista, álbum, selo, edição) e para conferir, e quando a " +
+  "imagem contradisser o texto, confie no texto. Nunca invente estado que o texto e a imagem não " +
+  "mostrem: use null.";
+
+const DEEP_USER_INSTRUCTIONS =
+  "Faça a análise PROFUNDA deste disco de vinil e devolva um objeto JSON com EXATAMENTE estas chaves:\n" +
+  '- "score": inteiro 0-100 (raridade + oportunidade + sinergia com a coleção + estado)\n' +
+  '- "rarity": um de "comum","interessante","raro","muito_raro"\n' +
+  '- "deal": um de "caro","justo","barato","indefinido" (preco_avaliado_reais vs. valor estimado)\n' +
+  '- "album": artista e álbum que você identificou ("" se não souber)\n' +
+  '- "reason": 1 frase curta justificando a nota (cite raridade, oportunidade e sinergia)\n' +
+  '- "tags": array curto de gênero/estilo/época/selo\n' +
+  '- "descricao": 2 a 4 frases sobre o ÁLBUM: quem é o artista, a importância e o contexto do ' +
+  "disco, a prensagem/edição e o que este lote traz (faixas notáveis, encarte, discos extras)\n" +
+  '- "estado": objeto {"disco": sigla Goldmine (M, NM, EX, VG+, VG, VG-, G+, G, G-, F/P) ou null, ' +
+  '"capa": idem, "encarte": "sim"|"nao"|null, "defeitos": array de defeitos citados, "inclui": ' +
+  'array do que vem junto, "base": "texto"|"imagem"|"misto"} — lido do texto_completo_do_lote; ' +
+  "null onde o texto e a foto não disserem\n" +
+  '- "sinergia": 1 frase sobre como este disco se relaciona com a coleção e os interesses ("sem ' +
+  'relação com a coleção" quando não houver)\n' +
+  '- "analytics": 1 a 3 frases comparando preco_avaliado_reais com "vendas_passadas_brl" ' +
+  '(mediana, nº de vendas) e com "mercado_discogs_brl", citando os valores; se não houver ' +
+  "histórico, diga isso\n\n";
+
+/** Requisição NEUTRA da análise profunda de UM lote (texto completo + capa, conforme o modo). */
+function buildDeepRequest(
+  lot: EvalLot,
+  ctx: LotContext | null | undefined,
+  cfg: PanelConfig,
+  fullText: string,
+  withImage: boolean,
+): AiRequest {
+  const price = parsePrice(lot.price);
+  const info: Record<string, unknown> = {
+    titulo: lot.title,
+    casa: lot.house,
+    preco_avaliado_reais: price ?? null,
+    tem_imagem: withImage && Boolean(usableImage(lot.image)),
+    texto_completo_do_lote: fullText.slice(0, DEEP_TEXT_MAX) || null,
+  };
+  if (ctx) {
+    // O texto completo já vai no campo próprio: tira a descrição curta do bloco de contexto.
+    info["contexto"] = contextForPrompt({ ...ctx, descricao: null }, price, cfg);
+  }
+  return {
+    system: SYSTEM_PROMPT + DEEP_SYSTEM_EXTRA,
+    maxTokens: 1400,
+    text:
+      DEEP_USER_INSTRUCTIONS +
+      "Disco:\n" +
+      JSON.stringify(info) +
+      "\n\nResponda só com o objeto JSON.",
+    image: withImage ? usableImage(lot.image) : null,
     json: true,
   };
 }
@@ -697,13 +776,22 @@ export async function evalLotsSync(
       const lot = lots[index];
       if (!lot) return;
       try {
+        const deepText = opts.deep?.fullText;
         const r = await runText(
-          buildEvalRequest(
-            opts.mode === "text" ? { ...lot, image: null } : lot,
-            contexts.get(lot.id),
-            cfg,
-            opts.hint,
-          ),
+          deepText
+            ? buildDeepRequest(
+                lot,
+                contexts.get(lot.id),
+                cfg,
+                deepText.get(lot.id) ?? lot.title,
+                opts.mode !== "text",
+              )
+            : buildEvalRequest(
+                opts.mode === "text" ? { ...lot, image: null } : lot,
+                contexts.get(lot.id),
+                cfg,
+                opts.hint,
+              ),
           provider,
           geminiModel,
         );
@@ -722,6 +810,7 @@ export async function evalLotsSync(
             tracklist: parsed.tracklist,
             model: r.model,
             eval_price: parsePrice(lot.price) || null,
+            ...(deepText ? { deep: parseDeepText(r.text, parsePrice(lot.price) || null) } : {}),
           });
         } else {
           // Resposta que não vira JSON de avaliação: conta como falha (senão a UI diria "já avaliado").

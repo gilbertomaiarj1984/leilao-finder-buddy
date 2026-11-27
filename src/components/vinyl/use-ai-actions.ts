@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { analyzeOnDemand, repriceLotAi } from "@/lib/ai.functions";
+import { analyzeOnDemand, analyzeWatchedDay, repriceLotAi } from "@/lib/ai.functions";
 import {
   AI_PROVIDER_SHORT,
   formatAiUsed,
@@ -183,4 +183,98 @@ export function useRepriceLots() {
     })();
   };
   return { repricing, repriceLots };
+}
+
+/** Lote do dia a analisar a fundo, já com o PREÇO a avaliar (ver `deepPriceFor`). */
+export type DeepLotInput = {
+  id: string;
+  idPeca: string;
+  url: string;
+  title: string;
+  price: string;
+  house: string;
+  image: string | null;
+};
+
+/** Lotes por chamada ao servidor (cada um lê o catálogo e chama a IA com texto completo). */
+const DEEP_CHUNK = 12;
+
+/**
+ * Análise PROFUNDA dos vigiados do dia (`analyzeWatchedDay`): em blocos de 12, grava as linhas
+ * devolvidas direto no cache `queryKeys.lotAi` (a nota e o painel atualizam sozinhos). Uma por vez.
+ */
+export function useAnalyzeWatchedDay() {
+  const runDeep = useServerFn(analyzeWatchedDay);
+  const queryClient = useQueryClient();
+  const provider: AiProvider = useAiProviderQuery().data ?? "anthropic";
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+
+  const analyzeDay = (lots: DeepLotInput[], opts: { mode: "image" | "text"; redo: boolean }) => {
+    if (progress || !lots.length) return;
+    void (async () => {
+      setProgress({ done: 0, total: lots.length });
+      let evaluated = 0;
+      let failed = 0;
+      let skipped = 0;
+      let lastError: string | null = null;
+      let served: AiProvider | null = null;
+      let switchedTo: AiProvider | null = null;
+      let attemptErrors: Partial<Record<AiProvider, string>> = {};
+      try {
+        for (let i = 0; i < lots.length; i += DEEP_CHUNK) {
+          const chunk = lots.slice(i, i + DEEP_CHUNK);
+          const res = await runDeep({ data: { lots: chunk, ...opts, provider } });
+          evaluated += res.evaluated;
+          failed += res.failed;
+          skipped += res.skipped;
+          if (res.error) lastError = res.error;
+          if (res.served) served = res.served;
+          if (res.switched && res.served) switchedTo = res.served;
+          attemptErrors = { ...attemptErrors, ...res.attemptErrors };
+          if (res.rows.length) {
+            const byId = new Map(res.rows.map((r) => [r.id, r]));
+            queryClient.setQueriesData({ queryKey: queryKeys.lotAi }, (old: unknown) =>
+              Array.isArray(old)
+                ? [
+                    ...old.map((r) => byId.get((r as { id: string })?.id) ?? r),
+                    ...res.rows.filter((r) => !old.some((o) => (o as { id: string })?.id === r.id)),
+                  ]
+                : old,
+            );
+          }
+          setProgress({ done: Math.min(i + DEEP_CHUNK, lots.length), total: lots.length });
+        }
+        const trail = formatFailoverTrail(attemptErrors);
+        if (switchedTo && switchedTo !== provider) {
+          toast.warning(
+            trail
+              ? `${trail} — usei ${AI_PROVIDER_SHORT[switchedTo]}`
+              : `${AI_PROVIDER_SHORT[provider]} indisponível — usei ${AI_PROVIDER_SHORT[switchedTo]}`,
+          );
+        }
+        const used = formatAiUsed(served ? { provider: served, model: "", switched: false } : null);
+        const extra = [
+          skipped ? `${skipped} já estavam em dia` : "",
+          failed ? `${failed} falharam${lastError ? ` (${lastError})` : ""}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        if (evaluated)
+          toast.success(
+            `IA analisou ${evaluated} lote(s) a fundo${used}${extra ? ` — ${extra}` : ""}`,
+          );
+        else if (failed)
+          toast.error(
+            `A IA não retornou análise${lastError ? ` (${lastError})` : ""} — verifique a chave/limite do provedor`,
+          );
+        else toast.success("Nada novo para analisar: todos os lotes do dia já estão em dia");
+      } catch (error) {
+        toast.error((error as Error)?.message || "Não foi possível analisar agora");
+      } finally {
+        setProgress(null);
+      }
+    })();
+  };
+
+  return { progress, analyzeDay };
 }

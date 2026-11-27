@@ -134,6 +134,9 @@ ALTER TABLE public.lot_ai ADD COLUMN IF NOT EXISTS eval_price numeric;
 -- Tracklist do álbum devolvida pela IA na avaliação: [{side, title, fame}] com fame
 -- 'alta' | 'media' | 'baixa' (verde/amarelo/vermelho no card). NULL = ainda não informada.
 ALTER TABLE public.lot_ai ADD COLUMN IF NOT EXISTS tracklist jsonb;
+-- Análise PROFUNDA dos vigiados (botão "Analisar vigiados", ver `src/lib/ai-deep.ts`): descritivo do
+-- álbum, estado lido do texto completo, sinergia com a coleção e análise de preço. NULL = só nota simples.
+ALTER TABLE public.lot_ai ADD COLUMN IF NOT EXISTS deep jsonb;
 
 -- ---------------------------------------------------------------------
 -- lot_ident — identificação SIMPLIFICADA da IA por lote (só artista/álbum/ano).
