@@ -10,6 +10,14 @@ import {
   formatFailoverTrail,
   type AiProvider,
 } from "@/lib/ai-provider";
+import {
+  advanceDeepProgress,
+  finishDeepProgress,
+  getDeepProgress,
+  startDeepProgress,
+  useDeepProgress,
+  type DeepErrorEntry,
+} from "@/lib/deep-progress";
 import { queryKeys, useAiProviderQuery } from "@/lib/queries";
 
 type Scope = { day: string; house?: string; watched?: boolean };
@@ -207,42 +215,70 @@ export function useAnalyzeWatchedDay() {
   const runDeep = useServerFn(analyzeWatchedDay);
   const queryClient = useQueryClient();
   const provider: AiProvider = useAiProviderQuery().data ?? "anthropic";
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  // O andamento vive num store de módulo (`deep-progress.ts`): o rodapé o mostra em qualquer tela.
+  const progress = useDeepProgress();
+  const running = progress.status === "running";
 
-  const analyzeDay = (lots: DeepLotInput[], opts: { mode: "image" | "text"; redo: boolean }) => {
-    if (progress || !lots.length) return;
+  const analyzeDay = (
+    lots: DeepLotInput[],
+    opts: { mode: "image" | "text"; redo: boolean },
+    dayLabel = "",
+  ) => {
+    if (running || !lots.length) return;
     void (async () => {
-      setProgress({ done: 0, total: lots.length });
-      let evaluated = 0;
-      let failed = 0;
-      let skipped = 0;
-      let lastError: string | null = null;
+      startDeepProgress(lots.length, dayLabel);
+      const titleById = new Map(lots.map((l) => [l.id, l]));
       let served: AiProvider | null = null;
       let switchedTo: AiProvider | null = null;
       let attemptErrors: Partial<Record<AiProvider, string>> = {};
+      const fatal: DeepErrorEntry[] = [];
       try {
         for (let i = 0; i < lots.length; i += DEEP_CHUNK) {
           const chunk = lots.slice(i, i + DEEP_CHUNK);
-          const res = await runDeep({ data: { lots: chunk, ...opts, provider } });
-          evaluated += res.evaluated;
-          failed += res.failed;
-          skipped += res.skipped;
-          if (res.error) lastError = res.error;
-          if (res.served) served = res.served;
-          if (res.switched && res.served) switchedTo = res.served;
-          attemptErrors = { ...attemptErrors, ...res.attemptErrors };
-          if (res.rows.length) {
-            const byId = new Map(res.rows.map((r) => [r.id, r]));
-            queryClient.setQueriesData({ queryKey: queryKeys.lotAi }, (old: unknown) =>
-              Array.isArray(old)
-                ? [
-                    ...old.map((r) => byId.get((r as { id: string })?.id) ?? r),
-                    ...res.rows.filter((r) => !old.some((o) => (o as { id: string })?.id === r.id)),
-                  ]
-                : old,
+          try {
+            const res = await runDeep({ data: { lots: chunk, ...opts, provider } });
+            if (res.served) served = res.served;
+            if (res.switched && res.served) switchedTo = res.served;
+            attemptErrors = { ...attemptErrors, ...res.attemptErrors };
+            const why = res.error || "a IA não devolveu uma análise válida";
+            const errors: DeepErrorEntry[] = res.failedIds.map((id) => ({
+              title: titleById.get(id)?.title ?? id,
+              house: titleById.get(id)?.house,
+              message: why,
+            }));
+            // Falhas sem id (não deve ocorrer) ainda aparecem na lista.
+            for (let k = errors.length; k < res.failed; k += 1)
+              errors.push({ title: "Lote sem identificação", message: why });
+            if (res.rows.length) {
+              const byId = new Map(res.rows.map((r) => [r.id, r]));
+              queryClient.setQueriesData({ queryKey: queryKeys.lotAi }, (old: unknown) =>
+                Array.isArray(old)
+                  ? [
+                      ...old.map((r) => byId.get((r as { id: string })?.id) ?? r),
+                      ...res.rows.filter(
+                        (r) => !old.some((o) => (o as { id: string })?.id === r.id),
+                      ),
+                    ]
+                  : old,
+              );
+            }
+            advanceDeepProgress(
+              {
+                size: chunk.length,
+                evaluated: res.evaluated,
+                skipped: res.skipped,
+                failed: res.failed,
+              },
+              errors,
+            );
+          } catch (error) {
+            // A chamada inteira caiu (rede, servidor, IA sem chave): o bloco todo conta como falha.
+            const message = (error as Error)?.message || "A chamada ao servidor falhou";
+            advanceDeepProgress(
+              { size: chunk.length, evaluated: 0, skipped: 0, failed: chunk.length },
+              chunk.map((l) => ({ title: l.title, house: l.house, message })),
             );
           }
-          setProgress({ done: Math.min(i + DEEP_CHUNK, lots.length), total: lots.length });
         }
         const trail = formatFailoverTrail(attemptErrors);
         if (switchedTo && switchedTo !== provider) {
@@ -252,29 +288,17 @@ export function useAnalyzeWatchedDay() {
               : `${AI_PROVIDER_SHORT[provider]} indisponível — usei ${AI_PROVIDER_SHORT[switchedTo]}`,
           );
         }
+        if (trail && !switchedTo) fatal.push({ title: "Provedores de IA", message: trail });
+        const final = getDeepProgress();
         const used = formatAiUsed(served ? { provider: served, model: "", switched: false } : null);
-        const extra = [
-          skipped ? `${skipped} já estavam em dia` : "",
-          failed ? `${failed} falharam${lastError ? ` (${lastError})` : ""}` : "",
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        if (evaluated)
-          toast.success(
-            `IA analisou ${evaluated} lote(s) a fundo${used}${extra ? ` — ${extra}` : ""}`,
-          );
-        else if (failed)
-          toast.error(
-            `A IA não retornou análise${lastError ? ` (${lastError})` : ""} — verifique a chave/limite do provedor`,
-          );
+        if (final.evaluated) toast.success(`IA analisou ${final.evaluated} lote(s) a fundo${used}`);
+        else if (final.failed) toast.error("A análise não retornou nada — veja os erros no rodapé");
         else toast.success("Nada novo para analisar: todos os lotes do dia já estão em dia");
-      } catch (error) {
-        toast.error((error as Error)?.message || "Não foi possível analisar agora");
       } finally {
-        setProgress(null);
+        finishDeepProgress(fatal);
       }
     })();
   };
 
-  return { progress, analyzeDay };
+  return { progress: running ? { done: progress.done, total: progress.total } : null, analyzeDay };
 }

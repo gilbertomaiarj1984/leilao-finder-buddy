@@ -377,6 +377,7 @@ export const analyzeWatchedDay = createServerFn({ method: "POST" })
       rows: [] as Awaited<ReturnType<typeof import("./lot-ai.server").getAllLotAiClient>>,
       evaluated: 0,
       failed: 0,
+      failedIds: [] as string[],
       skipped: 0,
       remaining: 0,
       served: null as AiProvider | null,
@@ -427,7 +428,7 @@ export const analyzeWatchedDay = createServerFn({ method: "POST" })
       fullText.set(l.id, text?.trim() || l.title);
     }
 
-    const { rows, served, switched, failed, error, attemptErrors } = await evalLotsSync(
+    const { rows, served, switched, failed, failedIds, error, attemptErrors } = await evalLotsSync(
       toEval.map(({ idPeca: _idPeca, url: _url, ...lot }) => lot),
       provider,
       { mode: data.mode, deep: { fullText } },
@@ -443,6 +444,7 @@ export const analyzeWatchedDay = createServerFn({ method: "POST" })
       rows: out,
       evaluated: rows.length,
       failed,
+      failedIds: failedIds ?? [],
       skipped,
       served,
       switched,

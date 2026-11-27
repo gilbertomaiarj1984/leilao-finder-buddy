@@ -631,7 +631,13 @@ export function WatchedTab({ d, futureOnly = false }: { d: DashboardData; future
                   pending={deepPending}
                   hasImages={deepLots.some((l) => Boolean(l.image))}
                   running={deepProgress !== null}
-                  onRun={(opts) => analyzeDay(deepLots, opts)}
+                  onRun={(opts) =>
+                    analyzeDay(
+                      deepLots,
+                      opts,
+                      deepDay ? `${deepDay.slice(8, 10)}/${deepDay.slice(5, 7)}` : "",
+                    )
+                  }
                 />
                 <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Dia">
                   <button

@@ -1,3 +1,4 @@
+import { DeepProgressBar } from "@/components/deep-progress-bar";
 import { APP_VERSION } from "@/lib/version";
 
 /**
@@ -21,6 +22,7 @@ export function Footer() {
           id="footer-extra"
           className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1"
         />
+        <DeepProgressBar variant="footer" />
         <span className="ml-auto shrink-0 font-mono" title="Versão do aplicativo">
           v{APP_VERSION}
         </span>
